@@ -143,6 +143,10 @@ impl<T> TopicModel<T> {
         &self.topic_stats
     }
 
+    pub fn topics(&self) -> &Vec<Vec<f64>> {
+        &self.topics
+    }
+
     delegate::delegate! {
         to self.vocabulary {
             pub fn get_word(&self, id: usize) -> Option<&T>;
