@@ -1,6 +1,7 @@
 use crate::topicmodel::vocabulary::Vocabulary;
 
 mod topicmodel;
+mod translate;
 
 
 fn main() {

@@ -8,20 +8,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fbad4d88-17fb-4a74-bcbd-3113bfb033c2" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/ldatranslate.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/topicmodel.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/topicmodel/dictionary.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/topicmodel/enums.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/topicmodel/io.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/topicmodel/topic_model.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/topicmodel/traits.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/topicmodel/vocabulary.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/translate.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/topicmodel.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/topicmodel.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -154,7 +146,7 @@
       <workItem from="1716103347646" duration="2465000" />
       <workItem from="1716106124842" duration="876000" />
       <workItem from="1716188543856" duration="15411000" />
-      <workItem from="1716272307811" duration="40057000" />
+      <workItem from="1716272307811" duration="41832000" />
     </task>
     <servers />
   </component>

@@ -1,6 +1,6 @@
 pub mod topic_model;
 pub mod vocabulary;
-mod dictionary;
-mod traits;
-mod enums;
+pub mod dictionary;
+pub mod traits;
+pub mod enums;
 mod io;
