@@ -5,6 +5,7 @@ use rayon::prelude::*;
 use crate::topicmodel::topic_model::TopicModel;
 use crate::topicmodel::dictionary::Dictionary;
 
+#[derive(Debug)]
 struct TranslateConfig {
     epsilon: Option<f64>,
     voting: String,
@@ -35,7 +36,13 @@ pub fn translate<T>(
     }.unwrap();
 
 
-    topic_model.topics().iter().enumerate().collect_vec().par_iter().map(|(topic_id, topic)| {
+    topic_model.topics().iter()
+        .zip_eq(topic_model.stats())
+        .enumerate()
+        .collect_vec()
+        .par_iter()
+        .copied()
+        .map(|(topic_id, (topic, stats))| {
 
     });
 }

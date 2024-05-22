@@ -9,9 +9,9 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::marker::PhantomData;
 use std::ops::{Bound, Deref, DerefMut, Range};
 use std::path::Path;
-use std::rc::Rc;
 use std::slice::Iter;
 use std::str::FromStr;
+use std::sync::Arc;
 use itertools::Itertools;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
@@ -21,6 +21,7 @@ use crate::topicmodel::traits::ToParseableString;
 
 pub type StringVocabulary = Vocabulary<String>;
 
+/// A vocabulary mapping between an usize id and a specific object (word)
 #[derive(Clone, Debug)]
 pub struct Vocabulary<T> {
     entry2id: HashMap<HashRef<T>, usize>,
@@ -28,115 +29,62 @@ pub struct Vocabulary<T> {
 }
 
 impl <T> Vocabulary<T> {
+
+    /// Create a new vocabulary with the default sizes
+    pub fn new() -> Self {
+        Self {
+            entry2id: Default::default(),
+            id2entry: Default::default()
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            entry2id: HashMap::with_capacity(capacity),
+            id2entry: Vec::with_capacity(capacity)
+        }
+    }
+
+    /// The number of entries in the vocabulary
     pub fn len(&self) -> usize {
         self.id2entry.len()
     }
 
+    /// Clear the whole thing
     pub fn clear(&mut self){
         self.id2entry.clear();
         self.entry2id.clear();
     }
 
+    /// Get the ids
     pub fn ids(&self) -> Range<usize> {
         0..self.id2entry.len()
     }
 
-    pub fn iter_words(&self) -> VocIter<T> {
-        VocIter::create(self.id2entry.iter())
+    /// Iterate over the words
+    pub fn iter(&self) -> Iter<HashRef<T>> {
+        self.id2entry.iter()
     }
 
+    /// Get the word for a specific `id` or none
     pub fn get_word(&self, id: usize) -> Option<&T> {
         return self.id2entry.get(id).map(|value| value.deref())
     }
 
-    pub fn contains_word_id(&self, id: usize) -> bool {
+    /// Get the HashRef for a specific `id` or none
+    pub fn get_hash_ref(&self, id: usize) -> Option<&HashRef<T>> {
+        return self.id2entry.get(id)
+    }
+
+    /// Check if the `id` is contained in this
+    pub fn contains_id(&self, id: usize) -> bool {
         self.id2entry.len() > id
     }
 }
 
-
-#[repr(transparent)]
-pub struct VocIter<'a, T> {
-    iter: Iter<'a, HashRef<T>>
-}
-
-impl<'a, T> VocIter<'a, T> {
-    fn create(iter: Iter<'a, HashRef<T>>) -> Self {
-        VocIter { iter }
-    }
-}
-
-impl<'a, T> Iterator for VocIter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let target = self.iter.next()?;
-        Some(target.deref())
-    }
-}
-
-
-#[derive(Debug, Error)]
-pub enum LoadVocabularyError<E: Debug> {
-    #[error(transparent)]
-    IO(#[from] std::io::Error),
-    #[error("Had a parse error")]
-    Parse(E),
-}
-
-impl<T: Hash + Eq + FromStr<Err=E>, E: Debug> Vocabulary<T> {
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, LoadVocabularyError<E>> {
-        let mut reader = BufReader::new(File::open(path)?);
-        Self::load_from_input(&mut reader)
-    }
-
-    pub fn load_from_input(reader: &mut impl BufRead) -> Result<Self, LoadVocabularyError<E>> {
-        let mut id2entry = Vec::new();
-        for line in reader.lines() {
-            id2entry.push(line?.parse().map_err(LoadVocabularyError::Parse)?)
-        }
-        Ok(Self::build_from_id2entry(id2entry))
-    }
-}
-
-
-impl<T: Eq> PartialEq for Vocabulary<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len() &&
-            self.id2entry.iter()
-                .zip_eq(other.id2entry.iter())
-                .all(|(a, b)| a.deref().eq(b.deref()))
-    }
-}
-
-impl<T: Eq> Eq for Vocabulary<T> {}
-
-impl<T: ToParseableString> Vocabulary<T>  {
-    pub fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<usize> {
-        let mut writer = File::options().create(true).truncate(true).write(true).open(path)?;
-        self.save_to_output(&mut writer)
-    }
-
-    pub fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {
-        let mut written = 0;
-        let mut writer = BufWriter::new(writer);
-        for value in self.id2entry.iter() {
-            let value = value.to_parseable_string();
-            written += writer.write(value.as_bytes())?;
-            written += writer.write(b"\n")?;
-        }
-        writer.flush()?;
-        Ok(written)
-    }
-}
-
-impl <T: Eq + Hash> Vocabulary<T> {
-    pub fn new() -> Vocabulary<T>{
-        Default::default()
-    }
-
-    fn build_from_id2entry(values: Vec<T>) -> Self {
-        let mut id2entry = values.into_iter().map(|value| HashRef::new(value)).collect_vec();
+impl<T: Eq + Hash> From<Vec<T>> for Vocabulary<T>  {
+    fn from(value: Vec<T>) -> Self {
+        let mut id2entry = value.into_iter().map(|value| HashRef::new(value)).collect_vec();
         let mut entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
 
         return Self {
@@ -144,17 +92,13 @@ impl <T: Eq + Hash> Vocabulary<T> {
             entry2id
         }
     }
+}
 
-    #[inline]
-    pub fn with_capacity(capacity: usize) -> Vocabulary<T> {
-        Vocabulary {
-            entry2id: HashMap::with_capacity(capacity),
-            id2entry: Vec::with_capacity(capacity)
-        }
-    }
+impl <T: Eq + Hash> Vocabulary<T> {
 
-    pub fn add<V: Into<T>>(&mut self, to_add: V) -> usize {
-        let found = self.entry2id.entry(HashRef::new(to_add.into()));
+    /// Adds the `value` to the vocabulary and returns the associated id
+    pub fn add_hash_ref(&mut self, value: HashRef<T>) -> usize {
+        let found = self.entry2id.entry(value);
         match found {
             Entry::Occupied(entry) => {
                 *entry.get()
@@ -168,29 +112,103 @@ impl <T: Eq + Hash> Vocabulary<T> {
         }
     }
 
-    pub fn get_word_id<Q: ?Sized>(&self, word: &Q) -> Option<usize>
+    /// Adds any `value` that can be converted into `T`
+    pub fn add<V: Into<T>>(&mut self, value: V) -> usize {
+        self.add_hash_ref(value.into().into())
+    }
+
+    /// Retrieves the id for `value`
+    pub fn get_word_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
     {
-        return self.entry2id.get(Wrapper::wrap(word)).cloned()
+        return self.entry2id.get(Wrapper::wrap(value)).cloned()
     }
 
-    pub fn contains_word<Q: ?Sized>(&self, word: &Q) -> bool
+    /// Retrieves the complete entry for `value` in the vocabulary, if it exists
+    pub fn get_entry_for<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq
+    {
+        self.entry2id.get_key_value(Wrapper::wrap(value))
+    }
+
+    pub fn contains<Q: ?Sized>(&self, value: &Q) -> bool
         where
             T: Borrow<Q>,
             Q: Hash + Eq {
 
-        self.entry2id.contains_key(Wrapper::wrap(word))
+        self.entry2id.contains_key(Wrapper::wrap(value))
     }
 }
-
 
 impl<Q: Into<T>, T: Eq + Hash> Extend<Q> for Vocabulary<T> {
     fn extend<I: IntoIterator<Item=Q>>(&mut self, iter: I) {
         for value in iter {
             self.add(value);
         }
+    }
+}
+
+
+impl<T: Eq> PartialEq for Vocabulary<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() &&
+            self.id2entry.iter()
+                .zip_eq(other.id2entry.iter())
+                .all(|(a, b)| a.eq(b))
+    }
+}
+
+impl<T: Eq> Eq for Vocabulary<T> {}
+
+
+#[derive(Debug, Error)]
+pub enum LoadVocabularyError<E: Debug> {
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
+    #[error("Had a parse error")]
+    Parse(E),
+}
+
+impl<T: Hash + Eq + FromStr<Err=E>, E: Debug> Vocabulary<T> {
+
+    /// Loads from a `path` in the list format
+    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, LoadVocabularyError<E>> {
+        let mut reader = BufReader::new(File::open(path)?);
+        Self::load_from_input(&mut reader)
+    }
+
+    /// Loads from a `reader` in the list format
+    pub fn load_from_input(reader: &mut impl BufRead) -> Result<Self, LoadVocabularyError<E>> {
+        let mut id2entry = Vec::new();
+        for line in reader.lines() {
+            id2entry.push(line?.parse().map_err(LoadVocabularyError::Parse)?)
+        }
+        Ok(Self::from(id2entry))
+    }
+}
+
+impl<T: ToParseableString> Vocabulary<T>  {
+    /// Writes the vocabulary as a file to `path` in the list format
+    pub fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<usize> {
+        let mut writer = File::options().create(true).truncate(true).write(true).open(path)?;
+        self.save_to_output(&mut writer)
+    }
+
+    /// Writes the vocabulary to `writer` in the list format
+    pub fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {
+        let mut written = 0;
+        let mut writer = BufWriter::new(writer);
+        for value in self.id2entry.iter() {
+            let value = value.to_parseable_string();
+            written += writer.write(value.as_bytes())?;
+            written += writer.write(b"\n")?;
+        }
+        writer.flush()?;
+        Ok(written)
     }
 }
 
@@ -208,17 +226,9 @@ impl <T: ToString> Display for Vocabulary<T> {
 impl<T> Default for Vocabulary<T> {
     #[inline]
     fn default() -> Self {
-        Vocabulary {
-            entry2id: HashMap::default(),
-            id2entry: Vec::default()
-        }
+        Self::new()
     }
 }
-
-
-
-
-
 
 
 impl<T: Serialize> Serialize for Vocabulary<T> {
@@ -232,46 +242,46 @@ impl<T: Serialize> Serialize for Vocabulary<T> {
     }
 }
 
-
-struct VocabularyVisitor<'de, T: Deserialize<'de>>{_phantom: PhantomData<(T, &'de())>}
-
-impl<'de, T: Deserialize<'de>> VocabularyVisitor<'de, T>  {
-    fn new() -> Self {
-        Self{_phantom: PhantomData}
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(field_identifier, rename_all = "lowercase")]
-enum Field { Id2Entry }
-
-impl<'de, T: Deserialize<'de> + Hash + Eq> Visitor<'de> for VocabularyVisitor<'de, T> {
-    type Value = Vocabulary<T>;
-
-    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        formatter.write_str("struct Vocabulary")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
-        let mut field = None;
-        while let Some(key) = map.next_key::<Field>()? {
-            match key { Field::Id2Entry => {
-                if field.is_some() {
-                    return Err(de::Error::duplicate_field("id2entry"));
-                }
-                field = Some(map.next_value::<Vec<T>>()?);
-            } }
-        }
-        if let Some(field_value) = field {
-            Ok(Vocabulary::build_from_id2entry(field_value))
-        } else {
-            Err(de::Error::missing_field("id2entry"))
-        }
-    }
-}
-
 impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+
+        struct VocabularyVisitor<'de, T: Deserialize<'de>>{_phantom: PhantomData<(T, &'de())>}
+
+        impl<'de, T: Deserialize<'de>> VocabularyVisitor<'de, T>  {
+            fn new() -> Self {
+                Self{_phantom: PhantomData}
+            }
+        }
+
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "lowercase")]
+        enum Field { Id2Entry }
+
+        impl<'de, T: Deserialize<'de> + Hash + Eq> Visitor<'de> for VocabularyVisitor<'de, T> {
+            type Value = Vocabulary<T>;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("struct Vocabulary")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
+                let mut field = None;
+                while let Some(key) = map.next_key::<Field>()? {
+                    match key { Field::Id2Entry => {
+                        if field.is_some() {
+                            return Err(de::Error::duplicate_field("id2entry"));
+                        }
+                        field = Some(map.next_value::<Vec<T>>()?);
+                    } }
+                }
+                if let Some(field_value) = field {
+                    Ok(Vocabulary::from(field_value))
+                } else {
+                    Err(de::Error::missing_field("id2entry"))
+                }
+            }
+        }
+
         deserializer.deserialize_struct("Vocabulary", &["id2entry"], VocabularyVisitor::<T>::new())
     }
 }
@@ -284,15 +294,20 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
 
 // Taken from https://github.com/billyrieger/bimap-rs/blob/main/src/mem.rs
 
+/// A ref that supplies the Hash and Eq method of the underlying struct.
+/// It is threadsafe and allows a simple cloning as well as ordering
+/// and dereferencing of the underlying value.
 #[derive(Eq, Ord)]
-struct HashRef<T> {
-    inner: Rc<T>
+#[repr(transparent)]
+pub struct HashRef<T> {
+    inner: Arc<T>
 }
 
 impl<T> HashRef<T> {
+    #[inline]
     pub fn new(value: T) -> Self {
         Self {
-            inner: Rc::new(value)
+            inner: Arc::new(value)
         }
     }
 }
@@ -317,14 +332,16 @@ impl<T: PartialOrd> PartialOrd for HashRef<T> {
 
 impl<T> Clone for HashRef<T> {
     fn clone(&self) -> Self {
-        Self {inner: self.inner.clone()}
+        Self { inner: self.inner.clone() }
     }
 }
 
 impl<T> Debug for HashRef<T> where T: Debug,
 {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        self.inner.fmt(f)
+        f.debug_struct("HashRef")
+            .field("inner", &self.inner)
+            .finish()
     }
 }
 
@@ -337,6 +354,14 @@ impl<T> Deref for HashRef<T> {
     }
 }
 
+impl<T> From<T> for HashRef<T>  {
+    #[inline]
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Used for hash lookup
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 struct Wrapper<T: ?Sized>(T);
@@ -363,9 +388,7 @@ impl<K, Q> Borrow<Wrapper<Q>> for HashRef<K>
         Q: ?Sized,
 {
     fn borrow(&self) -> &Wrapper<Q> {
-        // Rc<K>: Borrow<K>
         let b: &K = self.inner.deref();
-        // K: Borrow<Q>
         let b: &Q = b.borrow();
         Wrapper::wrap(b)
     }
@@ -374,7 +397,7 @@ impl<K, Q> Borrow<Wrapper<Q>> for HashRef<K>
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary};
+    use crate::topicmodel::vocabulary::{HashRef, StringVocabulary, Vocabulary};
 
     #[test]
     fn can_insert_and_retrieve() {
@@ -391,5 +414,21 @@ mod test {
         let voc2: Vocabulary<String> = serde_json::from_str(&s).unwrap();
         println!("{voc}");
         println!("{voc2}");
+    }
+
+    #[test]
+    fn equals_behaves_normally() {
+        let a = HashRef::new("Test1");
+        let b = a.clone();
+        let c = HashRef::new("Test1");
+        let d = HashRef::new("Test2");
+
+        assert_eq!(a, a);
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        assert_eq!(b, c);
+        assert_ne!(d, a);
+        assert_ne!(d, b);
+        assert_ne!(d, c);
     }
 }

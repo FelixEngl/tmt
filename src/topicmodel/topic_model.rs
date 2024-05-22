@@ -95,7 +95,7 @@ impl<T: Hash + Eq> TopicModel<T> {
     delegate::delegate! {
         to self.vocabulary {
             pub fn get_word_id<Q: ?Sized>(&self, word: &Q) -> Option<usize> where T: Borrow<Q>, Q: Hash + Eq;
-            pub fn contains_word<Q: ?Sized>(&self, word: &Q) -> bool where T: Borrow<Q>, Q: Hash + Eq;
+            pub fn contains<Q: ?Sized>(&self, word: &Q) -> bool where T: Borrow<Q>, Q: Hash + Eq;
         }
     }
 
@@ -129,6 +129,10 @@ impl<T> TopicModel<T> {
         self.topics.len()
     }
 
+    pub fn vocabulary(&self) -> &Vocabulary<T> {
+        &self.vocabulary
+    }
+
     /// The size of the vocabulary for this model.
     pub fn vocabulary_size(&self) -> usize {
         self.vocabulary.len()
@@ -150,7 +154,7 @@ impl<T> TopicModel<T> {
     delegate::delegate! {
         to self.vocabulary {
             pub fn get_word(&self, id: usize) -> Option<&T>;
-            pub fn contains_word_id(&self, id: usize) -> bool;
+            pub fn contains_id(&self, id: usize) -> bool;
         }
     }
 
@@ -164,7 +168,7 @@ impl<T> TopicModel<T> {
 
 
     pub fn get_word_to_topic_probabilities(&self, word_id: usize) -> Option<TopicToProbability> {
-        if self.contains_word_id(word_id) {
+        if self.contains_id(word_id) {
             Some(self.topics.iter().map(|value| unsafe{value.get_unchecked(word_id).clone()}).collect())
         } else {
             None
@@ -355,7 +359,7 @@ impl<T: Eq + Hash> TopicModel<T> {
     fn seems_equal_to(&self, other: &TopicModel<T>) -> bool {
         self.topic_count() == other.topic_count()
             && self.vocabulary_size() == other.vocabulary_size()
-            && self.vocabulary.iter_words().enumerate().all(|(word_id, word)| {
+            && self.vocabulary.iter().enumerate().all(|(word_id, word)| {
             if let Some(found) = other.vocabulary.get_word_id(word) {
                 self.used_vocab_frequency.get(word_id) == other.used_vocab_frequency.get(found)
             } else {
@@ -368,7 +372,7 @@ impl<T: Eq + Hash> TopicModel<T> {
             .enumerate()
             .all(|(topic_id, (topic, other_topic))| {
                 self.vocabulary
-                    .iter_words()
+                    .iter()
                     .enumerate()
                     .all(|(word_id, word)| {
                         unsafe {
