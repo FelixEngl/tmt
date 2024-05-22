@@ -13,6 +13,7 @@ use std::slice::Iter;
 use std::str::FromStr;
 use std::sync::Arc;
 use itertools::Itertools;
+use rayon::prelude::IntoParallelIterator;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
@@ -68,7 +69,7 @@ impl <T> Vocabulary<T> {
 
     /// Get the word for a specific `id` or none
     pub fn get_word(&self, id: usize) -> Option<&T> {
-        return self.id2entry.get(id).map(|value| value.deref())
+        return self.id2entry.get(id).map(|value| &value)
     }
 
     /// Get the HashRef for a specific `id` or none
@@ -287,6 +288,14 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
 }
 
 
+impl<T> IntoParallelIterator for Vocabulary<T> {
+    type Iter = rayon::vec::IntoIter<HashRef<T>>;
+    type Item = HashRef<T>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.id2entry.into_par_iter()
+    }
+}
 
 
 
@@ -297,11 +306,14 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
 /// A ref that supplies the Hash and Eq method of the underlying struct.
 /// It is threadsafe and allows a simple cloning as well as ordering
 /// and dereferencing of the underlying value.
-#[derive(Eq, Ord)]
+#[derive(Debug)]
 #[repr(transparent)]
-pub struct HashRef<T> {
+pub struct HashRef<T: ?Sized> {
     inner: Arc<T>
 }
+
+unsafe impl<T> Sync for HashRef<T>{}
+unsafe impl<T> Send for HashRef<T>{}
 
 impl<T> HashRef<T> {
     #[inline]
@@ -318,30 +330,28 @@ impl<T: Hash> Hash for HashRef<T> {
     }
 }
 
-impl<T: PartialEq> PartialEq for HashRef<T> {
+impl<T: ?Sized + PartialEq> PartialEq for HashRef<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.deref().eq(other.deref())
+        self.inner.eq(&other.inner)
+    }
+}
+impl<T: ?Sized + Eq> Eq for HashRef<T> {}
+
+impl<T: ?Sized + PartialOrd> PartialOrd for HashRef<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.inner.partial_cmp(&other.inner)
     }
 }
 
-impl<T: PartialOrd> PartialOrd for HashRef<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.deref().partial_cmp(other.deref())
+impl<T: ?Sized + Ord> Ord for HashRef<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.inner.cmp(&other.inner)
     }
 }
 
 impl<T> Clone for HashRef<T> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
-    }
-}
-
-impl<T> Debug for HashRef<T> where T: Debug,
-{
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        f.debug_struct("HashRef")
-            .field("inner", &self.inner)
-            .finish()
     }
 }
 
