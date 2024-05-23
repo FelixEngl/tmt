@@ -8,8 +8,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fbad4d88-17fb-4a74-bcbd-3113bfb033c2" name="Changes" comment="Start developing translate">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/topicmodel.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/topicmodel.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/topicmodel/dictionary.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/topicmodel/dictionary.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/topicmodel/vocabulary.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/topicmodel/vocabulary.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,29 +40,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Cargo.Test topic_model.executor": "Run",
-    "Cargo.Test topicmodel::topic_model::test::can_load_and_unload.executor": "Run",
-    "Cargo.Test topicmodel::vocabulary::test::can_insert_and_retrieve.executor": "Run",
-    "Cargo.Test topicmodel::vocabulary::test::equals_behaves_normally.executor": "Run",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.rust.reset.selective.auto.import": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "master",
-    "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "E:/git/rust/rustencode",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
-    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Test topic_model.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Test topicmodel::topic_model::test::can_load_and_unload.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Test topicmodel::vocabulary::test::can_insert_and_retrieve.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Test topicmodel::vocabulary::test::equals_behaves_normally.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;E:/git/rust/rustencode&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager" selected="Cargo.Test topicmodel::vocabulary::test::equals_behaves_normally">
     <configuration name="Test topic_model" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
       <option name="command" value="test --package ldatranslate --bin ldatranslate topicmodel::topic_model" />
@@ -164,6 +166,12 @@
       <workItem from="1716272307811" duration="41869000" />
       <workItem from="1716317143608" duration="999000" />
       <workItem from="1716352737252" duration="6869000" />
+      <workItem from="1716367193843" duration="1576000" />
+      <workItem from="1716368977019" duration="463000" />
+      <workItem from="1716369471943" duration="626000" />
+      <workItem from="1716372160908" duration="386000" />
+      <workItem from="1716372562659" duration="1249000" />
+      <workItem from="1716373833665" duration="5167000" />
     </task>
     <task id="LOCAL-00001" summary="Start developing translate">
       <option name="closed" value="true" />

@@ -69,7 +69,7 @@ impl <T> Vocabulary<T> {
 
     /// Get the word for a specific `id` or none
     pub fn get_word(&self, id: usize) -> Option<&T> {
-        return self.id2entry.get(id).map(|value| &value)
+        return self.id2entry.get(id).map(|value| value.deref())
     }
 
     /// Get the HashRef for a specific `id` or none
@@ -80,6 +80,13 @@ impl <T> Vocabulary<T> {
     /// Check if the `id` is contained in this
     pub fn contains_id(&self, id: usize) -> bool {
         self.id2entry.len() > id
+    }
+}
+
+
+impl<T> AsRef<Vec<HashRef<T>>> for Vocabulary<T> {
+    fn as_ref(&self) -> &Vec<HashRef<T>> {
+        &self.id2entry
     }
 }
 
@@ -296,8 +303,6 @@ impl<T> IntoParallelIterator for Vocabulary<T> {
         self.id2entry.into_par_iter()
     }
 }
-
-
 
 
 

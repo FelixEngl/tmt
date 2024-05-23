@@ -15,6 +15,15 @@ pub struct Dictionary<T> {
 }
 
 impl<T> Dictionary<T> {
+    pub fn new() -> Self {
+        Self {
+            voc_a: Default::default(),
+            voc_b: Default::default(),
+            map_a_to_b: Default::default(),
+            map_b_to_a: Default::default(),
+        }
+    }
+
     pub fn from_voc_a(voc_a: Vocabulary<T>) -> Self {
         let mut map_a_to_b = Vec::new();
         map_a_to_b.resize_with(voc_a.len(), || Vec::with_capacity(1));
@@ -25,6 +34,22 @@ impl<T> Dictionary<T> {
             map_a_to_b,
             map_b_to_a: Default::default(),
         }
+    }
+
+    pub fn voc_a(&self) -> &Vocabulary<T> {
+        &self.voc_a
+    }
+
+    pub fn voc_b(&self) -> &Vocabulary<T> {
+        &self.voc_b
+    }
+
+    pub fn map_a_to_b(&self) -> &Vec<Vec<usize>> {
+        &self.map_a_to_b
+    }
+
+    pub fn map_b_to_a(&self) -> &Vec<Vec<usize>> {
+        &self.map_b_to_a
     }
 }
 
@@ -59,7 +84,7 @@ impl<T: Eq + Hash> Dictionary<T> {
     }
 
     pub fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) {
-
+        self.insert_hash_ref::<D>(HashRef::new(word_a.into()), HashRef::new(word_b.into()))
     }
 
     pub fn translate_word_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>>
@@ -154,7 +179,7 @@ pub mod direction {
 
     pub struct AToB;
     impl private::Sealed for AToB{}
-    impl Direction for AToB{
+    impl Direction for AToB {
         const A2B: bool = true;
         const B2A: bool = false;
     }
@@ -169,9 +194,9 @@ pub mod direction {
     }
     impl Translation for BToA {}
 
-    pub struct Indifferent;
-    impl private::Sealed for Indifferent{}
-    impl Direction for Indifferent{
+    pub struct Invariant;
+    impl private::Sealed for Invariant {}
+    impl Direction for Invariant {
         const A2B: bool = true;
         const B2A: bool = true;
     }
