@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::{Entry};
@@ -11,13 +10,13 @@ use std::ops::{Bound, Deref, DerefMut, Range};
 use std::path::Path;
 use std::slice::Iter;
 use std::str::FromStr;
-use std::sync::Arc;
 use itertools::Itertools;
 use rayon::prelude::IntoParallelIterator;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
 use thiserror::Error;
+use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::traits::ToParseableString;
 
 pub type StringVocabulary = Vocabulary<String>;
@@ -67,14 +66,13 @@ impl <T> Vocabulary<T> {
         self.id2entry.iter()
     }
 
-    /// Get the word for a specific `id` or none
-    pub fn get_word(&self, id: usize) -> Option<&T> {
-        return self.id2entry.get(id).map(|value| value.deref())
+    pub fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)> {
+        self.get_value(id).map(|value| (id, value))
     }
 
     /// Get the HashRef for a specific `id` or none
-    pub fn get_hash_ref(&self, id: usize) -> Option<&HashRef<T>> {
-        return self.id2entry.get(id)
+    pub fn get_value(&self, id: usize) -> Option<&HashRef<T>> {
+        self.id2entry.get(id)
     }
 
     /// Check if the `id` is contained in this
@@ -120,13 +118,17 @@ impl <T: Eq + Hash> Vocabulary<T> {
         }
     }
 
+    pub fn add_value(&mut self, value: T) -> usize {
+        self.add_hash_ref(value.into())
+    }
+
     /// Adds any `value` that can be converted into `T`
     pub fn add<V: Into<T>>(&mut self, value: V) -> usize {
         self.add_hash_ref(value.into().into())
     }
 
     /// Retrieves the id for `value`
-    pub fn get_word_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
+    pub fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
@@ -135,7 +137,7 @@ impl <T: Eq + Hash> Vocabulary<T> {
     }
 
     /// Retrieves the complete entry for `value` in the vocabulary, if it exists
-    pub fn get_entry_for<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
+    pub fn get_entry_id<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
@@ -244,7 +246,7 @@ impl<T: Serialize> Serialize for Vocabulary<T> {
         let mut st = serializer.serialize_struct("Vocabulary", 1)?;
         st.serialize_field(
             "id2entry",
-            &self.id2entry.iter().map(|it| it.inner.deref()).collect_vec()
+            &self.id2entry.iter().map(|it| it.as_ref()).collect_vec()
         )?;
         st.end()
     }
@@ -306,80 +308,13 @@ impl<T> IntoParallelIterator for Vocabulary<T> {
 
 
 
-// Taken from https://github.com/billyrieger/bimap-rs/blob/main/src/mem.rs
-
-/// A ref that supplies the Hash and Eq method of the underlying struct.
-/// It is threadsafe and allows a simple cloning as well as ordering
-/// and dereferencing of the underlying value.
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct HashRef<T: ?Sized> {
-    inner: Arc<T>
-}
-
-unsafe impl<T> Sync for HashRef<T>{}
-unsafe impl<T> Send for HashRef<T>{}
-
-impl<T> HashRef<T> {
-    #[inline]
-    pub fn new(value: T) -> Self {
-        Self {
-            inner: Arc::new(value)
-        }
-    }
-}
-
-impl<T: Hash> Hash for HashRef<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.deref().hash(state)
-    }
-}
-
-impl<T: ?Sized + PartialEq> PartialEq for HashRef<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner.eq(&other.inner)
-    }
-}
-impl<T: ?Sized + Eq> Eq for HashRef<T> {}
-
-impl<T: ?Sized + PartialOrd> PartialOrd for HashRef<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.inner.partial_cmp(&other.inner)
-    }
-}
-
-impl<T: ?Sized + Ord> Ord for HashRef<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.inner.cmp(&other.inner)
-    }
-}
-
-impl<T> Clone for HashRef<T> {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
-    }
-}
-
-impl<T> Deref for HashRef<T> {
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.inner.deref()
-    }
-}
-
-impl<T> From<T> for HashRef<T>  {
-    #[inline]
-    fn from(value: T) -> Self {
-        Self::new(value)
-    }
-}
 
 /// Used for hash lookup
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
-struct Wrapper<T: ?Sized>(T);
+struct Wrapper<T: ?Sized> {
+    inner: T
+}
 
 impl<T: ?Sized> Wrapper<T> {
     #[inline]
@@ -403,11 +338,12 @@ impl<K, Q> Borrow<Wrapper<Q>> for HashRef<K>
         Q: ?Sized,
 {
     fn borrow(&self) -> &Wrapper<Q> {
-        let b: &K = self.inner.deref();
+        let b: &K = self.deref();
         let b: &Q = b.borrow();
         Wrapper::wrap(b)
     }
 }
+
 
 
 #[cfg(test)]
@@ -421,9 +357,9 @@ mod test {
         voc.add("Wasimodo".to_string());
 
         assert_eq!(2usize, voc.len());
-        assert_eq!(Some(0usize), voc.get_word_id("Hello World"));
-        assert_eq!(Some("Hello World"), voc.get_word(0).map(|x| x.as_str()));
-        assert_eq!(Some("Wasimodo"), voc.get_word(1).map(|x| x.as_str()));
+        assert_eq!(Some(0usize), voc.get_id("Hello World"));
+        assert_eq!(Some("Hello World"), voc.get_value(0).map(|x| x.as_str()));
+        assert_eq!(Some("Wasimodo"), voc.get_value(1).map(|x| x.as_str()));
 
         let s = serde_json::to_string(&voc).unwrap();
         let voc2: Vocabulary<String> = serde_json::from_str(&s).unwrap();

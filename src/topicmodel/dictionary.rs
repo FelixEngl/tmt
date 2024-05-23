@@ -1,8 +1,13 @@
 use std::borrow::Borrow;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
+use std::iter::Enumerate;
+use std::marker::PhantomData;
+use itertools::{Itertools, Position};
 use serde::{Deserialize, Serialize};
-use crate::topicmodel::dictionary::direction::{Direction, Translation};
-use crate::topicmodel::vocabulary::{HashRef, Vocabulary};
+use crate::topicmodel::dictionary::direction::{A, B, Direction, Language, Translation};
+use crate::topicmodel::reference::HashRef;
+use crate::topicmodel::vocabulary::{Vocabulary};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Dictionary<T> {
@@ -51,7 +56,42 @@ impl<T> Dictionary<T> {
     pub fn map_b_to_a(&self) -> &Vec<Vec<usize>> {
         &self.map_b_to_a
     }
+
+    pub fn iter<L: Language>(&self) -> DictIter<T, L> {
+        DictIter::<T, L>::new(self)
+    }
 }
+
+pub struct DictIter<'a, T, L> where L: Language {
+    iter: Enumerate<std::slice::Iter<'a, HashRef<T>>>,
+    dict: &'a Dictionary<T>,
+    _language: PhantomData<L>
+}
+
+impl<'a, T, L> DictIter<'a, T, L> where L: Language {
+    fn new(dict: &'a Dictionary<T>) -> Self {
+        Self {
+            iter: if L::TranslationDirection::A2B {
+                dict.voc_a.iter().enumerate()
+            } else {
+                dict.voc_b.iter().enumerate()
+            },
+            dict,
+            _language: PhantomData
+        }
+    }
+}
+
+impl<'a, T, L> Iterator for DictIter<'a, T, L> where L: Language {
+    type Item = (usize, &'a HashRef<T>, Option<Vec<(usize, &'a HashRef<T>)>>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (id, next) = self.iter.next()?;
+        let translation = self.dict.translate_id::<L::TranslationDirection>(id);
+        Some((id, next, translation))
+    }
+}
+
 
 impl<T: Eq + Hash> Dictionary<T> {
     pub fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) {
@@ -83,64 +123,103 @@ impl<T: Eq + Hash> Dictionary<T> {
         }
     }
 
-    pub fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) {
-        self.insert_hash_ref::<D>(HashRef::new(word_a.into()), HashRef::new(word_b.into()))
+    pub fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) {
+        self.insert_hash_ref::<D>(HashRef::new(word_a), HashRef::new(word_b))
     }
 
-    pub fn translate_word_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>>
+    pub fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) {
+        self.insert_value::<D>(word_a.into(), word_b.into())
+    }
+
+    pub fn translate_value<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<Vec<(usize, &HashRef<T>)>>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq
+    {
+        Some(self.ids_to_id_entry::<D>(self.translate_value_to_ids::<D, Q>(word)?))
+    }
+
+    pub fn translate_value_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
     {
         let id = if D::A2B {
-            self.voc_a.get_word_id(word)
+            self.voc_a.get_id(word)
         } else {
-            self.voc_b.get_word_id(word)
+            self.voc_b.get_id(word)
         }?;
         self.translate_id_to_ids::<D>(id)
     }
 
-    pub fn translate_word_to_words<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<Vec<&T>>
+    pub fn translate_value_to_values<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<Vec<&HashRef<T>>>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
     {
-        Some(self.ids_to_words::<D>(self.translate_word_to_ids::<D, Q>(word)?))
+        Some(self.ids_to_values::<D>(self.translate_value_to_ids::<D, Q>(word)?))
     }
+}
 
-    pub fn translate_word_to_hash_refs<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<Vec<&HashRef<T>>>
-        where
-            T: Borrow<Q>,
-            Q: Hash + Eq
-    {
-        Some(self.ids_to_hash_refs::<D>(self.translate_word_to_ids::<D, Q>(word)?))
+impl<T: Display> Display for Dictionary<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fn write_language<L: Language, T: Display>(dictionary: &Dictionary<T>, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}:\n", L::NAME)?;
+            for (id_a, value_a, translations) in dictionary.iter::<L>() {
+                write!(f, "  {value_a}({id_a}):\n")?;
+                if let Some(translations) = translations {
+                    for (position, (id_b, value_b)) in translations.iter().with_position() {
+                        match position {
+                            Position::First | Position::Middle => {
+                                write!(f, "    {value_b}({id_b})\n")?
+                            }
+                            Position::Last | Position::Only => {
+                                write!(f, "    {value_b}({id_b})")?
+                            }
+                        }
+
+                    }
+                } else {
+                    write!(f, "    - None -")?;
+                }
+            }
+            Ok(())
+        }
+
+        write_language::<A, _>(self, f)?;
+        write!(f, "\n------\n")?;
+        write_language::<B, _>(self, f)
     }
 }
 
 impl<T> Dictionary<T> {
 
-    fn ids_to_words<D: Translation>(&self, ids: &Vec<usize>) -> Vec<&T> {
+    fn ids_to_id_entry<D: Translation>(&self, ids: &Vec<usize>) -> Vec<(usize, &HashRef<T>)> {
         if D::A2B {
             ids.iter().map(|value| unsafe {
-                self.voc_b.get_word(*value).unwrap_unchecked()
+                self.voc_b.get_id_entry(*value).unwrap_unchecked()
             }).collect()
         } else {
             ids.iter().map(|value| unsafe {
-                self.voc_a.get_word(*value).unwrap_unchecked()
+                self.voc_a.get_id_entry(*value).unwrap_unchecked()
             }).collect()
         }
     }
 
-    fn ids_to_hash_refs<D: Translation>(&self, ids: &Vec<usize>) -> Vec<&HashRef<T>> {
+    fn ids_to_values<D: Translation>(&self, ids: &Vec<usize>) -> Vec<&HashRef<T>> {
         if D::A2B {
             ids.iter().map(|value| unsafe {
-                self.voc_b.get_hash_ref(*value).unwrap_unchecked()
+                self.voc_b.get_value(*value).unwrap_unchecked()
             }).collect()
         } else {
             ids.iter().map(|value| unsafe {
-                self.voc_a.get_hash_ref(*value).unwrap_unchecked()
+                self.voc_a.get_value(*value).unwrap_unchecked()
             }).collect()
         }
+    }
+
+    pub fn translate_id<D: Translation>(&self, word_id: usize) -> Option<Vec<(usize, &HashRef<T>)>> {
+        Some(self.ids_to_id_entry::<D>(self.translate_id_to_ids::<D>(word_id)?))
     }
 
     pub fn translate_id_to_ids<D: Translation>(&self, word_id: usize) -> Option<&Vec<usize>> {
@@ -151,12 +230,8 @@ impl<T> Dictionary<T> {
         }.get(word_id)
     }
 
-    pub fn translate_id_to_words<D: Translation>(&self, word_id: usize) -> Option<Vec<&T>> {
-        Some(self.ids_to_words::<D>(self.translate_id_to_ids::<D>(word_id)?))
-    }
-
-    pub fn translate_id_to_hash_refs<D: Translation>(&self, word_id: usize) -> Option<Vec<&HashRef<T>>> {
-        Some(self.ids_to_hash_refs::<D>(self.translate_id_to_ids::<D>(word_id)?))
+    pub fn translate_id_to_values<D: Translation>(&self, word_id: usize) -> Option<Vec<&HashRef<T>>> {
+        Some(self.ids_to_values::<D>(self.translate_id_to_ids::<D>(word_id)?))
     }
 }
 
@@ -169,28 +244,51 @@ pub mod direction {
         pub(crate) trait Sealed{}
     }
 
+    pub trait Language: private::Sealed{
+        type TranslationDirection: Translation;
+        const NAME: &'static str;
+    }
+
+    pub struct A;
+    impl private::Sealed for A{}
+    impl Language for A{
+        type TranslationDirection = AToB;
+        const NAME: &'static str = "A";
+    }
+
+
+    pub struct B;
+    impl private::Sealed for B{}
+    impl Language for B{
+        type TranslationDirection = BToA;
+        const NAME: &'static str = "B";
+    }
+
+
     pub trait Direction: private::Sealed{
         const A2B: bool;
         const B2A: bool;
+        const NAME: &'static str;
     }
 
     pub trait Translation: Direction + private::Sealed {}
-
 
     pub struct AToB;
     impl private::Sealed for AToB{}
     impl Direction for AToB {
         const A2B: bool = true;
         const B2A: bool = false;
+        const NAME: &'static str = "AToB";
     }
 
     impl Translation for AToB {}
 
     pub struct BToA;
     impl private::Sealed for BToA{}
-    impl Direction for BToA{
+    impl Direction for BToA {
         const A2B: bool = false;
         const B2A: bool = true;
+        const NAME: &'static str = "BToA";
     }
     impl Translation for BToA {}
 
@@ -199,6 +297,7 @@ pub mod direction {
     impl Direction for Invariant {
         const A2B: bool = true;
         const B2A: bool = true;
+        const NAME: &'static str = "Invariant";
     }
 
 }

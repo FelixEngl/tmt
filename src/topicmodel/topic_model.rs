@@ -18,7 +18,8 @@ use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::enums::ReadError::NotFinishedError;
 use crate::topicmodel::traits::{ToParseableString};
 use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite, TopicModelIOError, TopicModelWriter};
-use crate::topicmodel::vocabulary::Vocabulary;
+use crate::topicmodel::reference::HashRef;
+use crate::topicmodel::vocabulary::{Vocabulary};
 
 type WordToProbability = Vec<f64>;
 type TopicToProbability = Vec<f64>;
@@ -94,28 +95,28 @@ impl<T: Hash + Eq> TopicModel<T> {
 
     delegate::delegate! {
         to self.vocabulary {
-            pub fn get_word_id<Q: ?Sized>(&self, word: &Q) -> Option<usize> where T: Borrow<Q>, Q: Hash + Eq;
+            pub fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<usize> where T: Borrow<Q>, Q: Hash + Eq;
             pub fn contains<Q: ?Sized>(&self, word: &Q) -> bool where T: Borrow<Q>, Q: Hash + Eq;
         }
     }
 
     pub fn get_probability_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&f64> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_probability(topic_id, self.get_word_id(word)?)
+        self.get_probability(topic_id, self.get_id(word)?)
     }
-    pub fn get_word_to_topic_probabilities_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicToProbability> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_word_to_topic_probabilities(self.get_word_id(word)?)
+    pub fn get_value_to_topic_probabilities_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicToProbability> where T: Borrow<Q>, Q: Hash + Eq {
+        self.get_value_to_topic_probabilities(self.get_id(word)?)
     }
 
     pub fn get_probability_and_position_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<WordProbabilityWithPosition<T>> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_probability_and_position_for(topic_id, self.vocabulary.get_word_id(word)?)
+        self.get_probability_and_position_for(topic_id, self.vocabulary.get_id(word)?)
     }
 
     pub fn get_probabilities_and_positions_for_word<Q: ?Sized>(&self, word: &Q) -> Option<Vec<WordProbabilityWithPosition<T>>> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_probabilities_and_positions_for(self.vocabulary.get_word_id(word)?)
+        self.get_probabilities_and_positions_for(self.vocabulary.get_id(word)?)
     }
 
     pub fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<Vec<WordProbabilityWithPosition<T>>> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_all_similar_important_words_for(topic_id, self.vocabulary.get_word_id(word)?)
+        self.get_all_similar_important_words_for(topic_id, self.vocabulary.get_id(word)?)
     }
 }
 
@@ -153,7 +154,7 @@ impl<T> TopicModel<T> {
 
     delegate::delegate! {
         to self.vocabulary {
-            pub fn get_word(&self, id: usize) -> Option<&T>;
+            pub fn get_value(&self, id: usize) -> Option<&HashRef<T>>;
             pub fn contains_id(&self, id: usize) -> bool;
         }
     }
@@ -167,7 +168,7 @@ impl<T> TopicModel<T> {
     }
 
 
-    pub fn get_word_to_topic_probabilities(&self, word_id: usize) -> Option<TopicToProbability> {
+    pub fn get_value_to_topic_probabilities(&self, word_id: usize) -> Option<TopicToProbability> {
         if self.contains_id(word_id) {
             Some(self.topics.iter().map(|value| unsafe{value.get_unchecked(word_id).clone()}).collect())
         } else {
@@ -175,8 +176,8 @@ impl<T> TopicModel<T> {
         }
     }
 
-    pub fn get_word_at(&self, topic_id: usize, index: usize) -> Option<&T> {
-        self.vocabulary.get_word(
+    pub fn get_value_at(&self, topic_id: usize, index: usize) -> Option<&HashRef<T>> {
+        self.vocabulary.get_value(
             self.topics_to_probability_sorted_word_ids
                 .get(topic_id)?
                 .get(index)?
@@ -191,7 +192,7 @@ impl<T> TopicModel<T> {
         Some(
             WordProbabilityWithPosition {
                 topic_id,
-                word: self.vocabulary.get_word(word_id)?,
+                word: self.vocabulary.get_value(word_id)?,
                 word_id,
                 probability,
                 index_in_topic: index,
@@ -360,7 +361,7 @@ impl<T: Eq + Hash> TopicModel<T> {
         self.topic_count() == other.topic_count()
             && self.vocabulary_size() == other.vocabulary_size()
             && self.vocabulary.iter().enumerate().all(|(word_id, word)| {
-            if let Some(found) = other.vocabulary.get_word_id(word) {
+            if let Some(found) = other.vocabulary.get_id(word) {
                 self.used_vocab_frequency.get(word_id) == other.used_vocab_frequency.get(found)
             } else {
                 false
@@ -378,7 +379,7 @@ impl<T: Eq + Hash> TopicModel<T> {
                         unsafe {
                             // all accesses are already checked by the checks above!
                             let value = topic.get_unchecked(word_id);
-                            let other_word_id = other.vocabulary.get_word_id(word).expect("All words should be known!");
+                            let other_word_id = other.vocabulary.get_id(word).expect("All words should be known!");
                             let value_other = other_topic.get_unchecked(other_word_id);
                             relative_eq!(*value, *value_other)
                         }
@@ -397,7 +398,7 @@ impl<T: Display> TopicModel<T> {
             write!(out, "Topic({topic_id}):")?;
             for it in topic_entries {
                 out.write(b"\n")?;
-                write!(out, "    {}: {}", self.vocabulary.get_word(it.word_id).unwrap(), it.probability)?;
+                write!(out, "    {}: {}", self.vocabulary.get_value(it.word_id).unwrap(), it.probability)?;
             }
         }
         Ok(())
@@ -421,7 +422,7 @@ impl<T: Display> Display for TopicModel<T> {
         for (topic_id, topic) in self.topics.iter().enumerate() {
             write!(f, "\n    Topic({topic_id})")?;
             for (word_id, probability) in topic.iter().enumerate() {
-                write!(f, "\n        '{}'({}): {}", self.vocabulary.get_word(word_id).unwrap(), word_id, probability)?;
+                write!(f, "\n        '{}'({}): {}", self.vocabulary.get_value(word_id).unwrap(), word_id, probability)?;
             }
         }
         write!(f, "\n{}", self.vocabulary)
