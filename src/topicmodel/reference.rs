@@ -1,8 +1,7 @@
 // Taken from https://github.com/billyrieger/bimap-rs/blob/main/src/mem.rs
 
-use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -10,7 +9,6 @@ use std::sync::Arc;
 /// A ref that supplies the Hash and Eq method of the underlying struct.
 /// It is threadsafe and allows a simple cloning as well as ordering
 /// and dereferencing of the underlying value.
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct HashRef<T: ?Sized> {
     inner: Arc<T>
@@ -94,6 +92,13 @@ impl<T: ?Sized> AsRef<T> for HashRef<T>  {
         self.inner.as_ref()
     }
 }
+
+impl<T: ?Sized + Debug> Debug for HashRef<T>  {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
 
 
 impl<T> From<T> for HashRef<T>  {

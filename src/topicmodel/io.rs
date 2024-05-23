@@ -166,7 +166,7 @@ impl Write for TopicModelWriter<'_> {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize>;
             fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize>;
             fn flush(&mut self) -> io::Result<()>;
-            fn write_all(&mut self, mut buf: &[u8]) -> io::Result<()>;
+            fn write_all(&mut self, buf: &[u8]) -> io::Result<()>;
             fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> io::Result<()>;
         }
     }

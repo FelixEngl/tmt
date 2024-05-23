@@ -3,6 +3,7 @@ use rayon::prelude::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use crate::topicmodel::dictionary::Dictionary;
 use crate::topicmodel::dictionary::direction::*;
+use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::Vocabulary;
 
 pub mod topic_model;
@@ -15,58 +16,69 @@ pub mod reference;
 
 
 pub fn create_topic_model_specific_dictionary<T: Eq + Hash + Clone>(vocabulary: &Vocabulary<T>, dictionary: &Dictionary<T>) -> Dictionary<T> {
-    let mut new_vocabulary = Dictionary::from_voc_a(vocabulary.clone());
-    let translations = {
-        new_vocabulary.voc_a().as_ref().par_iter().map(|value| {
+    let mut new_dict = Dictionary::from_voc_a(vocabulary.clone());
+    let translations: Vec<(HashRef<T>, Option<Vec<&HashRef<T>>>)> = {
+        new_dict.voc_a().as_ref().par_iter().map(|value| {
             (value.clone(), dictionary.translate_value_to_values::<AToB, _>(value))
         }).collect::<Vec<_>>()
     };
 
-    for (t, other) in translations.iter() {
-        if let Some(other) = other {
-            for o in other {
-                new_vocabulary.insert_hash_ref::<AToB>((*t).clone(), (*o).clone());
+    fn insert_into<D: Translation, T: Eq + Hash>(dict: &mut Dictionary<T>, translations: &Vec<(HashRef<T>, Option<Vec<&HashRef<T>>>)>) {
+        for (t, other) in translations.iter() {
+            if let Some(other) = other {
+                for o in other {
+                    if D::A2B {
+                        dict.insert_hash_ref::<D>(t.clone(), (*o).clone());
+                    } else {
+                        dict.insert_hash_ref::<D>((*o).clone(), t.clone());
+                    }
+                }
             }
         }
     }
 
-    let retranslations = new_vocabulary.voc_b().as_ref().par_iter().map(|value| {
+    insert_into::<AToB, _>(&mut new_dict, &translations);
+
+    let retranslations = new_dict.voc_b().as_ref().par_iter().map(|value| {
         (value.clone(), dictionary.translate_value_to_values::<BToA, _>(value))
     }).collect::<Vec<_>>();
 
-    for (t, other) in retranslations {
-        if let Some(other) = other {
-            for o in other {
-                new_vocabulary.insert_hash_ref::<BToA>(t.clone(), (*o).clone());
-            }
-        }
-    }
+    insert_into::<BToA, _>(&mut new_dict, &retranslations);
 
-    return new_vocabulary;
+    return new_dict;
 }
 
 #[cfg(test)]
 mod test {
+    use crate::topicmodel::{create_topic_model_specific_dictionary};
     use crate::topicmodel::dictionary::Dictionary;
-    use crate::topicmodel::dictionary::direction::Invariant;
-    use crate::topicmodel::vocabulary::Vocabulary;
+    use crate::{dict, voc};
 
     #[test]
     fn can_transfer(){
-        let mut voc_a = Vocabulary::new();
-        voc_a.add_value("hallo");
-        voc_a.add_value("welt");
-        voc_a.add_value("katze");
 
-        let mut dictionary = Dictionary::new();
+        let voc_a = voc![
+            "hallo", "welt"
+        ];
 
-        dictionary.insert_value::<Invariant>("hallo", "hello");
-        dictionary.insert_value::<Invariant>("hallo", "hi");
-        dictionary.insert_value::<Invariant>("welt", "world");
-        dictionary.insert_value::<Invariant>("erde", "world");
-        dictionary.insert_value::<Invariant>("katze", "cat");
-        dictionary.insert_value::<Invariant>("kadse", "cat");
+        let dictionary = dict! {
+            "hallo" : "hello"
+            "hallo" : "hi"
+            "welt" : "world"
+            "erde" : "world"
+            "katze" : "cat"
+            "kadse" : "cat"
+        };
 
 
+        let dict = create_topic_model_specific_dictionary(
+            &voc_a,
+            &dictionary
+        );
+
+        println!("{:?}", dictionary);
+        println!("{:?}", dict);
+
+        // println!("{}", dict);
     }
 }

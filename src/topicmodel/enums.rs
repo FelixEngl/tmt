@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::path::PathBuf;
-use strum::{AsRefStr, Display, EnumString, FromRepr};
+use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
 use crate::topicmodel::io::TopicModelIOError;
 use crate::topicmodel::vocabulary::LoadVocabularyError;

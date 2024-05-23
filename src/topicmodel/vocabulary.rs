@@ -1,25 +1,41 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 use std::collections::hash_map::{Entry};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::marker::PhantomData;
-use std::ops::{Bound, Deref, DerefMut, Range};
+use std::ops::{Bound, Deref, Range};
 use std::path::Path;
 use std::slice::Iter;
 use std::str::FromStr;
 use itertools::Itertools;
 use rayon::prelude::IntoParallelIterator;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use thiserror::Error;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::traits::ToParseableString;
 
 pub type StringVocabulary = Vocabulary<String>;
+
+#[macro_export]
+macro_rules! voc {
+    () => {
+        Vocabulary::new()
+    };
+    ($($value: tt),+) => {
+        {
+            let mut __voc = $crate::topicmodel::vocabulary::Vocabulary::new();
+            $(
+                __voc.add_value($value);
+            )+
+            __voc
+        }
+    };
+}
 
 /// A vocabulary mapping between an usize id and a specific object (word)
 #[derive(Clone, Debug)]
@@ -90,8 +106,8 @@ impl<T> AsRef<Vec<HashRef<T>>> for Vocabulary<T> {
 
 impl<T: Eq + Hash> From<Vec<T>> for Vocabulary<T>  {
     fn from(value: Vec<T>) -> Self {
-        let mut id2entry = value.into_iter().map(|value| HashRef::new(value)).collect_vec();
-        let mut entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
+        let id2entry = value.into_iter().map(|value| HashRef::new(value)).collect_vec();
+        let entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
 
         return Self {
             id2entry,
@@ -151,6 +167,10 @@ impl <T: Eq + Hash> Vocabulary<T> {
             Q: Hash + Eq {
 
         self.entry2id.contains_key(Wrapper::wrap(value))
+    }
+
+    pub fn map<Q: Eq + Hash, F>(self, mapping: F) -> Vocabulary<Q> where F: Fn(&T) -> Q {
+        Vocabulary::from(self.id2entry.into_iter().map(|value| mapping(value.as_ref())).collect::<Vec<_>>())
     }
 }
 

@@ -9,6 +9,39 @@ use crate::topicmodel::dictionary::direction::{A, B, Direction, Language, Transl
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{Vocabulary};
 
+#[macro_export]
+macro_rules! dict_insert {
+    ($d: ident, $a: tt : $b: tt) => {
+        $d.insert_value::<$crate::topicmodel::dictionary::direction::Invariant>($a, $b);
+    };
+    ($d: ident, $a: tt :: $b: tt) => {
+        $d.insert_value::<$crate::topicmodel::dictionary::direction::Invariant>($a, $b);
+    };
+    ($d: ident, $a: tt :=: $b: tt) => {
+        $d.insert_value::<$crate::topicmodel::dictionary::direction::Invariant>($a, $b);
+    };
+    ($d: ident, $a: tt :>: $b: tt) => {
+        $d.insert_value::<$crate::topicmodel::dictionary::direction::AToB>($a, $b);
+    };
+    ($d: ident, $a: tt :<: $b: tt) => {
+        $d.insert_value::<$crate::topicmodel::dictionary::direction::BToA>($a, $b);
+    };
+}
+
+#[macro_export]
+macro_rules! dict {
+    () => {Dictionary::new()};
+    ($($a:tt $op:tt $b:tt)+) => {
+        {
+            let mut __dict = Dictionary::new();
+            $(
+                $crate::dict_insert!(__dict, $a $op $b);
+            )+
+            __dict
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Dictionary<T> {
     #[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de> + Hash + Eq"))]
@@ -60,6 +93,22 @@ impl<T> Dictionary<T> {
     pub fn iter<L: Language>(&self) -> DictIter<T, L> {
         DictIter::<T, L>::new(self)
     }
+
+    pub fn id_to_word<D: Translation>(&self, id: usize) -> Option<&HashRef<T>> {
+        if D::A2B {
+            self.voc_a.get_value(id)
+        } else {
+            self.voc_b.get_value(id)
+        }
+    }
+
+    pub fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
+        if D::A2B {
+            self.voc_a.contains_id(id) && self.map_a_to_b.get(id).is_some_and(|value| !value.is_empty())
+        } else {
+            self.voc_b.contains_id(id) && self.map_b_to_a.get(id).is_some_and(|value| !value.is_empty())
+        }
+    }
 }
 
 pub struct DictIter<'a, T, L> where L: Language {
@@ -101,7 +150,7 @@ impl<T: Eq + Hash> Dictionary<T> {
             if let Some(found) = self.map_a_to_b.get_mut(id_a) {
                 found.push(id_b)
             } else {
-                while self.map_a_to_b.len() < id_a {
+                while self.map_a_to_b.len() <= id_a {
                     self.map_a_to_b.push(Vec::with_capacity(1));
                 }
                 unsafe {
@@ -113,11 +162,11 @@ impl<T: Eq + Hash> Dictionary<T> {
             if let Some(found) = self.map_b_to_a.get_mut(id_b) {
                 found.push(id_a)
             } else {
-                while self.map_b_to_a.len() < id_b {
+                while self.map_b_to_a.len() <= id_b {
                     self.map_b_to_a.push(Vec::with_capacity(1));
                 }
                 unsafe {
-                    self.map_b_to_a.get_unchecked_mut(id_a).push(id_b);
+                    self.map_b_to_a.get_unchecked_mut(id_b).push(id_a);
                 }
             }
         }
@@ -152,6 +201,24 @@ impl<T: Eq + Hash> Dictionary<T> {
         self.translate_id_to_ids::<D>(id)
     }
 
+    pub fn word_to_id<D: Translation, Q: ?Sized>(&self, id: &Q) -> Option<usize>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq {
+        if D::A2B {
+            self.voc_a.get_id(id)
+        } else {
+            self.voc_b.get_id(id)
+        }
+    }
+
+    pub fn can_translate_word<D: Translation, Q: ?Sized>(&self, word: &Q) -> bool
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq {
+        self.word_to_id::<D, _>(word).is_some_and(|value| self.can_translate_id::<D>(value))
+    }
+
     pub fn translate_value_to_values<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<Vec<&HashRef<T>>>
         where
             T: Borrow<Q>,
@@ -159,22 +226,38 @@ impl<T: Eq + Hash> Dictionary<T> {
     {
         Some(self.ids_to_values::<D>(self.translate_value_to_ids::<D, Q>(word)?))
     }
+
+    pub fn map<Q: Eq + Hash, F>(self, f: F) -> Dictionary<Q> where F: for<'a> Fn(&'a T)-> Q {
+        Dictionary {
+            map_a_to_b: self.map_a_to_b,
+            map_b_to_a: self.map_b_to_a,
+            voc_a: self.voc_a.map(&f),
+            voc_b: self.voc_b.map(f),
+        }
+    }
 }
 
 impl<T: Display> Display for Dictionary<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         fn write_language<L: Language, T: Display>(dictionary: &Dictionary<T>, f: &mut Formatter<'_>) -> std::fmt::Result {
             write!(f, "{}:\n", L::NAME)?;
-            for (id_a, value_a, translations) in dictionary.iter::<L>() {
+            for (position_a, (id_a, value_a, translations)) in dictionary.iter::<L>().with_position() {
                 write!(f, "  {value_a}({id_a}):\n")?;
                 if let Some(translations) = translations {
-                    for (position, (id_b, value_b)) in translations.iter().with_position() {
-                        match position {
+                    for (position_b, (id_b, value_b)) in translations.iter().with_position() {
+                        match position_b {
                             Position::First | Position::Middle => {
                                 write!(f, "    {value_b}({id_b})\n")?
                             }
                             Position::Last | Position::Only => {
-                                write!(f, "    {value_b}({id_b})")?
+                                match position_a {
+                                    Position::First | Position::Middle => {
+                                        write!(f, "    {value_b}({id_b})\n")?
+                                    }
+                                    Position::Last | Position::Only => {
+                                        write!(f, "    {value_b}({id_b})")?
+                                    }
+                                }
                             }
                         }
 

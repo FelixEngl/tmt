@@ -17,7 +17,7 @@ use serde::Serialize;
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::enums::ReadError::NotFinishedError;
 use crate::topicmodel::traits::{ToParseableString};
-use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite, TopicModelIOError, TopicModelWriter};
+use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{Vocabulary};
 
@@ -165,6 +165,22 @@ impl<T> TopicModel<T> {
 
     pub fn get_probability(&self, topic_id: usize, word_id: usize) -> Option<&f64> {
         self.topics.get(topic_id)?.get(word_id)
+    }
+
+    pub fn rank_and_probability(&self, topic_id: usize, word_id: usize) -> Option<(usize, Option<usize>, usize, f64)> {
+        let word_to_probability = self.topics.get(topic_id)?;
+        if let Some(probability) = word_to_probability.get(word_id) {
+            let mut ct = 0usize;
+            for value in word_to_probability {
+                if value > probability {
+                    ct += 1;
+                }
+            }
+
+            Some((topic_id, Some(word_id), ct + 1, *probability))
+        } else {
+            Some((topic_id, None, self.vocabulary_size()+1, 0.0))
+        }
     }
 
 
@@ -370,8 +386,7 @@ impl<T: Eq + Hash> TopicModel<T> {
             && self.topics
             .iter()
             .zip_eq(other.topics.iter())
-            .enumerate()
-            .all(|(topic_id, (topic, other_topic))| {
+            .all(|(topic, other_topic)| {
                 self.vocabulary
                     .iter()
                     .enumerate()
@@ -489,7 +504,7 @@ impl<T: FromStr<Err=E> + Hash + Eq, E: Debug> TopicModel<T> {
                 let (inp, deflate) = fs.create_reader_to(PATH_TO_DOC_TOPIC_DISTS)?;
                 let doc_topic_distributions = Self::read_matrix_f64(inp, deflate)?;
                 let used_vocab_frequency = Self::read_vec_u64(fs.create_reader_to(PATH_TO_VOCABULARY_FREQ)?.0)?;
-                let (inp, deflate) = fs.create_reader_to(PATH_TO_VOCABULARY)?;
+                let (inp, _) = fs.create_reader_to(PATH_TO_VOCABULARY)?;
                 let vocabulary = Vocabulary::load_from_input(&mut BufReader::new(inp))?;
                 let (inp, deflate) = fs.create_reader_to(PATH_TO_MODEL)?;
                 let topics = Self::read_matrix_f64(inp, deflate)?;
@@ -679,7 +694,7 @@ mod test {
         std::fs::create_dir("test");
         topic_model.save(P, TopicModelVersion::V1, true, true).unwrap();
 
-        let (loaded, version) = TopicModel::load_string_model(P).unwrap();
+        let (loaded, _) = TopicModel::load_string_model(P).unwrap();
 
         assert!(topic_model.seems_equal_to(&loaded));
 
