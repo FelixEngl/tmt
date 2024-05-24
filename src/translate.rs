@@ -1,13 +1,12 @@
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
-use evalexpr::{context_map, ContextWithMutableVariables, EvalexprError, EvalexprResult, Function, IterateVariablesContext, Value};
-use itertools::{cloned, Itertools};
+use evalexpr::{context_map, ContextWithMutableVariables, EvalexprError, IterateVariablesContext};
+use itertools::{Itertools};
 use rayon::prelude::*;
 use thiserror::Error;
-use crate::topicmodel::topic_model::{TopicModel, TopicStats};
+use crate::topicmodel::topic_model::{TopicModel};
 use crate::topicmodel::dictionary::Dictionary;
-use crate::topicmodel::dictionary::direction::{AToB, BToA};
 
 #[derive(Debug)]
 struct TranslateConfig {
@@ -82,37 +81,37 @@ fn translate_impl<T>(
 
 
 fn translate_topic<T>(
-    topic_model: Arc<TopicModel<T>>
+    topic_model: Arc<TopicModel<T>>,
     dictionary: Arc<Dictionary<T>>,
     topic_id: usize,
     topic: &Vec<f64>
 ) -> Result<(), TranslateError<T>>{
-    topic
-        .iter()
-        .enumerate()
-        .collect_vec()
-        .par_iter()
-        .cloned()
-        .map(|(word_id_a, probability)| {
-            if let Some(voc_b) = dictionary.translate_id_to_ids::<AToB>(word_id_a) {
-                for word_id_b in voc_b {
-                    dictionary.translate_id_to_ids::<BToA>(*word_id_b)
-                        .iter()
-                        .map(|word_id_a_retrans| {
-                            topic_model.rank_and_probability(topic_id, word_id_a_retrans)
-                        })
-                }
-                voc_b.iter().map(|word_id_b| )
-            } else {
-                None
-            }
-        })
-
-    for (word_id, probability) in topic.iter().enumerate() {
-        let mut word_bound_context = context.clone();
-        word_bound_context.set_value_direct("hasTranslation", dictionary.can_translate_id(word_id))?;
-
-    }
+    // topic
+    //     .iter()
+    //     .enumerate()
+    //     .collect_vec()
+    //     .par_iter()
+    //     .cloned()
+    //     .map(|(word_id_a, probability)| {
+    //         if let Some(voc_b) = dictionary.translate_id_to_ids::<AToB>(word_id_a) {
+    //             for word_id_b in voc_b {
+    //                 dictionary.translate_id_to_ids::<BToA>(*word_id_b)
+    //                     .iter()
+    //                     .map(|word_id_a_retrans| {
+    //                         topic_model.rank_and_probability(topic_id, word_id_a_retrans)
+    //                     })
+    //             }
+    //             voc_b.iter().map(|word_id_b| )
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //
+    // for (word_id, probability) in topic.iter().enumerate() {
+    //     let mut word_bound_context = context.clone();
+    //     word_bound_context.set_value_direct("hasTranslation", dictionary.can_translate_id(word_id))?;
+    //
+    // }
 
 
 

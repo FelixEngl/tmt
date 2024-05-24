@@ -2,6 +2,8 @@ use crate::topicmodel::vocabulary::Vocabulary;
 
 mod topicmodel;
 mod translate;
+mod voting;
+mod toolkit;
 
 
 fn main() {
