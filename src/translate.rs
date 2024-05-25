@@ -1,7 +1,6 @@
 use std::num::NonZeroUsize;
-use std::ops::Deref;
 use std::sync::Arc;
-use evalexpr::{context_map, ContextWithMutableVariables, EvalexprError, IterateVariablesContext};
+use evalexpr::{context_map, EvalexprError};
 use itertools::{Itertools};
 use rayon::prelude::*;
 use thiserror::Error;

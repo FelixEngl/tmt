@@ -52,7 +52,7 @@ impl Aggregation {
         }
     }
 
-    pub fn calculate_asc<T, I>(&self, iterator: I) -> Result<f64, BulkOperationError>
+    pub fn calculate_asc<T, I>(&self, iterator: I) -> Result<f64, AggregationError>
         where
             T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
             I: Iterator<Item=T>,
@@ -68,7 +68,7 @@ impl Aggregation {
         }
     }
 
-    pub fn calculate_desc<T, I>(&self, iterator: I) -> Result<f64, BulkOperationError>
+    pub fn calculate_desc<T, I>(&self, iterator: I) -> Result<f64, AggregationError>
         where
             T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
             I: Iterator<Item=T>,
@@ -85,60 +85,79 @@ impl Aggregation {
     }
 }
 
-mod parse {
-    use std::num::NonZeroUsize;
+pub mod parse {
+    use std::num::{NonZeroUsize, ParseIntError};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::character::complete::{alpha1, digit1, multispace0};
     use nom::combinator::{map, map_res, opt, value};
+    use nom::error::context;
     use nom::IResult;
     use nom::sequence::{delimited, preceded, terminated, tuple};
+    use thiserror::Error;
     use crate::toolkit::nom::ws;
     use crate::voting::aggregations::{Aggregation, AggregationType};
+    use crate::voting::parse::{ErrorType};
+
+    #[derive(Debug, Clone, Error)]
+    pub enum AggregationParserError {
+        #[error(transparent)]
+        UnknownAggregation(#[from] strum::ParseError),
+        #[error(transparent)]
+        InvalidNumber(#[from] ParseIntError)
+    }
 
     /// Parses a aggregation from a string.
     /// The syntax is `BulkOperationType`(limit)
     /// e.g. ``avgOf`` or ``sumOf(3)``
     /// Also supports legacy expressions like   ``sumOf limit(*)``
-    pub fn parse_bulk_operation(input: &str) -> IResult<&str, Aggregation> {
-        map(
-            tuple((
-                map_res(
-                    ws(alpha1),
-                    |value| AggregationType::try_from(value)
-                ),
-                preceded(
-                    multispace0,
+    pub fn parse_aggregation<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, Aggregation, E> {
+        context(
+            "aggregation",
+            map(
+                tuple((
+                    map_res(
+                        ws(alpha1),
+                        |value|
+                            AggregationType::try_from(value)
+                                .map_err(AggregationParserError::UnknownAggregation)
+                    ),
                     opt(
                         preceded(
-                            opt(terminated(tag("limit"), multispace0)),
-                            delimited(
-                                tag("("),
-                                alt((
-                                    map_res(digit1, |value: &str| { value.parse::<NonZeroUsize>().map(|value| Some(value)) }),
-                                    value(None, tag("*"))
-                                )),
-                                tag(")")
+                            multispace0,
+                            preceded(
+                                opt(terminated(tag("limit"), multispace0)),
+                                delimited(
+                                    tag("("),
+                                    alt((
+                                        map_res(digit1, |value: &str| match value.parse::<NonZeroUsize>() {
+                                            Ok(value) => {Ok(Some(value))}
+                                            Err(value) => {Err(AggregationParserError::InvalidNumber(value))}
+                                        }),
+                                        value(None, tag("*"))
+                                    )),
+                                    tag(")")
+                                )
                             )
                         )
                     )
-                )
-            )),
-            |(typ, limit)| Aggregation::new(typ, limit.flatten())
+                )),
+                |(typ, limit)| Aggregation::new(typ, limit.flatten())
+            )
         )(input)
     }
 
     #[cfg(test)]
     mod test {
-        use std::num::NonZeroUsize;
+        use nom::error::VerboseError;
         use crate::voting::aggregations::{Aggregation, AggregationType};
-        use crate::voting::aggregations::parse::parse_bulk_operation;
+        use crate::voting::aggregations::parse::parse_aggregation;
 
         #[test]
         fn can_parse_a_simple_expression(){
             assert_eq!(
                 Aggregation::new_no_limit(AggregationType::SumOf),
-                parse_bulk_operation("sumOf").expect("This should work!").1
+                parse_aggregation::<VerboseError<_>>("sumOf").expect("This should work!").1
             )
         }
 
@@ -146,7 +165,7 @@ mod parse {
         fn can_parse_a_new_expression(){
             assert_eq!(
                 Aggregation::new_with_limit(AggregationType::AvgOf, 3).unwrap(),
-                parse_bulk_operation("avgOf (3)").expect("This should work!").1
+                parse_aggregation::<VerboseError<_>>("avgOf (3)").expect("This should work!").1
             )
         }
 
@@ -154,7 +173,7 @@ mod parse {
         fn can_parse_a_legacy_expression_star(){
             assert_eq!(
                 Aggregation::new_no_limit(AggregationType::GAvgOf),
-                parse_bulk_operation("gAvgOf (*)").expect("This should work!").1
+                parse_aggregation::<VerboseError<_>>("gAvgOf (*)").expect("This should work!").1
             )
         }
 
@@ -162,7 +181,7 @@ mod parse {
         fn can_parse_a_legacy_expression_limit_star(){
             assert_eq!(
                 Aggregation::new_no_limit(AggregationType::GAvgOf),
-                parse_bulk_operation("gAvgOf limit(*)").expect("This should work!").1
+                parse_aggregation::<VerboseError<_>>("gAvgOf limit(*)").expect("This should work!").1
             )
         }
 
@@ -170,7 +189,7 @@ mod parse {
         fn can_parse_a_legacy_expression_limit1(){
             assert_eq!(
                 Aggregation::new_with_limit(AggregationType::GAvgOf, 99).unwrap(),
-                parse_bulk_operation("gAvgOf limit (99)").expect("This should work!").1
+                parse_aggregation::<VerboseError<_>>("gAvgOf limit (99)").expect("This should work!").1
             )
         }
 
@@ -178,14 +197,14 @@ mod parse {
         fn can_parse_a_legacy_expression_limit2(){
             assert_eq!(
                 Aggregation::new_with_limit(AggregationType::GAvgOf, 99).unwrap(),
-                parse_bulk_operation("gAvgOf limit(99)").expect("This should work!").1
+                parse_aggregation::<VerboseError<_>>("gAvgOf limit(99)").expect("This should work!").1
             )
         }
     }
 }
 
 #[derive(Debug, Copy, Clone, Error, PartialEq)]
-pub enum BulkOperationError {
+pub enum AggregationError {
     #[error("There is no value to be used!")]
     NoValues,
     #[error("There is no max value!")]
@@ -211,7 +230,7 @@ pub enum AggregationType {
 
 
 impl AggregationType {
-    pub fn calculate<T, I>(&self, mut iter: I) -> Result<f64, BulkOperationError>
+    pub fn calculate<T, I>(&self, mut iter: I) -> Result<f64, AggregationError>
         where
             T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
             I: Iterator<Item=T>,
@@ -219,7 +238,7 @@ impl AggregationType {
 
         let mut iter = match iter.at_most_one() {
             Ok(None) => {
-                return Err(BulkOperationError::NoValues)
+                return Err(AggregationError::NoValues)
             }
             Ok(Some(value)) => {
                 return Ok(value.as_())
@@ -254,7 +273,7 @@ impl AggregationType {
                         Ok(value.as_())
                     }
                     None => {
-                        Err(BulkOperationError::NoMaxFound)
+                        Err(AggregationError::NoMaxFound)
                     }
                 }
             }
@@ -264,7 +283,7 @@ impl AggregationType {
                         Ok(value.as_())
                     }
                     None => {
-                        Err(BulkOperationError::NoMinFound)
+                        Err(AggregationError::NoMinFound)
                     }
                 }
             }
@@ -284,7 +303,7 @@ impl AggregationType {
 mod test {
     use std::num::NonZeroUsize;
     use num::Num;
-    use crate::voting::aggregations::{Aggregation, BulkOperationError, AggregationType};
+    use crate::voting::aggregations::{Aggregation, AggregationError, AggregationType};
 
 
     macro_rules! define_test {
