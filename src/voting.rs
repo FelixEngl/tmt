@@ -629,16 +629,17 @@ pub(crate) mod parse {
         use crate::voting::{VotingExecutable, VotingFunction};
 
         const TEST: &str = "aggregate(sss = sumOf): {
-            let z = if (a+b == (c+d)) {
+            if (a+b == (c+d)) {
                 r = true
                 x = 3 + 4 + c * 2
                 9 - 2 + d * x
+                pp
             } else {
                 r = true
                 x = 9 + 7 + a
                 (8 + 7) * b + 1
+                pp + 1
             }
-            pp
         }";
 
         #[test]
