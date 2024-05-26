@@ -4,7 +4,7 @@ use std::ops::{Deref, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, Rang
 use std::process::id;
 use std::slice::SliceIndex;
 use std::str::FromStr;
-use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, Operator, Value};
+use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, Operator, TupleType, Value};
 use indenter::CodeFormatter;
 use itertools::{FoldWhile, Itertools, Position};
 use nom::branch::alt;
@@ -30,8 +30,8 @@ pub enum VotingExpressionError {
     Eval(#[from] EvalexprError),
     #[error(transparent)]
     Agg(#[from] AggregationError),
-    #[error("The tuple {0} does not have a value at {1}!")]
-    TupleGet(String, IndexOrRange),
+    #[error("The tuple {0} with length {2} does not have a value at {1}!")]
+    TupleGet(String, IndexOrRange, usize),
 }
 
 
@@ -323,6 +323,24 @@ enum VotingExpressionOrStatement {
     }
 }
 
+impl From<VotingExpression> for VotingExpressionOrStatement {
+    #[inline]
+    fn from(expr: VotingExpression) -> Self {
+        Self::Expression {
+            expr
+        }
+    }
+}
+
+impl From<VotingStatement> for VotingExpressionOrStatement {
+    #[inline]
+    fn from(stmt: VotingStatement) -> Self {
+        Self::Statement {
+            stmt: stmt.into()
+        }
+    }
+}
+
 impl VotingExpressionOrStatement {
     pub fn pack_expr(expr: VotingExpression) -> Self {
         Self::Expression {expr}
@@ -451,8 +469,12 @@ impl VotingExecutable for VotingExpression {
                 )?;
                 match tuple {
                     Value::Tuple(value) => {
-                        value.get(idx.to_slice_index()).cloned().ok_or_else(||
-                            VotingExpressionError::TupleGet(variable_name.clone(), idx.clone())
+                        idx.access_value(value).ok_or_else(
+                            || VotingExpressionError::TupleGet(
+                                variable_name.clone(),
+                                idx.clone(),
+                                value.len()
+                            )
                         )
                     }
                     _ => Err(EvalexprError::expected_tuple(tuple.clone()).into())
@@ -466,7 +488,7 @@ impl DisplayTree for VotingExpression {
     fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
         match self {
             VotingExpression::Expr(value) => {
-                write!(f, "{value}")
+                write!(f, "{}", walk_left_to_right(value))
             }
             VotingExpression::IfElse(value) => {
                 DisplayTree::fmt(value, f)
@@ -510,37 +532,41 @@ enum IndexOrRange {
 }
 
 impl IndexOrRange {
-    pub fn to_slice_index<T: ?Sized>(&self) -> impl SliceIndex<T> {
-        match self {
-            IndexOrRange::Index(value) => {*value}
-            IndexOrRange::Range(value) => {value.clone()}
-            IndexOrRange::RangeTo(value) => {value.clone()}
-            IndexOrRange::RangeFrom(value) => {value.clone()}
-            IndexOrRange::RangeInclusive(value) => {value.clone()}
-            IndexOrRange::RangeToInclusive(value) => {value.clone()}
-            IndexOrRange::RangeFull => {RangeFull}
-        }
-    }
-
-    pub fn access_value<T: ?Sized, S: Borrow<[T]>, I>(&self, target: S) -> Option<&[T]>
-        where
-            I: SliceIndex<S> {
-
-        let x = Vec::new();
-
-
+    pub fn access_value(&self, target: &TupleType) -> Option<Value> {
         match self {
             IndexOrRange::Index(value) => {
-                let x = *value;
-                let x = target.borrow().get(x);
-
+                target.get(*value).cloned()
             }
-            IndexOrRange::Range(value) => {value.clone()}
-            IndexOrRange::RangeTo(value) => {value.clone()}
-            IndexOrRange::RangeFrom(value) => {value.clone()}
-            IndexOrRange::RangeInclusive(value) => {value.clone()}
-            IndexOrRange::RangeToInclusive(value) => {value.clone()}
-            IndexOrRange::RangeFull => {RangeFull}
+            IndexOrRange::Range(value) => {
+                target.get(value.clone()).map(
+                    |value| Value::Tuple(value.iter().cloned().collect())
+                )
+            }
+            IndexOrRange::RangeTo(value) => {
+                target.get(value.clone()).map(
+                    |value| Value::Tuple(value.iter().cloned().collect())
+                )
+            }
+            IndexOrRange::RangeFrom(value) => {
+                target.get(value.clone()).map(
+                    |value| Value::Tuple(value.iter().cloned().collect())
+                )
+            }
+            IndexOrRange::RangeInclusive(value) => {
+                target.get(value.clone()).map(
+                    |value| Value::Tuple(value.iter().cloned().collect())
+                )
+            }
+            IndexOrRange::RangeToInclusive(value) => {
+                target.get(value.clone()).map(
+                    |value| Value::Tuple(value.iter().cloned().collect())
+                )
+            }
+            IndexOrRange::RangeFull => {
+                target.get(..).map(
+                    |value| Value::Tuple(value.iter().cloned().collect())
+                )
+            }
         }
     }
 }
@@ -670,7 +696,7 @@ pub(crate) mod parse {
     use evalexpr::EvalexprError;
     use nom::branch::alt;
     use nom::bytes::complete::tag;
-    use nom::character::complete::{alphanumeric1, char, digit0, digit1, multispace0, multispace1, one_of, space0};
+    use nom::character::complete::{alphanumeric1, char, digit0, digit1, multispace0, multispace1, one_of, space0, space1};
     use nom::combinator::{cut, map, map_res, not, opt, peek, recognize};
     use nom::error::{context, ContextError, FromExternalError, ParseError};
     use nom::{AsChar, InputIter, InputTakeAtPosition, IResult, Parser};
@@ -680,7 +706,7 @@ pub(crate) mod parse {
     use thiserror::Error;
     use crate::voting::{IndexOrRange, InnerIfElse, VotingExecutableList, VotingExpression, VotingExpressionOrStatement, VotingFunction, VotingOperation, VotingStatement};
     use crate::voting::aggregations::parse::AggregationParserError;
-    use crate::voting::parse::VotingParseError::{EmptyIndexNotAllowed, NoVotingFound};
+    use crate::voting::parse::VotingParseError::{EmptyIndexNotAllowed, NoVotingFound, ToRangeAlwaysNeedsValue};
 
     const IMPORTANT_TOKENS: &str = "+-*/%^=!<>&|,;";
 
@@ -742,7 +768,9 @@ pub(crate) mod parse {
         #[error(transparent)]
         NotAKeyword(strum::ParseError),
         #[error("An empty index access does not work!")]
-        EmptyIndexNotAllowed
+        EmptyIndexNotAllowed,
+        #[error("An to range (..=) always needs a value after the =!")]
+        ToRangeAlwaysNeedsValue
     }
 
 
@@ -847,6 +875,7 @@ pub(crate) mod parse {
         context(
             "expression",
             alt((
+                voting_get_tuple_expression,
                 map(
                     preceded(multispace0, inner_if_else),
                     VotingExpression::IfElse
@@ -857,7 +886,6 @@ pub(crate) mod parse {
                         VotingExpression::parse_as_single(value).map_err(VotingParseError::EvalExpr)
                     }
                 ),
-
             ))
         )(input)
     }
@@ -868,38 +896,68 @@ pub(crate) mod parse {
             map(
                 tuple((
                     preceded(multispace0, variable_name),
-                    preceded(space0, c_expr_no_newline(digit1))
+                    preceded(space0, c_expr_no_newline(parse_index_or_range))
                 )),
-                |(name, position)| {
-                    todo!()
+                |(name, idx)| {
+                    VotingExpression::TupleGet {
+                        idx,
+                        variable_name: name.to_string()
+                    }
                 }
             )
         )(input)
     }
 
     fn parse_index_or_range<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, IndexOrRange, E> {
-        map_res(
-            tuple((
-                opt(digit1),
-                opt(
-                    tuple((
-                        preceded(space0, tag("..")),
-                        opt(tag("=")),
-                        opt(preceded(space0, digit1))
-                    ))
-                ),
-            )),
-            |(first, dots_and_second)| {
-                if let Some((dots, eq, second)) = dots_and_second {
-                    todo!()
-                } else {
-                    if let Some(value) = first {
-                        IndexOrRange::Index(value.parse().unwrap())
+        context(
+            "parse index/range",
+            map_res(
+                tuple((
+                    opt(digit1),
+                    opt(
+                        tuple((
+                            preceded(space0, tag::<&str, &str, E>("..")),
+                            opt(tag("=")),
+                            opt(preceded(space0, digit1))
+                        ))
+                    ),
+                )),
+                |(first, dots_and_second)| {
+                    if let Some((_, eq, second)) = dots_and_second {
+                        if eq.is_some() {
+                            if let Some(second) = second {
+                                if let Some(first) = first {
+                                    Ok(IndexOrRange::RangeInclusive(first.parse().unwrap()..=second.parse().unwrap()))
+                                } else {
+                                    Ok(IndexOrRange::RangeToInclusive(..=second.parse().unwrap()))
+                                }
+                            } else {
+                                Err(ToRangeAlwaysNeedsValue)
+                            }
+                        } else {
+                            if let Some(second) = second {
+                                if let Some(first) = first {
+                                    Ok(IndexOrRange::Range(first.parse().unwrap() .. second.parse().unwrap()))
+                                } else {
+                                    Ok(IndexOrRange::RangeTo( ..second.parse().unwrap()))
+                                }
+                            } else {
+                                if let Some(first) = first {
+                                    Ok(IndexOrRange::RangeFrom(first.parse().unwrap()..))
+                                } else {
+                                    Ok(IndexOrRange::RangeFull)
+                                }
+                            }
+                        }
                     } else {
-                        Err(EmptyIndexNotAllowed)
+                        if let Some(value) = first {
+                            Ok(IndexOrRange::Index(value.parse().unwrap()))
+                        } else {
+                            Err(EmptyIndexNotAllowed)
+                        }
                     }
                 }
-            }
+            )
         )(input)
     }
 
@@ -961,23 +1019,13 @@ pub(crate) mod parse {
                 map(
                     context(
                         "set variable",
-                        alt((
-                            tuple((
-                                delimited(
-                                    delimited(multispace0, tag(KW_LET), multispace0),
-                                    variable_name,
-                                    preceded(multispace0, char('='))
-                                ),
-                                preceded(multispace0, voting_list)
-                            )),
-                            tuple((
-                                delimited(
-                                    multispace0,
-                                    variable_name,
-                                    preceded(multispace0, char('='))
-                                ),
-                                preceded(multispace0, voting_list)
-                            ))
+                        tuple((
+                            delimited(
+                                delimited(multispace0, tag(KW_LET), space1),
+                                variable_name,
+                                preceded(space0, char('='))
+                            ),
+                            preceded(space0, voting_list)
                         ))
                     ),
                     |(name, expression)| {
@@ -1084,15 +1132,17 @@ pub(crate) mod parse {
                 r = true
                 x = -3 + 4 + c * 2
                 z = (true, -1, (3), false)
+                let _temp = z[1]
+                o = -_temp
                 y = -(a + b)
-                o = -z[1]
                 value = 9 - 2 + d * x
                 pp
             } else {
                 r = true
                 x = 9 + 7 + a
                 z = (true, -2, (3), false)
-                o = -z[1]
+                let _temp = z[1]
+                o = -_temp
                 value = (8 + 7) * b + 1
                 pp + 1
             }
