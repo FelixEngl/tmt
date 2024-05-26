@@ -32,3 +32,5 @@ log = "0.4"
 evalexpr = "11"
 nom = "7"
 num = "0.4"
+
+indenter = { version = "0", features = ["std"] }

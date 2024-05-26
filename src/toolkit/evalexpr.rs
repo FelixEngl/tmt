@@ -76,14 +76,14 @@ impl<'a, A, B> ContextWithMutableFunctions for CombinedContextWrapper<'a, A, B> 
 }
 
 impl<'a, A, B> IterateVariablesContext for CombinedContextWrapper<'a, A, B> where A: IterateVariablesContext, B: IterateVariablesContext {
-    type VariableIterator<'b> where Self: 'b = Chain<
+    type VariableIterator<'b> = Chain<
         <A as IterateVariablesContext>::VariableIterator<'b>,
         <B as IterateVariablesContext>::VariableIterator<'b>
-    >;
-    type VariableNameIterator<'b> where Self: 'b = Chain<
+    > where Self: 'b;
+    type VariableNameIterator<'b> = Chain<
         <A as IterateVariablesContext>::VariableNameIterator<'b>,
         <B as IterateVariablesContext>::VariableNameIterator<'b>
-    >;
+    > where Self: 'b;
 
     fn iter_variables(&self) -> Self::VariableIterator<'_> {
         self.local_context.iter_variables().chain(

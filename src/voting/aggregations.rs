@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display, Formatter};
 use std::iter::Sum;
 use std::num::{NonZeroUsize};
 use std::ops::Add;
@@ -14,8 +15,6 @@ pub struct Aggregation {
     typ: AggregationType,
     limit: Option<NonZeroUsize>,
 }
-
-
 
 impl Aggregation {
     pub const fn new_no_limit(
@@ -81,6 +80,116 @@ impl Aggregation {
             self.typ.calculate::<T, _>(vec.into_iter().take(limit.get()))
         } else {
             self.typ.calculate(iterator)
+        }
+    }
+}
+
+
+
+impl Display for Aggregation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(limit) = self.limit {
+            write!(f, "{}({})", self.typ, limit)
+        } else {
+            write!(f, "{}", self.typ)
+        }
+    }
+}
+
+
+#[derive(Debug, Copy, Clone, Error, PartialEq)]
+pub enum AggregationError {
+    #[error("There is no value to be used!")]
+    NoValues,
+    #[error("There is no max value!")]
+    NoMaxFound,
+    #[error("There is no min value!")]
+    NoMinFound,
+}
+
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
+#[derive(AsRefStr, Display, EnumString)]
+pub enum AggregationType {
+    #[strum(serialize = "sumOf")]
+    SumOf,
+    #[strum(serialize = "maxOf")]
+    MaxOf,
+    #[strum(serialize = "minOf")]
+    MinOf,
+    #[strum(serialize = "avgOf")]
+    AvgOf,
+    #[strum(serialize = "gAvgOf")]
+    GAvgOf,
+}
+
+
+impl AggregationType {
+    pub fn calculate<T, I>(&self, mut iter: I) -> Result<f64, AggregationError>
+        where
+            T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
+            I: Iterator<Item=T>,
+    {
+
+        let mut iter = match iter.at_most_one() {
+            Ok(None) => {
+                return Err(AggregationError::NoValues)
+            }
+            Ok(Some(value)) => {
+                return Ok(value.as_())
+            }
+            Err(err) => {
+                err
+            }
+        };
+
+
+        fn calc_average<T, I>(iter: &mut I) -> f64
+            where
+                T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add,
+                I: Iterator<Item=T>, {
+            let mut value = T::ZERO;
+            let mut ct = 0usize;
+            while let Some(current) = iter.next() {
+                value = value + current;
+                ct += 1;
+            }
+            value.as_() / (ct as f64)
+        }
+
+
+        match self {
+            AggregationType::SumOf => {
+                Ok(iter.sum::<T>().as_())
+            }
+            AggregationType::MaxOf => {
+                match iter.max_partial_filtered() {
+                    Some(value) => {
+                        Ok(value.as_())
+                    }
+                    None => {
+                        Err(AggregationError::NoMaxFound)
+                    }
+                }
+            }
+            AggregationType::MinOf => {
+                match iter.min_partial_filtered() {
+                    Some(value) => {
+                        Ok(value.as_())
+                    }
+                    None => {
+                        Err(AggregationError::NoMinFound)
+                    }
+                }
+            }
+            AggregationType::AvgOf => {
+                Ok(calc_average(&mut iter))
+            }
+            AggregationType::GAvgOf => {
+                let mut iter = iter.map(|value| value.as_().ln());
+                let avg = calc_average(&mut iter);
+                Ok(avg.exp())
+            }
         }
     }
 }
@@ -203,107 +312,9 @@ pub mod parse {
     }
 }
 
-#[derive(Debug, Copy, Clone, Error, PartialEq)]
-pub enum AggregationError {
-    #[error("There is no value to be used!")]
-    NoValues,
-    #[error("There is no max value!")]
-    NoMaxFound,
-    #[error("There is no min value!")]
-    NoMinFound,
-}
-
-
-#[derive(Debug, Copy, Clone, AsRefStr, Display, EnumString, Ord, PartialOrd, PartialEq, Eq)]
-pub enum AggregationType {
-    #[strum(serialize = "sumOf")]
-    SumOf,
-    #[strum(serialize = "maxOf")]
-    MaxOf,
-    #[strum(serialize = "minOf")]
-    MinOf,
-    #[strum(serialize = "avgOf")]
-    AvgOf,
-    #[strum(serialize = "gAvgOf")]
-    GAvgOf,
-}
-
-
-impl AggregationType {
-    pub fn calculate<T, I>(&self, mut iter: I) -> Result<f64, AggregationError>
-        where
-            T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
-            I: Iterator<Item=T>,
-    {
-
-        let mut iter = match iter.at_most_one() {
-            Ok(None) => {
-                return Err(AggregationError::NoValues)
-            }
-            Ok(Some(value)) => {
-                return Ok(value.as_())
-            }
-            Err(err) => {
-                err
-            }
-        };
-
-
-        fn calc_average<T, I>(iter: &mut I) -> f64
-            where
-                T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add,
-                I: Iterator<Item=T>, {
-            let mut value = T::ZERO;
-            let mut ct = 0usize;
-            while let Some(current) = iter.next() {
-                value = value + current;
-                ct += 1;
-            }
-            value.as_() / (ct as f64)
-        }
-
-
-        match self {
-            AggregationType::SumOf => {
-                Ok(iter.sum::<T>().as_())
-            }
-            AggregationType::MaxOf => {
-                match iter.max_partial_filtered() {
-                    Some(value) => {
-                        Ok(value.as_())
-                    }
-                    None => {
-                        Err(AggregationError::NoMaxFound)
-                    }
-                }
-            }
-            AggregationType::MinOf => {
-                match iter.min_partial_filtered() {
-                    Some(value) => {
-                        Ok(value.as_())
-                    }
-                    None => {
-                        Err(AggregationError::NoMinFound)
-                    }
-                }
-            }
-            AggregationType::AvgOf => {
-                Ok(calc_average(&mut iter))
-            }
-            AggregationType::GAvgOf => {
-                let mut iter = iter.map(|value| value.as_().ln());
-                let avg = calc_average(&mut iter);
-                Ok(avg.exp())
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use std::num::NonZeroUsize;
-    use num::Num;
-    use crate::voting::aggregations::{Aggregation, AggregationError, AggregationType};
+    use crate::voting::aggregations::{Aggregation, AggregationType};
 
 
     macro_rules! define_test {

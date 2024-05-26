@@ -1,6 +1,16 @@
-use std::fmt::{Debug, Display, Formatter, write};
-use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Value};
+use std::borrow::Borrow;
+use std::fmt::{Debug, Display, Formatter, Write, write};
+use std::ops::{Deref, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
+use std::process::id;
+use std::slice::SliceIndex;
+use std::str::FromStr;
+use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, Operator, Value};
+use indenter::CodeFormatter;
 use itertools::{FoldWhile, Itertools, Position};
+use nom::branch::alt;
+use nom::combinator::map;
+use nom::IResult;
+use strum::{Display, EnumIs, EnumString};
 use thiserror::Error;
 use crate::toolkit::evalexpr::CombineableContext;
 use crate::voting::aggregations::{Aggregation, AggregationError};
@@ -19,10 +29,37 @@ pub enum VotingExpressionError {
     #[error(transparent)]
     Eval(#[from] EvalexprError),
     #[error(transparent)]
-    Agg(#[from] AggregationError)
+    Agg(#[from] AggregationError),
+    #[error("The tuple {0} does not have a value at {1}!")]
+    TupleGet(String, IndexOrRange),
 }
 
+
 type VResult<T> = Result<T, VotingExpressionError>;
+
+
+
+trait DisplayTree: Display {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result;
+}
+
+
+macro_rules! impl_display_for_displaytree {
+    ($($target: ident),+) => {
+        $(
+            impl Display for $target {
+                fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                    let mut code_formatter = CodeFormatter::new(
+                        f,
+                        " "
+                    );
+                    DisplayTree::fmt(self, &mut code_formatter)
+                }
+            }
+        )+
+    };
+}
+
 
 #[derive(Debug)]
 enum VotingFunction {
@@ -56,6 +93,28 @@ impl VotingFunction {
         }
     }
 }
+
+
+
+impl DisplayTree for VotingFunction {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+        match self {
+            VotingFunction::Single(value) => {
+                DisplayTree::fmt(value, f)
+            }
+            VotingFunction::Multi(value) => {
+                for op in value {
+                    DisplayTree::fmt(op, f)?;
+                    write!(f, "\n")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl_display_for_displaytree!(VotingFunction);
+
 
 
 /// The operation beeing executed
@@ -116,9 +175,34 @@ impl VotingOperation {
     }
 }
 
-trait VotingExecutable {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value>;
+impl DisplayTree for VotingOperation {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+        let expr = match self {
+            VotingOperation::IterScope { expr } => {
+                write!(f, "foreach:")?;
+                expr
+            }
+            VotingOperation::GlobalScope { expr } => {
+                write!(f, "global:")?;
+                expr
+            }
+            VotingOperation::AggregationScope { variable_name, op, expr } => {
+                write!(f, "aggregate({} = {}):", variable_name, op)?;
+                expr
+            }
+        };
 
+        f.indent(2);
+        DisplayTree::fmt(expr, f)?;
+        f.dedent(2);
+        Ok(())
+    }
+}
+
+impl_display_for_displaytree!(VotingOperation);
+
+trait VotingExecutable: DisplayTree {
+    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value>;
 }
 
 #[derive(Debug)]
@@ -140,6 +224,29 @@ impl VotingExecutableList {
         }
     }
 }
+
+impl DisplayTree for VotingExecutableList {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+        match self {
+            VotingExecutableList::Single(value) => {
+                DisplayTree::fmt(value.as_ref(), f)
+            }
+            VotingExecutableList::Multiple(value) => {
+                write!(f, "{{\n")?;
+                f.indent(2);
+                for v in value {
+                    DisplayTree::fmt(v, f)?;
+                    write!(f, "\n")?;
+                }
+                write!(f, "\n")?;
+                f.dedent(2);
+                write!(f, "}}")
+            }
+        }
+    }
+}
+
+impl_display_for_displaytree!(VotingExecutableList);
 
 impl VotingExecutable for VotingExecutableList {
     fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value> {
@@ -192,6 +299,18 @@ impl VotingExecutable for InnerIfElse {
     }
 }
 
+impl DisplayTree for InnerIfElse {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+        write!(f, "if(")?;
+        DisplayTree::fmt(self.cond.as_ref(), f)?;
+        write!(f, ")")?;
+        DisplayTree::fmt(&self.if_block, f)?;
+        write!(f, " else ")?;
+        DisplayTree::fmt(&self.else_block, f)
+    }
+}
+
+impl_display_for_displaytree!(InnerIfElse);
 
 /// Either a statement or a expression
 #[derive(Debug)]
@@ -226,6 +345,21 @@ impl VotingExecutable for VotingExpressionOrStatement {
         }
     }
 }
+
+impl DisplayTree for VotingExpressionOrStatement {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+        match self {
+            VotingExpressionOrStatement::Expression { expr } => {
+                DisplayTree::fmt(expr, f)
+            }
+            VotingExpressionOrStatement::Statement { stmt } => {
+                DisplayTree::fmt(stmt.as_ref(), f)
+            }
+        }
+    }
+}
+
+impl_display_for_displaytree!(VotingExpressionOrStatement);
 
 /// The statements that can be used inside of votings
 #[derive(Debug)]
@@ -262,10 +396,33 @@ impl VotingExecutable for VotingStatement {
     }
 }
 
+impl DisplayTree for VotingStatement {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+        match self {
+            VotingStatement::If { cond, if_block } => {
+                write!(f, "if (")?;
+                DisplayTree::fmt(cond, f)?;
+                write!(f, ")")?;
+                DisplayTree::fmt(if_block, f)
+            }
+            VotingStatement::SetVariable { variable_name, expression } => {
+                write!(f, "let {variable_name} = ")?;
+                DisplayTree::fmt(expression, f)
+            }
+        }
+    }
+}
+
+impl_display_for_displaytree!(VotingStatement);
+
 /// An expression or multiple expressions
 enum VotingExpression {
-    Expr(evalexpr::Node),
-    IfElse(InnerIfElse)
+    Expr(Node),
+    IfElse(InnerIfElse),
+    TupleGet {
+        variable_name: String,
+        idx: IndexOrRange
+    }
 }
 
 impl VotingExpression {
@@ -280,6 +437,7 @@ impl VotingExecutable for VotingExpression {
     #[inline(always)]
     fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value>
     {
+
         match self {
             VotingExpression::Expr(value) => {
                 Ok(value.eval_with_context_mut(context)?)
@@ -287,9 +445,40 @@ impl VotingExecutable for VotingExpression {
             VotingExpression::IfElse(value) => {
                 value.execute(context)
             }
+            VotingExpression::TupleGet { idx, variable_name } => {
+                let tuple = context.get_value(variable_name.as_str()).ok_or_else(
+                    || EvalexprError::VariableIdentifierNotFound(variable_name.clone())
+                )?;
+                match tuple {
+                    Value::Tuple(value) => {
+                        value.get(idx.to_slice_index()).cloned().ok_or_else(||
+                            VotingExpressionError::TupleGet(variable_name.clone(), idx.clone())
+                        )
+                    }
+                    _ => Err(EvalexprError::expected_tuple(tuple.clone()).into())
+                }
+            }
         }
     }
 }
+
+impl DisplayTree for VotingExpression {
+    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+        match self {
+            VotingExpression::Expr(value) => {
+                write!(f, "{value}")
+            }
+            VotingExpression::IfElse(value) => {
+                DisplayTree::fmt(value, f)
+            }
+            VotingExpression::TupleGet { idx, variable_name } => {
+                write!(f, "{variable_name}[{idx}]")
+            }
+        }
+    }
+}
+
+impl_display_for_displaytree!(VotingExpression);
 
 impl Debug for VotingExpression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -298,32 +487,237 @@ impl Debug for VotingExpression {
             VotingExpression::IfElse(value) => {
                 f.debug_struct("IfElse").field("if_else", value).finish()
             }
+            VotingExpression::TupleGet {idx, variable_name} => {
+                f.debug_struct("TupleGet")
+                    .field("idx", idx)
+                    .field("var_name", variable_name)
+                    .finish()
+            }
+        }
+    }
+}
+
+
+#[derive(Debug, Clone)]
+enum IndexOrRange {
+    Index(usize),
+    Range(Range<usize>),
+    RangeTo(RangeTo<usize>),
+    RangeFrom(RangeFrom<usize>),
+    RangeInclusive(RangeInclusive<usize>),
+    RangeToInclusive(RangeToInclusive<usize>),
+    RangeFull
+}
+
+impl IndexOrRange {
+    pub fn to_slice_index<T: ?Sized>(&self) -> impl SliceIndex<T> {
+        match self {
+            IndexOrRange::Index(value) => {*value}
+            IndexOrRange::Range(value) => {value.clone()}
+            IndexOrRange::RangeTo(value) => {value.clone()}
+            IndexOrRange::RangeFrom(value) => {value.clone()}
+            IndexOrRange::RangeInclusive(value) => {value.clone()}
+            IndexOrRange::RangeToInclusive(value) => {value.clone()}
+            IndexOrRange::RangeFull => {RangeFull}
+        }
+    }
+
+    pub fn access_value<T: ?Sized, S: Borrow<[T]>, I>(&self, target: S) -> Option<&[T]>
+        where
+            I: SliceIndex<S> {
+
+        let x = Vec::new();
+
+
+        match self {
+            IndexOrRange::Index(value) => {
+                let x = *value;
+                let x = target.borrow().get(x);
+
+            }
+            IndexOrRange::Range(value) => {value.clone()}
+            IndexOrRange::RangeTo(value) => {value.clone()}
+            IndexOrRange::RangeFrom(value) => {value.clone()}
+            IndexOrRange::RangeInclusive(value) => {value.clone()}
+            IndexOrRange::RangeToInclusive(value) => {value.clone()}
+            IndexOrRange::RangeFull => {RangeFull}
+        }
+    }
+}
+
+impl Display for IndexOrRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IndexOrRange::Index(value) => {
+                write!(f, "{value}")
+            }
+            IndexOrRange::RangeTo(value) => {
+                write!(f, "..{}", value.end)
+            }
+            IndexOrRange::Range(value) => {
+                write!(f, "{}..{}", value.start, value.end)
+            }
+            IndexOrRange::RangeFull => {
+                write!(f, "..")
+            }
+            IndexOrRange::RangeFrom(value) => {
+                write!(f, "{}..", value.start)
+            }
+            IndexOrRange::RangeInclusive(value) => {
+                write!(f, "{}..={}", value.start(), value.end())
+            }
+            IndexOrRange::RangeToInclusive(value) => {
+                write!(f, "..={}", value.end)
+            }
+        }
+    }
+}
+
+
+#[derive(Debug, Clone)]
+#[derive(EnumIs)]
+enum NodeContainer<'a> {
+    Leaf(&'a Node, bool),
+    Single(&'a Node, Box<NodeContainer<'a>>, bool),
+    Expr(Box<NodeContainer<'a>>, &'a Node, Box<NodeContainer<'a>>, bool),
+    Special(&'a Node, Vec<NodeContainer<'a>>, bool)
+}
+
+fn walk_left_to_right(node: &Node) -> NodeContainer {
+    fn walk_left_to_right_(node: &Node, is_root: bool) -> NodeContainer {
+        let children = node.children();
+        match children.len() {
+            0 => {
+                NodeContainer::Leaf(node, is_root)
+            }
+            1 => {
+                NodeContainer::Single(node, walk_left_to_right_(&children[0], false).into(), is_root)
+            }
+            2 => {
+                NodeContainer::Expr(
+                    walk_left_to_right_(&children[0], false).into(),
+                    node,
+                    walk_left_to_right_(&children[1], false).into(),
+                    is_root
+                )
+            }
+            _ => {
+                NodeContainer::Special(node, node.children().iter().map(
+                    |value| walk_left_to_right_(value, false)
+                ).collect_vec(), is_root)
+            }
+        }
+    }
+    walk_left_to_right_(node, true)
+}
+
+impl<'a> NodeContainer<'a> {
+
+    fn origin(&self) -> &'a Node {
+        match self {
+            NodeContainer::Leaf(value, _) => {*value}
+            NodeContainer::Single(value, _, _) => {*value}
+            NodeContainer::Expr(_, value, _, _) => {*value}
+            NodeContainer::Special(value, _, _) => {*value}
+        }
+    }
+}
+
+impl Display for NodeContainer<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeContainer::Leaf(value, _) => {
+                write!(f, "{}", format!("{}", value).trim())
+            }
+            NodeContainer::Single(value1, value2, is_root) => {
+                if *is_root {
+                    write!(f, "{}", value2.as_ref())
+                } else {
+                    match value1.operator() {
+                        Operator::RootNode => {
+                            if value2.is_expr() {
+                                write!(f, "({})", value2.as_ref())
+                            } else {
+                                write!(f, "{}", value2.as_ref())
+                            }
+                        }
+                        _ => {
+                            write!(f, "{}{}", format!("{}", value1.operator()).trim(), value2.as_ref())
+                        }
+                    }
+                }
+            }
+            NodeContainer::Expr(value1, value2, value3, _) => {
+                write!(f, "{} {} {}", value1, format!("{}", value2.operator()).trim(), value3)
+            }
+            NodeContainer::Special(value1, value2, _) => {
+                match value1.operator() {
+                    Operator::Tuple => {
+                        write!(f, "({})", value2.iter().join(", "))
+                    }
+                    Operator::Chain => {
+                        write!(f, "{}", value2.iter().join("; "))
+                    }
+                    _ => write!(f, "[!{value1}]")
+                }
+
+            }
         }
     }
 }
 
 pub(crate) mod parse {
-    use std::ops::RangeTo;
     use evalexpr::EvalexprError;
     use nom::branch::alt;
     use nom::bytes::complete::tag;
-    use nom::character::complete::{alpha1, alphanumeric0, alphanumeric1, char, digit1, multispace0, multispace1, one_of, space0, space1};
-    use nom::combinator::{cut, map, map_res, not, peek, recognize};
+    use nom::character::complete::{alphanumeric1, char, digit0, digit1, multispace0, multispace1, one_of, space0};
+    use nom::combinator::{cut, map, map_res, not, opt, peek, recognize};
     use nom::error::{context, ContextError, FromExternalError, ParseError};
-    use nom::{AsChar, Compare, error, InputIter, InputLength, InputTake, InputTakeAtPosition, IResult, Offset, Parser, Slice};
-    use nom::multi::{count, many1, many1_count};
+    use nom::{AsChar, InputIter, InputTakeAtPosition, IResult, Parser};
+    use nom::multi::{many1, many1_count};
     use nom::sequence::{delimited, preceded, terminated, tuple};
+    use strum::{AsRefStr, Display, EnumString};
     use thiserror::Error;
-    use crate::toolkit::nom::ws;
-    use crate::voting::{InnerIfElse, VotingExecutableList, VotingExpression, VotingExpressionOrStatement, VotingFunction, VotingOperation, VotingStatement};
+    use crate::voting::{IndexOrRange, InnerIfElse, VotingExecutableList, VotingExpression, VotingExpressionOrStatement, VotingFunction, VotingOperation, VotingStatement};
     use crate::voting::aggregations::parse::AggregationParserError;
-    use crate::voting::parse::VotingParseError::NoVotingFound;
+    use crate::voting::parse::VotingParseError::{EmptyIndexNotAllowed, NoVotingFound};
 
     const IMPORTANT_TOKENS: &str = "+-*/%^=!<>&|,;";
 
     const KW_ITER: &str = "foreach";
     const KW_GLOBAL: &str = "global";
     const KW_AGGREGATE: &str = "aggregate";
+    const KW_LET: &str = "let";
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+    #[derive(AsRefStr, Display, EnumString)]
+    pub enum Keyword {
+        #[strum(serialize = "foreach")]
+        ForEach,
+        #[strum(serialize = "global")]
+        Global,
+        #[strum(serialize = "aggregate")]
+        Aggregate,
+        #[strum(serialize = "let")]
+        Let
+    }
+
+    fn keyword<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, &str, E>
+    {
+        context(
+            "keyword",
+            preceded(
+                multispace0,
+                alt((
+                    tag(KW_ITER),
+                    tag(KW_GLOBAL),
+                    tag(KW_AGGREGATE),
+                    tag(KW_LET),
+                ))
+            )
+        )(input)
+    }
+
 
     pub trait ErrorType<T>: ParseError<T> + ContextError<T> + FromExternalError<T, VotingParseError> + FromExternalError<T, AggregationParserError> {}
     impl<C, T> ErrorType<T> for C where
@@ -345,6 +739,10 @@ pub(crate) mod parse {
         NoExpressionOrStatementFound,
         #[error(transparent)]
         EvalExpr(#[from] EvalexprError),
+        #[error(transparent)]
+        NotAKeyword(strum::ParseError),
+        #[error("An empty index access does not work!")]
+        EmptyIndexNotAllowed
     }
 
 
@@ -366,23 +764,48 @@ pub(crate) mod parse {
         };
     }
 
-    fn is_a_keyword<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E>
-    {
 
-        context(
-            "not a keyword check",
-            peek(
-                preceded(
-                    multispace0,
-                    alt((
-                        tag(KW_ITER),
-                        tag(KW_GLOBAL),
-                        tag(KW_AGGREGATE),
-                    ))
-                )
-            )
-        )(input)
-    }
+    make_expr!(
+        s_expr,
+        open='(',
+        close=')',
+        spacing= multispace0,
+        on_close_missing="closing parentheses for single expr"
+    );
+
+    make_expr!(
+        s_expr_no_newline,
+        open='(',
+        close=')',
+        spacing= space0,
+        on_close_missing="closing parentheses for single expr (no newline)"
+    );
+
+    make_expr!(
+        b_exp,
+        open='{',
+        close='}',
+        spacing= multispace0,
+        on_close_missing="closing parentheses for block expr"
+    );
+
+    // make_expr!(
+    //     c_exp,
+    //     open='[',
+    //     close=']',
+    //     spacing= multispace0,
+    //     on_close_missing="closing parentheses for tuple/array access"
+    // );
+
+    make_expr!(
+        c_expr_no_newline,
+        open='[',
+        close=']',
+        spacing= space0,
+        on_close_missing="closing parentheses for tuple/array access (no newline)"
+    );
+
+
 
 
 
@@ -391,7 +814,7 @@ pub(crate) mod parse {
         context(
             "variable name",
             delimited(
-                context("keyword check", not(is_a_keyword)),
+                context("keyword check", peek(not(keyword))),
                 nom::combinator::verify(
                     recognize(
                         preceded(
@@ -407,35 +830,6 @@ pub(crate) mod parse {
     }
 
 
-
-
-
-    make_expr!(
-        s_expr,
-        open='(',
-        close=')',
-        spacing= multispace0,
-        on_close_missing="closing parentheses for single expr"
-    );
-
-    make_expr!(
-        s_expr_no_newline,
-        open='(',
-        close=')',
-        spacing= space0,
-        on_close_missing="closing parentheses for single expr"
-    );
-
-    make_expr!(
-        b_exp,
-        open='{',
-        close='}',
-        spacing= multispace0,
-        on_close_missing="closing parentheses for block expr"
-    );
-
-
-
     fn voting_expression<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingExpression, E> {
         fn collect_eval_expr<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E> {
             context("single expression", recognize(
@@ -443,7 +837,7 @@ pub(crate) mod parse {
                     alt((
                         alphanumeric1,
                         s_expr_no_newline(collect_eval_expr),
-                        recognize(one_of("_+-*/%^=!<>&|,; "))
+                        recognize(one_of("._+-*/%^=!<>&|,;: \"'"))
                     ))
                 )
             ))(input)
@@ -463,9 +857,53 @@ pub(crate) mod parse {
                         VotingExpression::parse_as_single(value).map_err(VotingParseError::EvalExpr)
                     }
                 ),
+
             ))
         )(input)
     }
+
+    fn voting_get_tuple_expression<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingExpression, E> {
+        context(
+            "get tuple",
+            map(
+                tuple((
+                    preceded(multispace0, variable_name),
+                    preceded(space0, c_expr_no_newline(digit1))
+                )),
+                |(name, position)| {
+                    todo!()
+                }
+            )
+        )(input)
+    }
+
+    fn parse_index_or_range<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, IndexOrRange, E> {
+        map_res(
+            tuple((
+                opt(digit1),
+                opt(
+                    tuple((
+                        preceded(space0, tag("..")),
+                        opt(tag("=")),
+                        opt(preceded(space0, digit1))
+                    ))
+                ),
+            )),
+            |(first, dots_and_second)| {
+                if let Some((dots, eq, second)) = dots_and_second {
+                    todo!()
+                } else {
+                    if let Some(value) = first {
+                        IndexOrRange::Index(value.parse().unwrap())
+                    } else {
+                        Err(EmptyIndexNotAllowed)
+                    }
+                }
+            }
+        )(input)
+    }
+
+
 
     fn voting_list<'a, E: ErrorType<&'a str>>(inner: &'a str) -> IResult<&'a str, VotingExecutableList, E>  {
         context(
@@ -523,9 +961,23 @@ pub(crate) mod parse {
                 map(
                     context(
                         "set variable",
-                        tuple((
-                            delimited(multispace0, variable_name, preceded(multispace0, char('='))),
-                            preceded(multispace0, voting_list)
+                        alt((
+                            tuple((
+                                delimited(
+                                    delimited(multispace0, tag(KW_LET), multispace0),
+                                    variable_name,
+                                    preceded(multispace0, char('='))
+                                ),
+                                preceded(multispace0, voting_list)
+                            )),
+                            tuple((
+                                delimited(
+                                    multispace0,
+                                    variable_name,
+                                    preceded(multispace0, char('='))
+                                ),
+                                preceded(multispace0, voting_list)
+                            ))
                         ))
                     ),
                     |(name, expression)| {
@@ -625,21 +1077,27 @@ pub(crate) mod parse {
         use evalexpr::{ContextWithMutableVariables, HashMapContext};
         use nom::{Finish};
         use nom::error::VerboseError;
-        use crate::voting::parse::{variable_name, voting_function, voting_list};
-        use crate::voting::{VotingExecutable, VotingFunction};
+        use crate::voting::parse::{voting_function};
 
         const TEST: &str = "aggregate(sss = sumOf): {
-            if (a+b == (c+d)) {
+            let katze = if (a+b == (c+d)) {
                 r = true
-                x = 3 + 4 + c * 2
-                9 - 2 + d * x
+                x = -3 + 4 + c * 2
+                z = (true, -1, (3), false)
+                y = -(a + b)
+                o = -z[1]
+                value = 9 - 2 + d * x
                 pp
             } else {
                 r = true
                 x = 9 + 7 + a
-                (8 + 7) * b + 1
+                z = (true, -2, (3), false)
+                o = -z[1]
+                value = (8 + 7) * b + 1
                 pp + 1
             }
+            let katze = katze + 1
+            katze
         }";
 
         #[test]
@@ -653,7 +1111,7 @@ pub(crate) mod parse {
             let result= voting_function::<VerboseError<_>>(TEST).finish();
             match &result {
                 Ok(value) => {
-                    println!("{:?}", value);
+                    println!("{}", value.1);
                 }
                 Err(value) => {
                     println!("{}", value.to_string());
