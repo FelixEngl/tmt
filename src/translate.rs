@@ -3,16 +3,31 @@ use std::sync::Arc;
 use evalexpr::{context_map, EvalexprError};
 use itertools::{Itertools};
 use rayon::prelude::*;
+use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
 use crate::topicmodel::topic_model::{TopicModel};
 use crate::topicmodel::dictionary::Dictionary;
+use crate::topicmodel::dictionary::direction::{AToB, BToA};
 
 #[derive(Debug)]
 struct TranslateConfig {
     epsilon: Option<f64>,
     voting: String,
     voting_limit: Option<NonZeroUsize>,
-    threshold: Option<f64>
+    threshold: Option<f64>,
+    keep_original_word: KeepOriginalWord
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
+#[derive(AsRefStr, Display, EnumString)]
+pub enum KeepOriginalWord {
+    #[strum(serialize = "ALWAYS")]
+    Always,
+    #[strum(serialize = "IF_NO_TRANSLATION")]
+    IfNoTranslation,
+    #[strum(serialize = "NEVER")]
+    #[default]
+    Never
 }
 
 #[derive(Debug, Error)]
@@ -73,6 +88,7 @@ fn translate_impl<T>(
             }.unwrap();
 
 
+
     }).collect::<Vec<_>>();
 
     todo!()
@@ -85,26 +101,36 @@ fn translate_topic<T>(
     topic_id: usize,
     topic: &Vec<f64>
 ) -> Result<(), TranslateError<T>>{
-    // topic
-    //     .iter()
-    //     .enumerate()
-    //     .collect_vec()
-    //     .par_iter()
-    //     .cloned()
-    //     .map(|(word_id_a, probability)| {
-    //         if let Some(voc_b) = dictionary.translate_id_to_ids::<AToB>(word_id_a) {
-    //             for word_id_b in voc_b {
-    //                 dictionary.translate_id_to_ids::<BToA>(*word_id_b)
-    //                     .iter()
-    //                     .map(|word_id_a_retrans| {
-    //                         topic_model.rank_and_probability(topic_id, word_id_a_retrans)
-    //                     })
-    //             }
-    //             voc_b.iter().map(|word_id_b| )
-    //         } else {
-    //             None
-    //         }
-    //     })
+    topic
+        .iter()
+        .enumerate()
+        .collect_vec()
+        .par_iter()
+        .cloned()
+        .map(|(word_id_a, probability)| {
+            if let Some(voc_b) = dictionary.translate_id_to_ids::<AToB>(word_id_a) {
+                for word_id_b in voc_b {
+                    match dictionary.translate_id_to_ids::<BToA>(*word_id_b) {
+                        None => {
+
+                        }
+                        Some(re_translations) => {
+                            assert!(!re_translations.is_empty());
+                            re_translations
+                                .iter()
+                                .map(|word_id_a_retrans| {
+                                    topic_model.rank_and_probability(topic_id, *word_id_a_retrans)
+                                })
+
+                        }
+                    }
+
+                }
+                voc_b.iter().map(|word_id_b| )
+            } else {
+                None
+            }
+        })
     //
     // for (word_id, probability) in topic.iter().enumerate() {
     //     let mut word_bound_context = context.clone();

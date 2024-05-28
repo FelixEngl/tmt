@@ -4,7 +4,6 @@ use std::ops::{Deref, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusiv
 use std::slice::SliceIndex;
 use std::str::FromStr;
 use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, Operator, TupleType, Value};
-use indenter::CodeFormatter;
 use itertools::{FoldWhile, Itertools, Position};
 use strum::{EnumIs};
 use thiserror::Error;
@@ -15,9 +14,16 @@ mod parser;
 mod aggregations;
 
 
-pub struct Voting {
+trait VotingMethod {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
+        where
+            A : ContextWithMutableVariables,
+            B : ContextWithMutableVariables;
+}
+
+pub struct Voting<T: VotingMethod> {
     name: String,
-    expr: VotingFunction
+    expr: T
 }
 
 #[derive(Debug, Error)]
@@ -36,8 +42,9 @@ type VResult<T> = Result<T, VotingExpressionError>;
 
 
 trait DisplayTree: Display {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result;
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result;
 }
+
 
 
 macro_rules! impl_display_for_displaytree {
@@ -45,10 +52,7 @@ macro_rules! impl_display_for_displaytree {
         $(
             impl Display for $target {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                    let mut code_formatter = CodeFormatter::new(
-                        f,
-                        " "
-                    );
+                    let mut code_formatter = IndentWriter::new(f);
                     DisplayTree::fmt(self, &mut code_formatter)
                 }
             }
@@ -63,7 +67,7 @@ enum VotingFunction {
     Multi(Vec<VotingOperation>)
 }
 
-impl VotingFunction {
+impl VotingMethod for VotingFunction {
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
         where
             A : ContextWithMutableVariables,
@@ -90,10 +94,47 @@ impl VotingFunction {
     }
 }
 
+struct IndentWriter<'a, T: Write> {
+    f: &'a mut T,
+    level: usize,
+    indent: String
+}
+
+impl<'a, T> IndentWriter<'a, T> where T: Write {
+    fn new(f: &'a mut T) -> Self {
+        Self {
+            f,
+            level: 0,
+            indent: String::new()
+        }
+    }
+
+    fn indent(&mut self, value: usize) {
+        self.level = self.level.saturating_add(value);
+        self.indent = " ".repeat(self.level);
+    }
+    
+    fn dedent(&mut self, value: usize) {
+        self.level = self.level.saturating_sub(value);
+        self.indent = " ".repeat(self.level);
+    }
+}
+
+impl<T> Write for IndentWriter<'_, T> where T: Write {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        if s.ends_with("\n") {
+            write!(self.f, "{}{}", s, self.indent)
+        } else {
+            write!(self.f, "{}", s)
+        }
+
+    }
+}
+
 
 
 impl DisplayTree for VotingFunction {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         match self {
             VotingFunction::Single(value) => {
                 DisplayTree::fmt(value, f)
@@ -101,7 +142,6 @@ impl DisplayTree for VotingFunction {
             VotingFunction::Multi(value) => {
                 for op in value {
                     DisplayTree::fmt(op, f)?;
-                    write!(f, "\n")?;
                 }
                 Ok(())
             }
@@ -132,7 +172,7 @@ enum VotingOperation {
     }
 }
 
-impl VotingOperation {
+impl VotingMethod for VotingOperation {
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
         where
             A : ContextWithMutableVariables,
@@ -172,7 +212,7 @@ impl VotingOperation {
 }
 
 impl DisplayTree for VotingOperation {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         let expr = match self {
             VotingOperation::IterScope { expr } => {
                 write!(f, "foreach:")?;
@@ -187,10 +227,7 @@ impl DisplayTree for VotingOperation {
                 expr
             }
         };
-
-        f.indent(2);
         DisplayTree::fmt(expr, f)?;
-        f.dedent(2);
         Ok(())
     }
 }
@@ -222,20 +259,27 @@ impl VotingExecutableList {
 }
 
 impl DisplayTree for VotingExecutableList {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         match self {
             VotingExecutableList::Single(value) => {
                 DisplayTree::fmt(value.as_ref(), f)
             }
             VotingExecutableList::Multiple(value) => {
-                write!(f, "{{\n")?;
+                write!(f, "{{")?;
                 f.indent(2);
-                for v in value {
-                    DisplayTree::fmt(v, f)?;
-                    write!(f, "\n")?;
-                }
                 write!(f, "\n")?;
+                for (p, v) in value.iter().with_position() {
+                    DisplayTree::fmt(v, f)?;
+                    match p {
+                        Position::First | Position::Middle => {
+                            write!(f, "\n")?;
+                        }
+                        Position::Last | Position::Only => {
+                        }
+                    }
+                }
                 f.dedent(2);
+                write!(f, "\n")?;
                 write!(f, "}}")
             }
         }
@@ -296,7 +340,7 @@ impl VotingExecutable for InnerIfElse {
 }
 
 impl DisplayTree for InnerIfElse {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         write!(f, "if(")?;
         DisplayTree::fmt(self.cond.as_ref(), f)?;
         write!(f, ")")?;
@@ -361,7 +405,7 @@ impl VotingExecutable for VotingExpressionOrStatement {
 }
 
 impl DisplayTree for VotingExpressionOrStatement {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         match self {
             VotingExpressionOrStatement::Expression { expr } => {
                 DisplayTree::fmt(expr, f)
@@ -411,7 +455,7 @@ impl VotingExecutable for VotingStatement {
 }
 
 impl DisplayTree for VotingStatement {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         match self {
             VotingStatement::If { cond, if_block } => {
                 write!(f, "if (")?;
@@ -481,7 +525,7 @@ impl VotingExecutable for VotingExpression {
 }
 
 impl DisplayTree for VotingExpression {
-    fn fmt(&self, f: &mut CodeFormatter<'_, impl Write>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         match self {
             VotingExpression::Expr(value) => {
                 write!(f, "{}", walk_left_to_right(value))
@@ -1122,6 +1166,7 @@ pub(crate) mod parse {
         use nom::{Finish};
         use nom::error::VerboseError;
         use crate::voting::parse::{voting_function};
+        use crate::voting::VotingMethod;
 
         const TEST: &str = "aggregate(sss = sumOf): {
             let katze = if (a+b == (c+d)) {
