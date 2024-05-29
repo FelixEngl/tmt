@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::{Deref, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 use std::slice::SliceIndex;
 use std::str::FromStr;
-use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, Operator, TupleType, Value};
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, Operator, TupleType, Value};
 use itertools::{FoldWhile, Itertools, Position};
 use strum::{EnumIs};
 use thiserror::Error;
@@ -13,18 +13,6 @@ use crate::voting::aggregations::{Aggregation, AggregationError};
 mod parser;
 mod aggregations;
 
-
-trait VotingMethod {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
-        where
-            A : ContextWithMutableVariables,
-            B : ContextWithMutableVariables;
-}
-
-pub struct Voting<T: VotingMethod> {
-    name: String,
-    expr: T
-}
 
 #[derive(Debug, Error)]
 pub enum VotingExpressionError {
@@ -38,6 +26,28 @@ pub enum VotingExpressionError {
 
 
 type VResult<T> = Result<T, VotingExpressionError>;
+
+
+
+
+pub trait VotingMethod {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
+        where
+            A : ContextWithMutableVariables,
+            B : ContextWithMutableVariables;
+}
+
+
+pub struct Voting<T: VotingMethod> {
+    name: String,
+    expr: T
+}
+
+impl<T> VotingMethod for Voting<T> where T: VotingMethod {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+        self.expr.execute(global_context, voters)
+    }
+}
 
 
 
@@ -183,7 +193,7 @@ impl VotingMethod for VotingOperation {
                 expr
             } => {
                 for value in voters {
-                    expr.execute(&mut value.combine_with(global_context))?;
+                    expr.execute(&mut value.combine_with_mut(global_context))?;
                 }
                 Ok(Value::Empty)
             }
@@ -196,7 +206,7 @@ impl VotingMethod for VotingOperation {
                     .into_iter()
                     .map(|value|
                         expr
-                        .execute(&mut value.combine_with(global_context))
+                        .execute(&mut value.combine_with_mut(global_context))
                         .and_then(|value| value.as_number().map_err(|op| op.into())))
                     .collect::<Result<Vec<_>, _>>()?;
                 let new_result = op.calculate_desc(value.into_iter())?;

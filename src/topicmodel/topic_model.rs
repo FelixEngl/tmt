@@ -1,18 +1,20 @@
 use std::borrow::Borrow;
-use std::cmp::min;
+use std::cmp::{Ordering, Reverse};
 use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
-use std::ops::{DerefMut, Range};
+use std::ops::{Deref, DerefMut, Range};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use approx::relative_eq;
 
 use flate2::Compression;
 use itertools::Itertools;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use crate::toolkit::normal_number::IsNormalNumber;
 
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::enums::ReadError::NotFinishedError;
@@ -21,64 +23,146 @@ use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{Vocabulary};
 
-type WordToProbability = Vec<f64>;
-type TopicToProbability = Vec<f64>;
-type TopicToWordProbability = Vec<WordToProbability>;
-type WordToTopicProbability = Vec<TopicToProbability>;
-type DocumentTopicToProbability = Vec<TopicToProbability>;
+
+type TopicTo<T> = Vec<T>;
+type WordTo<T> = Vec<T>;
+type PositionTo<T> = Vec<T>;
+type DocumentTo<T> = Vec<T>;
+type ImportanceRankTo<T> = Vec<T>;
+type Probability = f64;
+
+/// The direct rank, created by the order of the probabilities and then
+type Rank = usize;
+
+/// The rank, when grouping the topic by probabilities
+type ImportanceRank = usize;
+type WordId = usize;
+type TopicId = usize;
+type Position = usize;
+type Importance = usize;
+type DocumentId = usize;
+type WordFrequency = u64;
+type DocumentLength = u64;
+
 
 
 pub type StringTopicModel = TopicModel<String>;
 
-#[derive(Clone, Debug)]
-pub struct TopicModel<T> {
-    topics: TopicToWordProbability,
-    vocabulary: Vocabulary<T>,
-    used_vocab_frequency: Vec<u64>,
-    doc_topic_distributions: DocumentTopicToProbability,
-    document_lengths: Vec<u64>,
-    topic_stats: Vec<TopicStats>,
-    topics_to_probability_sorted_word_ids: Vec<Vec<usize>>,
-    topics_to_importance_to_word_ids: Vec<Vec<Vec<usize>>>,
-    topics_to_word_id_to_importance: Vec<Vec<usize>>
+/// The meta for a topic.
+#[derive(Debug, Clone)]
+pub struct TopicMeta {
+    pub stats: TopicStats,
+    pub by_words: WordTo<Arc<WordMeta>>,
+    pub by_position: PositionTo<Arc<WordMeta>>,
+    pub by_importance: ImportanceRankTo<Vec<Arc<WordMeta>>>
+}
+
+impl TopicMeta {
+    pub fn new(
+        stats: TopicStats,
+        mut by_words: WordTo<Arc<WordMeta>>,
+        mut by_position: PositionTo<Arc<WordMeta>>,
+        mut by_importance: ImportanceRankTo<Vec<Arc<WordMeta>>>
+    ) -> Self {
+        by_words.shrink_to_fit();
+        by_position.shrink_to_fit();
+        by_importance.shrink_to_fit();
+
+        Self {
+            stats,
+            by_words,
+            by_position,
+            by_importance
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordMeta {
+    pub topic_id: TopicId,
+    pub word_id: WordId,
+    pub probability: Probability,
+    pub position: Position,
+    pub importance: Importance,
+}
+
+impl WordMeta {
+    #[inline]
+    pub fn rank(&self) -> Rank {
+        self.position + 1
+    }
+
+    #[inline]
+    pub fn importance_rank(&self) -> Rank {
+        self.importance + 1
+    }
+}
+
+impl Display for WordMeta {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.5}({})", self.probability, self.rank())
+    }
+}
+
+
+
+#[derive(Debug)]
+pub struct WordMetaWithWord<'a, T> {
+    pub word: &'a T,
+    inner: &'a Arc<WordMeta>
+}
+
+impl<'a, T> WordMetaWithWord<'a, T> {
+    pub fn new(word: &'a T, inner: &'a Arc<WordMeta>) -> Self {
+        Self {
+            word,
+            inner
+        }
+    }
+}
+
+impl<'a, T> WordMetaWithWord<'a, T> {
+    pub fn into_inner(self) -> &'a Arc<WordMeta> {
+        self.inner
+    }
+}
+
+impl<T> Deref for WordMetaWithWord<'_, T> {
+    type Target = Arc<WordMeta>;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner
+    }
 }
 
 
 
 
 
-impl<T: Hash + Eq> TopicModel<T> {
+
+#[derive(Clone, Debug)]
+pub struct TopicModel<T> {
+    topics: TopicTo<WordTo<Probability>>,
+    vocabulary: Vocabulary<T>,
+    used_vocab_frequency: WordTo<WordFrequency>,
+    doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
+    document_lengths: DocumentTo<DocumentLength>,
+    topic_metas: TopicTo<TopicMeta>
+}
+
+
+impl<T: Hash + Eq + Ord> TopicModel<T> {
     pub fn new(
-        topics: TopicToWordProbability,
+        topics: TopicTo<WordTo<Probability>>,
         vocabulary: Vocabulary<T>,
-        used_vocab_frequency: Vec<u64>,
-        doc_topic_distributions: DocumentTopicToProbability,
+        used_vocab_frequency: WordTo<u64>,
+        doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
         document_lengths: Vec<u64>,
     ) -> Self {
-        let topic_stats =
-            Self::calculate_topic_stats(&topics);
 
-        let topics_to_probability_sorted_word_ids: Vec<Vec<usize>> =
-            unsafe {
-                Self::calculate_topics_to_probability_sorted_word_ids(&topics)
-            };
-
-        let topics_to_importance_to_word_ids =
-            unsafe {
-                Self::calculate_topics_to_importance_to_word_ids(
-                    &topics,
-                    &topics_to_probability_sorted_word_ids
-                )
-            };
-
-        let topics_to_word_id_to_importance =
-            unsafe {
-                Self::calculate_topics_to_word_id_to_importance(
-                    &topics,
-                    &topics_to_importance_to_word_ids
-                )
-            };
-
+        let topic_content = unsafe {
+            Self::calculate_topic_metas(&topics, &vocabulary)
+        };
 
         Self {
             topics,
@@ -86,10 +170,7 @@ impl<T: Hash + Eq> TopicModel<T> {
             used_vocab_frequency,
             doc_topic_distributions,
             document_lengths,
-            topic_stats,
-            topics_to_probability_sorted_word_ids,
-            topics_to_importance_to_word_ids,
-            topics_to_word_id_to_importance
+            topic_metas: topic_content
         }
     }
 
@@ -100,23 +181,204 @@ impl<T: Hash + Eq> TopicModel<T> {
         }
     }
 
-    pub fn get_probability_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&f64> where T: Borrow<Q>, Q: Hash + Eq {
+    pub fn get_probability_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Probability> where T: Borrow<Q>, Q: Hash + Eq {
         self.get_probability(topic_id, self.get_id(word)?)
     }
-    pub fn get_value_to_topic_probabilities_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicToProbability> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_value_to_topic_probabilities(self.get_id(word)?)
+    pub fn get_topic_probabilities_for_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicTo<Probability>> where T: Borrow<Q>, Q: Hash + Eq {
+        self.get_topic_probabilities_for(self.get_id(word)?)
     }
 
-    pub fn get_probability_and_position_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<WordProbabilityWithPosition<T>> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_probability_and_position_for(topic_id, self.vocabulary.get_id(word)?)
+    pub fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Arc<WordMeta>> where T: Borrow<Q>, Q: Hash + Eq {
+        self.get_word_meta(topic_id, self.vocabulary.get_id(word)?)
     }
 
-    pub fn get_probabilities_and_positions_for_word<Q: ?Sized>(&self, word: &Q) -> Option<Vec<WordProbabilityWithPosition<T>>> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_probabilities_and_positions_for(self.vocabulary.get_id(word)?)
+    pub fn get_word_metas_with_word_by_word<Q: ?Sized>(&self, word: &Q) -> Option<Vec<WordMetaWithWord<HashRef<T>>>> where T: Borrow<Q>, Q: Hash + Eq {
+        self.get_word_metas_with_word(self.vocabulary.get_id(word)?)
     }
 
-    pub fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<Vec<WordProbabilityWithPosition<T>>> where T: Borrow<Q>, Q: Hash + Eq {
-        self.get_all_similar_important_words_for(topic_id, self.vocabulary.get_id(word)?)
+    pub fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Vec<Arc<WordMeta>>> where T: Borrow<Q>, Q: Hash + Eq {
+        self.get_all_similar_important(topic_id, self.vocabulary.get_id(word)?)
+    }
+
+    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &Vocabulary<T>) -> TopicTo<TopicMeta> {
+        struct SortHelper<'a, Q>(WordId, Probability, &'a Vocabulary<Q>);
+
+        impl<'a, Q> SortHelper<'a, Q> where Q: Hash + Eq  {
+            fn word(&self) -> &HashRef<Q> {
+                self.2.get_value(self.0).expect("There should be no problem with enpacking it here!")
+            }
+        }
+
+        impl<Q> Eq for SortHelper<'_, Q> {}
+
+        impl<Q> PartialEq<Self> for SortHelper<'_, Q> {
+            fn eq(&self, other: &Self) -> bool {
+                self.1.eq(&other.1)
+            }
+        }
+
+        impl<Q> PartialOrd for SortHelper<'_, Q> where Q: Hash + Eq + Ord {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                match self.1.partial_cmp(&other.1) {
+                    None => {
+                        if self.1.is_normal_number() {
+                            Some(Ordering::Greater)
+                        } else if other.1.is_normal_number() {
+                            Some(Ordering::Less)
+                        } else {
+                            Some(
+                                other.2.get_value(other.0).unwrap().cmp(
+                                    self.2.get_value(self.0).unwrap()
+                                )
+                            )
+                        }
+                    }
+                    Some(Ordering::Equal) => {
+                        Some(
+                            other.2.get_value(other.0).unwrap().cmp(
+                                self.2.get_value(self.0).unwrap()
+                            )
+                        )
+                    }
+                    otherwise => otherwise
+                }
+            }
+        }
+
+        impl<Q> Ord for SortHelper<'_, Q> where Q: Hash + Eq + Ord {
+            fn cmp(&self, other: &Self) -> Ordering {
+                self.partial_cmp(other).unwrap()
+            }
+        }
+
+        let mut topics: TopicTo<WordTo<_>> = topics.iter().enumerate().map(|(topic_id, topic)| {
+            let position_to_word_id_and_prob = topic
+                .iter()
+                .enumerate()
+                .sorted_by_key(|(word_id, prob)| Reverse(SortHelper(*word_id, **prob, vocabulary)))
+                .collect_vec();
+
+            let mut current_value = position_to_word_id_and_prob.first().unwrap().1;
+            let mut current_sink = Vec::new();
+            let mut importance_to_word_ids: Vec<Vec<WordId>> = Vec::new();
+
+            for (word_id, probability) in &position_to_word_id_and_prob {
+                if current_value.ne(*probability) {
+                    importance_to_word_ids.push(current_sink);
+                    current_sink = Vec::new();
+                    current_value = *probability;
+                }
+                current_sink.push(*word_id);
+            }
+
+            if !current_sink.is_empty() {
+                importance_to_word_ids.push(current_sink);
+            }
+
+
+
+            let mut word_it_to_importance = importance_to_word_ids.into_iter().enumerate().flat_map(|(importance, words)| {
+                words.into_iter().map(move |value| (importance, value))
+            }).collect_vec();
+            word_it_to_importance.sort_by_key(|value| value.1);
+
+            let word_id_to_position = position_to_word_id_and_prob
+                .iter()
+                .enumerate()
+                .map(|(position, (word_id, prob))| (word_id, prob, position))
+                .sorted_by_key(|(word_id, _, _)| *word_id)
+                .collect_vec();
+
+            let mut result = word_id_to_position.into_iter().zip_eq(word_it_to_importance.into_iter()).map(|(((word_id_1, prob, position), (importance, word_id_2)))| {
+                assert_eq!(*word_id_1, word_id_2, "Word ids {} {} are not compatible!", word_id_1, word_id_2);
+                (word_id_1, prob, position, importance)
+            }).zip_eq(topic.into_iter().enumerate()).map(|((word_id_1, probability_1, position, importance), (word_id, probability))| {
+                assert_eq!(word_id, *word_id_1, "Word ids {} {} are not compatible in zipping!", word_id, word_id_1);
+                assert_eq!(probability, *probability_1,
+                           "Probabilities fir the ids {}({}) {}({}) are not compatible in zipping!",
+                           word_id, probability,
+                           word_id_1, probability_1);
+                Arc::new(
+                    WordMeta {
+                        topic_id,
+                        word_id,
+                        probability: *probability,
+                        position,
+                        importance,
+                    }
+                )
+            }).collect_vec();
+            result.shrink_to_fit();
+            result
+        }).collect_vec();
+
+        topics.shrink_to_fit();
+
+
+        let topics: TopicTo<TopicMeta> = topics.into_iter().enumerate().map(|(topic_id, topic_content)| {
+
+            let position_to_meta: PositionTo<_> = topic_content.iter().sorted_by_key(|value| value.position).cloned().collect_vec();
+
+
+            let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
+
+            for value in position_to_meta.iter() {
+                while importance_to_meta.len() <= value.importance {
+                    importance_to_meta.push(Vec::new())
+                }
+                importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());
+            }
+
+            let mut max_value: f64 = f64::MIN;
+            let mut min_value: f64 = f64::MAX;
+            let mut sum_value: f64 = 0.0;
+
+            for value in &topic_content {
+                max_value = max_value.max(value.probability);
+                min_value = min_value.min(value.probability);
+                sum_value += value.probability;
+            }
+
+
+            let stats = TopicStats {
+                topic_id,
+                max_value,
+                min_value,
+                sum_value,
+                average_value: sum_value / (topic_content.len() as f64)
+            };
+
+            TopicMeta::new(stats, topic_content, position_to_meta, importance_to_meta)
+        }).collect_vec();
+
+
+        return topics;
+    }
+
+    fn recalculate_statistics(&mut self) {
+        self.topic_metas = unsafe {
+            Self::calculate_topic_metas(&self.topics, &self.vocabulary)
+        };
+    }
+
+    pub fn normalize_in_place(mut self) -> Self {
+        for topic in self.topics.iter_mut() {
+            let sum: f64 = topic.iter().sum();
+            topic.iter_mut().for_each(|value| {
+                *value /= sum
+            });
+        }
+
+        for probabilities in self.doc_topic_distributions.iter_mut() {
+            let sum: f64 = probabilities.iter().sum();
+            probabilities.iter_mut().for_each(|value| {
+                *value /= sum
+            });
+        }
+
+        self.recalculate_statistics();
+
+        self
     }
 }
 
@@ -144,12 +406,12 @@ impl<T> TopicModel<T> {
         0..self.topics.len()
     }
 
-    pub fn stats(&self) -> &[TopicStats] {
-        &self.topic_stats
-    }
-
     pub fn topics(&self) -> &Vec<Vec<f64>> {
         &self.topics
+    }
+
+    pub fn topic_metas(&self) -> &[TopicMeta] {
+        &self.topic_metas
     }
 
     delegate::delegate! {
@@ -163,28 +425,19 @@ impl<T> TopicModel<T> {
         self.topics.get(topic_id)
     }
 
-    pub fn get_probability(&self, topic_id: usize, word_id: usize) -> Option<&f64> {
+    pub fn get_topic_meta(&self, topic_id: usize) -> Option<&TopicMeta> {
+        self.topic_metas.get(topic_id)
+    }
+
+    pub fn get_probability(&self, topic_id: usize, word_id: usize) -> Option<&Probability> {
         self.topics.get(topic_id)?.get(word_id)
     }
 
-    pub fn rank_and_probability(&self, topic_id: usize, word_id: usize) -> Option<(usize, Option<usize>, usize, f64)> {
-        let word_to_probability = self.topics.get(topic_id)?;
-        if let Some(probability) = word_to_probability.get(word_id) {
-            let mut ct = 0usize;
-            for value in word_to_probability {
-                if value > probability {
-                    ct += 1;
-                }
-            }
-
-            Some((topic_id, Some(word_id), ct + 1, *probability))
-        } else {
-            Some((topic_id, None, self.vocabulary_size()+1, 0.0))
-        }
+    pub fn get_word_meta(&self, topic_id: usize, word_id: usize) -> Option<&Arc<WordMeta>> {
+        self.topic_metas.get(topic_id)?.by_words.get(word_id)
     }
 
-
-    pub fn get_value_to_topic_probabilities(&self, word_id: usize) -> Option<TopicToProbability> {
+    pub fn get_topic_probabilities_for(&self, word_id: usize) -> Option<TopicTo<Probability>> {
         if self.contains_id(word_id) {
             Some(self.topics.iter().map(|value| unsafe{value.get_unchecked(word_id).clone()}).collect())
         } else {
@@ -192,59 +445,45 @@ impl<T> TopicModel<T> {
         }
     }
 
-    pub fn get_value_at(&self, topic_id: usize, index: usize) -> Option<&HashRef<T>> {
-        self.vocabulary.get_value(
-            self.topics_to_probability_sorted_word_ids
-                .get(topic_id)?
-                .get(index)?
-                .clone()
-        )
+    pub fn get_word_metas_for(&self, word_id: usize) -> Option<TopicTo<&Arc<WordMeta>>> {
+        if self.contains_id(word_id) {
+            Some(self.topic_metas.iter().map(|value| unsafe{value.by_words.get_unchecked(word_id)}).collect())
+        } else {
+            None
+        }
     }
 
-    pub fn get_probability_and_position_for(&self, topic_id: usize, word_id: usize) -> Option<WordProbabilityWithPosition<T>> {
-        let probability = *self.get_probability(topic_id, word_id)?;
-        let importance = *self.topics_to_word_id_to_importance.get(topic_id)?.get(word_id)?;
-        let index = self.topics_to_probability_sorted_word_ids.get(topic_id)?.iter().position(|value| word_id.eq(value))?;
+
+    pub fn get_word_meta_with_word(&self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<HashRef<T>>> {
+        let topic_meta = self.get_topic_meta(topic_id)?;
+        let word_meta = topic_meta.by_words.get(word_id)?;
+        let word = self.vocabulary.get_value(word_meta.word_id)?;
+        Some(WordMetaWithWord::new(word, word_meta))
+    }
+
+    pub fn get_word_metas_with_word(&self, word_id: usize) -> Option<Vec<WordMetaWithWord<HashRef<T>>>> {
+        self.topic_ids().map(|topic_id| self.get_word_meta_with_word(topic_id, word_id)).collect()
+    }
+
+    pub fn get_all_similar_important(&self, topic_id: usize, word_id: usize) -> Option<&Vec<Arc<WordMeta>>> {
+        let topic = self.topic_metas.get(topic_id)?;
+        topic.by_importance.get(topic.by_words.get(word_id)?.importance)
+    }
+
+    pub fn get_all_similar_important_with_word_for(&self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<HashRef<T>>>> {
         Some(
-            WordProbabilityWithPosition {
-                topic_id,
-                word: self.vocabulary.get_value(word_id)?,
-                word_id,
-                probability,
-                index_in_topic: index,
-                importance
-            }
+            self.get_all_similar_important(topic_id, word_id)?
+                .iter()
+                .map(|value| WordMetaWithWord::new(self.vocabulary.get_value(value.word_id).unwrap(), value))
+                .collect()
         )
     }
 
-    pub fn get_probabilities_and_positions_for(&self, word_id: usize) -> Option<Vec<WordProbabilityWithPosition<T>>> {
-        self.topic_ids().map(|topic_id| self.get_probability_and_position_for(topic_id, word_id)).collect()
+    pub fn get_n_best_for_topic(&self, topic_id: usize, n: usize) -> Option<&[Arc<WordMeta>]> {
+        Some(&self.topic_metas.get(topic_id)?.by_position[..n])
     }
 
-    pub fn get_all_similar_important_words_for(&self, topic_id: usize, word_id: usize) -> Option<Vec<WordProbabilityWithPosition<T>>> {
-        self.topics_to_importance_to_word_ids
-            .get(topic_id)?
-            .get(*self.topics_to_word_id_to_importance.get(topic_id)?.get(word_id)?)?
-            .iter()
-            .map(|word_id| self.get_probability_and_position_for(topic_id, *word_id))
-            .collect()
-    }
-
-    pub fn get_n_best_for_topic(&self, topic_id: usize, n: usize) -> Option<Vec<WordIdAndProbability>> {
-        let topic = self.topics.get(topic_id)?;
-        let probability_sorted_word_ids = self.topics_to_probability_sorted_word_ids.get(topic_id)?;
-        Some(
-            (0..min(n, topic.len())).map(|it| unsafe {
-                let word_id = *probability_sorted_word_ids.get_unchecked(it);
-                WordIdAndProbability {
-                    word_id,
-                    probability: *topic.get_unchecked(word_id)
-                }
-            }).collect()
-        )
-    }
-
-    pub fn get_n_best_for_topics(&self, n: usize) -> Option<Vec<Vec<WordIdAndProbability>>> {
+    pub fn get_n_best_for_topics(&self, n: usize) -> Option<Vec<&[Arc<WordMeta>]>> {
         self.topic_ids().map(|topic_id| self.get_n_best_for_topic(topic_id, n)).collect()
     }
 
@@ -270,103 +509,9 @@ impl<T> TopicModel<T> {
             }
         }).collect()
     }
-
-    unsafe fn calculate_topics_to_probability_sorted_word_ids(topics: &Vec<Vec<f64>>) -> Vec<Vec<usize>> {
-        topics.iter().map(|topic| {
-            let mut created = (0..topic.len())
-                .sorted_by(|a, b|
-                    topic.get_unchecked(*a)
-                        .partial_cmp(topic.get_unchecked(*b))
-                        .unwrap()
-                )
-                .collect_vec();
-            created.reverse();
-            created
-        }).collect()
-    }
-
-    unsafe fn calculate_topics_to_importance_to_word_ids(topics: &Vec<Vec<f64>>, topics_to_probability_sorted_word_ids: &Vec<Vec<usize>>) -> Vec<Vec<Vec<usize>>> {
-        topics.iter().enumerate().map(|(topic_id, topic)| {
-            let probability_sorted_word_ids: &Vec<usize> = topics_to_probability_sorted_word_ids.get_unchecked(topic_id);
-            let mut current_value = topic.get_unchecked(probability_sorted_word_ids[0]);
-            let mut current_sink = Vec::new();
-            let mut collection = Vec::new();
-            for word_id in probability_sorted_word_ids {
-                let probability = topic.get_unchecked(*word_id);
-                if current_value != probability {
-                    current_sink.shrink_to_fit();
-                    collection.push(current_sink);
-                    current_sink = Vec::new();
-                    current_value = probability;
-                }
-                current_sink.push(*word_id);
-            }
-            current_sink.shrink_to_fit();
-            collection.push(current_sink);
-            collection
-        }).collect()
-    }
-
-    unsafe fn calculate_topics_to_word_id_to_importance(
-        topics: &Vec<Vec<f64>>,
-        topics_to_importance_to_word_ids: &Vec<Vec<Vec<usize>>>
-    ) -> Vec<Vec<usize>> {
-        topics.iter().enumerate().map(|(topic_id, topic)| {
-            let groupings = topics_to_importance_to_word_ids.get_unchecked(topic_id);
-            let mut result = vec![0usize; topic.len()];
-
-            for (importance, importances) in groupings.iter().enumerate() {
-                for idx in importances {
-                    result.insert(*idx, importance);
-                }
-            }
-            result
-        }).collect()
-    }
-
-    fn recalculate_statistics(&mut self) {
-        self.topic_stats = Self::calculate_topic_stats(&self.topics);
-
-        unsafe {
-            self.topics_to_probability_sorted_word_ids =
-                Self::calculate_topics_to_probability_sorted_word_ids(&self.topics);
-
-            self.topics_to_importance_to_word_ids =
-                Self::calculate_topics_to_importance_to_word_ids(
-                    &self.topics,
-                    &self.topics_to_probability_sorted_word_ids
-                );
-
-            self.topics_to_word_id_to_importance =
-                Self::calculate_topics_to_word_id_to_importance(
-                    &self.topics,
-                    &self.topics_to_importance_to_word_ids
-                )
-        }
-    }
-
-    pub fn normalize_in_place(mut self) -> Self {
-        for topic in self.topics.iter_mut() {
-            let sum: f64 = topic.iter().sum();
-            topic.iter_mut().for_each(|value| {
-                *value /= sum
-            });
-        }
-
-        for probabilities in self.doc_topic_distributions.iter_mut() {
-            let sum: f64 = probabilities.iter().sum();
-            probabilities.iter_mut().for_each(|value| {
-                *value /= sum
-            });
-        }
-
-        self.recalculate_statistics();
-
-        self
-    }
 }
 
-impl<T: Clone> TopicModel<T> {
+impl<T: Clone + Hash + Eq + Ord> TopicModel<T> {
     pub fn normalize(&self) -> Self {
         self.clone().normalize_in_place()
     }
@@ -403,6 +548,7 @@ impl<T: Eq + Hash> TopicModel<T> {
     }
 }
 
+
 impl<T: Display> TopicModel<T> {
 
     pub fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
@@ -411,9 +557,9 @@ impl<T: Display> TopicModel<T> {
                 out.write(b"\n")?;
             }
             write!(out, "Topic({topic_id}):")?;
-            for it in topic_entries {
+            for it in topic_entries.iter() {
                 out.write(b"\n")?;
-                write!(out, "    {}: {}", self.vocabulary.get_value(it.word_id).unwrap(), it.probability)?;
+                write!(out, "    {}: {} ({})", self.vocabulary.get_value(it.word_id).unwrap(), it.probability, it.rank())?;
             }
         }
         Ok(())
@@ -444,22 +590,6 @@ impl<T: Display> Display for TopicModel<T> {
     }
 }
 
-pub struct WordIdAndProbability {
-    pub word_id: usize,
-    pub probability: f64
-}
-
-
-pub struct WordProbabilityWithPosition<'a, T> {
-    pub topic_id: usize,
-    pub word: &'a T,
-    pub word_id: usize,
-    pub probability: f64,
-    pub index_in_topic: usize,
-    pub importance: usize
-}
-
-
 impl TopicModel<String> {
     pub fn load_string_model(path: impl AsRef<Path>) -> Result<(Self, TopicModelVersion), ReadError<Infallible>> {
         Self::load(path)
@@ -475,7 +605,7 @@ const PATH_TO_MODEL: &str = "model\\topic.model";
 const PATH_VERSION_INFO: &str = "version.info";
 const MARKER_FILE: &str = "COMPLETED_TM";
 
-impl<T: FromStr<Err=E> + Hash + Eq, E: Debug> TopicModel<T> {
+impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug> TopicModel<T> {
 
     pub fn load(path: impl AsRef<Path>) -> Result<(Self, TopicModelVersion), ReadError<E>> {
         if !Self::is_already_finished(&path) {
@@ -639,7 +769,7 @@ impl<T: ToParseableString> TopicModel<T> {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicStats {
     pub topic_id: usize,
     pub max_value: f64,
@@ -670,7 +800,7 @@ mod test {
 
         TopicModel::new(
             vec![
-                vec![0.019, 0.018, 0.012, 0.009, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008],
+                vec![0.019, 0.018, 0.012, 0.009, 0.008, 0.007, 0.008, 0.008, 0.008, 0.008, 0.008],
                 vec![0.02, 0.002, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001],
             ],
             voc,
@@ -698,6 +828,7 @@ mod test {
 
         assert!(topic_model.seems_equal_to(&loaded));
 
+        topic_model.show_10().unwrap();
         topic_model.normalize().show_10().unwrap();
 
         std::fs::remove_dir_all(P).unwrap();
