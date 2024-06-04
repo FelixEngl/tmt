@@ -1,4 +1,5 @@
 use std::num::NonZeroUsize;
+use std::ops::Deref;
 use std::sync::Arc;
 use evalexpr::{Context, context_map, EmptyContext, EmptyContextWithBuiltinFunctions, EvalexprError, HashMapContext, Value};
 use itertools::{Itertools};
@@ -10,7 +11,7 @@ use crate::toolkit::evalexpr::{CombineableContext, CombinedContextWrapper, Combi
 use crate::topicmodel::topic_model::{TopicModel, WordMeta};
 use crate::topicmodel::dictionary::Dictionary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
-use crate::translate::AOrB::{A, B};
+use crate::translate::LanguageOrigin::{Origin, Target};
 use crate::voting::{EmptyVotingMethod, Voting, VotingMethod, VotingResult};
 
 #[derive(Debug)]
@@ -19,7 +20,8 @@ struct TranslateConfig {
     voting: String,
     voting_limit: Option<NonZeroUsize>,
     threshold: Option<f64>,
-    keep_original_word: KeepOriginalWord
+    keep_original_word: KeepOriginalWord,
+    top_candidate_limit: Option<NonZeroUsize>,
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
@@ -42,16 +44,43 @@ pub enum TranslateError<T> {
     EvalExpressionError(#[from] EvalexprError),
 }
 
+
+/// Allows to differentiate the source of the object regarding a language
+#[derive(Copy, Clone, Debug)]
+enum LanguageOrigin<T> {
+    Origin(T),
+    Target(T)
+}
+
+impl<T> Deref for LanguageOrigin<T> {
+    type Target = T;
+
+    fn deref(&self) -> &<Self as Deref>::Target {
+        match self {
+            Origin(value) => {value}
+            Target(value) => {value}
+        }
+    }
+}
+
+
+
 macro_rules! declare_variable_names {
-    ($($variable_name: ident: $name: literal),+) => {
-        $(
-           pub const $variable_name: &str = $name;
-        )+
+    ($variable_name: ident: $name: literal, $($tt:tt)*) => {
+        pub const $variable_name: &str = $name;
+        declare_variable_names!($($tt)*);
+    };
+
+    (doc = $doc: literal $variable_name: ident: $name: literal, $($tt:tt)*) => {
+        #[doc = $doc]
+        pub const $variable_name: &str = $name;
+        declare_variable_names!($($tt)*);
     };
 }
 
 
 declare_variable_names! {
+    doc = "The epsilon of the calculation"
     EPSILON: "epsilon",
     VOCABULARY_SIZE_A: "n_voc",
     VOCABULARY_SIZE_B: "n_voc_target",
@@ -68,7 +97,7 @@ declare_variable_names! {
     RECIPROCAL_RANK: "rr",
     RANK: "rank",
     IMPORTANCE: "importance",
-    SCORE: "score"
+    SCORE: "score",
 }
 
 
@@ -136,29 +165,26 @@ fn translate_impl<T>(
     todo!()
 }
 
-
+#[derive(Debug, Clone)]
 struct Candidate<'a> {
-    candidate_word_id: AOrB<usize>,
-    voting_result: Option<VotingResult<Value>>,
+    candidate_word_id: LanguageOrigin<usize>,
+    voting_result: Option<Value>,
     voters: Option<Vec<&'a Arc<WordMeta>>>
 }
 
-#[derive(Copy, Clone, Debug)]
-enum AOrB<T> {
-    A(T),
-    B(T)
-}
 
 impl<'a> Candidate<'a> {
-    pub fn new(candidate_word_id: AOrB<usize>, voting_result: VotingResult<Value>, voters: Vec<&'a Arc<WordMeta>>) -> Self {
-        Self {
-            candidate_word_id,
-            voting_result: Some(voting_result),
-            voters: (!voters.is_empty()).then_some(voters)
-        }
+    pub fn new(candidate_word_id: LanguageOrigin<usize>, voting_result: VotingResult<Value>, voters: Vec<&'a Arc<WordMeta>>) -> VotingResult<Self> {
+        Ok(
+            Self {
+                candidate_word_id,
+                voting_result: Some(voting_result?),
+                voters: (!voters.is_empty()).then_some(voters)
+            }
+        )
     }
 
-    pub fn new_without_voters(candidate_word_id: AOrB<usize>) -> Candidate<'a> {
+    pub fn new_without_voters(candidate_word_id: LanguageOrigin<usize>) -> Candidate<'a> {
         Self {
             candidate_word_id,
             voting_result: None,
@@ -174,7 +200,7 @@ fn translate_topic<T, A, B>(
     dictionary: Arc<Dictionary<T>>,
     topic_id: usize,
     topic: &Vec<f64>,
-    topic_context: StaticContext<A, B>,
+    topic_context: StaticContext<Origin, Target>,
     config: &TranslateConfig
 ) -> Result<(), TranslateError<T>> where A: Context, B: Context {
     let candidates: Vec<_> = topic
@@ -187,8 +213,8 @@ fn translate_topic<T, A, B>(
             let mut candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(*original) {
                 Some(candidates.iter().cloned().map( |candidate|
                     match dictionary.translate_id_to_ids::<BToA>(candidate) {
-                        None  => Candidate::new_without_voters(B(candidate)),
-                        Some(voters) if voters.is_empty() => Candidate::new_without_voters(B(candidate)),
+                        None  => Candidate::new_without_voters(Target(candidate)),
+                        Some(voters) if voters.is_empty() => Candidate::new_without_voters(Target(candidate)),
                         Some(voters) => {
                             let mapped = voters
                                 .iter()
@@ -213,7 +239,7 @@ fn translate_topic<T, A, B>(
                                 IMPORTANCE => value.importance_rank() as i64,
                                 SCORE => value.probability,
                             }.unwrap()).collect_vec();
-                            Candidate::new(B(candidate), voting.execute(&mut context, voters.as_mut_slice()), mapped)
+                            Candidate::new(Target(candidate), voting.execute(&mut context, voters.as_mut_slice()), mapped)
                         }
                     }
                 ).collect_vec())
@@ -246,7 +272,7 @@ fn translate_topic<T, A, B>(
                             }.unwrap()
                         ];
 
-                        candidates.push(Candidate::new(A(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta]));
+                        candidates.push(Candidate::new(Origin(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta]));
 
                         Some(candidates)
                     } else {
@@ -273,7 +299,7 @@ fn translate_topic<T, A, B>(
 
                         Some(
                             vec![
-                                Candidate::new(A(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
+                                Candidate::new(Origin(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
                             ]
                         )
                     }
@@ -305,7 +331,7 @@ fn translate_topic<T, A, B>(
 
                         Some(
                             vec![
-                                Candidate::new(A(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
+                                Candidate::new(Origin(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
                             ]
                         )
                     }
