@@ -1,10 +1,111 @@
-use std::iter::Chain;
-use evalexpr::{Context, ContextWithMutableFunctions, ContextWithMutableVariables, EmptyContext, EvalexprError, EvalexprResult, Function, IterateVariablesContext, Value};
+use std::iter::{Chain};
+use std::sync::Arc;
+use evalexpr::{Context, ContextWithMutableFunctions, ContextWithMutableVariables, EvalexprError, EvalexprResult, Function, IterateVariablesContext, Value};
+use evalexpr::EvalexprError::FunctionIdentifierNotFound;
+
+
+#[derive(Debug)]
+pub struct StaticContext<A: ?Sized, B: ?Sized> {
+    current: Arc<A>,
+    next: Arc<B>
+}
+
+unsafe impl<A, B> Sync for StaticContext<A, B>{}
+unsafe impl<A, B> Send for StaticContext<A, B>{}
+
+impl<A, B> Clone for StaticContext<A, B> {
+    fn clone(&self) -> Self {
+        Self {
+            current: self.current.clone(),
+            next: self.next.clone()
+        }
+    }
+}
+
+
+impl<A, B> StaticContext<A, B> where A: Context, B: Context {
+    pub fn new(current: A, next: B) -> Self {
+        Self { current: Arc::new(current), next: Arc::new(next) }
+    }
+
+    pub fn create_expanded<C: Context>(&self, other: C) -> StaticContext<C, StaticContext<A, B>> {
+        StaticContext::<C, StaticContext<A, B>>::new(other, self.clone())
+    }
+}
+
+impl<A, B> Context for StaticContext<A, B> where A: Context, B: Context {
+    fn get_value(&self, identifier: &str) -> Option<&Value> {
+        match self.current.get_value(identifier) {
+            None => {
+                self.next.get_value(identifier)
+            }
+            Some(value) => {
+                Some(value)
+            }
+        }
+    }
+
+    fn call_function(&self, identifier: &str, argument: &Value) -> EvalexprResult<Value> {
+        match self.current.call_function(identifier, argument) {
+            Ok(value) => {
+                Ok(value)
+            }
+            Err(FunctionIdentifierNotFound(_)) => {
+                self.next.call_function(identifier, argument)
+            }
+            Err(EvalexprError::WrongFunctionArgumentAmount {..}) => {
+                self.next.call_function(identifier, argument)
+            }
+            other => other
+        }
+    }
+
+    fn are_builtin_functions_disabled(&self) -> bool {
+        self.current.are_builtin_functions_disabled()
+    }
+
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<()> {
+        let are_disabled = self.are_builtin_functions_disabled();
+        if disabled == are_disabled {
+            Ok(())
+        } else {
+            if are_disabled {
+                Err(EvalexprError::BuiltinFunctionsCannotBeEnabled)
+            } else {
+                Err(EvalexprError::BuiltinFunctionsCannotBeDisabled)
+            }
+        }
+    }
+}
+
+impl<A, B> IterateVariablesContext for StaticContext<A, B> where A: IterateVariablesContext, B: IterateVariablesContext {
+    type VariableIterator<'b> = Chain<
+        <A as IterateVariablesContext>::VariableIterator<'b>,
+        <B as IterateVariablesContext>::VariableIterator<'b>
+    > where Self: 'b;
+    type VariableNameIterator<'b> = Chain<
+        <A as IterateVariablesContext>::VariableNameIterator<'b>,
+        <B as IterateVariablesContext>::VariableNameIterator<'b>
+    > where Self: 'b;
+    fn iter_variables(&self) -> Self::VariableIterator<'_> {
+        self.current.iter_variables().chain(
+            self.next.iter_variables()
+        )
+    }
+
+    fn iter_variable_names(&self) -> Self::VariableNameIterator<'_> {
+        self.current.iter_variable_names().chain(
+            self.next.iter_variable_names()
+        )
+    }
+}
+
 
 
 pub trait CombineableContext<B> where B: Context {
     fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<Self, B>;
     fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<Self, B>;
+    fn to_static_with(self, other: B) -> StaticContext<Self, B>;
 }
 
 impl<A, B> CombineableContext<B> for A where A: Context, B: Context {
@@ -15,6 +116,10 @@ impl<A, B> CombineableContext<B> for A where A: Context, B: Context {
     #[inline(always)]
     fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<'a, Self, B> {
         CombinedContextWrapperMut::new(self, other)
+    }
+
+    fn to_static_with(self, other: B) -> StaticContext<Self, B> {
+        StaticContext::new(self, other)
     }
 }
 

@@ -1,17 +1,22 @@
-use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::ops::{Deref, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
-use std::slice::SliceIndex;
-use std::str::FromStr;
+use std::num::NonZeroUsize;
+use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
+use std::sync::Arc;
 use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, Operator, TupleType, Value};
 use itertools::{FoldWhile, Itertools, Position};
-use strum::{EnumIs};
+use strum::{AsRefStr, Display, EnumIs, EnumString};
 use thiserror::Error;
 use crate::toolkit::evalexpr::CombineableContext;
+use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
+use crate::translate::{EPSILON, NUMBER_OF_VOTERS, RANK, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
 use crate::voting::aggregations::{Aggregation, AggregationError};
+use crate::voting::aggregations::AggregationType::{AvgOf, GAvgOf, SumOf};
+use crate::voting::VotingExpressionError::{Eval, NoValue};
 
 mod parser;
 mod aggregations;
+
 
 
 #[derive(Debug, Error)]
@@ -22,29 +27,300 @@ pub enum VotingExpressionError {
     Agg(#[from] AggregationError),
     #[error("The tuple {0} with length {2} does not have a value at {1}!")]
     TupleGet(String, IndexOrRange, usize),
+    #[error("No value for working with was found!")]
+    NoValue,
 }
 
 
-type VResult<T> = Result<T, VotingExpressionError>;
+pub type VotingResult<T> = Result<T, VotingExpressionError>;
 
 
 
+pub trait VotingMethodMarker{}
 
-pub trait VotingMethod {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
+
+pub trait VotingMethod: VotingMethodMarker {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
         where
             A : ContextWithMutableVariables,
             B : ContextWithMutableVariables;
 }
 
 
-pub struct Voting<T: VotingMethod> {
-    name: String,
+pub struct EmptyVotingMethod;
+
+impl VotingMethodMarker for EmptyVotingMethod {}
+
+impl VotingMethod for EmptyVotingMethod {
+    fn execute<A, B>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+        return Err(NoValue)
+    }
+}
+
+#[derive(Debug, Copy, Clone, EnumString, AsRefStr, Display)]
+pub enum BuildInVotings {
+    OriginalScore,
+    Votes,
+    CombSum,
+    GCombSum,
+    CombSumTop,
+    CombSumPow2,
+    CombMax,
+    RR,
+    RRPow2,
+    CombSumRR,
+    CombSumRRPow2,
+    CombSumPow2RR,
+    CombSumPow2RRPow2,
+    ExpCombMnz,
+    WCombSum,
+    WCombSumG,
+    WGCombSum,
+    PCombSum
+}
+
+impl VotingMethodMarker for BuildInVotings {}
+
+impl VotingMethod for BuildInVotings {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+        fn get_value_or_fail<A: Context>(context: &A, name: &str) -> VotingResult<Value> {
+            if let Some(found) = context.get_value(name) {
+                Ok(found.clone())
+            } else {
+                Err(Eval(EvalexprError::VariableIdentifierNotFound(name.to_string())))
+            }
+        }
+        fn collect_simple<B, F>(voters: &[B], f: F) -> VotingResult<Vec<f64>> where B: Context, F: Fn(&B) -> EvalexprResult<Value> {
+            Ok(voters.iter().map(f).map_ok(|value: Value| value.as_number()).collect::<EvalexprResult<EvalexprResult<Vec<_>>>>()??)
+        }
+
+        match self {
+            BuildInVotings::OriginalScore => {
+                get_value_or_fail(global_context, SCORE_CANDIDATE)
+            }
+            BuildInVotings::Votes => {
+                get_value_or_fail(global_context, NUMBER_OF_VOTERS)
+            }
+            BuildInVotings::CombSum => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    Ok(found.clone())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::GCombSum => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    Ok(found.clone())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+
+                Ok(GAvgOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::CombSumTop => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    Ok(found.clone())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+
+                Ok(Aggregation::new(SumOf, NonZeroUsize::new(2)).calculate_desc(calculated.into_iter())?.into())
+            }
+            BuildInVotings::CombSumPow2 => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    Ok(Value::Float(found.as_number().unwrap().powi(2)))
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::CombMax => {
+                Ok(
+                    collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                        Ok(found.clone())
+                    } else {
+                        Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                    })?.iter().max_partial().map_err(|_| AggregationError::NoMaxFound)?
+                        .unwrap()
+                        .clone()
+                        .into()
+                )
+            }
+            BuildInVotings::RR => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
+                    Ok(found.clone())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
+                })?;
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::RRPow2 => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
+                    Ok(found.as_number().unwrap().powi(2).into())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
+                })?;
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::CombSumRR => {
+                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
+                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
+                        Ok(Value::Float(score.as_number().unwrap() * rr.as_number().unwrap()))
+                    } else {
+                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
+                    }
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::CombSumRRPow2 => {
+                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
+                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
+                        Ok(Value::Float(score.as_number().unwrap() * rr.as_number().unwrap().powi(2)))
+                    } else {
+                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
+                    }
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::CombSumPow2RR => {
+                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
+                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
+                        Ok(Value::Float(score.as_number().unwrap().powi(2) * rr.as_number().unwrap()))
+                    } else {
+                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
+                    }
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::CombSumPow2RRPow2 => {
+                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
+                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
+                        Ok(Value::Float(score.as_number().unwrap().powi(2) * rr.as_number().unwrap().powi(2)))
+                    } else {
+                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
+                    }
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                Ok(SumOf.calculate(calculated.into_iter())?.into())
+            }
+            BuildInVotings::ExpCombMnz => {
+                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                Ok((BuildInVotings::CombSumPow2.execute(global_context, voters)?.as_number()? + (n_voters as f64)).into())
+            }
+            BuildInVotings::WCombSum => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    Ok(found.clone())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                let trans = SumOf.calculate(calculated.iter().copied())?;
+                let trans_avg = SumOf.calculate(calculated.into_iter())?;
+                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
+            }
+            BuildInVotings::WCombSumG => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    Ok(found.clone())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                let trans = SumOf.calculate(calculated.iter().copied())?;
+                let trans_avg = GAvgOf.calculate(calculated.into_iter())?;
+                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
+            }
+            BuildInVotings::WGCombSum => {
+                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    Ok(found.clone())
+                } else {
+                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                })?;
+                let trans = SumOf.calculate(calculated.iter().map(|value| value.ln()))?;
+                let trans_avg = AvgOf.calculate(calculated.into_iter())?;
+                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
+            }
+            BuildInVotings::PCombSum => {
+                if voters.is_empty() {
+                    get_value_or_fail(global_context, EPSILON)
+                } else {
+                    let trans = SumOf.calculate(collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                        Ok(found.clone())
+                    } else {
+                        Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
+                    })?.into_iter())?;
+                    let max_rr = voters.iter().map(|value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
+                        match found.as_int() {
+                            Ok(value) => {
+                                Ok(value)
+                            }
+                            Err(_) => {
+                                Err(EvalexprError::ExpectedInt {
+                                    actual: found.clone()
+                                })
+                            }
+                        }
+                    } else {
+                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
+                    }).process_results(|values| {
+                        values.max().unwrap()
+                    })?;
+                    Ok(((trans / get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_number()?) + max_rr as f64).into())
+                }
+            }
+        }
+    }
+}
+
+
+pub struct VotingRegistry {
+    inner: HashMap<String, Arc<dyn VotingMethodMarker + Sync + Send>>
+}
+
+
+pub struct Voting<T: VotingMethod + ?Sized> {
+    /// The limit for the
+    limit: Option<NonZeroUsize>,
     expr: T
 }
 
+impl<T> Voting<T> where T: VotingMethod {
+    pub fn new(limit: Option<NonZeroUsize>, expr: T) -> Self {
+        Self {
+            limit,
+            expr
+        }
+    }
+}
+
+
+impl<T> VotingMethodMarker for Voting<T> where T: VotingMethod {}
+
 impl<T> VotingMethod for Voting<T> where T: VotingMethod {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+        let voters = if let Some(limit) = self.limit {
+            let limit = limit.get();
+            if limit < voters.len() {
+                voters.sort_by_key(|value| value.get_value(RANK).unwrap().as_int().expect("Rank has to be an int!"));
+                &mut voters[..limit]
+            } else {
+                voters
+            }
+        } else {
+            voters
+        };
+
+        global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;
+
         self.expr.execute(global_context, voters)
     }
 }
@@ -77,8 +353,10 @@ enum VotingFunction {
     Multi(Vec<VotingOperation>)
 }
 
+impl VotingMethodMarker for VotingFunction {}
+
 impl VotingMethod for VotingFunction {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
         where
             A : ContextWithMutableVariables,
             B : ContextWithMutableVariables
@@ -182,8 +460,10 @@ enum VotingOperation {
     }
 }
 
+impl VotingMethodMarker for VotingOperation {}
+
 impl VotingMethod for VotingOperation {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VResult<Value>
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
         where
             A : ContextWithMutableVariables,
             B : ContextWithMutableVariables
@@ -202,12 +482,13 @@ impl VotingMethod for VotingOperation {
                 op,
                 expr
             } => {
+
                 let value = voters
                     .into_iter()
                     .map(|value|
                         expr
                         .execute(&mut value.combine_with_mut(global_context))
-                        .and_then(|value| value.as_number().map_err(|op| op.into())))
+                        .and_then(|value| value.as_number().map_err(|err| err.into())))
                     .collect::<Result<Vec<_>, _>>()?;
                 let new_result = op.calculate_desc(value.into_iter())?;
                 global_context.set_value(variable_name.clone(), new_result.into())?;
@@ -245,7 +526,7 @@ impl DisplayTree for VotingOperation {
 impl_display_for_displaytree!(VotingOperation);
 
 trait VotingExecutable: DisplayTree {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value>;
+    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>;
 }
 
 #[derive(Debug)]
@@ -299,7 +580,7 @@ impl DisplayTree for VotingExecutableList {
 impl_display_for_displaytree!(VotingExecutableList);
 
 impl VotingExecutable for VotingExecutableList {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value> {
+    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value> {
         match self {
             VotingExecutableList::Single(value) => {
                 value.execute(context)
@@ -340,7 +621,7 @@ impl InnerIfElse {
 }
 
 impl VotingExecutable for InnerIfElse {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value> {
+    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value> {
         if self.cond.execute(context)?.as_boolean()? {
             self.if_block.execute(context)
         } else {
@@ -401,7 +682,7 @@ impl VotingExpressionOrStatement {
 }
 
 impl VotingExecutable for VotingExpressionOrStatement {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value>
+    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>
     {
         match self {
             VotingExpressionOrStatement::Expression{expr} => {
@@ -443,7 +724,7 @@ enum VotingStatement {
 }
 
 impl VotingExecutable for VotingStatement {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value>
+    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>
     {
         match self {
             VotingStatement::If { cond, if_block } => {
@@ -503,7 +784,7 @@ impl VotingExpression {
 
 impl VotingExecutable for VotingExpression {
     #[inline(always)]
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VResult<Value>
+    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>
     {
 
         match self {
@@ -746,7 +1027,7 @@ pub(crate) mod parse {
     use evalexpr::EvalexprError;
     use nom::branch::alt;
     use nom::bytes::complete::tag;
-    use nom::character::complete::{alphanumeric1, char, digit0, digit1, multispace0, multispace1, one_of, space0, space1};
+    use nom::character::complete::{alphanumeric1, char, digit1, multispace0, multispace1, one_of, space0, space1};
     use nom::combinator::{cut, map, map_res, not, opt, peek, recognize};
     use nom::error::{context, ContextError, FromExternalError, ParseError};
     use nom::{AsChar, InputIter, InputTakeAtPosition, IResult, Parser};
@@ -1158,7 +1439,7 @@ pub(crate) mod parse {
         )(input)
     }
 
-    fn voting_function<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingFunction, E> {
+    pub fn voting_function<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingFunction, E> {
         map_res(many1(preceded(multispace0, voting_operation)), |mut value| {
             match value.len() {
                 0 => Err(NoVotingFound),
@@ -1176,7 +1457,7 @@ pub(crate) mod parse {
         use nom::{Finish};
         use nom::error::VerboseError;
         use crate::voting::parse::{voting_function};
-        use crate::voting::VotingMethod;
+        use crate::voting::{VotingMethod};
 
         const TEST: &str = "aggregate(sss = sumOf): {
             let katze = if (a+b == (c+d)) {

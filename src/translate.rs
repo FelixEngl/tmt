@@ -1,16 +1,17 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use evalexpr::{context_map, EmptyContext, EmptyContextWithBuiltinFunctions, EvalexprError, HashMapContext};
+use evalexpr::{Context, context_map, EmptyContext, EmptyContextWithBuiltinFunctions, EvalexprError, HashMapContext, Value};
 use itertools::{Itertools};
 use nom::combinator::map;
 use rayon::prelude::*;
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
-use crate::toolkit::evalexpr::{CombineableContext, CombinedContextWrapper, CombinedContextWrapperMut};
+use crate::toolkit::evalexpr::{CombineableContext, CombinedContextWrapper, CombinedContextWrapperMut, StaticContext};
 use crate::topicmodel::topic_model::{TopicModel, WordMeta};
 use crate::topicmodel::dictionary::Dictionary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
-use crate::voting::{Voting, VotingMethod};
+use crate::translate::AOrB::{A, B};
+use crate::voting::{EmptyVotingMethod, Voting, VotingMethod, VotingResult};
 
 #[derive(Debug)]
 struct TranslateConfig {
@@ -41,6 +42,35 @@ pub enum TranslateError<T> {
     EvalExpressionError(#[from] EvalexprError),
 }
 
+macro_rules! declare_variable_names {
+    ($($variable_name: ident: $name: literal),+) => {
+        $(
+           pub const $variable_name: &str = $name;
+        )+
+    };
+}
+
+
+declare_variable_names! {
+    EPSILON: "epsilon",
+    VOCABULARY_SIZE_A: "n_voc",
+    VOCABULARY_SIZE_B: "n_voc_target",
+    TOPIC_MAX_PROBABILITY: "topic_max",
+    TOPIC_MIN_PROBABILITY: "topic_min",
+    TOPIC_AVG_PROBABILITY: "topic_avg",
+    TOPIC_SUM_PROBABILITY: "topic_sum",
+    COUNT_OF_VOTERS: "ct_voters",
+    NUMBER_OF_VOTERS: "n_voters",
+    HAS_VOTERS: "hasVoters",
+    HAS_TRANSLATION: "has_translation",
+    IS_ORIGIN_WORD: "is_origin_word",
+    SCORE_CANDIDATE: "score_candidate",
+    RECIPROCAL_RANK: "rr",
+    RANK: "rank",
+    IMPORTANCE: "importance",
+    SCORE: "score"
+}
+
 
 
 fn translate_impl<T>(
@@ -68,15 +98,15 @@ fn translate_impl<T>(
     };
 
     let topic_context = context_map! {
-        "epsilon" => epsilon,
-        "n_voc" => dictionary.voc_a().len() as i64,
-        "n_voc_target" => dictionary.voc_b().len() as i64,
-    }.unwrap();
+        EPSILON => epsilon,
+        VOCABULARY_SIZE_A => dictionary.voc_a().len() as i64,
+        VOCABULARY_SIZE_B => dictionary.voc_b().len() as i64,
+    }.unwrap().to_static_with(EmptyContextWithBuiltinFunctions);
 
     let topic_model = Arc::new(topic_model);
     let dictionary = Arc::new(dictionary);
 
-    let voting = Arc::new(todo!());
+    let voting = Arc::new(Voting::new(None, EmptyVotingMethod));
 
     let result = topic_model.topics().iter()
         .zip_eq(topic_model.topic_metas())
@@ -86,11 +116,11 @@ fn translate_impl<T>(
         .copied()
         .map(|(topic_id, (topic, meta))| {
             let topic_context_2 = context_map! {
-                "topic_max" => meta.stats.max_value,
-                "topic_min" => meta.stats.min_value,
-                "topic_avg" => meta.stats.average_value,
-                "topic_sum" => meta.stats.sum_value,
-            }.unwrap();
+                TOPIC_MAX_PROBABILITY => meta.stats.max_value,
+                TOPIC_MIN_PROBABILITY => meta.stats.min_value,
+                TOPIC_AVG_PROBABILITY => meta.stats.average_value,
+                TOPIC_SUM_PROBABILITY => meta.stats.sum_value,
+            }.unwrap().to_static_with(topic_context.clone());
 
             translate_topic(
                 voting.clone(),
@@ -98,7 +128,7 @@ fn translate_impl<T>(
                 dictionary.clone(),
                 topic_id,
                 topic,
-                topic_context_2.combine_with(&topic_context),
+                topic_context_2,
                 &translate_config
             )
     }).collect::<Vec<_>>();
@@ -108,47 +138,57 @@ fn translate_impl<T>(
 
 
 struct Candidate<'a> {
-    candidate_word_id: usize,
+    candidate_word_id: AOrB<usize>,
+    voting_result: Option<VotingResult<Value>>,
     voters: Option<Vec<&'a Arc<WordMeta>>>
 }
 
+#[derive(Copy, Clone, Debug)]
+enum AOrB<T> {
+    A(T),
+    B(T)
+}
+
 impl<'a> Candidate<'a> {
-    pub fn new(candidate_word_id: usize, voters: Vec<&'a Arc<WordMeta>>) -> Self {
+    pub fn new(candidate_word_id: AOrB<usize>, voting_result: VotingResult<Value>, voters: Vec<&'a Arc<WordMeta>>) -> Self {
         Self {
             candidate_word_id,
+            voting_result: Some(voting_result),
             voters: (!voters.is_empty()).then_some(voters)
         }
     }
 
-    pub fn new_without_voters(candidate_word_id: usize) -> Candidate<'a> {
+    pub fn new_without_voters(candidate_word_id: AOrB<usize>) -> Candidate<'a> {
         Self {
             candidate_word_id,
+            voting_result: None,
             voters: None
         }
     }
 }
 
-fn translate_topic<T, A: ?Sized, B: ?Sized>(
-    voting: Arc<Voting<impl VotingMethod>>,
+
+fn translate_topic<T, A, B>(
+    voting: Arc<Voting<impl VotingMethod + Sync + Send>>,
     topic_model: Arc<TopicModel<T>>,
     dictionary: Arc<Dictionary<T>>,
     topic_id: usize,
     topic: &Vec<f64>,
-    topic_context: CombinedContextWrapper<A, B>,
+    topic_context: StaticContext<A, B>,
     config: &TranslateConfig
-) -> Result<(), TranslateError<T>> {
-    let x = topic
+) -> Result<(), TranslateError<T>> where A: Context, B: Context {
+    let candidates: Vec<_> = topic
         .iter()
         .cloned()
         .enumerate()
         .collect_vec()
         .par_iter()
         .map(|(original, probability)| {
-            let value = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(*original) {
+            let mut candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(*original) {
                 Some(candidates.iter().cloned().map( |candidate|
                     match dictionary.translate_id_to_ids::<BToA>(candidate) {
-                        None  => Candidate::new_without_voters(candidate),
-                        Some(voters) if voters.is_empty() => Candidate::new_without_voters(candidate),
+                        None  => Candidate::new_without_voters(B(candidate)),
+                        Some(voters) if voters.is_empty() => Candidate::new_without_voters(B(candidate)),
                         Some(voters) => {
                             let mapped = voters
                                 .iter()
@@ -157,25 +197,23 @@ fn translate_topic<T, A: ?Sized, B: ?Sized>(
                                 })
                                 .collect::<Vec<_>>();
 
-                            let context = context_map! {
-                                "n_voters" => mapped.len(),
-                                "hasVoters" => !mapped.is_empty(),
-                                "has_translation" => true,
-                                "is_origin_word" => false,
+                            let mut context = context_map! {
+                                COUNT_OF_VOTERS => mapped.len() as i64,
+                                HAS_VOTERS => !mapped.is_empty(),
+                                HAS_TRANSLATION => true,
+                                IS_ORIGIN_WORD => false,
+                                SCORE_CANDIDATE => *probability
                             }.unwrap();
 
-                            let context = context.combine_with(&topic_context);
+                            let mut context = context.combine_with_mut(&topic_context);
 
                             let mut voters = mapped.iter().map(|value| context_map! {
-                                "rr" => 1./ value.rank() as f64,
-                                "rank" => value.rank(),
-                                "importance" => value.importance_rank(),
-                                "score" => value.probability,
+                                RECIPROCAL_RANK => 1./ value.rank() as f64,
+                                RANK => value.rank() as i64,
+                                IMPORTANCE => value.importance_rank() as i64,
+                                SCORE => value.probability,
                             }.unwrap()).collect_vec();
-                            let mut context =(&context).combine_with_mut(&mut EmptyContextWithBuiltinFunctions);
-                            voting.execute(&mut context, voters.as_mut_slice());
-
-                            Candidate::new(candidate, mapped)
+                            Candidate::new(B(candidate), voting.execute(&mut context, voters.as_mut_slice()), mapped)
                         }
                     }
                 ).collect_vec())
@@ -184,27 +222,105 @@ fn translate_topic<T, A: ?Sized, B: ?Sized>(
                 None
             };
 
-            match config.keep_original_word {
+            let candidates = match config.keep_original_word {
                 KeepOriginalWord::Always => {
+                    if let Some(mut candidates) = candidates {
+                        let mut context = context_map! {
+                            COUNT_OF_VOTERS => 1,
+                            HAS_VOTERS => false,
+                            HAS_TRANSLATION => true,
+                            IS_ORIGIN_WORD => true,
+                            SCORE_CANDIDATE => *probability
+                        }.unwrap();
 
+                        let mut context = context.combine_with_mut(&topic_context);
+
+                        let original_meta = topic_model.get_word_meta(topic_id, *original).unwrap();
+
+                        let mut voters = vec![
+                            context_map! {
+                                RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
+                                RANK => original_meta.rank() as i64,
+                                IMPORTANCE => original_meta.importance_rank() as i64,
+                                SCORE => original_meta.probability,
+                            }.unwrap()
+                        ];
+
+                        candidates.push(Candidate::new(A(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta]));
+
+                        Some(candidates)
+                    } else {
+                        let mut context = context_map! {
+                            COUNT_OF_VOTERS => 1,
+                            HAS_VOTERS => false,
+                            HAS_TRANSLATION => false,
+                            IS_ORIGIN_WORD => true,
+                            SCORE_CANDIDATE => *probability
+                        }.unwrap();
+
+                        let mut context = context.combine_with_mut(&topic_context);
+
+                        let original_meta = topic_model.get_word_meta(topic_id, *original).unwrap();
+
+                        let mut voters = vec![
+                            context_map! {
+                                RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
+                                RANK => original_meta.rank() as i64,
+                                IMPORTANCE => original_meta.importance_rank() as i64,
+                                SCORE => original_meta.probability,
+                            }.unwrap()
+                        ];
+
+                        Some(
+                            vec![
+                                Candidate::new(A(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
+                            ]
+                        )
+                    }
                 }
                 KeepOriginalWord::IfNoTranslation => {
+                    if let Some(candidates) = candidates {
+                        Some(candidates)
+                    } else {
+                        let mut context = context_map! {
+                                COUNT_OF_VOTERS => 1,
+                                HAS_VOTERS => false,
+                                HAS_TRANSLATION => false,
+                                IS_ORIGIN_WORD => true,
+                                SCORE_CANDIDATE => *probability
+                            }.unwrap();
 
+                        let mut context = context.combine_with_mut(&topic_context);
+
+                        let original_meta = topic_model.get_word_meta(topic_id, *original).unwrap();
+
+                        let mut voters = vec![
+                            context_map! {
+                                RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
+                                RANK => original_meta.rank() as i64,
+                                IMPORTANCE => original_meta.importance_rank() as i64,
+                                SCORE => original_meta.probability,
+                            }.unwrap()
+                        ];
+
+                        Some(
+                            vec![
+                                Candidate::new(A(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
+                            ]
+                        )
+                    }
                 }
                 KeepOriginalWord::Never => {
-
+                    candidates
                 }
+            };
+
+            if let Some(candidates) = candidates {
+                
+            } else {
+                None
             }
-        });
-    //
-    // for (word_id, probability) in topic.iter().enumerate() {
-    //     let mut word_bound_context = context.clone();
-    //     word_bound_context.set_value_direct("hasTranslation", dictionary.can_translate_id(word_id))?;
-    //
-    // }
-
-
-
+        }).collect();
 
     todo!()
 }
