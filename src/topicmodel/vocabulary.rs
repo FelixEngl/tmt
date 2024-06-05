@@ -11,7 +11,7 @@ use std::path::Path;
 use std::slice::Iter;
 use std::str::FromStr;
 use itertools::Itertools;
-use rayon::prelude::IntoParallelIterator;
+use rayon::prelude::{FromParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeStruct;
@@ -317,6 +317,7 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
 }
 
 
+
 impl<T> IntoParallelIterator for Vocabulary<T> {
     type Iter = rayon::vec::IntoIter<HashRef<T>>;
     type Item = HashRef<T>;
@@ -326,6 +327,50 @@ impl<T> IntoParallelIterator for Vocabulary<T> {
     }
 }
 
+
+impl<T> FromIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+    fn from_iter<I: IntoIterator<Item=HashRef<T>>>(iter: I) -> Self {
+        let mut new = Self::new();
+        for value in iter {
+            new.add_hash_ref(value);
+        }
+        return new;
+    }
+}
+
+impl<'a, T> FromIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+    fn from_iter<I: IntoIterator<Item=&'a HashRef<T>>>(iter: I) -> Self {
+        let mut new = Self::new();
+        for value in iter {
+            new.add_hash_ref(value.clone());
+        }
+        return new;
+    }
+}
+
+impl<T> FromParallelIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+    fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=HashRef<T>> {
+        let mut new = Self::new();
+        for value in par_iter.into_par_iter().collect_vec_list() {
+            for value in value.into_iter() {
+                new.add_hash_ref(value);
+            }
+        }
+        return new;
+    }
+}
+
+impl<'a, T> FromParallelIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+    fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=&'a HashRef<T>> {
+        let mut new = Self::new();
+        for value in par_iter.into_par_iter().collect_vec_list() {
+            for value in value.into_iter() {
+                new.add_hash_ref(value.clone());
+            }
+        }
+        return new;
+    }
+}
 
 
 
