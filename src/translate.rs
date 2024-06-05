@@ -1,18 +1,19 @@
+use std::cmp::Ordering;
+use std::error::Error;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
-use evalexpr::{Context, context_map, EmptyContext, EmptyContextWithBuiltinFunctions, EvalexprError, HashMapContext, Value};
+use evalexpr::{Context, context_map, EmptyContextWithBuiltinFunctions};
 use itertools::{Itertools};
-use nom::combinator::map;
 use rayon::prelude::*;
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
-use crate::toolkit::evalexpr::{CombineableContext, CombinedContextWrapper, CombinedContextWrapperMut, StaticContext};
-use crate::topicmodel::topic_model::{TopicModel, WordMeta};
+use crate::toolkit::evalexpr::{CombineableContext, StaticContext};
+use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, TopicModel, WordMeta};
 use crate::topicmodel::dictionary::Dictionary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
 use crate::translate::LanguageOrigin::{Origin, Target};
-use crate::voting::{EmptyVotingMethod, Voting, VotingMethod, VotingResult};
+use crate::voting::{EmptyVotingMethod, Voting, VotingExpressionError, VotingMethod, VotingResult};
 
 #[derive(Debug)]
 struct TranslateConfig {
@@ -37,11 +38,59 @@ pub enum KeepOriginalWord {
 }
 
 #[derive(Debug, Error)]
-pub enum TranslateError<T> {
+pub enum TranslateError<L> {
     #[error("The dictionary is not compatible with the topic model.")]
-    InvalidDictionary(TopicModel<T>, Dictionary<T>),
+    InvalidDictionary(TopicModel<L>, Dictionary<L>),
     #[error(transparent)]
-    EvalExpressionError(#[from] EvalexprError),
+    VotingError(#[from] VotingExpressionError),
+    #[error(transparent)]
+    WithOrigin(#[from] TranslateErrorWithOrigin)
+}
+
+#[derive(Debug, Error)]
+#[error("Failedwith an error!")]
+pub struct TranslateErrorWithOrigin {
+    topic_id: usize,
+    word_id: usize,
+    source: Box<dyn Error + Send + Sync>
+}
+
+trait MapsToTranslateErrorWithOrigin {
+    type Return;
+    fn originates_at(self, topic_id: usize, word_id: usize) -> Self::Return;
+}
+
+impl<T> MapsToTranslateErrorWithOrigin for VotingResult<T> {
+    type Return = Result<T, TranslateErrorWithOrigin>;
+
+    fn originates_at(self, topic_id: usize, word_id: usize) -> Self::Return {
+        match self {
+            Ok(value) => {
+                Ok(value)
+            }
+            Err(err) => {
+                Err(
+                    TranslateErrorWithOrigin {
+                        topic_id,
+                        word_id,
+                        source: err.into()
+                    }
+                )
+            }
+        }
+    }
+}
+
+impl MapsToTranslateErrorWithOrigin for VotingExpressionError {
+    type Return = TranslateErrorWithOrigin;
+
+    fn originates_at(self, topic_id: usize, word_id: usize) -> Self::Return {
+        TranslateErrorWithOrigin {
+            topic_id,
+            word_id,
+            source: self.into()
+        }
+    }
 }
 
 
@@ -66,6 +115,7 @@ impl<T> Deref for LanguageOrigin<T> {
 
 
 macro_rules! declare_variable_names {
+    () => {};
     ($variable_name: ident: $name: literal, $($tt:tt)*) => {
         pub const $variable_name: &str = $name;
         declare_variable_names!($($tt)*);
@@ -80,23 +130,37 @@ macro_rules! declare_variable_names {
 
 
 declare_variable_names! {
-    doc = "The epsilon of the calculation"
+    doc = "The epsilon of the calculation."
     EPSILON: "epsilon",
+    doc = "The size of the vocabulary in language a."
     VOCABULARY_SIZE_A: "n_voc",
+    doc = "The size of the vocabulary in language b."
     VOCABULARY_SIZE_B: "n_voc_target",
+    doc = "The max probability of the topic."
     TOPIC_MAX_PROBABILITY: "topic_max",
+    doc = "The min probability of the topic."
     TOPIC_MIN_PROBABILITY: "topic_min",
+    doc = "The avg probability of the topic."
     TOPIC_AVG_PROBABILITY: "topic_avg",
+    doc = "The sum of all probabilities of the topic."
     TOPIC_SUM_PROBABILITY: "topic_sum",
+    doc = "The number of available voters"
     COUNT_OF_VOTERS: "ct_voters",
+    doc = "The number of used voters."
     NUMBER_OF_VOTERS: "n_voters",
-    HAS_VOTERS: "hasVoters",
+    doc = "True if the word in language A has translations to language B."
     HAS_TRANSLATION: "has_translation",
+    doc = "True if this is the original word in language A"
     IS_ORIGIN_WORD: "is_origin_word",
+    doc = "The original score of the candidate."
     SCORE_CANDIDATE: "score_candidate",
+    doc = "The reciprocal rank of the word."
     RECIPROCAL_RANK: "rr",
+    doc = "The rank of the word."
     RANK: "rank",
+    doc = "The importance rank of the word."
     IMPORTANCE: "importance",
+    doc = "The score of the word in the topic model."
     SCORE: "score",
 }
 
@@ -107,13 +171,9 @@ fn translate_impl<T>(
     dictionary: Dictionary<T>,
     translate_config: TranslateConfig
 ) -> Result<TopicModel<T>, TranslateError<T>> {
-
-
     if topic_model.vocabulary().len() != dictionary.voc_a().len() {
         return Err(TranslateError::InvalidDictionary(topic_model, dictionary));
     }
-
-
 
     let epsilon = if let Some(value) = translate_config.epsilon {
         value
@@ -137,12 +197,10 @@ fn translate_impl<T>(
 
     let voting = Arc::new(Voting::new(None, EmptyVotingMethod));
 
-    let result = topic_model.topics().iter()
+    // topic to word id to probable translation candidates.
+    let result = topic_model.topics().par_iter()
         .zip_eq(topic_model.topic_metas())
         .enumerate()
-        .collect_vec()
-        .par_iter()
-        .copied()
         .map(|(topic_id, (topic, meta))| {
             let topic_context_2 = context_map! {
                 TOPIC_MAX_PROBABILITY => meta.stats.max_value,
@@ -160,7 +218,7 @@ fn translate_impl<T>(
                 topic_context_2,
                 &translate_config
             )
-    }).collect::<Vec<_>>();
+    }).collect::<Result<Vec<_>, _>>()?;
 
     todo!()
 }
@@ -168,31 +226,47 @@ fn translate_impl<T>(
 #[derive(Debug, Clone)]
 struct Candidate<'a> {
     candidate_word_id: LanguageOrigin<usize>,
-    voting_result: Option<Value>,
-    voters: Option<Vec<&'a Arc<WordMeta>>>
+    relative_score: f64,
+    voters: Vec<&'a Arc<WordMeta>>,
+    origin_word_id: usize
 }
 
 
 impl<'a> Candidate<'a> {
-    pub fn new(candidate_word_id: LanguageOrigin<usize>, voting_result: VotingResult<Value>, voters: Vec<&'a Arc<WordMeta>>) -> VotingResult<Self> {
-        Ok(
-            Self {
-                candidate_word_id,
-                voting_result: Some(voting_result?),
-                voters: (!voters.is_empty()).then_some(voters)
-            }
-        )
-    }
-
-    pub fn new_without_voters(candidate_word_id: LanguageOrigin<usize>) -> Candidate<'a> {
+    pub fn new(
+        candidate_word_id: LanguageOrigin<usize>,
+        relative_score: f64,
+        voters: Vec<&'a Arc<WordMeta>>,
+        origin_word_id: usize,
+    ) -> Self {
         Self {
             candidate_word_id,
-            voting_result: None,
-            voters: None
+            relative_score,
+            voters,
+            origin_word_id
         }
     }
 }
 
+impl PartialEq<Self> for Candidate<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.relative_score == other.relative_score
+    }
+}
+
+impl PartialOrd for Candidate<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        f64::partial_cmp(&other.relative_score, &self.relative_score)
+    }
+}
+
+impl Eq for Candidate<'_> {}
+
+impl Ord for Candidate<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f64::total_cmp(&other.relative_score, &self.relative_score)
+    }
+}
 
 fn translate_topic<T, A, B>(
     voting: Arc<Voting<impl VotingMethod + Sync + Send>>,
@@ -200,21 +274,18 @@ fn translate_topic<T, A, B>(
     dictionary: Arc<Dictionary<T>>,
     topic_id: usize,
     topic: &Vec<f64>,
-    topic_context: StaticContext<Origin, Target>,
+    topic_context: StaticContext<A, B>,
     config: &TranslateConfig
-) -> Result<(), TranslateError<T>> where A: Context, B: Context {
-    let candidates: Vec<_> = topic
-        .iter()
-        .cloned()
-        .enumerate()
-        .collect_vec()
+) -> Result<Vec<Option<Vec<Candidate>>>, TranslateErrorWithOrigin> where A: Context, B: Context {
+    topic
         .par_iter()
-        .map(|(original, probability)| {
-            let mut candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(*original) {
-                Some(candidates.iter().cloned().map( |candidate|
+        .enumerate()
+        .map(|(original_word_id, probability)| {
+            let mut candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_word_id) {
+                Some(candidates.par_iter().cloned().filter_map( |candidate|
                     match dictionary.translate_id_to_ids::<BToA>(candidate) {
-                        None  => Candidate::new_without_voters(Target(candidate)),
-                        Some(voters) if voters.is_empty() => Candidate::new_without_voters(Target(candidate)),
+                        None  => None,
+                        Some(voters) if voters.is_empty() => None,
                         Some(voters) => {
                             let mapped = voters
                                 .iter()
@@ -225,7 +296,6 @@ fn translate_topic<T, A, B>(
 
                             let mut context = context_map! {
                                 COUNT_OF_VOTERS => mapped.len() as i64,
-                                HAS_VOTERS => !mapped.is_empty(),
                                 HAS_TRANSLATION => true,
                                 IS_ORIGIN_WORD => false,
                                 SCORE_CANDIDATE => *probability
@@ -239,101 +309,112 @@ fn translate_topic<T, A, B>(
                                 IMPORTANCE => value.importance_rank() as i64,
                                 SCORE => value.probability,
                             }.unwrap()).collect_vec();
-                            Candidate::new(Target(candidate), voting.execute(&mut context, voters.as_mut_slice()), mapped)
+                            Some(
+                                match voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
+                                    Ok(result) => {
+                                        Ok(Candidate::new(Target(candidate), result, mapped, original_word_id))
+                                    }
+                                    Err(err) => {
+                                        Err(err.originates_at(topic_id, original_word_id))
+                                    }
+                                }
+                            )
                         }
                     }
-                ).collect_vec())
+                ).collect::<Result<Vec<Candidate>, TranslateErrorWithOrigin>>())
             } else {
-                /// Unknown
+                // Unknown
                 None
-            };
+            }.transpose();
+
+            fn vote_for_origin<'a, A, B>(topic_model: &'a impl BasicTopicModel, topic_context: &StaticContext<A, B>, has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &Voting<impl VotingMethod + Sync + Send>) -> Result<Candidate<'a>, TranslateErrorWithOrigin> where A: Context, B: Context {
+                let mut context = context_map! {
+                    COUNT_OF_VOTERS => 1,
+                    HAS_TRANSLATION => has_translation,
+                    IS_ORIGIN_WORD => true,
+                    SCORE_CANDIDATE => probability
+                }.unwrap();
+
+                let mut context = context.combine_with_mut(topic_context);
+
+                let original_meta = topic_model.get_word_meta(topic_id, word_id).unwrap();
+
+                let mut voters = vec![
+                    context_map! {
+                        RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
+                        RANK => original_meta.rank() as i64,
+                        IMPORTANCE => original_meta.importance_rank() as i64,
+                        SCORE => original_meta.probability,
+                    }.unwrap()
+                ];
+
+                match voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
+                    Ok(result) => {
+                        Ok(Candidate::new(Origin(word_id), result, vec![original_meta], word_id))
+                    }
+                    Err(err) => {
+                        Err(err.originates_at(topic_id, word_id))
+                    }
+                }
+            }
 
             let candidates = match config.keep_original_word {
                 KeepOriginalWord::Always => {
-                    if let Some(mut candidates) = candidates {
-                        let mut context = context_map! {
-                            COUNT_OF_VOTERS => 1,
-                            HAS_VOTERS => false,
-                            HAS_TRANSLATION => true,
-                            IS_ORIGIN_WORD => true,
-                            SCORE_CANDIDATE => *probability
-                        }.unwrap();
-
-                        let mut context = context.combine_with_mut(&topic_context);
-
-                        let original_meta = topic_model.get_word_meta(topic_id, *original).unwrap();
-
-                        let mut voters = vec![
-                            context_map! {
-                                RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
-                                RANK => original_meta.rank() as i64,
-                                IMPORTANCE => original_meta.importance_rank() as i64,
-                                SCORE => original_meta.probability,
-                            }.unwrap()
-                        ];
-
-                        candidates.push(Candidate::new(Origin(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta]));
-
-                        Some(candidates)
+                    if let Ok(Some(mut candidates)) = candidates {
+                        match vote_for_origin(
+                            topic_model.as_ref(),
+                            &topic_context,
+                            true,
+                            topic_id,
+                            original_word_id,
+                            *probability,
+                            &voting
+                        ) {
+                            Ok(value) => {
+                                candidates.push(value);
+                                Ok(Some(candidates))
+                            }
+                            Err(value) => {Err(value)}
+                        }
                     } else {
-                        let mut context = context_map! {
-                            COUNT_OF_VOTERS => 1,
-                            HAS_VOTERS => false,
-                            HAS_TRANSLATION => false,
-                            IS_ORIGIN_WORD => true,
-                            SCORE_CANDIDATE => *probability
-                        }.unwrap();
-
-                        let mut context = context.combine_with_mut(&topic_context);
-
-                        let original_meta = topic_model.get_word_meta(topic_id, *original).unwrap();
-
-                        let mut voters = vec![
-                            context_map! {
-                                RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
-                                RANK => original_meta.rank() as i64,
-                                IMPORTANCE => original_meta.importance_rank() as i64,
-                                SCORE => original_meta.probability,
-                            }.unwrap()
-                        ];
-
-                        Some(
-                            vec![
-                                Candidate::new(Origin(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
-                            ]
-                        )
+                        match vote_for_origin(
+                            topic_model.as_ref(),
+                            &topic_context,
+                            false,
+                            topic_id,
+                            original_word_id,
+                            *probability,
+                            &voting
+                        ) {
+                            Ok(value) => {
+                                Ok(Some(vec![value]))
+                            }
+                            Err(value) => {
+                                Err(value)
+                            }
+                        }
                     }
                 }
                 KeepOriginalWord::IfNoTranslation => {
-                    if let Some(candidates) = candidates {
-                        Some(candidates)
+                    if let Ok(None) = candidates {
+                        match vote_for_origin(
+                            topic_model.as_ref(),
+                            &topic_context,
+                            false,
+                            topic_id,
+                            original_word_id,
+                            *probability,
+                            &voting
+                        ) {
+                            Ok(value) => {
+                                Ok(Some(vec![value]))
+                            }
+                            Err(value) => {
+                                Err(value)
+                            }
+                        }
                     } else {
-                        let mut context = context_map! {
-                                COUNT_OF_VOTERS => 1,
-                                HAS_VOTERS => false,
-                                HAS_TRANSLATION => false,
-                                IS_ORIGIN_WORD => true,
-                                SCORE_CANDIDATE => *probability
-                            }.unwrap();
-
-                        let mut context = context.combine_with_mut(&topic_context);
-
-                        let original_meta = topic_model.get_word_meta(topic_id, *original).unwrap();
-
-                        let mut voters = vec![
-                            context_map! {
-                                RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
-                                RANK => original_meta.rank() as i64,
-                                IMPORTANCE => original_meta.importance_rank() as i64,
-                                SCORE => original_meta.probability,
-                            }.unwrap()
-                        ];
-
-                        Some(
-                            vec![
-                                Candidate::new(Origin(*original), voting.execute(&mut context, voters.as_mut_slice()), vec![original_meta])
-                            ]
-                        )
+                        candidates
                     }
                 }
                 KeepOriginalWord::Never => {
@@ -341,14 +422,25 @@ fn translate_topic<T, A, B>(
                 }
             };
 
-            if let Some(candidates) = candidates {
-                
+            if let Some(top_candidate_limit) = config.top_candidate_limit {
+                if let Ok(Some(mut candidates)) = candidates {
+                    let top_candidate_limit = top_candidate_limit.get();
+                    Ok(Some(
+                        if top_candidate_limit < candidates.len() {
+                            candidates.sort();
+                            candidates.truncate(top_candidate_limit);
+                            candidates
+                        } else {
+                            candidates
+                        }
+                    ))
+                } else {
+                    candidates
+                }
             } else {
-                None
+                candidates
             }
-        }).collect();
-
-    todo!()
+        }).collect()
 }
 
 

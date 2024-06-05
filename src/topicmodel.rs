@@ -13,6 +13,7 @@ pub mod traits;
 pub mod enums;
 mod io;
 pub mod reference;
+mod math;
 
 
 pub fn create_topic_model_specific_dictionary<T: Eq + Hash + Clone>(vocabulary: &Vocabulary<T>, dictionary: &Dictionary<T>) -> Dictionary<T> {

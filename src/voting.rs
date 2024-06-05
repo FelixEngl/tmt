@@ -40,6 +40,15 @@ pub trait VotingMethodMarker{}
 
 
 pub trait VotingMethod: VotingMethodMarker {
+    #[inline]
+    fn execute_to_f64<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<f64>
+        where
+            A : ContextWithMutableVariables,
+            B : ContextWithMutableVariables
+    {
+        Ok(self.execute(global_context,voters)?.as_number()?)
+    }
+
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
         where
             A : ContextWithMutableVariables,

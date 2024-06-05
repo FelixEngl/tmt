@@ -1,6 +1,3 @@
-use std::borrow::Cow;
-use std::borrow::Cow::{Borrowed, Owned};
-use std::cmp::Reverse;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::Sum;
 use std::num::{NonZeroUsize};
@@ -109,8 +106,6 @@ pub enum AggregationError {
     NoMaxFound,
     #[error("There is no min value!")]
     NoMinFound,
-    #[error("Illegal Value")]
-    IllegalValue
 }
 
 
@@ -131,7 +126,7 @@ pub enum AggregationType {
 
 
 impl AggregationType {
-    pub fn calculate<T, I>(&self, mut iter: I) -> Result<f64, AggregationError>
+    pub fn calculate<T, I>(&self, iter: I) -> Result<f64, AggregationError>
         where
             T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
             I: Iterator<Item=T>,
