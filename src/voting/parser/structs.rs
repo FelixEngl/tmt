@@ -7,6 +7,7 @@ use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodMarker, Vot
 use crate::voting::aggregations::Aggregation;
 use crate::voting::display::{DisplayTree, IndentWriter};
 use crate::voting::parser::traits::VotingExecutable;
+use crate::voting::traits::LimitableVotingMethodMarker;
 use crate::voting::walk::walk_left_to_right;
 
 macro_rules! impl_display_for_displaytree {
@@ -30,6 +31,7 @@ pub enum VotingFunction {
     Multi(Vec<VotingOperation>)
 }
 
+impl LimitableVotingMethodMarker for VotingFunction {}
 impl VotingMethodMarker for VotingFunction {}
 
 impl VotingMethod for VotingFunction {

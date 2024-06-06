@@ -7,15 +7,18 @@ use crate::translate::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_
 use crate::voting::{VotingMethod, VotingMethodMarker, VotingResult};
 use crate::voting::aggregations::{Aggregation, AggregationError};
 use crate::voting::aggregations::AggregationType::{AvgOf, GAvgOf, SumOf};
+use crate::voting::traits::LimitableVotingMethodMarker;
 use crate::voting::VotingExpressionError::{Eval, NoValue};
 
 
 /// An empty voting method if nothing works
 pub struct EmptyVotingMethod;
 
+impl LimitableVotingMethodMarker for EmptyVotingMethod {}
 impl VotingMethodMarker for EmptyVotingMethod {}
 
 impl VotingMethod for EmptyVotingMethod {
+
     fn execute<A, B>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
         return Err(NoValue)
     }
@@ -44,9 +47,11 @@ pub enum BuildInVoting {
     PCombSum
 }
 
+impl LimitableVotingMethodMarker for BuildInVoting {}
 impl VotingMethodMarker for BuildInVoting {}
 
 impl VotingMethod for BuildInVoting {
+
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
         fn get_value_or_fail<A: Context>(context: &A, name: &str) -> VotingResult<Value> {
             if let Some(found) = context.get_value(name) {

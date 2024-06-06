@@ -16,7 +16,8 @@ use crate::topicmodel::dictionary::Dictionary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
 use crate::topicmodel::vocabulary::Vocabulary;
 use crate::translate::LanguageOrigin::{Origin, Target};
-use crate::voting::{VotingExpressionError, VotingMethod, VotingResult, VotingMethodMarker};
+use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
+use crate::voting::traits::VotingMethodMarker;
 
 #[derive(Debug)]
 struct TranslateConfig<V: VotingMethodMarker> {
@@ -164,6 +165,12 @@ declare_variable_names! {
     IMPORTANCE: "importance",
     doc = "The score of the word in the topic model."
     SCORE: "score",
+    doc = "The word id of a voter."
+    VOTER_ID: "voter_id",
+    doc = "The word id of a candidate."
+    CANDIDATE_ID: "candidate_id",
+    doc = "The topic id."
+    TOPIC_ID: "topic_id",
 }
 
 
@@ -207,6 +214,7 @@ fn translate_topic_model<'a, T, V>(
                 TOPIC_MIN_PROBABILITY => meta.stats.min_value,
                 TOPIC_AVG_PROBABILITY => meta.stats.average_value,
                 TOPIC_SUM_PROBABILITY => meta.stats.sum_value,
+                TOPIC_ID => topic_id as i64
             }.unwrap().to_static_with(topic_context.clone());
 
             translate_topic(
@@ -370,20 +378,26 @@ fn translate_single_candidate<T, A, B, V>(
                         .collect::<Vec<_>>();
 
                     let mut context = context_map! {
-                                COUNT_OF_VOTERS => mapped.len() as i64,
-                                HAS_TRANSLATION => true,
-                                IS_ORIGIN_WORD => false,
-                                SCORE_CANDIDATE => probability
-                            }.unwrap();
+                        COUNT_OF_VOTERS => mapped.len() as i64,
+                        HAS_TRANSLATION => true,
+                        IS_ORIGIN_WORD => false,
+                        SCORE_CANDIDATE => probability,
+                        CANDIDATE_ID => candidate as i64
+                    }.unwrap();
 
                     let mut context = context.combine_with_mut(topic_context);
 
-                    let mut voters = mapped.iter().map(|value| context_map! {
-                                RECIPROCAL_RANK => 1./ value.rank() as f64,
-                                RANK => value.rank() as i64,
-                                IMPORTANCE => value.importance_rank() as i64,
-                                SCORE => value.probability,
-                            }.unwrap()).collect_vec();
+                    let mut voters = mapped
+                        .iter()
+                        .map(|value| context_map! {
+                            RECIPROCAL_RANK => 1./ value.rank() as f64,
+                            RANK => value.rank() as i64,
+                            IMPORTANCE => value.importance_rank() as i64,
+                            SCORE => value.probability,
+                            VOTER_ID => value.word_id as i64
+                        }.unwrap())
+                        .collect_vec();
+
                     Some(
                         match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
                             Ok(result) => {
@@ -404,11 +418,12 @@ fn translate_single_candidate<T, A, B, V>(
 
     fn vote_for_origin<'a, A, B>(topic_model: &'a impl BasicTopicModel, topic_context: &StaticContext<A, B>, has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &(impl VotingMethod + Sync + Send)) -> Result<Candidate, TranslateErrorWithOrigin> where A: Context, B: Context {
         let mut context = context_map! {
-                    COUNT_OF_VOTERS => 1,
-                    HAS_TRANSLATION => has_translation,
-                    IS_ORIGIN_WORD => true,
-                    SCORE_CANDIDATE => probability
-                }.unwrap();
+            COUNT_OF_VOTERS => 1,
+            HAS_TRANSLATION => has_translation,
+            IS_ORIGIN_WORD => true,
+            SCORE_CANDIDATE => probability,
+            CANDIDATE_ID => word_id as i64
+        }.unwrap();
 
         let mut context = context.combine_with_mut(topic_context);
 
@@ -416,11 +431,12 @@ fn translate_single_candidate<T, A, B, V>(
 
         let mut voters = vec![
             context_map! {
-                        RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
-                        RANK => original_meta.rank() as i64,
-                        IMPORTANCE => original_meta.importance_rank() as i64,
-                        SCORE => original_meta.probability,
-                    }.unwrap()
+                RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
+                RANK => original_meta.rank() as i64,
+                IMPORTANCE => original_meta.importance_rank() as i64,
+                SCORE => original_meta.probability,
+                VOTER_ID => word_id as i64
+            }.unwrap()
         ];
 
         match voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
@@ -528,12 +544,13 @@ mod test {
     use std::num::NonZeroUsize;
     use crate::topicmodel::dictionary::Dictionary;
     use crate::topicmodel::dictionary::direction::Invariant;
-    use crate::topicmodel::topic_model::{BasicTopicModel, TopicModel};
+    use crate::topicmodel::topic_model::{TopicModel};
     use crate::topicmodel::vocabulary::Vocabulary;
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::{translate_topic_model, TranslateConfig};
-    use crate::voting::BuildInVoting::CombSum;
-    use crate::voting::IntoVotingWithLimit;
+    use crate::voting::BuildInVoting::{CombSum};
+    use crate::voting::spy::IntoSpy;
+    use crate::voting::traits::IntoVotingWithLimit;
 
     #[test]
     fn test_complete_translation(){
@@ -618,7 +635,7 @@ mod test {
 
         let config = TranslateConfig {
             threshold: None,
-            voting: CombSum.with_limit(NonZeroUsize::new(3).unwrap()),
+            voting: CombSum.with_limit(NonZeroUsize::new(3).unwrap()).spy(),
             epsilon: 0.00001.into(),
             keep_original_word: Never,
             top_candidate_limit: Some(NonZeroUsize::new(3).unwrap())
@@ -629,6 +646,16 @@ mod test {
             &dict,
             &config
         ).unwrap();
+
+        for (id, (candidate_id, candidate_prob, result), voters) in config.voting.spy_history().lock().unwrap().iter() {
+            println!("Topic: {id}");
+            println!("  Candidate: {candidate_id} ({candidate_prob})");
+            println!("  Result: {result:?}");
+            println!("  Voters:");
+            for (voter_id, voter_score) in voters {
+                println!("    {voter_id} ({voter_score})")
+            }
+        }
 
         model_a.show_10().unwrap();
         model_b.show_10().unwrap();
