@@ -207,7 +207,7 @@ pub mod parse {
     use thiserror::Error;
     use crate::toolkit::nom::ws;
     use crate::voting::aggregations::{Aggregation, AggregationType};
-    use crate::voting::parse::{ErrorType};
+    use crate::voting::parser::logic::ErrorType;
 
     #[derive(Debug, Clone, Error)]
     pub enum AggregationParserError {

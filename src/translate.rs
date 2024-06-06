@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::collections::hash_map::Entry;
 use std::error::Error;
 use std::hash::Hash;
@@ -12,12 +12,12 @@ use rayon::prelude::*;
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
 use crate::toolkit::evalexpr::{CombineableContext, StaticContext};
-use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, TopicModel, TopicModelWithDocumentStats, WordMeta};
+use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, TopicModel, TopicModelWithDocumentStats};
 use crate::topicmodel::dictionary::Dictionary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
 use crate::topicmodel::vocabulary::Vocabulary;
 use crate::translate::LanguageOrigin::{Origin, Target};
-use crate::voting::{EmptyVotingMethod, Voting, VotingExpressionError, VotingMethod, VotingResult};
+use crate::voting::{EmptyVotingMethod, VotingWithLimit, VotingExpressionError, VotingMethod, VotingResult, Voting};
 
 #[derive(Debug)]
 struct TranslateConfig {
@@ -199,7 +199,7 @@ fn translate_impl<T>(
     let topic_model = Arc::new(topic_model);
     let dictionary = Arc::new(dictionary);
 
-    let voting = Arc::new(Voting::new(None, EmptyVotingMethod));
+    let voting = Arc::new(Voting::new(EmptyVotingMethod));
 
     // topic to word id to probable translation candidates.
     let result = topic_model
@@ -328,7 +328,7 @@ impl Ord for Candidate {
 }
 
 fn translate_topic<T, A, B>(
-    voting: Arc<Voting<impl VotingMethod + Sync + Send>>,
+    voting: Arc<impl VotingMethod + Sync + Send>,
     topic_model: Arc<TopicModel<T>>,
     dictionary: Arc<Dictionary<T>>,
     topic_id: usize,
@@ -357,7 +357,7 @@ fn translate_topic<T, A, B>(
 
 #[inline(always)]
 fn translate_single_candidate<T, A, B>(
-    voting: &Voting<impl VotingMethod + Sync + Send>,
+    voting: &Arc<impl VotingMethod + Sync + Send>,
     topic_model: &TopicModel<T>,
     dictionary: &Dictionary<T>,
     topic_id: usize,
@@ -412,7 +412,7 @@ fn translate_single_candidate<T, A, B>(
         None
     };
 
-    fn vote_for_origin<'a, A, B>(topic_model: &'a impl BasicTopicModel, topic_context: &StaticContext<A, B>, has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &Voting<impl VotingMethod + Sync + Send>) -> Result<Candidate, TranslateErrorWithOrigin> where A: Context, B: Context {
+    fn vote_for_origin<'a, A, B>(topic_model: &'a impl BasicTopicModel, topic_context: &StaticContext<A, B>, has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &Arc<impl VotingMethod + Sync + Send>) -> Result<Candidate, TranslateErrorWithOrigin> where A: Context, B: Context {
         let mut context = context_map! {
                     COUNT_OF_VOTERS => 1,
                     HAS_TRANSLATION => has_translation,
