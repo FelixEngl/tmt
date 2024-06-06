@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
@@ -52,6 +54,9 @@ pub struct Dictionary<T> {
     map_b_to_a: Vec<Vec<usize>>
 }
 
+unsafe impl<T> Send for Dictionary<T>{}
+unsafe impl<T> Sync for Dictionary<T>{}
+
 impl<T> Dictionary<T> {
     pub fn new() -> Self {
         Self {
@@ -71,6 +76,20 @@ impl<T> Dictionary<T> {
             voc_b: Default::default(),
             map_a_to_b,
             map_b_to_a: Default::default(),
+        }
+    }
+
+    pub fn from_voc(voc_a: Vocabulary<T>, voc_b: Vocabulary<T>) -> Self {
+        let mut map_a_to_b = Vec::new();
+        map_a_to_b.resize_with(voc_a.len(), || Vec::with_capacity(1));
+        let mut map_b_to_a = Vec::new();
+        map_b_to_a.resize_with(voc_b.len(), || Vec::with_capacity(1));
+
+        Self {
+            voc_a,
+            voc_b,
+            map_a_to_b,
+            map_b_to_a,
         }
     }
 

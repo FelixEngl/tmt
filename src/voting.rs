@@ -1,12 +1,5 @@
-use std::fmt::{Debug, Display, Write};
 use std::num::NonZeroUsize;
-use evalexpr::{Context, ContextWithMutableVariables, Value};
-use itertools::Itertools;
-use nom::error::ParseError;
-use nom::{AsChar, Compare, InputTake, InputTakeAtPosition};
-use strum::VariantArray;
-use crate::toolkit::evalexpr::CombineableContext;
-use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
+use evalexpr::{ContextWithMutableVariables, Value};
 use crate::translate::{NUMBER_OF_VOTERS, RANK};
 pub use crate::voting::buildin::*;
 pub use crate::voting::parser::structs::VotingFunction;
@@ -53,7 +46,7 @@ pub trait VotingMethod {
 }
 
 /// A marker for methods that can be dynamically referenced without generics
-pub trait VotingMethodMarker: VotingMethod {}
+pub trait VotingMethodMarker: VotingMethod + Sync + Send {}
 
 /// A normal voting without limits
 #[repr(transparent)]

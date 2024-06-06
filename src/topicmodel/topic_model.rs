@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+
 use std::borrow::{Borrow};
-use std::cmp::{Ordering, Reverse};
+use std::cmp::{min, Ordering, Reverse};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -170,7 +172,7 @@ pub struct TopicStats {
 
 
 /// A basic topic model fulfilling the bare minimum of
-pub trait BasicTopicModel {
+pub trait BasicTopicModel: Send + Sync {
     /// The number of topics in this model
     fn topic_count(&self) -> usize;
 
@@ -371,6 +373,9 @@ pub struct TopicModel<T> {
     document_lengths: DocumentTo<DocumentLength>,
     topic_metas: TopicTo<TopicMeta>
 }
+
+unsafe impl<T> Send for TopicModel<T>{}
+unsafe impl<T> Sync for TopicModel<T>{}
 
 
 impl<T: Hash + Eq + Ord> TopicModel<T> {
@@ -681,7 +686,8 @@ impl<T> BasicTopicModel for TopicModel<T> {
     }
 
     fn get_n_best_for_topic(&self, topic_id: usize, n: usize) -> Option<&[Arc<WordMeta>]> {
-        Some(&self.topic_metas.get(topic_id)?.by_position[..n])
+        let metas = self.topic_metas.get(topic_id)?;
+        Some(&metas.by_position[..min(n, metas.by_position.len())])
     }
 
     fn get_n_best_for_topics(&self, n: usize) -> Option<Vec<&[Arc<WordMeta>]>> {
@@ -1260,7 +1266,7 @@ mod test {
         let topic_model = create_test_data();
         const P: &str = "test\\def";
 
-        std::fs::create_dir("test");
+        std::fs::create_dir("test").unwrap();
         topic_model.save(P, TopicModelVersion::V1, true, true).unwrap();
 
         let (loaded, _) = TopicModel::load_string_model(P, false).unwrap();
@@ -1280,7 +1286,6 @@ mod test {
             r"C:\git\ldatranslation_v3\bambergdictionary\dictionaryprocessor\lda\aligned-v2\en\trained_lda\lda",
             true
         ).unwrap().0;
-        std::time::Instant::now() - before;
         println!("{}", (std::time::Instant::now() - before).as_secs());
         // model.show_10().unwrap();
         let infer = TopicModelInferencer::new(model, 0.001, 0.1);

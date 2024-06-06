@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::Sum;
 use std::num::{NonZeroUsize};

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::iter::{Chain};
 use std::sync::Arc;
 use evalexpr::{Context, ContextWithMutableFunctions, ContextWithMutableVariables, EvalexprError, EvalexprResult, Function, IterateVariablesContext, Value};

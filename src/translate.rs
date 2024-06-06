@@ -5,7 +5,6 @@ use std::error::Error;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::sync::Arc;
 use evalexpr::{Context, context_map, EmptyContextWithBuiltinFunctions};
 use itertools::{Itertools};
 use rayon::prelude::*;
@@ -17,13 +16,12 @@ use crate::topicmodel::dictionary::Dictionary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
 use crate::topicmodel::vocabulary::Vocabulary;
 use crate::translate::LanguageOrigin::{Origin, Target};
-use crate::voting::{EmptyVotingMethod, VotingWithLimit, VotingExpressionError, VotingMethod, VotingResult, Voting};
+use crate::voting::{VotingExpressionError, VotingMethod, VotingResult, VotingMethodMarker};
 
 #[derive(Debug)]
-struct TranslateConfig {
+struct TranslateConfig<V: VotingMethodMarker> {
     epsilon: Option<f64>,
-    voting: String,
-    voting_limit: Option<NonZeroUsize>,
+    voting: V,
     threshold: Option<f64>,
     keep_original_word: KeepOriginalWord,
     top_candidate_limit: Option<NonZeroUsize>,
@@ -42,9 +40,9 @@ pub enum KeepOriginalWord {
 }
 
 #[derive(Debug, Error)]
-pub enum TranslateError<L> {
+pub enum TranslateError<'a, L> {
     #[error("The dictionary is not compatible with the topic model.")]
-    InvalidDictionary(TopicModel<L>, Dictionary<L>),
+    InvalidDictionary(&'a TopicModel<L>, &'a Dictionary<L>),
     #[error(transparent)]
     VotingError(#[from] VotingExpressionError),
     #[error(transparent)]
@@ -170,11 +168,11 @@ declare_variable_names! {
 
 
 
-fn translate_impl<T>(
-    topic_model: TopicModel<T>,
-    dictionary: Dictionary<T>,
-    translate_config: TranslateConfig
-) -> Result<TopicModel<T>, TranslateError<T>> where T: Hash + Eq + Ord {
+fn translate_topic_model<'a, T, V>(
+    topic_model: &'a TopicModel<T>,
+    dictionary: &'a Dictionary<T>,
+    translate_config: &TranslateConfig<V>
+) -> Result<TopicModel<T>, TranslateError<'a, T>> where T: Hash + Eq + Ord, V: VotingMethodMarker {
     if topic_model.vocabulary().len() != dictionary.voc_a().len() {
         return Err(TranslateError::InvalidDictionary(topic_model, dictionary));
     }
@@ -196,10 +194,6 @@ fn translate_impl<T>(
         VOCABULARY_SIZE_B => dictionary.voc_b().len() as i64,
     }.unwrap().to_static_with(EmptyContextWithBuiltinFunctions);
 
-    let topic_model = Arc::new(topic_model);
-    let dictionary = Arc::new(dictionary);
-
-    let voting = Arc::new(Voting::new(EmptyVotingMethod));
 
     // topic to word id to probable translation candidates.
     let result = topic_model
@@ -216,9 +210,8 @@ fn translate_impl<T>(
             }.unwrap().to_static_with(topic_context.clone());
 
             translate_topic(
-                voting.clone(),
-                topic_model.clone(),
-                dictionary.clone(),
+                topic_model,
+                dictionary,
                 topic_id,
                 topic,
                 topic_context_2,
@@ -327,21 +320,19 @@ impl Ord for Candidate {
     }
 }
 
-fn translate_topic<T, A, B>(
-    voting: Arc<impl VotingMethod + Sync + Send>,
-    topic_model: Arc<TopicModel<T>>,
-    dictionary: Arc<Dictionary<T>>,
+fn translate_topic<T, A, B, V>(
+    topic_model: &TopicModel<T>,
+    dictionary: &Dictionary<T>,
     topic_id: usize,
     topic: &Vec<f64>,
     topic_context: StaticContext<A, B>,
-    config: &TranslateConfig
-) -> Result<Vec<Candidate>, TranslateErrorWithOrigin> where A: Context, B: Context {
+    config: &TranslateConfig<V>
+) -> Result<Vec<Candidate>, TranslateErrorWithOrigin> where A: Context, B: Context, V: VotingMethodMarker {
     topic
         .par_iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
             translate_single_candidate(
-                &voting,
                 &topic_model,
                 &dictionary,
                 topic_id,
@@ -356,17 +347,16 @@ fn translate_topic<T, A, B>(
 }
 
 #[inline(always)]
-fn translate_single_candidate<T, A, B>(
-    voting: &Arc<impl VotingMethod + Sync + Send>,
+fn translate_single_candidate<T, A, B, V>(
     topic_model: &TopicModel<T>,
     dictionary: &Dictionary<T>,
     topic_id: usize,
     topic_context: &StaticContext<A, B>,
-    config: &TranslateConfig,
+    config: &TranslateConfig<V>,
     original_word_id: usize,
     probability: f64
-) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>> where A: Context, B: Context {
-    let mut candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_word_id) {
+) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>> where A: Context, B: Context, V: VotingMethodMarker {
+    let candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_word_id) {
         Some(candidates.par_iter().cloned().filter_map( |candidate|
             match dictionary.translate_id_to_ids::<BToA>(candidate) {
                 None  => None,
@@ -395,7 +385,7 @@ fn translate_single_candidate<T, A, B>(
                                 SCORE => value.probability,
                             }.unwrap()).collect_vec();
                     Some(
-                        match voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
+                        match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
                             Ok(result) => {
                                 Ok(Candidate::new(Target(candidate), result, original_word_id))
                             }
@@ -412,7 +402,7 @@ fn translate_single_candidate<T, A, B>(
         None
     };
 
-    fn vote_for_origin<'a, A, B>(topic_model: &'a impl BasicTopicModel, topic_context: &StaticContext<A, B>, has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &Arc<impl VotingMethod + Sync + Send>) -> Result<Candidate, TranslateErrorWithOrigin> where A: Context, B: Context {
+    fn vote_for_origin<'a, A, B>(topic_model: &'a impl BasicTopicModel, topic_context: &StaticContext<A, B>, has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &(impl VotingMethod + Sync + Send)) -> Result<Candidate, TranslateErrorWithOrigin> where A: Context, B: Context {
         let mut context = context_map! {
                     COUNT_OF_VOTERS => 1,
                     HAS_TRANSLATION => has_translation,
@@ -453,7 +443,7 @@ fn translate_single_candidate<T, A, B>(
                     topic_id,
                     original_word_id,
                     probability,
-                    &voting
+                    &config.voting
                 ) {
                     Ok(value) => {
                         candidates.push(value);
@@ -469,7 +459,7 @@ fn translate_single_candidate<T, A, B>(
                     topic_id,
                     original_word_id,
                     probability,
-                    &voting
+                    &config.voting
                 ) {
                     Ok(value) => {
                         Ok(vec![value])
@@ -490,7 +480,7 @@ fn translate_single_candidate<T, A, B>(
                         topic_id,
                         original_word_id,
                         probability,
-                        &voting
+                        &config.voting
                     ) {
                         Ok(value) => {
                             Ok(vec![value])
@@ -535,17 +525,113 @@ fn translate_single_candidate<T, A, B>(
 
 #[cfg(test)]
 mod test {
+    use std::num::NonZeroUsize;
+    use crate::topicmodel::dictionary::Dictionary;
+    use crate::topicmodel::dictionary::direction::Invariant;
+    use crate::topicmodel::topic_model::{BasicTopicModel, TopicModel};
+    use crate::topicmodel::vocabulary::Vocabulary;
+    use crate::translate::KeepOriginalWord::Never;
+    use crate::translate::{translate_topic_model, TranslateConfig};
+    use crate::voting::BuildInVoting::CombSum;
+    use crate::voting::IntoVotingWithLimit;
+
     #[test]
-    fn test() {
-        let a = evalexpr::context_map! {
-            "epsilon" => 0.7
-        }.unwrap();
+    fn test_complete_translation(){
 
-        let mut b = evalexpr::context_map! {
-            "katze" => 1
-        }.unwrap();
+        let mut voc_a = Vocabulary::<String>::new();
+        voc_a.extend(vec![
+            "plane".to_string(),
+            "aircraft".to_string(),
+            "airplane".to_string(),
+            "flyer".to_string(),
+            "airman".to_string(),
+            "airfoil".to_string(),
+            "wing".to_string(),
+            "deck".to_string(),
+            "hydrofoil".to_string(),
+            "foil".to_string(),
+            "bearing surface".to_string()
+        ]);
+        let mut voc_b = Vocabulary::<String>::new();
+        voc_b.extend(vec![
+            "Flugzeug".to_string(),
+            "Flieger".to_string(),
+            "Tragfläche".to_string(),
+            "Ebene".to_string(),
+            "Planum".to_string(),
+            "Platane".to_string(),
+            "Maschine".to_string(),
+            "Bremsberg".to_string(),
+            "Berg".to_string(),
+            "Fläche".to_string(),
+            "Luftfahrzeug".to_string(),
+            "Fluggerät".to_string(),
+            "Flugsystem".to_string(),
+            "Motorflugzeug".to_string(),
+        ]);
 
-        println!("{b:?}")
+        let mut dict = Dictionary::new();
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Ebene").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Planum").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Platane").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Maschine").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Bremsberg").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Berg").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Fläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Luftfahrzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Fluggerät").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flugsystem").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Motorflugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("flyer").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airman").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("wing").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+
+        let model_a = TopicModel::new(
+            vec![
+                vec![0.019, 0.018, 0.012, 0.009, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008],
+                vec![0.02, 0.002, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001],
+            ],
+            voc_a,
+            vec![10, 5, 8, 1, 2, 3, 1, 1, 1, 1, 2],
+            vec![
+                vec![0.7, 0.2],
+                vec![0.8, 0.3]
+            ],
+            vec![
+                200,
+                300
+            ]
+        );
+
+        let config = TranslateConfig {
+            threshold: None,
+            voting: CombSum.with_limit(NonZeroUsize::new(3).unwrap()),
+            epsilon: 0.00001.into(),
+            keep_original_word: Never,
+            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap())
+        };
+
+        let model_b = translate_topic_model(
+            &model_a,
+            &dict,
+            &config
+        ).unwrap();
+
+        model_a.show_10().unwrap();
+        model_b.show_10().unwrap();
     }
 }
 

@@ -1,6 +1,6 @@
+#[allow(dead_code)]
 
 use evalexpr::EvalexprError;
-use itertools::Itertools;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alphanumeric1, char, digit1, multispace0, multispace1, one_of, space0, space1};
@@ -9,14 +9,13 @@ use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError
 use nom::{AsChar, InputIter, InputTakeAtPosition, IResult, Parser};
 use nom::multi::{many1, many1_count};
 use nom::sequence::{delimited, preceded, terminated, tuple};
-use strum::{AsRefStr, Display, EnumString, VariantArray};
+use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
 use crate::voting::buildin::BuildInVoting;
 use crate::voting::aggregations::parse::AggregationParserError;
-use std::str::FromStr;
 use crate::voting::parser::structs::*;
 
-const IMPORTANT_TOKENS: &str = "+-*/%^=!<>&|,;";
+const IMPORTANT_TOKENS: &str = "._+-*/%^=!<>&|,;: \"'";
 
 const KW_ITER: &str = "foreach";
 const KW_GLOBAL: &str = "global";
@@ -173,7 +172,7 @@ fn voting_expression<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a s
                 alt((
                     alphanumeric1,
                     s_expr_no_newline(collect_eval_expr),
-                    recognize(one_of("._+-*/%^=!<>&|,;: \"'"))
+                    recognize(one_of(IMPORTANT_TOKENS))
                 ))
             )
         ))(input)

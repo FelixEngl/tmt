@@ -22,7 +22,7 @@ impl Clone for VotingRegistryEntry {
 }
 
 pub struct VotingRegistry {
-    parsed_votings: RwLock<HashMap<String, VotingRegistryEntry>>
+    parsed_votings: RwLock<HashMap<String, Arc<VotingFunction>>>
 }
 
 impl VotingRegistry {

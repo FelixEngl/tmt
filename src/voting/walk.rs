@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::fmt::{Display, Formatter};
 use evalexpr::{Node, Operator};
 use itertools::Itertools;

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::{Hash};
@@ -150,6 +152,15 @@ impl <T: Eq + Hash> Vocabulary<T> {
             Q: Hash + Eq
     {
         return self.entry2id.get(Wrapper::wrap(value)).cloned()
+    }
+
+    /// Retrieves the id for `value`
+    pub fn get_hash_ref<Q: ?Sized>(&self, value: &Q) -> Option<&HashRef<T>>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq
+    {
+        Some(self.get_entry_id(value)?.0)
     }
 
     /// Retrieves the complete entry for `value` in the vocabulary, if it exists
