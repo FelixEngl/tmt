@@ -167,7 +167,9 @@ impl<T: Eq + Hash> Dictionary<T> {
         let id_b = self.voc_b.add_hash_ref(word_b);
         if D::A2B {
             if let Some(found) = self.map_a_to_b.get_mut(id_a) {
-                found.push(id_b)
+                if !found.contains(&id_b) {
+                    found.push(id_b)
+                }
             } else {
                 while self.map_a_to_b.len() <= id_a {
                     self.map_a_to_b.push(Vec::with_capacity(1));
@@ -179,7 +181,9 @@ impl<T: Eq + Hash> Dictionary<T> {
         }
         if D::B2A {
             if let Some(found) = self.map_b_to_a.get_mut(id_b) {
-                found.push(id_a)
+                if !found.contains(&id_a) {
+                    found.push(id_a)
+                }
             } else {
                 while self.map_b_to_a.len() <= id_b {
                     self.map_b_to_a.push(Vec::with_capacity(1));

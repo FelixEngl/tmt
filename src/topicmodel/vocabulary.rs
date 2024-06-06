@@ -118,6 +118,8 @@ impl<T: Eq + Hash> From<Vec<T>> for Vocabulary<T>  {
     }
 }
 
+
+
 impl <T: Eq + Hash> Vocabulary<T> {
 
     /// Adds the `value` to the vocabulary and returns the associated id
