@@ -1,12 +1,15 @@
+use std::fmt::Write;
 use std::num::NonZeroUsize;
+use std::path::Display;
 use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, Value};
 use itertools::Itertools;
 use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
-use crate::translate::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
+use crate::variable_names::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
 use crate::voting::{VotingMethod, VotingMethodMarker, VotingResult};
 use crate::voting::aggregations::{Aggregation, AggregationError};
 use crate::voting::aggregations::AggregationType::{AvgOf, GAvgOf, SumOf};
+use crate::voting::display::{DisplayTree, IndentWriter};
 use crate::voting::traits::LimitableVotingMethodMarker;
 use crate::voting::VotingExpressionError::{Eval, NoValue};
 
@@ -28,7 +31,7 @@ impl VotingMethod for EmptyVotingMethod {
 #[derive(Debug, Copy, Clone, EnumString, IntoStaticStr, Display, VariantArray)]
 pub enum BuildInVoting {
     OriginalScore,
-    Votes,
+    Voters,
     CombSum,
     GCombSum,
     CombSumTop,
@@ -49,7 +52,6 @@ pub enum BuildInVoting {
 
 impl LimitableVotingMethodMarker for BuildInVoting {}
 impl VotingMethodMarker for BuildInVoting {}
-
 impl VotingMethod for BuildInVoting {
 
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
@@ -68,7 +70,7 @@ impl VotingMethod for BuildInVoting {
             BuildInVoting::OriginalScore => {
                 get_value_or_fail(global_context, SCORE_CANDIDATE)
             }
-            BuildInVoting::Votes => {
+            BuildInVoting::Voters => {
                 get_value_or_fail(global_context, NUMBER_OF_VOTERS)
             }
             BuildInVoting::CombSum => {
@@ -250,4 +252,9 @@ impl VotingMethod for BuildInVoting {
         }
     }
 }
-
+impl DisplayTree for BuildInVoting {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
+        let s: &str = self.into();
+        write!(f, "{s}")
+    }
+}

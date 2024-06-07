@@ -1,37 +1,68 @@
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
+use std::ops::{Deref, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
+use std::ptr::write;
+use std::sync::Arc;
 use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, TupleType, Value};
 use itertools::{FoldWhile, Itertools, Position};
 use crate::toolkit::evalexpr::CombineableContext;
-use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodMarker, VotingResult};
+use crate::voting::{BuildInVoting, VotingExpressionError, VotingMethod, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::Aggregation;
 use crate::voting::display::{DisplayTree, IndentWriter};
 use crate::voting::parser::traits::VotingExecutable;
 use crate::voting::traits::LimitableVotingMethodMarker;
 use crate::voting::walk::walk_left_to_right;
+use crate::voting::display::impl_display_for_displaytree;
+use crate::voting::parser::input::ParserInput;
 
-macro_rules! impl_display_for_displaytree {
-    ($($target: ident),+) => {
-        $(
-            impl Display for $target {
-                fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                    let mut code_formatter = IndentWriter::new(f);
-                    $crate::voting::display::DisplayTree::fmt(self, &mut code_formatter)
-                }
-            }
-        )+
-    };
+
+/// A tuple with a name and a voting function
+#[derive(Debug, Clone)]
+pub struct VotingAndName(pub String, pub VotingFunction);
+
+impl From<(String, VotingFunction)> for VotingAndName {
+    fn from(value: (String, VotingFunction)) -> Self {
+        Self(value.0, value.1)
+    }
 }
 
+impl From<(&str, VotingFunction)> for VotingAndName {
+    fn from(value: (&str, VotingFunction)) -> Self {
+        Self(value.0.to_string(), value.1)
+    }
+}
 
-/// A voting function
-#[derive(Debug)]
+impl<'a, 'b> From<(ParserInput<'a, 'b>, VotingFunction)> for VotingAndName {
+    fn from(value: (ParserInput<'a, 'b>, VotingFunction)) -> Self {
+        Self(value.0.to_string(), value.1)
+    }
+}
+
+impl DisplayTree for VotingAndName {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
+        write!(f, "declare {} ", self.0)?;
+        write!(f, "{{")?;
+        f.indent(2);
+        write!(f, "\n")?;
+        DisplayTree::fmt(&self.1, f)?;
+        f.dedent(2);
+        write!(f, "\n")?;
+        write!(f, "}}")
+    }
+}
+
+impl_display_for_displaytree!(VotingAndName);
+
+
+/// A voting function, this is the root for a parsed voting!
+#[derive(Debug, Clone)]
 pub enum VotingFunction {
-    Single(VotingOperation),
+    Single(VotingOperation, bool),
     Multi(Vec<VotingOperation>)
 }
 
+
 impl LimitableVotingMethodMarker for VotingFunction {}
+
 impl VotingMethodMarker for VotingFunction {}
 
 impl VotingMethod for VotingFunction {
@@ -41,7 +72,7 @@ impl VotingMethod for VotingFunction {
             B : ContextWithMutableVariables
     {
         match self {
-            VotingFunction::Single(value) => {
+            VotingFunction::Single(value, _) => {
                 value.execute(global_context, voters)
             }
             VotingFunction::Multi(values) => {
@@ -64,12 +95,24 @@ impl VotingMethod for VotingFunction {
 impl DisplayTree for VotingFunction {
     fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
         match self {
-            VotingFunction::Single(value) => {
-                DisplayTree::fmt(value, f)
+            VotingFunction::Single(value, was_root) => {
+                if *was_root {
+                    write!(f, "{{")?;
+                    f.indent(2);
+                    write!(f, "\n")?;
+                }
+                DisplayTree::fmt(value, f)?;
+                if *was_root {
+                    f.dedent(2);
+                    write!(f, "\n")?;
+                    write!(f, "}}")?;
+                }
+                Ok(())
             }
             VotingFunction::Multi(value) => {
                 for op in value {
                     DisplayTree::fmt(op, f)?;
+                    write!(f, "\n")?;
                 }
                 Ok(())
             }
@@ -81,7 +124,7 @@ impl_display_for_displaytree!(VotingFunction);
 
 
 /// The operation beeing executed
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VotingOperation {
     /// foreach: { <expr> \n <expr> } || for each <expr>
     IterScope {
@@ -91,11 +134,16 @@ pub enum VotingOperation {
     GlobalScope {
         expr: VotingExecutableList
     },
-    /// aggregate(<variable_name> = <aggregation>): { <expr> \n <expr> } || <variable_name> = <aggregation> <expr>
+    /// aggregate(let <variable_name> = <aggregation>): { <expr> \n <expr> } || <variable_name> = <aggregation> <expr>
     AggregationScope {
         variable_name: String,
         op: Aggregation,
         expr: VotingExecutableList
+    },
+    /// execute(let <variable_name> = <buildin> || <name_of_registered> || <buildin>(<limit>) || <name_of_registered>(<limit>))
+    Execute {
+        variable_name: String,
+        execution: VotingExecution
     }
 }
 
@@ -119,7 +167,6 @@ impl VotingMethod for VotingOperation {
                 op,
                 expr
             } => {
-
                 let value = voters
                     .into_iter()
                     .map(|value|
@@ -135,37 +182,88 @@ impl VotingMethod for VotingOperation {
             VotingOperation::GlobalScope { expr } => {
                 Ok(expr.execute(global_context)?)
             }
+            VotingOperation::Execute { variable_name, execution } => {
+                let result = execution.execute(global_context, voters)?;
+                global_context.set_value(variable_name.clone(), result.clone())?;
+                Ok(result)
+            }
         }
     }
 }
 
 impl DisplayTree for VotingOperation {
     fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
-        let expr = match self {
+        match self {
             VotingOperation::IterScope { expr } => {
                 write!(f, "foreach:")?;
-                expr
+                DisplayTree::fmt(expr, f)
             }
             VotingOperation::GlobalScope { expr } => {
                 write!(f, "global:")?;
-                expr
+                DisplayTree::fmt(expr, f)
             }
             VotingOperation::AggregationScope { variable_name, op, expr } => {
-                write!(f, "aggregate({} = {}):", variable_name, op)?;
-                expr
+                write!(f, "aggregate(let {} = {}):", variable_name, op)?;
+                DisplayTree::fmt(expr, f)
             }
-        };
-        DisplayTree::fmt(expr, f)?;
-        Ok(())
+            VotingOperation::Execute { variable_name, execution } => {
+                write!(f, "execute(let {} = ", variable_name)?;
+                DisplayTree::fmt(execution, f)?;
+                write!(f, ");\n")
+            }
+        }
     }
 }
 
 
 impl_display_for_displaytree!(VotingOperation);
 
+#[derive(Debug, Clone)]
+pub enum VotingExecution {
+    BuildIn(BuildInVoting),
+    Parsed(String, Arc<VotingFunction>),
+    Limited(VotingWithLimit<Box<VotingExecution>>)
+}
+
+impl VotingMethodMarker for VotingExecution {}
+
+impl VotingMethod for VotingExecution {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+        match self {
+            VotingExecution::BuildIn(value) => {
+                value.execute(global_context, voters)
+            }
+            VotingExecution::Parsed(_, value) => {
+                value.execute(global_context, voters)
+            }
+            VotingExecution::Limited(value) => {
+                value.execute(global_context, voters)
+            }
+        }
+    }
+}
+
+impl DisplayTree for VotingExecution {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
+        match self {
+            VotingExecution::BuildIn(value) => {
+                write!(f, "{value}")
+            }
+            VotingExecution::Parsed(value, _) => {
+                write!(f, "{value}")
+            }
+            VotingExecution::Limited(value) => {
+                DisplayTree::fmt(value, f)
+            }
+        }
+    }
+}
+
+impl_display_for_displaytree!(VotingExecution);
+
 
 /// A list of [VotingExpressionOrStatement] elements. Can be a single or multiple.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VotingExecutableList {
     Single(Box<VotingExpressionOrStatement>),
     Multiple(Vec<VotingExpressionOrStatement>)
@@ -236,7 +334,7 @@ impl_display_for_displaytree!(VotingExecutableList);
 
 
 /// An if else expression or statement.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct InnerIfElse {
     cond: Box<VotingExpression>,
     if_block: VotingExecutableList,
@@ -284,7 +382,7 @@ impl_display_for_displaytree!(InnerIfElse);
 
 
 /// Either a statement or a expression
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VotingExpressionOrStatement {
     Expression {
         expr: VotingExpression
@@ -351,8 +449,8 @@ impl From<VotingStatement> for VotingExpressionOrStatement {
 }
 
 
-/// The statements that can be used inside of votings
-#[derive(Debug)]
+/// The statements that can be used inside votings
+#[derive(Debug, Clone)]
 pub enum VotingStatement {
     If {
         cond: VotingExpression,
@@ -407,6 +505,7 @@ impl_display_for_displaytree!(VotingStatement);
 
 
 /// An expression or multiple expressions
+#[derive(Clone)]
 pub enum VotingExpression {
     Expr(Node),
     IfElse(InnerIfElse),
@@ -418,8 +517,8 @@ pub enum VotingExpression {
 
 impl VotingExpression {
     #[inline(always)]
-    pub fn parse_as_single(s: &str) -> EvalexprResult<Self> {
-        Ok(VotingExpression::Expr(evalexpr::build_operator_tree(s)?))
+    pub(crate) fn parse_as_single(s: ParserInput) -> EvalexprResult<Self> {
+        Ok(VotingExpression::Expr(evalexpr::build_operator_tree(s.deref())?))
     }
 }
 

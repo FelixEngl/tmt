@@ -1,10 +1,23 @@
 use std::fmt::{Display, Write};
 
+macro_rules! impl_display_for_displaytree {
+    ($($target: ident),+) => {
+        $(
+            impl Display for $target {
+                fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                    let mut code_formatter = $crate::voting::display::IndentWriter::new(f);
+                    $crate::voting::display::DisplayTree::fmt(self, &mut code_formatter)
+                }
+            }
+        )+
+    };
+}
+pub(crate) use impl_display_for_displaytree;
+
 /// Allows to display atree
 pub trait DisplayTree: Display {
     fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result;
 }
-
 
 pub struct IndentWriter<'a, T: Write> {
     f: &'a mut T,

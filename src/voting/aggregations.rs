@@ -204,10 +204,9 @@ pub mod parse {
     use nom::character::complete::{alpha1, digit1, multispace0};
     use nom::combinator::{map, map_res, opt, value};
     use nom::error::context;
-    use nom::IResult;
+    use nom::{AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, IResult};
     use nom::sequence::{delimited, preceded, terminated, tuple};
     use thiserror::Error;
-    use crate::toolkit::nom::ws;
     use crate::voting::aggregations::{Aggregation, AggregationType};
     use crate::voting::parser::logic::ErrorType;
 
@@ -223,15 +222,19 @@ pub mod parse {
     /// The syntax is `BulkOperationType`(limit)
     /// e.g. ``avgOf`` or ``sumOf(3)``
     /// Also supports legacy expressions like   ``sumOf limit(*)``
-    pub fn parse_aggregation<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, Aggregation, E> {
+    pub(crate) fn parse_aggregation<Input, E: ErrorType<Input>>(input: Input) -> IResult<Input, Aggregation, E> where
+        Input: AsRef<str> + Clone + InputLength + InputIter + InputTake + InputTakeAtPosition + for<'a> Compare<&'a str>,
+        <Input as InputIter>::Item: AsChar + Clone,
+        <Input as InputTakeAtPosition>::Item: AsChar + Clone,
+    {
         context(
             "aggregation",
             map(
                 tuple((
                     map_res(
-                        ws(alpha1),
-                        |value|
-                            AggregationType::try_from(value)
+                        delimited(multispace0, alpha1, multispace0),
+                        |value: Input|
+                            AggregationType::try_from(value.as_ref())
                                 .map_err(AggregationParserError::UnknownAggregation)
                     ),
                     opt(
@@ -242,7 +245,7 @@ pub mod parse {
                                 delimited(
                                     tag("("),
                                     alt((
-                                        map_res(digit1, |value: &str| match value.parse::<NonZeroUsize>() {
+                                        map_res(digit1, |value: Input| match value.as_ref().parse::<NonZeroUsize>() {
                                             Ok(value) => {Ok(Some(value))}
                                             Err(value) => {Err(AggregationParserError::InvalidNumber(value))}
                                         }),
@@ -269,7 +272,7 @@ pub mod parse {
         fn can_parse_a_simple_expression(){
             assert_eq!(
                 Aggregation::new_no_limit(AggregationType::SumOf),
-                parse_aggregation::<VerboseError<_>>("sumOf").expect("This should work!").1
+                parse_aggregation::<_, VerboseError<_>>("sumOf").expect("This should work!").1
             )
         }
 
@@ -277,7 +280,7 @@ pub mod parse {
         fn can_parse_a_new_expression(){
             assert_eq!(
                 Aggregation::new_with_limit(AggregationType::AvgOf, 3).unwrap(),
-                parse_aggregation::<VerboseError<_>>("avgOf (3)").expect("This should work!").1
+                parse_aggregation::<_, VerboseError<_>>("avgOf (3)").expect("This should work!").1
             )
         }
 
@@ -285,7 +288,7 @@ pub mod parse {
         fn can_parse_a_legacy_expression_star(){
             assert_eq!(
                 Aggregation::new_no_limit(AggregationType::GAvgOf),
-                parse_aggregation::<VerboseError<_>>("gAvgOf (*)").expect("This should work!").1
+                parse_aggregation::<_, VerboseError<_>>("gAvgOf (*)").expect("This should work!").1
             )
         }
 
@@ -293,7 +296,7 @@ pub mod parse {
         fn can_parse_a_legacy_expression_limit_star(){
             assert_eq!(
                 Aggregation::new_no_limit(AggregationType::GAvgOf),
-                parse_aggregation::<VerboseError<_>>("gAvgOf limit(*)").expect("This should work!").1
+                parse_aggregation::<_, VerboseError<_>>("gAvgOf limit(*)").expect("This should work!").1
             )
         }
 
@@ -301,7 +304,7 @@ pub mod parse {
         fn can_parse_a_legacy_expression_limit1(){
             assert_eq!(
                 Aggregation::new_with_limit(AggregationType::GAvgOf, 99).unwrap(),
-                parse_aggregation::<VerboseError<_>>("gAvgOf limit (99)").expect("This should work!").1
+                parse_aggregation::<_, VerboseError<_>>("gAvgOf limit (99)").expect("This should work!").1
             )
         }
 
@@ -309,7 +312,7 @@ pub mod parse {
         fn can_parse_a_legacy_expression_limit2(){
             assert_eq!(
                 Aggregation::new_with_limit(AggregationType::GAvgOf, 99).unwrap(),
-                parse_aggregation::<VerboseError<_>>("gAvgOf limit(99)").expect("This should work!").1
+                parse_aggregation::<_, VerboseError<_>>("gAvgOf limit(99)").expect("This should work!").1
             )
         }
     }

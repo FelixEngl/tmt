@@ -1,7 +1,7 @@
 use evalexpr::EvalexprError;
 use thiserror::Error;
 use crate::voting::aggregations::AggregationError;
-use crate::voting::parser::structs::IndexOrRange;
+use crate::voting::parser::voting_function::IndexOrRange;
 
 #[derive(Debug, Error)]
 pub enum VotingExpressionError {

@@ -1,26 +1,37 @@
+use std::fmt::{Display, Formatter, Write};
+use std::num::{NonZeroUsize, ParseIntError};
+use std::sync::Arc;
 #[allow(dead_code)]
 
 use evalexpr::EvalexprError;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::character::complete::{alphanumeric1, char, digit1, multispace0, multispace1, one_of, space0, space1};
+use nom::character::complete::{alphanumeric1, char, digit1, multispace0, multispace1, newline, one_of, space0, space1};
 use nom::combinator::{cut, map, map_res, not, opt, peek, recognize};
 use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
 use nom::{AsChar, InputIter, InputTakeAtPosition, IResult, Parser};
 use nom::multi::{many1, many1_count};
-use nom::sequence::{delimited, preceded, terminated, tuple};
+use nom::sequence::{delimited, pair, preceded, separated_pair, terminated, tuple};
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
+use crate::variable_names::{reserved_variable_name};
 use crate::voting::buildin::BuildInVoting;
 use crate::voting::aggregations::parse::AggregationParserError;
-use crate::voting::parser::structs::*;
+use crate::voting::display::{DisplayTree, impl_display_for_displaytree, IndentWriter};
+use crate::voting::parser::input::ParserInput;
+use crate::voting::parser::logic::VotingParseError::{NoRegistryProvided, NoVotingInRegistryFound, UnableToParseInt};
+use crate::voting::parser::voting_function::*;
+use crate::voting::parser::voting_function::VotingExecution::Limited;
+use crate::voting::VotingWithLimit;
 
 const IMPORTANT_TOKENS: &str = "._+-*/%^=!<>&|,;: \"'";
 
 const KW_ITER: &str = "foreach";
 const KW_GLOBAL: &str = "global";
 const KW_AGGREGATE: &str = "aggregate";
+const KW_EXECUTE: &str = "execute";
 const KW_LET: &str = "let";
+const KW_DECLARE: &str = "declare";
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[derive(AsRefStr, Display, EnumString)]
@@ -31,11 +42,23 @@ pub enum Keyword {
     Global,
     #[strum(serialize = "aggregate")]
     Aggregate,
+    #[strum(serialize = "call")]
+    Call,
     #[strum(serialize = "let")]
     Let
 }
 
-fn keyword<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, &str, E>
+fn let_variable_declaration<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, ParserInput<'a,'b>,  E> {
+    preceded(
+        delimited(multispace0, tag(KW_LET), space1),
+        preceded(
+            context("special variable check failed", peek(not(reserved_variable_name))),
+            variable_name,
+        )
+    )(input)
+}
+
+fn keyword<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, ParserInput<'a,'b>,  E>
 {
     context(
         "keyword",
@@ -46,6 +69,8 @@ fn keyword<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, &str, 
                 tag(KW_GLOBAL),
                 tag(KW_AGGREGATE),
                 tag(KW_LET),
+                tag(KW_EXECUTE),
+                tag(KW_DECLARE),
             ))
         )
     )(input)
@@ -77,10 +102,14 @@ pub enum VotingParseError {
     #[error("An empty index access does not work!")]
     EmptyIndexNotAllowed,
     #[error("An to range (..=) always needs a value after the =!")]
-    ToRangeAlwaysNeedsValue
+    ToRangeAlwaysNeedsValue,
+    #[error("No voting with the name {0} in the registy found!")]
+    NoVotingInRegistryFound(String),
+    #[error("There was no registy provided!")]
+    NoRegistryProvided,
+    #[error(transparent)]
+    UnableToParseInt(#[from] ParseIntError)
 }
-
-
 
 macro_rules! make_expr {
         ($vis:vis $name: ident, open=$open:literal, close=$close:literal, spacing= $space:ident, on_close_missing=$message: literal) => {
@@ -117,7 +146,7 @@ make_expr!(
     );
 
 make_expr!(
-        b_exp,
+        pub(crate) b_exp,
         open='{',
         close='}',
         spacing= multispace0,
@@ -144,7 +173,7 @@ make_expr!(
 
 
 
-pub fn variable_name<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E>
+pub(crate) fn variable_name<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, ParserInput<'a,'b>,  E>
 {
     context(
         "variable name",
@@ -157,7 +186,7 @@ pub fn variable_name<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a s
                         many1(alt((alphanumeric1, tag("_"))))
                     )
                 ),
-                |value: &str| value.len() > 0
+                |value: &ParserInput| value.len() > 0
             ),
             context("not name", peek(not(alt((alphanumeric1, tag("_"))))))
         )
@@ -165,8 +194,8 @@ pub fn variable_name<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a s
 }
 
 
-fn voting_expression<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingExpression, E> {
-    fn collect_eval_expr<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E> {
+fn voting_expression<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingExpression, E> {
+    fn collect_eval_expr<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, ParserInput<'a,'b>,  E> {
         context("single expression", recognize(
             many1_count(
                 alt((
@@ -197,7 +226,7 @@ fn voting_expression<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a s
     )(input)
 }
 
-fn voting_get_tuple_expression<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingExpression, E> {
+fn voting_get_tuple_expression<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingExpression, E> {
     context(
         "get tuple",
         map(
@@ -215,7 +244,7 @@ fn voting_get_tuple_expression<'a, E: ErrorType<&'a str>>(input: &'a str) -> IRe
     )(input)
 }
 
-fn parse_index_or_range<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, IndexOrRange, E> {
+fn parse_index_or_range<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, IndexOrRange, E> {
     context(
         "parse index/range",
         map_res(
@@ -223,7 +252,7 @@ fn parse_index_or_range<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'
                 opt(digit1),
                 opt(
                     tuple((
-                        preceded(space0, tag::<&str, &str, E>("..")),
+                        preceded(space0, tag::<&str, ParserInput, E>("..")),
                         opt(tag("=")),
                         opt(preceded(space0, digit1))
                     ))
@@ -246,7 +275,7 @@ fn parse_index_or_range<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'
                             if let Some(first) = first {
                                 Ok(IndexOrRange::Range(first.parse().unwrap() .. second.parse().unwrap()))
                             } else {
-                                Ok(IndexOrRange::RangeTo( ..second.parse().unwrap()))
+                                Ok(IndexOrRange::RangeTo(..second.parse().unwrap()))
                             }
                         } else {
                             if let Some(first) = first {
@@ -270,7 +299,7 @@ fn parse_index_or_range<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'
 
 
 
-fn voting_list<'a, E: ErrorType<&'a str>>(inner: &'a str) -> IResult<&'a str, VotingExecutableList, E>  {
+fn voting_list<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingExecutableList, E>  {
     context(
         "voting list",
         preceded(multispace0, alt((
@@ -281,10 +310,10 @@ fn voting_list<'a, E: ErrorType<&'a str>>(inner: &'a str) -> IResult<&'a str, Vo
             )),
             map(voting_or_statement, VotingExecutableList::pack_single)
         )))
-    )(inner)
+    )(input)
 }
 
-fn parse_if<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, (VotingExpression, VotingExecutableList), E> {
+fn parse_if<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, (VotingExpression, VotingExecutableList), E> {
     context(
         "parse if",
         preceded(
@@ -297,7 +326,7 @@ fn parse_if<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, (Voti
     )(input)
 }
 
-fn inner_if_else<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, InnerIfElse, E> {
+fn inner_if_else<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, InnerIfElse, E> {
     context(
         "parse if else",
         map(
@@ -313,7 +342,7 @@ fn inner_if_else<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, 
     )(input)
 }
 
-fn voting_statement<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingStatement, E> {
+fn voting_statement<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingStatement, E> {
     context(
         "statement",
         alt((
@@ -327,9 +356,8 @@ fn voting_statement<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a st
                 context(
                     "set variable",
                     tuple((
-                        delimited(
-                            delimited(multispace0, tag(KW_LET), space1),
-                            variable_name,
+                        terminated(
+                            let_variable_declaration,
                             preceded(space0, char('='))
                         ),
                         preceded(space0, voting_list)
@@ -346,7 +374,7 @@ fn voting_statement<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a st
     )(input)
 }
 
-fn voting_or_statement<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingExpressionOrStatement, E> {
+fn voting_or_statement<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingExpressionOrStatement, E> {
     context(
         "voting or statement",
         alt((
@@ -357,7 +385,69 @@ fn voting_or_statement<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a
 }
 
 
-fn voting_operation<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingOperation, E> {
+pub(crate) fn parse_limited<'a, 'b, O1, O2, E: ErrorType<ParserInput<'a,'b>>, F>(
+    parser: F
+) -> impl Parser<ParserInput<'a,'b>, VotingWithLimit<O2>, E> where F: Parser<ParserInput<'a,'b>, O1, E>, O1: Into<O2> {
+    map(
+        separated_pair(
+            parser,
+            space0,
+            map_res(s_expr_no_newline(digit1), |value: ParserInput| {
+                let x: &str = value.as_ref();
+                match x.parse() {
+                    Ok(value) => {
+                        Ok(value)
+                    }
+                    Err(err) => {
+                        Err(UnableToParseInt(err))
+                    }
+                }
+            })
+        ),
+        |(voting, value)| {
+            VotingWithLimit::new(value, voting.into())
+        }
+    )
+}
+
+fn voting_execution<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingExecution, E> {
+    fn simple_voting_execution<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingExecution, E> {
+        alt((
+            map(build_in_voting, VotingExecution::BuildIn),
+            map_res(
+                preceded(space0, variable_name),
+                |value| {
+                    match value.registry() {
+                        None => {Err(NoRegistryProvided)}
+                        Some(registry) => {
+                            match registry.get(value.as_ref()) {
+                                None => {
+                                    Err(NoVotingInRegistryFound(value.to_string()))
+                                }
+                                Some(voting) => {
+                                    Ok(VotingExecution::Parsed(value.to_string(), voting))
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        ))(input)
+    }
+
+    alt((
+        map(
+            parse_limited(simple_voting_execution),
+            |(voting)| {
+                Limited(voting)
+            }
+        ),
+        simple_voting_execution
+    ))(input)
+}
+
+
+fn voting_operation<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingOperation, E> {
     preceded(
         multispace0,
         alt((
@@ -388,9 +478,8 @@ fn voting_operation<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a st
                         terminated(
                             s_expr(
                                 tuple((
-                                    delimited(
-                                        multispace0,
-                                        variable_name,
+                                    terminated(
+                                        let_variable_declaration,
                                         preceded(multispace0, tag("="))
                                     ),
                                     preceded(
@@ -410,19 +499,58 @@ fn voting_operation<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a st
                             expr
                         }
                 )
+            ),
+            preceded(
+                tag(KW_EXECUTE),
+                map(
+                    terminated(
+                        s_expr_no_newline(
+                            tuple((
+                                terminated(
+                                    let_variable_declaration,
+                                    preceded(space0, tag("="))
+                                ),
+                                preceded(
+                                    space0,
+                                    voting_execution
+                                )
+                            ))
+                        ),
+                        preceded(space0, char(';'))
+                    ),
+                    |(variable_name, call)| {
+                        VotingOperation::Execute {
+                            variable_name: variable_name.to_string(),
+                            execution: call
+                        }
+                    }
+                )
             )
         ))
     )(input)
 }
 
-fn voting_function<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, VotingFunction, E> {
-    map_res(many1(preceded(multispace0, voting_operation)), |mut value| {
+
+fn voting_function_provider<'a,'b, E: ErrorType<ParserInput<'a,'b>>>(is_root: bool) -> impl FnMut(ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingFunction, E>{
+    map_res(many1(preceded(multispace0, voting_operation)), move |mut value| {
         match value.len() {
             0 => Err(VotingParseError::NoVotingFound),
-            1 => Ok(VotingFunction::Single(value.swap_remove(0))),
+            1 => Ok(VotingFunction::Single(value.swap_remove(0), is_root)),
             _ => Ok(VotingFunction::Multi(value))
         }
-    })(input)
+    })
+}
+
+/// Parses a voting function
+fn voting_function<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingFunction, E> {
+    voting_function_provider(false)(input)
+}
+
+pub(crate) fn global_voting_function<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingFunction, E> {
+    alt((
+        b_exp(voting_function_provider(true)),
+        voting_function_provider(false),
+    ))(input)
 }
 
 struct BuildInVotingParser;
@@ -444,26 +572,49 @@ impl<Input, Error: ParseError<Input>> Parser<Input, BuildInVoting, Error> for Bu
     }
 }
 
-fn build_in_voting<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, BuildInVoting, E> {
+pub(crate) fn build_in_voting<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a, 'b>) -> IResult<ParserInput<'a,'b>, BuildInVoting, E> {
     preceded(
         multispace0,
         BuildInVotingParser
     )(input)
 }
 
-// fn voting<'a, E: ErrorType<&'a str>>(input: &'a str) -> IResult<&'a str, Voting<dyn VotingMethod>, E> {
-//
-// }
+pub(crate) fn voting<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingAndName, E> {
+    fn voting_impl<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, VotingAndName, E> {
+        map(
+            pair(
+                delimited(
+                    delimited(multispace0, tag(KW_DECLARE), space1),
+                    preceded(
+                        context("special variable check failed", peek(not(reserved_variable_name))),
+                        variable_name,
+                    ),
+                    multispace1
+                ),
+                b_exp(voting_function)
+            ),
+            VotingAndName::from
+        )(input)
+    }
+
+    alt((
+        b_exp(voting_impl),
+        voting_impl
+    ))(input)
+}
+
+
 
 #[cfg(test)]
 mod test {
     use evalexpr::{ContextWithMutableVariables, HashMapContext};
     use nom::{Finish};
     use nom::error::VerboseError;
+    use crate::variable_names::{NUMBER_OF_VOTERS, SCORE};
     use crate::voting::{VotingMethod};
-    use crate::voting::parser::logic::voting_function;
+    use crate::voting::parser::logic::{b_exp, voting, voting_function};
 
-    const TEST: &str = "aggregate(sss = sumOf): {
+    const TEST: &str = "aggregate(let sss = sumOf): {
             let katze = if (a+b == (c+d)) {
                 r = true
                 x = -3 + 4 + c * 2
@@ -486,6 +637,48 @@ mod test {
             katze
         }";
 
+    const TEST2: &str = "
+    declare my_voting {
+        execute(let the_votes_selected = Voters);
+        aggregate(let sss = sumOf): {
+            let katze = if (a+b == (c+d)) {
+                r = true
+                x = -3 + 4 + c * 2
+                z = (true, -1, (3), false)
+                let _temp = z[1]
+                o = -_temp
+                y = -(a + b)
+                value = 9 - 2 + d * x
+                pp + 2
+            } else {
+                r = true
+                x = 9 + 7 + a
+                z = (true, -2, (3), false)
+                let _temp = z[1]
+                o = -_temp
+                value = (8 + 7) * b + 1
+                pp + 3
+            }
+            let katze = katze + the_votes_selected
+            katze
+        }
+    }
+    ";
+
+    const TEST3: &str = "
+    {
+        aggregate(let sss = sumOf): {score}
+        global: sss
+    }
+    ";
+
+    #[test]
+    fn can_parse(){
+        let x = b_exp::<_, _, VerboseError<_>, _>(voting_function)(TEST3.into());
+        let x = x.unwrap();
+        println!("{}", x.1)
+    }
+
     #[test]
     fn versuch(){
         let mut conbtext = HashMapContext::new();
@@ -494,7 +687,7 @@ mod test {
         conbtext.set_value("c".to_string(), 1.into()).unwrap();
         conbtext.set_value("d".to_string(), 4.into()).unwrap();
 
-        let result= voting_function::<VerboseError<_>>(TEST).finish();
+        let result= voting_function::<VerboseError<_>>(TEST.into()).finish();
         match &result {
             Ok(value) => {
                 println!("{}", value.1);
@@ -516,6 +709,42 @@ mod test {
         }
 
         println!("{:?}", result.unwrap().1.execute(&mut conbtext, &mut x));
+        println!("{:?}", conbtext);
+        println!("{:?}", x);
+    }
+
+    #[test]
+    fn versuch2(){
+        let mut conbtext = HashMapContext::new();
+        conbtext.set_value("a".to_string(), 3.into()).unwrap();
+        conbtext.set_value("b".to_string(), 2.into()).unwrap();
+        conbtext.set_value("c".to_string(), 1.into()).unwrap();
+        conbtext.set_value("d".to_string(), 4.into()).unwrap();
+        conbtext.set_value(NUMBER_OF_VOTERS.to_string(), 4.into()).unwrap();
+
+        let result= voting::<VerboseError<_>>(TEST2.into()).finish();
+        match &result {
+            Ok(value) => {
+                println!("{}", value.1);
+            }
+            Err(value) => {
+                println!("{}", value.to_string());
+            }
+        }
+        // println!("{}", result.unwrap_err().to_string());
+        // println!("{}", result.unwrap_err().to_string());
+        let mut x = vec![
+            HashMapContext::new(),
+            HashMapContext::new(),
+            HashMapContext::new(),
+        ];
+
+        for (i, z) in x.iter_mut().enumerate() {
+            z.set_value("pp".to_string(), (i as i64).into()).unwrap();
+            z.set_value(SCORE.to_string(), (0.3 * i as f64).into()).unwrap();
+        }
+
+        println!("{:?}", result.unwrap().1.1.execute(&mut conbtext, &mut x));
         println!("{:?}", conbtext);
         println!("{:?}", x);
     }

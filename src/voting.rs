@@ -1,12 +1,16 @@
+use std::fmt::{Display, Formatter, Write};
 use std::num::NonZeroUsize;
 use evalexpr::{ContextWithMutableVariables, Value};
-use crate::translate::{NUMBER_OF_VOTERS, RANK, SCORE};
+use nom::Parser;
+use nom::error::ParseError;
+use crate::variable_names::{NUMBER_OF_VOTERS, RANK};
 pub use crate::voting::buildin::*;
-pub use crate::voting::parser::structs::VotingFunction;
+use crate::voting::display::{DisplayTree, IndentWriter};
+pub use crate::voting::parser::voting_function::VotingFunction;
 pub use crate::voting::errors::VotingExpressionError;
 use crate::voting::traits::{LimitableVotingMethodMarker, RootVotingMethodMarker, VotingMethodMarker};
 
-mod parser;
+pub(crate) mod parser;
 mod aggregations;
 pub mod buildin;
 pub mod registry;
@@ -82,12 +86,13 @@ impl<T> VotingMethod for Voting<T> where T: VotingMethodMarker {
 
 
 /// A voting with limits
-pub struct VotingWithLimit<T: VotingMethodMarker + ?Sized> {
+#[derive(Debug, Clone)]
+pub struct VotingWithLimit<T: ?Sized> {
     /// The limit for the votes
     limit: NonZeroUsize,
     expr: T
 }
-impl<T> VotingWithLimit<T> where T: VotingMethodMarker {
+impl<T> VotingWithLimit<T> {
     pub fn new(limit: NonZeroUsize, expr: T) -> Self {
         Self {
             limit,
@@ -124,7 +129,19 @@ impl<T> VotingMethod for VotingWithLimit<T> where T: VotingMethodMarker {
     }
 }
 
+impl<T> DisplayTree for VotingWithLimit<T> where T: DisplayTree {
+    fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result {
+        DisplayTree::fmt(&self.expr, f)?;
+        write!(f, "({})", self.limit.get())
+    }
+}
 
+impl<T> Display for VotingWithLimit<T> where T: DisplayTree {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut code_formatter = IndentWriter::new(f);
+        DisplayTree::fmt(self, &mut code_formatter)
+    }
+}
 
 
 
