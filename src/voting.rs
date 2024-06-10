@@ -1,14 +1,12 @@
 use std::fmt::{Display, Formatter, Write};
 use std::num::NonZeroUsize;
 use evalexpr::{ContextWithMutableVariables, Value};
-use nom::Parser;
-use nom::error::ParseError;
 use crate::variable_names::{NUMBER_OF_VOTERS, RANK};
 pub use crate::voting::buildin::*;
 use crate::voting::display::{DisplayTree, IndentWriter};
 pub use crate::voting::parser::voting_function::VotingFunction;
 pub use crate::voting::errors::VotingExpressionError;
-use crate::voting::traits::{LimitableVotingMethodMarker, RootVotingMethodMarker, VotingMethodMarker};
+use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
 
 pub(crate) mod parser;
 mod aggregations;
@@ -39,15 +37,15 @@ pub trait VotingMethod {
             A : ContextWithMutableVariables,
             B : ContextWithMutableVariables;
 
-    #[inline]
-    fn execute_to_f64_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(f64, &'a [B])>
-        where
-            A : ContextWithMutableVariables,
-            B : ContextWithMutableVariables
-    {
-        let (result, voters) = self.execute_with_voters(global_context,voters)?;
-        Ok((result.as_number()?, voters))
-    }
+    // #[inline]
+    // fn execute_to_f64_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(f64, &'a [B])>
+    //     where
+    //         A : ContextWithMutableVariables,
+    //         B : ContextWithMutableVariables
+    // {
+    //     let (result, voters) = self.execute_with_voters(global_context,voters)?;
+    //     Ok((result.as_number()?, voters))
+    // }
 
     fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])>
         where
@@ -57,32 +55,6 @@ pub trait VotingMethod {
     }
 }
 
-
-/// A normal voting without limits
-#[repr(transparent)]
-pub struct Voting<T: VotingMethodMarker + ?Sized> {
-    expr: T
-}
-impl<T> Voting<T> where T: VotingMethodMarker {
-    #[inline(always)]
-    pub fn new(expr: T) -> Self {
-        Self { expr }
-    }
-}
-impl<T> RootVotingMethodMarker for Voting<T> where T: VotingMethodMarker {}
-impl<T> LimitableVotingMethodMarker for Voting<T> where T: VotingMethodMarker {}
-impl<T> VotingMethodMarker for Voting<T> where T: VotingMethodMarker {}
-impl<T> VotingMethod for Voting<T> where T: VotingMethodMarker {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
-        global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;
-        self.expr.execute(global_context, voters)
-    }
-
-    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
-        global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;
-        self.expr.execute_with_voters(global_context, voters)
-    }
-}
 
 
 /// A voting with limits
@@ -122,7 +94,7 @@ impl<T> VotingMethod for VotingWithLimit<T> where T: VotingMethodMarker {
     }
 
     fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
-        let voters = self.slice_voters(voters, |value| value.get_value(RANK).unwrap().as_int().expect("Rank has to be an int!"));;
+        let voters = self.slice_voters(voters, |value| value.get_value(RANK).unwrap().as_int().expect("Rank has to be an int!"));
         assert!(voters.len() <= self.limit.get());
         global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;
         self.expr.execute_with_voters(global_context, voters)

@@ -11,17 +11,18 @@ use rayon::prelude::*;
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
 use crate::toolkit::evalexpr::{CombineableContext, StaticContext};
-use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, TopicModel, TopicModelWithDocumentStats};
-use crate::topicmodel::dictionary::Dictionary;
+use crate::topicmodel::topic_model::{BasicTopicModel, TopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
+use crate::topicmodel::dictionary::{DictionaryWithVoc};
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
-use crate::topicmodel::vocabulary::Vocabulary;
+use crate::topicmodel::vocabulary::{Vocabulary, VocabularyImpl, VocabularyMut};
 use crate::translate::LanguageOrigin::{Origin, Target};
 use crate::variable_names::*;
 use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
 use crate::voting::traits::VotingMethodMarker;
+use pyo3::pyclass;
 
 #[derive(Debug)]
-struct TranslateConfig<V: VotingMethodMarker> {
+pub struct TranslateConfig<V: VotingMethodMarker> {
     epsilon: Option<f64>,
     voting: V,
     threshold: Option<f64>,
@@ -29,8 +30,27 @@ struct TranslateConfig<V: VotingMethodMarker> {
     top_candidate_limit: Option<NonZeroUsize>,
 }
 
+impl<V> TranslateConfig<V> where V: VotingMethodMarker {
+    pub fn new(epsilon: Option<f64>, voting: V, threshold: Option<f64>, keep_original_word: KeepOriginalWord, top_candidate_limit: Option<NonZeroUsize>) -> Self {
+        Self { epsilon, voting, threshold, keep_original_word, top_candidate_limit }
+    }
+}
+
+impl<V> Clone for TranslateConfig<V> where V: Clone + VotingMethodMarker {
+    fn clone(&self) -> Self {
+        Self {
+            epsilon: self.epsilon,
+            voting: self.voting.clone(),
+            threshold: self.threshold,
+            keep_original_word: self.keep_original_word,
+            top_candidate_limit: self.top_candidate_limit
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
 #[derive(AsRefStr, Display, EnumString)]
+#[pyclass]
 pub enum KeepOriginalWord {
     #[strum(serialize = "ALWAYS")]
     Always,
@@ -42,9 +62,9 @@ pub enum KeepOriginalWord {
 }
 
 #[derive(Debug, Error)]
-pub enum TranslateError<'a, L> {
+pub enum TranslateError<'a, Model, D> {
     #[error("The dictionary is not compatible with the topic model.")]
-    InvalidDictionary(&'a TopicModel<L>, &'a Dictionary<L>),
+    InvalidDictionary(&'a Model, &'a D),
     #[error(transparent)]
     VotingError(#[from] VotingExpressionError),
     #[error(transparent)]
@@ -118,14 +138,17 @@ impl<T> Deref for LanguageOrigin<T> {
 
 
 
-
-
-
-fn translate_topic_model<'a, T, V>(
-    topic_model: &'a TopicModel<T>,
-    dictionary: &'a Dictionary<T>,
+pub fn translate_topic_model<'a, Model, D, T, Voc, V>(
+    topic_model: &'a Model,
+    dictionary: &'a D,
     translate_config: &TranslateConfig<V>
-) -> Result<TopicModel<T>, TranslateError<'a, T>> where T: Hash + Eq + Ord, V: VotingMethodMarker {
+) -> Result<TopicModel<T, VocabularyImpl<T>>, TranslateError<'a, Model, D>> where
+    T: Hash + Eq + Ord,
+    V: VotingMethodMarker,
+    Voc: VocabularyMut<T>,
+    D: DictionaryWithVoc<T, Voc>,
+    Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats
+{
     if topic_model.vocabulary().len() != dictionary.voc_a().len() {
         return Err(TranslateError::InvalidDictionary(topic_model, dictionary));
     }
@@ -186,7 +209,7 @@ fn translate_topic_model<'a, T, V>(
     }).collect_vec_list();
 
 
-    let voc_b = voc_b_col.iter().flatten().cloned().collect::<Vocabulary<_>>();
+    let voc_b = voc_b_col.iter().flatten().cloned().collect::<VocabularyImpl<_>>();
 
     let mut counts = vec![0u64; voc_b.len()];
 
@@ -236,7 +259,7 @@ fn translate_topic_model<'a, T, V>(
 struct Candidate {
     candidate_word_id: LanguageOrigin<usize>,
     relative_score: f64,
-    origin_word_id: usize
+    _origin_word_id: usize
 }
 
 
@@ -244,12 +267,12 @@ impl Candidate {
     pub fn new(
         candidate_word_id: LanguageOrigin<usize>,
         relative_score: f64,
-        origin_word_id: usize,
+        _origin_word_id: usize,
     ) -> Self {
         Self {
             candidate_word_id,
             relative_score,
-            origin_word_id
+            _origin_word_id
         }
     }
 }
@@ -274,21 +297,27 @@ impl Ord for Candidate {
     }
 }
 
-fn translate_topic<T, A, B, V>(
-    topic_model: &TopicModel<T>,
-    dictionary: &Dictionary<T>,
+fn translate_topic<Model, T, A, B, V, Voc>(
+    topic_model: &Model,
+    dictionary: &impl DictionaryWithVoc<T, Voc>,
     topic_id: usize,
     topic: &Vec<f64>,
     topic_context: StaticContext<A, B>,
     config: &TranslateConfig<V>
-) -> Result<Vec<Candidate>, TranslateErrorWithOrigin> where A: Context, B: Context, V: VotingMethodMarker {
+) -> Result<Vec<Candidate>, TranslateErrorWithOrigin>
+    where A: Context,
+          B: Context,
+          V: VotingMethodMarker,
+          Voc: Vocabulary<T>,
+          Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats
+{
     topic
         .par_iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
             translate_single_candidate(
-                &topic_model,
-                &dictionary,
+                topic_model,
+                dictionary,
                 topic_id,
                 &topic_context,
                 config,
@@ -301,15 +330,21 @@ fn translate_topic<T, A, B, V>(
 }
 
 #[inline(always)]
-fn translate_single_candidate<T, A, B, V>(
-    topic_model: &TopicModel<T>,
-    dictionary: &Dictionary<T>,
+fn translate_single_candidate<Model, T, A, B, V, Voc>(
+    topic_model: &Model,
+    dictionary: &impl DictionaryWithVoc<T, Voc>,
     topic_id: usize,
     topic_context: &StaticContext<A, B>,
     config: &TranslateConfig<V>,
     original_word_id: usize,
     probability: f64
-) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>> where A: Context, B: Context, V: VotingMethodMarker {
+) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>>
+    where A: Context,
+          B: Context,
+          V: VotingMethodMarker,
+          Voc: Vocabulary<T> ,
+          Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats
+{
     let candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_word_id) {
         Some(candidates.par_iter().cloned().filter_map( |candidate|
             match dictionary.translate_id_to_ids::<BToA>(candidate) {
@@ -320,8 +355,14 @@ fn translate_single_candidate<T, A, B, V>(
                         .iter()
                         .filter_map(|word_id_a_retrans| {
                             topic_model.get_word_meta(topic_id, *word_id_a_retrans)
-                        })
-                        .collect::<Vec<_>>();
+                        });
+
+                    let mapped = if let Some(threshold) = config.threshold {
+                        mapped.filter(|value| value.probability >= threshold).collect_vec()
+                    } else {
+                        mapped.collect_vec()
+                    };
+
 
                     let mut context = context_map! {
                         COUNT_OF_VOTERS => mapped.len() as i64,
@@ -488,20 +529,21 @@ fn translate_single_candidate<T, A, B, V>(
 #[cfg(test)]
 mod test {
     use std::num::NonZeroUsize;
-    use crate::topicmodel::dictionary::Dictionary;
+    use crate::topicmodel::dictionary::{DictionaryImpl, DictionaryMut};
     use crate::topicmodel::dictionary::direction::Invariant;
     use crate::topicmodel::topic_model::{TopicModel};
-    use crate::topicmodel::vocabulary::Vocabulary;
+    use crate::topicmodel::vocabulary::{VocabularyImpl, VocabularyMut};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::{translate_topic_model, TranslateConfig};
     use crate::voting::BuildInVoting::{CombSum};
     use crate::voting::spy::IntoSpy;
     use crate::voting::traits::IntoVotingWithLimit;
+    use Extend;
 
     #[test]
     fn test_complete_translation(){
 
-        let mut voc_a = Vocabulary::<String>::new();
+        let mut voc_a = VocabularyImpl::<String>::new();
         voc_a.extend(vec![
             "plane".to_string(),
             "aircraft".to_string(),
@@ -515,7 +557,7 @@ mod test {
             "foil".to_string(),
             "bearing surface".to_string()
         ]);
-        let mut voc_b = Vocabulary::<String>::new();
+        let mut voc_b = VocabularyImpl::<String>::new();
         voc_b.extend(vec![
             "Flugzeug".to_string(),
             "Flieger".to_string(),
@@ -533,7 +575,7 @@ mod test {
             "Motorflugzeug".to_string(),
         ]);
 
-        let mut dict = Dictionary::new();
+        let mut dict = DictionaryImpl::new();
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);

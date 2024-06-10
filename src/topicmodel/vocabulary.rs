@@ -21,33 +21,124 @@ use thiserror::Error;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::traits::ToParseableString;
 
-pub type StringVocabulary = Vocabulary<String>;
+pub type StringVocabulary = VocabularyImpl<String>;
 
 #[macro_export]
 macro_rules! voc {
     () => {
-        Vocabulary::new()
+        VocabularyImpl::new()
     };
     ($($value: tt),+) => {
         {
-            let mut __voc = $crate::topicmodel::vocabulary::Vocabulary::new();
+            let mut __voc = $crate::topicmodel::vocabulary::VocabularyImpl::new();
             $(
-                __voc.add_value($value);
+                $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value);
             )+
             __voc
         }
     };
 }
 
+pub trait Vocabulary<T>: Send + Sync {
+    /// The number of entries in the vocabulary
+    fn len(&self) -> usize;
+
+    /// Clear the whole thing
+    fn clear(&mut self);
+
+    /// Get the ids
+    fn ids(&self) -> Range<usize>;
+
+    /// Iterate over the words
+    fn iter(&self) -> Iter<HashRef<T>>;
+
+    fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)>;
+
+    /// Get the HashRef for a specific `id` or none
+    fn get_value(&self, id: usize) -> Option<&HashRef<T>>;
+
+    /// Check if the `id` is contained in this
+    fn contains_id(&self, id: usize) -> bool;
+
+}
+
+pub trait VocabularyMut<T>: Vocabulary<T> where T: Eq + Hash {
+    /// Adds the `value` to the vocabulary and returns the associated id
+    fn add_hash_ref(&mut self, value: HashRef<T>) -> usize;
+
+    fn add_value(&mut self, value: T) -> usize;
+
+    /// Adds any `value` that can be converted into `T`
+    fn add<V: Into<T>>(&mut self, value: V) -> usize;
+
+    /// Retrieves the id for `value`
+    fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq;
+
+    /// Retrieves the id for `value`
+    fn get_hash_ref<Q: ?Sized>(&self, value: &Q) -> Option<&HashRef<T>>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq;
+
+    /// Retrieves the complete entry for `value` in the vocabulary, if it exists
+    fn get_entry_id<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq;
+
+    fn contains<Q: ?Sized>(&self, value: &Q) -> bool
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq;
+}
+
+pub trait MappableVocabulary<T>: Vocabulary<T> where T: Eq + Hash {
+    fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&T) -> Q, V: From<Vec<Q>>;
+}
+
+pub trait StoreableVocabulary<T> where T: ToParseableString {
+    /// Writes the vocabulary as a file to `path` in the list format
+    fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<usize> {
+        let mut writer = File::options().create(true).truncate(true).write(true).open(path)?;
+        self.save_to_output(&mut writer)
+    }
+
+    /// Writes the vocabulary to `writer` in the list format
+    fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize>;
+}
+
+pub trait LoadableVocabulary<T, E> where T: Hash + Eq + FromStr<Err=E>, E: Debug, Self: From<Vec<T>> {
+    /// Loads from a `path` in the list format
+    fn load_from_file(path: impl AsRef<Path>) -> Result<Self, LoadVocabularyError<E>> {
+        let mut reader = BufReader::new(File::open(path)?);
+        Self::load_from_input(&mut reader)
+    }
+
+    /// Loads from a `reader` in the list format
+    fn load_from_input(reader: &mut impl BufRead) -> Result<Self, LoadVocabularyError<E>> {
+        let mut id2entry = Vec::new();
+        for line in reader.lines() {
+            id2entry.push(line?.parse().map_err(LoadVocabularyError::Parse)?)
+        }
+        Ok(Self::from(id2entry))
+    }
+}
+
+
+
 /// A vocabulary mapping between an usize id and a specific object (word)
 #[derive(Clone, Debug)]
-pub struct Vocabulary<T> {
+pub struct VocabularyImpl<T> {
     entry2id: HashMap<HashRef<T>, usize>,
     id2entry: Vec<HashRef<T>>
 }
 
-impl <T> Vocabulary<T> {
 
+
+impl <T> VocabularyImpl<T> {
     /// Create a new vocabulary with the default sizes
     pub fn new() -> Self {
         Self {
@@ -62,51 +153,54 @@ impl <T> Vocabulary<T> {
             id2entry: Vec::with_capacity(capacity)
         }
     }
+}
 
+
+impl <T> Vocabulary<T> for VocabularyImpl<T> {
     /// The number of entries in the vocabulary
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.id2entry.len()
     }
 
     /// Clear the whole thing
-    pub fn clear(&mut self){
+    fn clear(&mut self){
         self.id2entry.clear();
         self.entry2id.clear();
     }
 
     /// Get the ids
-    pub fn ids(&self) -> Range<usize> {
+    fn ids(&self) -> Range<usize> {
         0..self.id2entry.len()
     }
 
     /// Iterate over the words
-    pub fn iter(&self) -> Iter<HashRef<T>> {
+    fn iter(&self) -> Iter<HashRef<T>> {
         self.id2entry.iter()
     }
 
-    pub fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)> {
+    fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)> {
         self.get_value(id).map(|value| (id, value))
     }
 
     /// Get the HashRef for a specific `id` or none
-    pub fn get_value(&self, id: usize) -> Option<&HashRef<T>> {
+    fn get_value(&self, id: usize) -> Option<&HashRef<T>> {
         self.id2entry.get(id)
     }
 
     /// Check if the `id` is contained in this
-    pub fn contains_id(&self, id: usize) -> bool {
+    fn contains_id(&self, id: usize) -> bool {
         self.id2entry.len() > id
     }
 }
 
 
-impl<T> AsRef<Vec<HashRef<T>>> for Vocabulary<T> {
+impl<T> AsRef<Vec<HashRef<T>>> for VocabularyImpl<T> {
     fn as_ref(&self) -> &Vec<HashRef<T>> {
         &self.id2entry
     }
 }
 
-impl<T: Eq + Hash> From<Vec<T>> for Vocabulary<T>  {
+impl<T: Eq + Hash> From<Vec<T>> for VocabularyImpl<T>  {
     fn from(value: Vec<T>) -> Self {
         let id2entry = value.into_iter().map(|value| HashRef::new(value)).collect_vec();
         let entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
@@ -119,11 +213,9 @@ impl<T: Eq + Hash> From<Vec<T>> for Vocabulary<T>  {
 }
 
 
-
-impl <T: Eq + Hash> Vocabulary<T> {
-
+impl<T> VocabularyMut<T> for VocabularyImpl<T> where T: Eq + Hash {
     /// Adds the `value` to the vocabulary and returns the associated id
-    pub fn add_hash_ref(&mut self, value: HashRef<T>) -> usize {
+    fn add_hash_ref(&mut self, value: HashRef<T>) -> usize {
         let found = self.entry2id.entry(value);
         match found {
             Entry::Occupied(entry) => {
@@ -138,17 +230,17 @@ impl <T: Eq + Hash> Vocabulary<T> {
         }
     }
 
-    pub fn add_value(&mut self, value: T) -> usize {
+    fn add_value(&mut self, value: T) -> usize {
         self.add_hash_ref(value.into())
     }
 
     /// Adds any `value` that can be converted into `T`
-    pub fn add<V: Into<T>>(&mut self, value: V) -> usize {
+    fn add<V: Into<T>>(&mut self, value: V) -> usize {
         self.add_hash_ref(value.into().into())
     }
 
     /// Retrieves the id for `value`
-    pub fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
+    fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
@@ -157,7 +249,7 @@ impl <T: Eq + Hash> Vocabulary<T> {
     }
 
     /// Retrieves the id for `value`
-    pub fn get_hash_ref<Q: ?Sized>(&self, value: &Q) -> Option<&HashRef<T>>
+    fn get_hash_ref<Q: ?Sized>(&self, value: &Q) -> Option<&HashRef<T>>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
@@ -166,7 +258,7 @@ impl <T: Eq + Hash> Vocabulary<T> {
     }
 
     /// Retrieves the complete entry for `value` in the vocabulary, if it exists
-    pub fn get_entry_id<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
+    fn get_entry_id<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
         where
             T: Borrow<Q>,
             Q: Hash + Eq
@@ -174,20 +266,23 @@ impl <T: Eq + Hash> Vocabulary<T> {
         self.entry2id.get_key_value(Wrapper::wrap(value))
     }
 
-    pub fn contains<Q: ?Sized>(&self, value: &Q) -> bool
+    fn contains<Q: ?Sized>(&self, value: &Q) -> bool
         where
             T: Borrow<Q>,
             Q: Hash + Eq {
 
         self.entry2id.contains_key(Wrapper::wrap(value))
     }
+}
 
-    pub fn map<Q: Eq + Hash, F>(self, mapping: F) -> Vocabulary<Q> where F: Fn(&T) -> Q {
-        Vocabulary::from(self.id2entry.into_iter().map(|value| mapping(value.as_ref())).collect::<Vec<_>>())
+
+impl<T> MappableVocabulary<T> for VocabularyImpl<T> where T: Eq + Hash {
+    fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&T) -> Q, V: From<Vec<Q>> {
+        V::from(self.id2entry.into_iter().map(|value| mapping(value.as_ref())).collect::<Vec<_>>())
     }
 }
 
-impl<Q: Into<T>, T: Eq + Hash> Extend<Q> for Vocabulary<T> {
+impl<T, Q: Into<T>> Extend<Q> for VocabularyImpl<T> where T: Eq + Hash {
     fn extend<I: IntoIterator<Item=Q>>(&mut self, iter: I) {
         for value in iter {
             self.add(value);
@@ -196,7 +291,7 @@ impl<Q: Into<T>, T: Eq + Hash> Extend<Q> for Vocabulary<T> {
 }
 
 
-impl<T: Eq> PartialEq for Vocabulary<T> {
+impl<T: Eq> PartialEq for VocabularyImpl<T> {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() &&
             self.id2entry.iter()
@@ -205,7 +300,7 @@ impl<T: Eq> PartialEq for Vocabulary<T> {
     }
 }
 
-impl<T: Eq> Eq for Vocabulary<T> {}
+impl<T: Eq> Eq for VocabularyImpl<T> {}
 
 
 #[derive(Debug, Error)]
@@ -216,33 +311,13 @@ pub enum LoadVocabularyError<E: Debug> {
     Parse(E),
 }
 
-impl<T: Hash + Eq + FromStr<Err=E>, E: Debug> Vocabulary<T> {
-
-    /// Loads from a `path` in the list format
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, LoadVocabularyError<E>> {
-        let mut reader = BufReader::new(File::open(path)?);
-        Self::load_from_input(&mut reader)
-    }
-
-    /// Loads from a `reader` in the list format
-    pub fn load_from_input(reader: &mut impl BufRead) -> Result<Self, LoadVocabularyError<E>> {
-        let mut id2entry = Vec::new();
-        for line in reader.lines() {
-            id2entry.push(line?.parse().map_err(LoadVocabularyError::Parse)?)
-        }
-        Ok(Self::from(id2entry))
-    }
+impl<T: Hash + Eq + FromStr<Err=E>, E: Debug> LoadableVocabulary<T, E> for  VocabularyImpl<T> {
 }
 
-impl<T: ToParseableString> Vocabulary<T>  {
-    /// Writes the vocabulary as a file to `path` in the list format
-    pub fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<usize> {
-        let mut writer = File::options().create(true).truncate(true).write(true).open(path)?;
-        self.save_to_output(&mut writer)
-    }
 
+impl<T: ToParseableString> StoreableVocabulary<T> for VocabularyImpl<T>  {
     /// Writes the vocabulary to `writer` in the list format
-    pub fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {
+    fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {
         let mut written = 0;
         let mut writer = BufWriter::new(writer);
         for value in self.id2entry.iter() {
@@ -255,7 +330,7 @@ impl<T: ToParseableString> Vocabulary<T>  {
     }
 }
 
-impl <T: ToString> Display for Vocabulary<T> {
+impl <T: ToString> Display for VocabularyImpl<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let x = self
             .id2entry
@@ -266,7 +341,7 @@ impl <T: ToString> Display for Vocabulary<T> {
     }
 }
 
-impl<T> Default for Vocabulary<T> {
+impl<T> Default for VocabularyImpl<T> {
     #[inline]
     fn default() -> Self {
         Self::new()
@@ -274,7 +349,7 @@ impl<T> Default for Vocabulary<T> {
 }
 
 
-impl<T: Serialize> Serialize for Vocabulary<T> {
+impl<T: Serialize> Serialize for VocabularyImpl<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         let mut st = serializer.serialize_struct("Vocabulary", 1)?;
         st.serialize_field(
@@ -285,7 +360,7 @@ impl<T: Serialize> Serialize for Vocabulary<T> {
     }
 }
 
-impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
+impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for VocabularyImpl<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
 
         struct VocabularyVisitor<'de, T: Deserialize<'de>>{_phantom: PhantomData<(T, &'de())>}
@@ -301,7 +376,7 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
         enum Field { Id2Entry }
 
         impl<'de, T: Deserialize<'de> + Hash + Eq> Visitor<'de> for VocabularyVisitor<'de, T> {
-            type Value = Vocabulary<T>;
+            type Value = VocabularyImpl<T>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str("struct Vocabulary")
@@ -318,7 +393,7 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
                     } }
                 }
                 if let Some(field_value) = field {
-                    Ok(Vocabulary::from(field_value))
+                    Ok(VocabularyImpl::from(field_value))
                 } else {
                     Err(de::Error::missing_field("id2entry"))
                 }
@@ -331,7 +406,7 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
 
 
 
-impl<T> IntoParallelIterator for Vocabulary<T> {
+impl<T> IntoParallelIterator for VocabularyImpl<T> {
     type Iter = rayon::vec::IntoIter<HashRef<T>>;
     type Item = HashRef<T>;
 
@@ -341,7 +416,7 @@ impl<T> IntoParallelIterator for Vocabulary<T> {
 }
 
 
-impl<T> FromIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+impl<T> FromIterator<HashRef<T>> for VocabularyImpl<T> where T: Hash + Eq {
     fn from_iter<I: IntoIterator<Item=HashRef<T>>>(iter: I) -> Self {
         let mut new = Self::new();
         for value in iter {
@@ -351,7 +426,7 @@ impl<T> FromIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
     }
 }
 
-impl<'a, T> FromIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+impl<'a, T> FromIterator<&'a HashRef<T>> for VocabularyImpl<T> where T: Hash + Eq {
     fn from_iter<I: IntoIterator<Item=&'a HashRef<T>>>(iter: I) -> Self {
         let mut new = Self::new();
         for value in iter {
@@ -361,7 +436,7 @@ impl<'a, T> FromIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
     }
 }
 
-impl<T> FromParallelIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+impl<T> FromParallelIterator<HashRef<T>> for VocabularyImpl<T> where T: Hash + Eq {
     fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=HashRef<T>> {
         let mut new = Self::new();
         for value in par_iter.into_par_iter().collect_vec_list() {
@@ -373,7 +448,7 @@ impl<T> FromParallelIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
     }
 }
 
-impl<'a, T> FromParallelIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
+impl<'a, T> FromParallelIterator<&'a HashRef<T>> for VocabularyImpl<T> where T: Hash + Eq {
     fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=&'a HashRef<T>> {
         let mut new = Self::new();
         for value in par_iter.into_par_iter().collect_vec_list() {
@@ -426,7 +501,7 @@ impl<K, Q> Borrow<Wrapper<Q>> for HashRef<K>
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::vocabulary::{HashRef, StringVocabulary, Vocabulary};
+    use crate::topicmodel::vocabulary::{HashRef, StringVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
 
     #[test]
     fn can_insert_and_retrieve() {
@@ -440,7 +515,7 @@ mod test {
         assert_eq!(Some("Wasimodo"), voc.get_value(1).map(|x| x.as_str()));
 
         let s = serde_json::to_string(&voc).unwrap();
-        let voc2: Vocabulary<String> = serde_json::from_str(&s).unwrap();
+        let voc2: VocabularyImpl<String> = serde_json::from_str(&s).unwrap();
         println!("{voc}");
         println!("{voc2}");
     }

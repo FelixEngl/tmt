@@ -5,9 +5,9 @@ use std::sync::{Arc, RwLock};
 use crate::voting::{VotingFunction};
 
 /// A registry for votings
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct VotingRegistry {
-    inner: RwLock<HashMap<String, Arc<VotingFunction>>>
+    inner: Arc<RwLock<HashMap<String, Arc<VotingFunction>>>>
 }
 
 impl VotingRegistry {
@@ -34,11 +34,6 @@ impl VotingRegistry {
             .get(q)
             .cloned()
     }
-
-    // pub fn register_by_parsing<Q: ?Sized>(&self, value: &Q) -> (Arc<VotingFunction>, Option<Arc<VotingFunction>>)
-    //     where Q: AsRef<str> {
-    //
-    // }
 }
 
 

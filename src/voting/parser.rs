@@ -1,21 +1,22 @@
 use std::sync::Arc;
+use evalexpr::{ContextWithMutableVariables, Value};
 use nom::branch::alt;
 use nom::combinator::{map, map_res};
 use nom::IResult;
 use strum::EnumIs;
-use crate::voting::{BuildInVoting, VotingFunction, VotingWithLimit};
+use crate::voting::{BuildInVoting, VotingFunction, VotingMethod, VotingResult, VotingWithLimit};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::logic::{build_in_voting, ErrorType, global_voting_function, parse_limited, variable_name, voting};
 use crate::voting::parser::logic::VotingParseError::{NoRegistryProvided, NoVotingInRegistryFound};
-use crate::voting::parser::ParseResult::FromRegistry;
 use crate::voting::parser::voting_function::VotingAndName;
+use crate::voting::traits::VotingMethodMarker;
 
 pub(crate) mod voting_function;
 pub mod logic;
 mod traits;
 pub mod input;
 
-#[derive(Debug, EnumIs)]
+#[derive(Debug, EnumIs, Clone)]
 pub enum ParseResult {
     BuildIn(BuildInVoting),
     FromRegistry(Arc<VotingFunction>),
@@ -34,7 +35,7 @@ pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>
                     registry
                         .get(value.as_ref())
                         .ok_or_else(|| NoVotingInRegistryFound(value.to_string()))
-                        .map(FromRegistry)
+                        .map(ParseResult::FromRegistry)
                 }
             }),
             map(voting, ParseResult::ForRegistry),
@@ -46,6 +47,55 @@ pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>
         map(parse_limited(parse_internal), ParseResult::Limited),
         parse_internal
     ))(input)
+}
+
+impl VotingMethodMarker for ParseResult{}
+
+impl VotingMethod for ParseResult {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+        match self {
+            ParseResult::BuildIn(value) => {
+                value.execute(global_context, voters)
+            }
+            ParseResult::FromRegistry(value) => {
+                value.execute(global_context, voters)
+            }
+            ParseResult::Parsed(value) => {
+                value.execute(global_context, voters)
+            }
+            ParseResult::ForRegistry(value) => {
+                value.1.execute(global_context, voters)
+            }
+            ParseResult::Limited(value) => {
+                value.execute(global_context, voters)
+            }
+        }
+    }
+}
+
+
+impl From<Arc<VotingFunction>> for ParseResult {
+    fn from(value: Arc<VotingFunction>) -> Self {
+        Self::FromRegistry(value)
+    }
+}
+
+impl From<VotingFunction> for ParseResult {
+    fn from(value: VotingFunction) -> Self {
+        Self::Parsed(value)
+    }
+}
+
+impl From<VotingAndName> for ParseResult {
+    fn from(value: VotingAndName) -> Self {
+        Self::ForRegistry(value)
+    }
+}
+
+impl From<BuildInVoting> for ParseResult {
+    fn from(value: BuildInVoting) -> Self {
+        Self::BuildIn(value)
+    }
 }
 
 
@@ -62,14 +112,14 @@ mod test {
     fn can_recognize_buildin(){
         let build_ind = BuildInVoting::CombSumPow2RRPow2.to_string();
         let result: IResult<_, _> = parse(build_ind.as_str().into());
-        let (input, result) = result.unwrap();
+        let (_, result) = result.unwrap();
         assert!(result.is_build_in())
     }
 
     #[test]
     fn can_recognize_parsed(){
         let result: IResult<_, _> = parse("aggregate(let sss = sumOf): score".into());
-        let (input, result) = result.unwrap();
+        let (_, result) = result.unwrap();
         assert!(result.is_parsed())
     }
 
@@ -90,7 +140,7 @@ mod test {
             "call_me",
             &registry
         ));
-        let (input, result) = result.unwrap();
+        let (_, result) = result.unwrap();
         assert!(result.is_from_registry())
     }
 
@@ -101,7 +151,7 @@ mod test {
             global: sss
         }".into()).finish();
 
-        let (input, result) = result.unwrap();
+        let (_, result) = result.unwrap();
         assert!(result.is_parsed())
     }
 
@@ -111,14 +161,14 @@ mod test {
             aggregate(let sss = sumOf): score
             global: sss
         }".into());
-        let (input, result) = result.unwrap();
+        let (_, result) = result.unwrap();
         assert!(result.is_for_registry())
     }
 
     #[test]
     fn can_recognize_limited(){
         let result: IResult<_, _> = parse("Voters(20)".into());
-        let (input, result) = result.unwrap();
+        let (_, result) = result.unwrap();
         assert!(result.is_limited());
         if let ParseResult::Limited(inner) = result {
             assert!(inner.expr.is_build_in())
@@ -131,7 +181,7 @@ mod test {
             aggregate(let sss = sumOf): {score}
             global: sss
         }(20)".into());
-        let (input, result) = result.unwrap();
+        let (_, result) = result.unwrap();
         assert!(result.is_limited());
         if let ParseResult::Limited(inner) = result {
             assert!(inner.expr.is_parsed())

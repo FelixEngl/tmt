@@ -10,6 +10,7 @@ use std::hash::{Hash};
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
 use std::iter::Map;
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut, Range};
 use std::path::Path;
 use std::slice::Iter;
@@ -32,32 +33,29 @@ use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite};
 use crate::topicmodel::io::TopicModelIOError::PathNotFound;
 use crate::topicmodel::math::{dirichlet_expectation_1d, dirichlet_expectation_2d, dot, transpose};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{Vocabulary};
+use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
 
 
-type TopicTo<T> = Vec<T>;
-type WordTo<T> = Vec<T>;
-type PositionTo<T> = Vec<T>;
-type DocumentTo<T> = Vec<T>;
-type ImportanceRankTo<T> = Vec<T>;
-type Probability = f64;
+pub(crate) type TopicTo<T> = Vec<T>;
+pub(crate) type WordTo<T> = Vec<T>;
+pub(crate) type PositionTo<T> = Vec<T>;
+pub(crate) type DocumentTo<T> = Vec<T>;
+pub(crate) type ImportanceRankTo<T> = Vec<T>;
+pub(crate) type Probability = f64;
 
 /// The direct rank, created by the order of the probabilities and then
-type Rank = usize;
+pub(crate) type Rank = usize;
 
 /// The rank, when grouping the topic by probabilities
-type ImportanceRank = usize;
-type WordId = usize;
-type TopicId = usize;
-type Position = usize;
-type Importance = usize;
-type DocumentId = usize;
-type WordFrequency = u64;
-type DocumentLength = u64;
+pub(crate) type ImportanceRank = usize;
+pub(crate) type WordId = usize;
+pub(crate) type TopicId = usize;
+pub(crate) type Position = usize;
+pub(crate) type Importance = usize;
+pub(crate) type DocumentId = usize;
+pub(crate) type WordFrequency = u64;
+pub(crate) type DocumentLength = u64;
 
-
-/// A topic model based on Strings.
-pub type StringTopicModel = TopicModel<String>;
 
 /// The meta for a topic.
 #[derive(Debug, Clone)]
@@ -251,18 +249,18 @@ pub trait TopicModelWithDocumentStats {
 }
 
 /// A basic topic model with a vocabulary
-pub trait BasicTopicModelWithVocabulary<T>: BasicTopicModel {
+pub trait BasicTopicModelWithVocabulary<T, Voc>: BasicTopicModel where Voc: Vocabulary<T> {
     /// The vocabulary
-    fn vocabulary(&self) -> &Vocabulary<T>;
+    fn vocabulary(&self) -> &Voc;
 
     /// Get the word for the `word_id`
     #[inline]
-    fn get_word(&self, word_id: WordId) -> Option<&HashRef<T>> {
+    fn get_word<'a>(&'a self, word_id: WordId) -> Option<&'a HashRef<T>> where Voc: 'a {
         self.vocabulary().get_value(word_id)
     }
 
     /// Get the [WordMetaWithWord] of `word_id` of `topic_id`
-    fn get_word_meta_with_word(&self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<HashRef<T>>> {
+    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, HashRef<T>>>  where Voc: 'a {
         let topic_meta = self.get_topic_meta(topic_id)?;
         let word_meta = topic_meta.by_words.get(word_id)?;
         let word = self.vocabulary().get_value(word_meta.word_id)?;
@@ -270,13 +268,13 @@ pub trait BasicTopicModelWithVocabulary<T>: BasicTopicModel {
     }
 
     /// Get the [WordMetaWithWord] of `word_id` for all topics.
-    fn get_word_metas_with_word(&self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<HashRef<T>>>> {
+    fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, HashRef<T>>>> where Voc: 'a {
         self.topic_ids().map(|topic_id| self.get_word_meta_with_word(topic_id, word_id)).collect()
     }
 
     /// Get all [WordMetaWithWord] values with a similar importance in `topic_id` than `word_id`.
     /// (including the `word_id`)
-    fn get_all_similar_important_with_word_for(&self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<HashRef<T>>>> {
+    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, HashRef<T>>>> where Voc: 'a {
         Some(
             self.get_all_similar_important(topic_id, word_id)?
                 .iter()
@@ -287,7 +285,7 @@ pub trait BasicTopicModelWithVocabulary<T>: BasicTopicModel {
 }
 
 /// A topic model with an explicit vocabulary
-pub trait TopicModelWithVocabulary<T>: BasicTopicModelWithVocabulary<T> {
+pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where Voc: Vocabulary<T> {
     fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<WordId> where T: Borrow<Q>, Q: Hash + Eq;
     fn contains<Q: ?Sized>(&self, word: &Q) -> bool where T: Borrow<Q>, Q: Hash + Eq;
 
@@ -311,7 +309,7 @@ pub trait TopicModelWithVocabulary<T>: BasicTopicModelWithVocabulary<T> {
 
     /// Get the [WordMetaWithWord] of `word` for all topics.
     #[inline]
-    fn get_word_metas_with_word_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicTo<WordMetaWithWord<HashRef<T>>>> where T: Borrow<Q>, Q: Hash + Eq {
+    fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, HashRef<T>>>> where T: Borrow<Q>, Q: Hash + Eq, Voc: 'a {
         self.get_word_metas_with_word(self.get_id(word)?)
     }
 
@@ -323,15 +321,16 @@ pub trait TopicModelWithVocabulary<T>: BasicTopicModelWithVocabulary<T> {
     }
 
     /// Returns true iff the topic models seem similar.
-    fn seems_equal_to<Q>(&self, other: &impl TopicModelWithVocabulary<Q>) -> bool
+    fn seems_equal_to<Q, VOther>(&self, other: &impl TopicModelWithVocabulary<Q, VOther>) -> bool
         where
             T: Borrow<Q>,
-            Q: Hash + Eq + Borrow<T>
+            Q: Hash + Eq + Borrow<T>,
+            VOther: Vocabulary<Q>
     ;
 }
 
 /// A topic model that allows basic show methods
-pub trait DisplayableTopicModel<T>: BasicTopicModelWithVocabulary<T> where T: Display {
+pub trait DisplayableTopicModel<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where T: Display, Voc: Vocabulary<T> + Display {
     fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
         for (topic_id, topic_entries) in self.get_n_best_for_topics(n).ok_or(io::Error::from(ErrorKind::Other))?.iter().enumerate() {
             if topic_id != 0 {
@@ -358,30 +357,48 @@ pub trait DisplayableTopicModel<T>: BasicTopicModelWithVocabulary<T> where T: Di
     }
 }
 
-impl<TopicModel, T> DisplayableTopicModel<T> for TopicModel
-    where TopicModel: BasicTopicModelWithVocabulary<T>,
-          T:Display
+impl<TopicModel, T, Voc> DisplayableTopicModel<T, Voc> for TopicModel
+    where TopicModel: BasicTopicModelWithVocabulary<T, Voc>,
+          T:Display, Voc: Vocabulary<T> + Display
 {}
 
 /// A topic model
-#[derive(Clone, Debug)]
-pub struct TopicModel<T> {
+#[derive(Debug)]
+pub struct TopicModel<T, V> {
     topics: TopicTo<WordTo<Probability>>,
-    vocabulary: Vocabulary<T>,
+    vocabulary: V,
     used_vocab_frequency: WordTo<WordFrequency>,
     doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
     document_lengths: DocumentTo<DocumentLength>,
-    topic_metas: TopicTo<TopicMeta>
+    topic_metas: TopicTo<TopicMeta>,
+    _word_type: PhantomData<T>
 }
 
-unsafe impl<T> Send for TopicModel<T>{}
-unsafe impl<T> Sync for TopicModel<T>{}
+unsafe impl<T, V> Send for TopicModel<T, V>{}
+unsafe impl<T, V> Sync for TopicModel<T, V>{}
+
+impl<T, V> Clone for TopicModel<T, V> where V: Clone {
+    fn clone(&self) -> Self {
+        Self {
+            topics: self.topics.clone(),
+            vocabulary: self.vocabulary.clone(),
+            used_vocab_frequency: self.used_vocab_frequency.clone(),
+            doc_topic_distributions: self.doc_topic_distributions.clone(),
+            document_lengths: self.document_lengths.clone(),
+            topic_metas: self.topic_metas.clone(),
+            _word_type: PhantomData
+        }
+    }
+}
 
 
-impl<T: Hash + Eq + Ord> TopicModel<T> {
+impl<T, V> TopicModel<T, V> where
+    T: Hash + Eq + Ord,
+    V: VocabularyMut<T>
+{
     pub fn new(
         topics: TopicTo<WordTo<Probability>>,
-        vocabulary: Vocabulary<T>,
+        vocabulary: V,
         used_vocab_frequency: WordTo<WordFrequency>,
         doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
         document_lengths: DocumentTo<DocumentLength>,
@@ -396,47 +413,53 @@ impl<T: Hash + Eq + Ord> TopicModel<T> {
             used_vocab_frequency,
             doc_topic_distributions,
             document_lengths,
-            topic_metas: topic_content
+            topic_metas: topic_content,
+            _word_type: PhantomData
         }
     }
 
-    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &Vocabulary<T>) -> TopicTo<TopicMeta> {
-        struct SortHelper<'a, Q>(WordId, Probability, &'a Vocabulary<Q>);
+    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &impl Vocabulary<T>) -> TopicTo<TopicMeta> {
+        struct SortHelper<'a, Q, V> where V: Vocabulary<Q> {
+            word_id: WordId,
+            probability: Probability,
+            vocabulary: &'a V,
+            _word_type: PhantomData<Q>,
+        }
 
-        impl<'a, Q> SortHelper<'a, Q> where Q: Hash + Eq  {
+        impl<'a, Q, V> SortHelper<'a, Q, V> where Q: Hash + Eq, V: Vocabulary<Q> {
             fn word(&self) -> &HashRef<Q> {
-                self.2.get_value(self.0).expect("There should be no problem with enpacking it here!")
+                self.vocabulary.get_value(self.word_id).expect("There should be no problem with enpacking it here!")
             }
         }
 
-        impl<Q> Eq for SortHelper<'_, Q> {}
+        impl<Q, V> Eq for SortHelper<'_, Q, V> where V: Vocabulary<Q> {}
 
-        impl<Q> PartialEq<Self> for SortHelper<'_, Q> {
+        impl<Q, V> PartialEq<Self> for SortHelper<'_, Q, V> where V: Vocabulary<Q> {
             fn eq(&self, other: &Self) -> bool {
-                self.1.eq(&other.1)
+                self.probability.eq(&other.probability)
             }
         }
 
-        impl<Q> PartialOrd for SortHelper<'_, Q> where Q: Hash + Eq + Ord {
+        impl<Q, V> PartialOrd for SortHelper<'_, Q, V> where Q: Hash + Eq + Ord, V: Vocabulary<Q> {
             fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                match self.1.partial_cmp(&other.1) {
+                match self.probability.partial_cmp(&other.probability) {
                     None => {
-                        if self.1.is_normal_number() {
+                        if self.probability.is_normal_number() {
                             Some(Ordering::Greater)
-                        } else if other.1.is_normal_number() {
+                        } else if other.probability.is_normal_number() {
                             Some(Ordering::Less)
                         } else {
                             Some(
-                                other.2.get_value(other.0).unwrap().cmp(
-                                    self.2.get_value(self.0).unwrap()
+                                other.vocabulary.get_value(other.word_id).unwrap().cmp(
+                                    self.vocabulary.get_value(self.word_id).unwrap()
                                 )
                             )
                         }
                     }
                     Some(Ordering::Equal) => {
                         Some(
-                            other.2.get_value(other.0).unwrap().cmp(
-                                self.2.get_value(self.0).unwrap()
+                            other.vocabulary.get_value(other.word_id).unwrap().cmp(
+                                self.vocabulary.get_value(self.word_id).unwrap()
                             )
                         )
                     }
@@ -445,7 +468,7 @@ impl<T: Hash + Eq + Ord> TopicModel<T> {
             }
         }
 
-        impl<Q> Ord for SortHelper<'_, Q> where Q: Hash + Eq + Ord {
+        impl<Q, V> Ord for SortHelper<'_, Q, V> where Q: Hash + Eq + Ord, V: Vocabulary<Q> {
             fn cmp(&self, other: &Self) -> Ordering {
                 self.partial_cmp(other).unwrap()
             }
@@ -456,7 +479,12 @@ impl<T: Hash + Eq + Ord> TopicModel<T> {
                 .iter()
                 .copied()
                 .enumerate()
-                .sorted_by_key(|(word_id, prob)| Reverse(SortHelper(*word_id, *prob, vocabulary)))
+                .sorted_by_key(|(word_id, prob)| Reverse(SortHelper {
+                    word_id: *word_id,
+                    probability: *prob,
+                    vocabulary: vocabulary,
+                    _word_type: PhantomData
+                }))
                 .collect_vec();
 
             let mut current_value = position_to_word_id_and_prob.first().unwrap().1;
@@ -574,13 +602,13 @@ impl<T: Hash + Eq + Ord> TopicModel<T> {
     }
 }
 
-impl<T: Clone + Hash + Eq + Ord> TopicModel<T> {
+impl<T, V> TopicModel<T, V> where T: Hash + Eq + Ord, V: Clone + VocabularyMut<T> {
     pub fn normalize(&self) -> Self {
         self.clone().normalize_in_place()
     }
 }
 
-impl<T> TopicModel<T> {
+impl<T, V> TopicModel<T, V> {
     pub fn is_already_finished(path: impl AsRef<Path>) -> bool {
         println!("{:}", path.as_ref().join(MARKER_FILE).to_str().unwrap());
         path.as_ref().join(MARKER_FILE).exists()
@@ -610,7 +638,7 @@ impl<T> TopicModel<T> {
     }
 }
 
-impl<T> BasicTopicModel for TopicModel<T> {
+impl<T, V> BasicTopicModel for TopicModel<T, V> where V: Vocabulary<T> {
     fn topic_count(&self) -> usize {
         self.topics.len()
     }
@@ -695,19 +723,19 @@ impl<T> BasicTopicModel for TopicModel<T> {
     }
 }
 
-impl<T> BasicTopicModelWithVocabulary<T> for TopicModel<T> {
-    fn vocabulary(&self) -> &Vocabulary<T> {
+impl<T, V> BasicTopicModelWithVocabulary<T, V> for TopicModel<T, V> where V: Vocabulary<T> {
+    fn vocabulary(&self) -> &V {
         &self.vocabulary
     }
 
-    fn get_word_meta_with_word(&self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<HashRef<T>>> {
+    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, HashRef<T>>>  where V: 'a  {
         let topic_meta = self.get_topic_meta(topic_id)?;
         let word_meta = topic_meta.by_words.get(word_id)?;
         let word = self.vocabulary.get_value(word_meta.word_id)?;
         Some(WordMetaWithWord::new(word, word_meta))
     }
 
-    fn get_all_similar_important_with_word_for(&self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<HashRef<T>>>> {
+    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, HashRef<T>>>> where V: 'a {
         Some(
             self.get_all_similar_important(topic_id, word_id)?
                 .iter()
@@ -717,7 +745,7 @@ impl<T> BasicTopicModelWithVocabulary<T> for TopicModel<T> {
     }
 }
 
-impl<T> TopicModelWithVocabulary<T> for TopicModel<T> where T: Hash + Eq {
+impl<T, V> TopicModelWithVocabulary<T, V> for TopicModel<T, V> where T: Hash + Eq, V: VocabularyMut<T> {
     delegate::delegate! {
         to self.vocabulary {
             fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<usize> where T: Borrow<Q>, Q: Hash + Eq;
@@ -725,9 +753,10 @@ impl<T> TopicModelWithVocabulary<T> for TopicModel<T> where T: Hash + Eq {
         }
     }
 
-    fn seems_equal_to<Q>(&self, other: &impl TopicModelWithVocabulary<Q>) -> bool
+    fn seems_equal_to<Q, Voc>(&self, other: &impl TopicModelWithVocabulary<Q, Voc>) -> bool
         where T: Borrow<Q>,
-              Q: Hash + Eq + Borrow<T>
+              Q: Hash + Eq + Borrow<T>,
+              Voc: Vocabulary<Q>
     {
         self.topic_count() == other.topic_count()
             && self.vocabulary_size() == other.vocabulary_size()
@@ -758,7 +787,7 @@ impl<T> TopicModelWithVocabulary<T> for TopicModel<T> where T: Hash + Eq {
     }
 }
 
-impl<T> TopicModelWithDocumentStats for TopicModel<T> {
+impl<T, V> TopicModelWithDocumentStats for TopicModel<T, V> {
     fn document_count(&self) -> usize {
         self.document_lengths.len()
     }
@@ -776,7 +805,7 @@ impl<T> TopicModelWithDocumentStats for TopicModel<T> {
     }
 }
 
-impl<T: Display> TopicModel<T> {
+impl<T: Display, V> TopicModel<T, V> where V: Vocabulary<T> {
 
     pub fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
         for (topic_id, topic_entries) in self.get_n_best_for_topics(n).ok_or(io::Error::from(ErrorKind::Other))?.iter().enumerate() {
@@ -804,7 +833,7 @@ impl<T: Display> TopicModel<T> {
     }
 }
 
-impl<T: Display> Display for TopicModel<T> {
+impl<T: Display, V> Display for TopicModel<T, V> where V: Display + Vocabulary<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("Topic Model:")?;
         for (topic_id, topic) in self.topics.iter().enumerate() {
@@ -817,7 +846,7 @@ impl<T: Display> Display for TopicModel<T> {
     }
 }
 
-impl TopicModel<String> {
+impl TopicModel<String, VocabularyImpl<String>> {
     pub fn load_string_model(path: impl AsRef<Path>, allow_unfinished: bool) -> Result<(Self, TopicModelVersion), ReadError<Infallible>> {
         Self::load(path, allow_unfinished)
     }
@@ -832,9 +861,9 @@ const PATH_TO_MODEL: &str = "model\\topic.model";
 const PATH_VERSION_INFO: &str = "version.info";
 const MARKER_FILE: &str = "COMPLETED_TM";
 
-impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug> TopicModel<T> {
+impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug, V> TopicModel<T, V> where V: LoadableVocabulary<T, E> + VocabularyMut<T> {
 
-    pub fn load(path: impl AsRef<Path>, allow_unfinished: bool) -> Result<(Self, TopicModelVersion), ReadError<E>> {
+    pub fn load(path: impl AsRef<Path>, allow_unfinished: bool) -> Result<(TopicModel<T, V>, TopicModelVersion), ReadError<E>> {
         if !allow_unfinished && !Self::is_already_finished(&path) {
             return Err(NotFinishedError(path.as_ref().to_path_buf()))
         }
@@ -851,7 +880,7 @@ impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug> TopicModel<T> {
         Self::load_routine(reader)
     }
 
-    fn load_routine(mut fs: TopicModelFSRead) -> Result<(Self, TopicModelVersion), ReadError<E>> {
+    fn load_routine(mut fs: TopicModelFSRead) -> Result<(TopicModel<T, V>, TopicModelVersion), ReadError<E>> {
         let mut buf = String::new();
 
         let version = match fs.create_reader_to(PATH_VERSION_INFO) {
@@ -872,7 +901,7 @@ impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug> TopicModel<T> {
                 let doc_topic_distributions = Self::read_matrix_f64(inp, deflate)?;
                 let used_vocab_frequency = Self::read_vec_u64(fs.create_reader_to(PATH_TO_VOCABULARY_FREQ)?.0)?;
                 let (inp, _) = fs.create_reader_to(PATH_TO_VOCABULARY)?;
-                let vocabulary = Vocabulary::load_from_input(&mut BufReader::new(inp))?;
+                let vocabulary = V::load_from_input(&mut BufReader::new(inp))?;
                 let (inp, deflate) = fs.create_reader_to(PATH_TO_MODEL)?;
                 let topics = Self::read_matrix_f64(inp, deflate)?;
                 Ok(
@@ -931,7 +960,7 @@ impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug> TopicModel<T> {
     }
 }
 
-impl<T: ToParseableString> TopicModel<T> {
+impl<T: ToParseableString, V> TopicModel<T, V> where V: StoreableVocabulary<T> {
 
     pub fn save(&self, path: impl AsRef<Path>, save_version: TopicModelVersion, deflate: bool, replace: bool) -> Result<usize, WriteError> {
         if Self::is_already_finished(&path) {
@@ -1006,6 +1035,24 @@ impl<T: ToParseableString> TopicModel<T> {
     }
 }
 
+pub trait MappableTopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> + From<Vec<T>> {
+    fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: From<Vec<T>>;
+}
+
+impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> + From<Vec<T>>  {
+    fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: From<Vec<T>> {
+        TopicModel {
+            vocabulary: self.vocabulary.map(|value| value.clone()),
+            document_lengths: self.document_lengths,
+            doc_topic_distributions: self.doc_topic_distributions,
+            used_vocab_frequency: self.used_vocab_frequency,
+            topics: self.topics,
+            topic_metas: self.topic_metas,
+            _word_type: PhantomData
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub enum WordIdOrUnknown<T> {
@@ -1013,20 +1060,76 @@ pub enum WordIdOrUnknown<T> {
     Unknown(T)
 }
 
-pub struct TopicModelInferencer<T> {
-    topic_model: TopicModel<T>,
+
+pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: Vocabulary<T> {
+    topic_model: &'a Model,
     alpha: f64,
-    gamma_threshold: f64
+    gamma_threshold: f64,
+    _word_type: PhantomData<(T, V)>
 }
 
-impl<T> TopicModelInferencer<T> {
-    pub fn new(topic_model: TopicModel<T>, alpha: f64, gamma_threshold: f64) -> Self {
-        Self { topic_model, alpha, gamma_threshold }
+impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: Vocabulary<T> {
+    pub fn new(topic_model: &'a Model, alpha: f64, gamma_threshold: f64) -> Self {
+        Self { topic_model, alpha, gamma_threshold, _word_type: PhantomData }
     }
 }
 
+impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
+    T: Hash + Eq,
+    V: VocabularyMut<T>,
+    Model: TopicModelWithVocabulary<T, V>
+{
+    pub const DEFAULT_MIN_PROBABILITY: f64 = 1E-10;
+    pub const DEFAULT_MIN_PHI_VALUE: f64 = 1E-10;
 
-impl<T: Hash + Eq> TopicModelInferencer<T> {
+    pub fn get_doc_probability_for_default(
+        &self,
+        doc: Vec<T>,
+        per_word_topics: bool
+    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
+        self.get_doc_probability_for(doc, Self::DEFAULT_MIN_PROBABILITY, Self::DEFAULT_MIN_PHI_VALUE, per_word_topics)
+    }
+
+    fn get_doc_probability(&self, doc: Vec<WordIdOrUnknown<T>>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
+        let minimum_probability = 1E-10f64.max(minimum_probability);
+        let minimum_phi_value = 1E-10f64.max(minimum_phi_value);
+        let (bow, _) = self.doc_to_bow(doc);
+        let (gamma, phis) = self.inference(
+            vec![bow.iter().map(|(a, b)| (*a,*b)).collect_vec()],
+            per_word_topics,
+            1000
+        );
+        let norm_value = gamma[0].iter().sum::<f64>();
+        let topic_dist = gamma[0].iter().map(|value| value / norm_value).collect_vec();
+
+        let document_topics = topic_dist.into_iter().enumerate().filter(|(_, value)| *value > minimum_probability).collect_vec();
+
+        if let Some(phis) = phis {
+            let mut word_topic: Vec<(usize, Vec<usize>)> = Vec::new();  // contains word and corresponding topic
+            let mut word_phi: Vec<(usize, Vec<(usize, f64)>)> = Vec::new();  // contains word and phi values
+            for (word_type, _) in bow.iter() {
+                let word_type = *word_type;
+                let mut phi_values: Vec<(f64, usize)> = Vec::new();  // contains (phi_value, topic) pairing to later be sorted
+                let mut phi_topic: Vec<(usize, f64)> = Vec::new();  // contains topic and corresponding phi value to be returned 'raw' to user
+                for topic_id in self.topic_model.topic_ids() {
+                    let v = phis[topic_id][word_type];
+                    if v > minimum_phi_value {
+                        phi_values.push((v, topic_id));
+                        phi_topic.push((topic_id, v));
+                    }
+                }
+                // list with ({word_id => [(topic_0, phi_value), (topic_1, phi_value) ...]).
+                word_phi.push((word_type, phi_topic));
+                // sorts the topics based on most likely topic
+                // returns a list like ({word_id => [topic_id_most_probable, topic_id_second_most_probable, ...]).
+                phi_values.sort_by(|a, b| b.0.total_cmp(&a.0));
+                word_topic.push((word_type, phi_values.into_iter().map(|(_, b)| b).collect()))
+            }
+            (document_topics, Some(word_topic), Some(word_phi))
+        } else {
+            (document_topics, None, None)
+        }
+    }
 
     fn inference(&self, chunk: Vec<Vec<(usize, usize)>>, collect_stats: bool, iterations: usize) -> (Vec<Vec<f64>>, Option<Vec<Vec<f64>>>) {
 
@@ -1079,7 +1182,7 @@ impl<T: Hash + Eq> TopicModelInferencer<T> {
             .enumerate()
             .map(|(_, (doc, mut gamma_d, mut exp_e_log_theta_d))| {
                 let (ids, cts): (Vec<_>, Vec<_>) = multiunzip(doc.into_iter());
-                let exp_e_log_beta_d = self.topic_model.topics.iter().map(|topic| ids.iter().map(|id| topic[*id]).collect_vec()).collect_vec();
+                let exp_e_log_beta_d = self.topic_model.topics().iter().map(|topic| ids.iter().map(|id| topic[*id]).collect_vec()).collect_vec();
                 let mut phinorm = calculate_phi_norm(&exp_e_log_theta_d, &exp_e_log_beta_d);
                 for _ in 0..iterations {
                     let last_gamma = std::mem::replace(
@@ -1105,12 +1208,12 @@ impl<T: Hash + Eq> TopicModelInferencer<T> {
                     }
                 }
                 gamma_d
-        }).collect_vec();
+            }).collect_vec();
 
         (gamma, stats)
     }
 
-    pub fn doc_to_bow<Q>(&self, doc: Vec<WordIdOrUnknown<Q>>) -> (HashMap<WordId, usize>, Option<HashMap<Q, usize>>) where T: Borrow<Q>, Q: Eq + Hash {
+    fn doc_to_bow<Q>(&self, doc: Vec<WordIdOrUnknown<Q>>) -> (HashMap<WordId, usize>, Option<HashMap<Q, usize>>) where T: Borrow<Q>, Q: Eq + Hash {
         let mut counts: HashMap<WordId, usize> = HashMap::with_capacity(doc.len());
         let mut fallback = HashMap::new();
         for word in doc {
@@ -1141,24 +1244,7 @@ impl<T: Hash + Eq> TopicModelInferencer<T> {
         (counts, (!fallback.is_empty()).then_some(fallback))
     }
 
-    pub const DEFAULT_MIN_PROBABILITY: f64 = 1E-10;
-    pub const DEFAULT_MIN_PHI_VALUE: f64 = 1E-10;
-
-    pub fn get_doc_probability_for_default(
-        &self,
-        doc: Vec<T>,
-        per_word_topics: bool
-    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
-        self.get_doc_probability_for(doc, Self::DEFAULT_MIN_PROBABILITY, Self::DEFAULT_MIN_PHI_VALUE, per_word_topics)
-    }
-
-    pub fn get_doc_probability_for(
-        &self,
-        doc: Vec<T>,
-        minimum_probability: f64,
-        minimum_phi_value: f64,
-        per_word_topics: bool
-    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
+    pub fn get_doc_probability_for(&self, doc: Vec<T>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
         let doc = doc.into_iter().map(|value| match self.topic_model.get_id(&value) {
             None => {
                 WordIdOrUnknown::Unknown(value)
@@ -1169,55 +1255,6 @@ impl<T: Hash + Eq> TopicModelInferencer<T> {
         }).collect_vec();
         self.get_doc_probability(doc, minimum_probability,minimum_phi_value, per_word_topics)
     }
-
-
-
-    fn get_doc_probability(
-        &self,
-        doc: Vec<WordIdOrUnknown<T>>,
-        minimum_probability: f64,
-        minimum_phi_value: f64,
-        per_word_topics: bool
-    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
-        let minimum_probability = 1E-10f64.max(minimum_probability);
-        let minimum_phi_value = 1E-10f64.max(minimum_phi_value);
-        let (bow, _) = self.doc_to_bow(doc);
-        let (gamma, phis) = self.inference(
-            vec![bow.iter().map(|(a, b)| (*a,*b)).collect_vec()],
-            per_word_topics,
-            1000
-        );
-        let norm_value = gamma[0].iter().sum::<f64>();
-        let topic_dist = gamma[0].iter().map(|value| value / norm_value).collect_vec();
-
-        let document_topics = topic_dist.into_iter().enumerate().filter(|(_, value)| *value > minimum_probability).collect_vec();
-
-        if let Some(phis) = phis {
-            let mut word_topic: Vec<(usize, Vec<usize>)> = Vec::new();  // contains word and corresponding topic
-            let mut word_phi: Vec<(usize, Vec<(usize, f64)>)> = Vec::new();  // contains word and phi values
-            for (word_type, _) in bow.iter() {
-                let word_type = *word_type;
-                let mut phi_values: Vec<(f64, usize)> = Vec::new();  // contains (phi_value, topic) pairing to later be sorted
-                let mut phi_topic: Vec<(usize, f64)> = Vec::new();  // contains topic and corresponding phi value to be returned 'raw' to user
-                for topic_id in self.topic_model.topic_ids() {
-                    let v = phis[topic_id][word_type];
-                    if v > minimum_phi_value {
-                        phi_values.push((v, topic_id));
-                        phi_topic.push((topic_id, v));
-                    }
-                }
-                // list with ({word_id => [(topic_0, phi_value), (topic_1, phi_value) ...]).
-                word_phi.push((word_type, phi_topic));
-                // sorts the topics based on most likely topic
-                // returns a list like ({word_id => [topic_id_most_probable, topic_id_second_most_probable, ...]).
-                phi_values.sort_by(|a, b| b.0.total_cmp(&a.0));
-                word_topic.push((word_type, phi_values.into_iter().map(|(_, b)| b).collect()))
-            }
-            (document_topics, Some(word_topic), Some(word_phi))
-        } else {
-            (document_topics, None, None)
-        }
-    }
 }
 
 
@@ -1225,12 +1262,12 @@ impl<T: Hash + Eq> TopicModelInferencer<T> {
 #[cfg(test)]
 mod test {
     use crate::topicmodel::enums::TopicModelVersion;
-    use crate::topicmodel::topic_model::{StringTopicModel, TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
-    use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary};
+    use crate::topicmodel::topic_model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
+    use crate::topicmodel::vocabulary::{StringVocabulary, VocabularyImpl, VocabularyMut};
 
 
-    pub fn create_test_data() -> StringTopicModel {
-        let mut voc: StringVocabulary = Vocabulary::new();
+    pub fn create_test_data() -> TopicModel<String, VocabularyImpl<String>> {
+        let mut voc: StringVocabulary = VocabularyImpl::new();
         voc.add("plane");
         voc.add("aircraft");
         voc.add("airplane");
@@ -1288,7 +1325,7 @@ mod test {
         ).unwrap().0;
         println!("{}", (std::time::Instant::now() - before).as_secs());
         // model.show_10().unwrap();
-        let infer = TopicModelInferencer::new(model, 0.001, 0.1);
+        let infer = TopicModelInferencer::new(&model, 0.001, 0.1);
         let inferred = infer.get_doc_probability_for_default(vec!["hello".to_string(), "religion".to_string()], true);
         println!("{:?}", inferred.0);
     }

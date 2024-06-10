@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::{Deref, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
-use std::ptr::write;
 use std::sync::Arc;
 use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, TupleType, Value};
 use itertools::{FoldWhile, Itertools, Position};
@@ -335,7 +334,7 @@ impl_display_for_displaytree!(VotingExecutableList);
 
 /// An if else expression or statement.
 #[derive(Debug, Clone)]
-pub(crate) struct InnerIfElse {
+pub struct InnerIfElse {
     cond: Box<VotingExpression>,
     if_block: VotingExecutableList,
     else_block: VotingExecutableList,

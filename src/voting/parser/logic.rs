@@ -1,12 +1,8 @@
-use std::fmt::{Display, Formatter, Write};
-use std::num::{NonZeroUsize, ParseIntError};
-use std::sync::Arc;
-#[allow(dead_code)]
-
+use std::num::{ParseIntError};
 use evalexpr::EvalexprError;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::character::complete::{alphanumeric1, char, digit1, multispace0, multispace1, newline, one_of, space0, space1};
+use nom::character::complete::{alphanumeric1, char, digit1, multispace0, multispace1, one_of, space0, space1};
 use nom::combinator::{cut, map, map_res, not, opt, peek, recognize};
 use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
 use nom::{AsChar, InputIter, InputTakeAtPosition, IResult, Parser};
@@ -17,7 +13,6 @@ use thiserror::Error;
 use crate::variable_names::{reserved_variable_name};
 use crate::voting::buildin::BuildInVoting;
 use crate::voting::aggregations::parse::AggregationParserError;
-use crate::voting::display::{DisplayTree, impl_display_for_displaytree, IndentWriter};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::logic::VotingParseError::{NoRegistryProvided, NoVotingInRegistryFound, UnableToParseInt};
 use crate::voting::parser::voting_function::*;
@@ -87,18 +82,18 @@ impl<C, T> ErrorType<T> for C where
 
 #[derive(Debug, Clone, Error)]
 pub enum VotingParseError {
-    #[error("The if block is missing an expression")]
-    IfExpressionMissing,
-    #[error("The else block is missing, this is necessary for a statement!")]
-    ElseBlockMissing,
+    // #[error("The if block is missing an expression")]
+    // IfExpressionMissing,
+    // #[error("The else block is missing, this is necessary for a statement!")]
+    // ElseBlockMissing,
     #[error("No Voting found!")]
     NoVotingFound,
     #[error("No expression or statement found!")]
     NoExpressionOrStatementFound,
     #[error(transparent)]
     EvalExpr(#[from] EvalexprError),
-    #[error(transparent)]
-    NotAKeyword(strum::ParseError),
+    // #[error(transparent)]
+    // NotAKeyword(strum::ParseError),
     #[error("An empty index access does not work!")]
     EmptyIndexNotAllowed,
     #[error("An to range (..=) always needs a value after the =!")]
@@ -438,9 +433,7 @@ fn voting_execution<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput
     alt((
         map(
             parse_limited(simple_voting_execution),
-            |(voting)| {
-                Limited(voting)
-            }
+            |voting| { Limited(voting) }
         ),
         simple_voting_execution
     ))(input)

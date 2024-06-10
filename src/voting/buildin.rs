@@ -1,6 +1,5 @@
 use std::fmt::Write;
 use std::num::NonZeroUsize;
-use std::path::Display;
 use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, Value};
 use itertools::Itertools;
 use strum::{Display, EnumString, IntoStaticStr, VariantArray};
