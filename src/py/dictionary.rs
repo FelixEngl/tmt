@@ -2,12 +2,12 @@ use std::borrow::Borrow;
 use std::fs::File;
 use std::hash::Hash;
 use itertools::Itertools;
-use pyo3::{Bound, pyclass, pymethods, PyResult};
+use pyo3::{Bound, pyclass, pymethods, PyRef, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::{Dictionary, DictionaryImpl, DictionaryMut, DictionaryWithVoc};
+use crate::topicmodel::dictionary::{Dictionary, DictionaryImpl, DictionaryMut, DictionaryWithVoc, DictLangIter};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, Invariant, Translation};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::VocabularyImpl;
@@ -89,6 +89,15 @@ impl PyDictionary {
             }
         }
     }
+
+    fn __iter__(slf: PyRef<Self>) -> PyResult<()> {
+        todo!()
+    }
+}
+
+pub struct PyDictIter<'a> {
+    inner: &'a PyDictionary,
+
 }
 
 impl Dictionary<String, PyVocabulary> for PyDictionary {

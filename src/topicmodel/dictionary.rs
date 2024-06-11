@@ -1,12 +1,15 @@
 #![allow(dead_code)]
 
+use core::fmt;
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::iter::Enumerate;
+use std::iter::{Chain, Cloned, Enumerate, FlatMap, Map};
 use std::marker::PhantomData;
+use std::slice::Iter;
 use itertools::{Itertools, Position};
 use serde::{Deserialize, Serialize};
+use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::topicmodel::dictionary::direction::{A, B, Direction, Language, Translation};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{MappableVocabulary, Vocabulary, VocabularyMut};
@@ -52,6 +55,33 @@ pub trait Dictionary<T, V>: Send + Sync {
     fn map_a_to_b(&self) -> &Vec<Vec<usize>>;
 
     fn map_b_to_a(&self) -> &Vec<Vec<usize>>;
+
+    fn iter(&self) -> DictIter {
+        DictIter::new(self)
+    }
+}
+
+
+pub struct DictIter<'a> {
+    iter: Chain<FlatMap<Enumerate<Iter<'a, Vec<usize>>>, TupleFirst<Cloned<Iter<'a, usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleFirst<Cloned<Iter<usize>>, usize>>, FlatMap<Enumerate<Iter<'a, Vec<usize>>>, TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleLast<Cloned<Iter<usize>>, usize>>>,
+}
+
+impl<'a> DictIter<'a> {
+    fn new<T, V>(dict: &'a impl Dictionary<T, V>) -> Self {
+        let a_to_b: FlatMap<Enumerate<Iter<Vec<usize>>>, TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleFirst<Cloned<Iter<usize>>, usize>> = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a));
+        let b_to_a: FlatMap<Enumerate<Iter<Vec<usize>>>, TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleLast<Cloned<Iter<usize>>, usize>> = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b));
+        let iter: Chain<FlatMap<Enumerate<Iter<Vec<usize>>>, TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleFirst<Cloned<Iter<usize>>, usize>>, FlatMap<Enumerate<Iter<Vec<usize>>>, TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleLast<Cloned<Iter<usize>>, usize>>> = a_to_b.chain(b_to_a);
+
+    }
+}
+
+impl<'a> Iterator for DictIter<'a> {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.iter.next()?;
+
+    }
 }
 
 pub trait DictionaryWithVoc<T, V>: Dictionary<T, V> where V: Vocabulary<T> {
@@ -112,8 +142,42 @@ pub trait DictionaryWithVoc<T, V>: Dictionary<T, V> where V: Vocabulary<T> {
         Some(self.ids_to_values::<D>(self.translate_id_to_ids::<D>(word_id)?))
     }
 
-    fn iter<'a, L: Language>(&'a self) -> DictIter<'a, T, L, Self, V> where V: 'a {
-        DictIter::<T, L, Self, V>::new(self)
+
+
+    fn iter_language<'a, L: Language>(&'a self) -> DictLangIter<'a, T, L, Self, V> where V: 'a {
+        DictLangIter::<T, L, Self, V>::new(self)
+    }
+}
+
+
+
+pub struct DictLangIter<'a, T, L, D: ?Sized, V> where L: Language {
+    iter: Enumerate<std::slice::Iter<'a, HashRef<T>>>,
+    dict: &'a D,
+    _language: PhantomData<(L, V)>
+}
+
+impl<'a, T, L, D: ?Sized, V> DictLangIter<'a, T, L, D, V> where L: Language, V: Vocabulary<T> + 'a, D: Dictionary<T, V> {
+    fn new(dict: &'a D) -> Self {
+        Self {
+            iter: if L::TranslationDirection::A2B {
+                dict.voc_a().iter().enumerate()
+            } else {
+                dict.voc_b().iter().enumerate()
+            },
+            dict,
+            _language: PhantomData
+        }
+    }
+}
+
+impl<'a, T, L, D, V> Iterator for DictLangIter<'a, T, L, D, V> where L: Language, V: Vocabulary<T> + 'a, D: DictionaryWithVoc<T, V> {
+    type Item = (usize, &'a HashRef<T>, Option<Vec<(usize, &'a HashRef<T>)>>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (id, next) = self.iter.next()?;
+        let translation = self.dict.translate_id::<L::TranslationDirection>(id);
+        Some((id, next, translation))
     }
 }
 
@@ -326,35 +390,6 @@ impl<T, V> DictionaryImpl<T, V> where V: Default {
     }
 }
 
-pub struct DictIter<'a, T, L, D: ?Sized, V> where L: Language {
-    iter: Enumerate<std::slice::Iter<'a, HashRef<T>>>,
-    dict: &'a D,
-    _language: PhantomData<(L, V)>
-}
-
-impl<'a, T, L, D: ?Sized, V> DictIter<'a, T, L, D, V> where L: Language, V: Vocabulary<T> + 'a, D: Dictionary<T, V> {
-    fn new(dict: &'a D) -> Self {
-        Self {
-            iter: if L::TranslationDirection::A2B {
-                dict.voc_a().iter().enumerate()
-            } else {
-                dict.voc_b().iter().enumerate()
-            },
-            dict,
-            _language: PhantomData
-        }
-    }
-}
-
-impl<'a, T, L, D, V> Iterator for DictIter<'a, T, L, D, V> where L: Language, V: Vocabulary<T> + 'a, D: DictionaryWithVoc<T, V> {
-    type Item = (usize, &'a HashRef<T>, Option<Vec<(usize, &'a HashRef<T>)>>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (id, next) = self.iter.next()?;
-        let translation = self.dict.translate_id::<L::TranslationDirection>(id);
-        Some((id, next, translation))
-    }
-}
 
 impl<T, V> DictionaryMut<T, V> for  DictionaryImpl<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
     fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) {
@@ -432,7 +467,7 @@ impl<T: Display, V: Vocabulary<T>> Display for DictionaryImpl<T, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         fn write_language<L: Language, T: Display, V: Vocabulary<T>>(dictionary: &DictionaryImpl<T, V>, f: &mut Formatter<'_>) -> std::fmt::Result {
             write!(f, "{}:\n", L::NAME)?;
-            for (position_a, (id_a, value_a, translations)) in dictionary.iter::<L>().with_position() {
+            for (position_a, (id_a, value_a, translations)) in dictionary.iter_language::<L>().with_position() {
                 write!(f, "  {value_a}({id_a}):\n")?;
                 if let Some(translations) = translations {
                     for (position_b, (id_b, value_b)) in translations.iter().with_position() {
