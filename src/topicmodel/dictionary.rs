@@ -1,13 +1,12 @@
 #![allow(dead_code)]
 
-use core::fmt;
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::iter::{Chain, Cloned, Enumerate, FlatMap, Map};
+use std::iter::{Chain, Cloned, Enumerate, FlatMap};
 use std::marker::PhantomData;
 use std::slice::Iter;
-use itertools::{Itertools, Position};
+use itertools::{Itertools, Position, Unique};
 use serde::{Deserialize, Serialize};
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::topicmodel::dictionary::direction::{A, B, Direction, Language, Translation};
@@ -56,14 +55,17 @@ pub trait Dictionary<T, V>: Send + Sync {
 
     fn map_b_to_a(&self) -> &Vec<Vec<usize>>;
 
-    fn iter(&self) -> DictIter {
+    fn iter(&self) -> DictIter where Self: Sized {
         DictIter::new(self)
     }
 }
 
 
 pub struct DictIter<'a> {
-    iter: Chain<FlatMap<Enumerate<Iter<'a, Vec<usize>>>, TupleFirst<Cloned<Iter<'a, usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleFirst<Cloned<Iter<usize>>, usize>>, FlatMap<Enumerate<Iter<'a, Vec<usize>>>, TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleLast<Cloned<Iter<usize>>, usize>>>,
+    iter: Unique<Chain<
+        FlatMap<Enumerate<Iter<'a, Vec<usize>>>, TupleFirst<Cloned<Iter<'a, usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleFirst<Cloned<Iter<usize>>, usize>>,
+        FlatMap<Enumerate<Iter<'a, Vec<usize>>>, TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleLast<Cloned<Iter<usize>>, usize>>
+    >>,
 }
 
 impl<'a> DictIter<'a> {
@@ -71,7 +73,7 @@ impl<'a> DictIter<'a> {
         let a_to_b: FlatMap<Enumerate<Iter<Vec<usize>>>, TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleFirst<Cloned<Iter<usize>>, usize>> = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a));
         let b_to_a: FlatMap<Enumerate<Iter<Vec<usize>>>, TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleLast<Cloned<Iter<usize>>, usize>> = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b));
         let iter: Chain<FlatMap<Enumerate<Iter<Vec<usize>>>, TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleFirst<Cloned<Iter<usize>>, usize>>, FlatMap<Enumerate<Iter<Vec<usize>>>, TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, &Vec<usize>)) -> TupleLast<Cloned<Iter<usize>>, usize>>> = a_to_b.chain(b_to_a);
-
+        Self { iter: iter.unique() }
     }
 }
 
@@ -79,8 +81,7 @@ impl<'a> Iterator for DictIter<'a> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.iter.next()?;
-
+        self.iter.next()
     }
 }
 

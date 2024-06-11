@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse, ParseResult};
 use crate::voting::registry::VotingRegistry;
-use crate::voting::{VotingMethod, VotingResult};
+use crate::voting::{BuildInVoting, VotingMethod, VotingResult};
 use crate::voting::traits::VotingMethodMarker;
 
 #[pyclass]
@@ -137,5 +137,6 @@ impl<T> From<T> for PyVoting where T: Into<ParseResult> {
 pub(crate) fn voting_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVotingRegistry>()?;
     m.add_class::<PyVoting>()?;
+    m.add_class::<BuildInVoting>()?;
     Ok(())
 }

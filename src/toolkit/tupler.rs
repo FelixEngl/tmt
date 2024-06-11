@@ -80,7 +80,7 @@ impl<I: Iterator, V: Clone> Iterator for TupleLast<I, V> {
 impl<I: DoubleEndedIterator, V: Clone> DoubleEndedIterator for TupleLast<I, V>
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(|value| (self.value.clone(), value))
+        self.iter.next_back().map(|value| (value, self.value.clone()))
     }
 }
 

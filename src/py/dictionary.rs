@@ -7,10 +7,10 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::{Dictionary, DictionaryImpl, DictionaryMut, DictionaryWithVoc, DictLangIter};
+use crate::topicmodel::dictionary::{Dictionary, DictionaryImpl, DictionaryMut, DictionaryWithVoc, DictIter};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, Invariant, Translation};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::VocabularyImpl;
+use crate::topicmodel::vocabulary::{Vocabulary, VocabularyImpl};
 
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -90,15 +90,46 @@ impl PyDictionary {
         }
     }
 
-    fn __iter__(slf: PyRef<Self>) -> PyResult<()> {
-        todo!()
+    fn __iter__(&self) -> PyDictIter {
+        PyDictIter::new(self.clone())
     }
 }
 
-pub struct PyDictIter<'a> {
-    inner: &'a PyDictionary,
-
+#[pyclass]
+pub struct PyDictIter {
+    inner: PyDictionary,
+    iter: DictIter<'static>,
 }
+
+unsafe impl Send for PyDictIter{}
+unsafe impl Sync for PyDictIter{}
+
+impl PyDictIter {
+    pub fn new(inner: PyDictionary) -> Self {
+        let iter: DictIter<'static> = unsafe{ std::mem::transmute(inner.inner.iter()) };
+        Self { inner, iter }
+    }
+
+    pub fn into_inner(self) -> PyDictionary {
+        self.inner
+    }
+}
+
+#[pymethods]
+impl PyDictIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> Option<(String, String)> {
+        let (a, b) = self.iter.next()?;
+        Some((
+            self.inner.voc_a().get_value(a).unwrap().to_string(),
+            self.inner.voc_b().get_value(b).unwrap().to_string()
+        ))
+    }
+}
+
 
 impl Dictionary<String, PyVocabulary> for PyDictionary {
     delegate::delegate! {
@@ -200,5 +231,6 @@ impl From<DictionaryImpl<String, PyVocabulary>> for PyDictionary {
 
 pub(crate) fn dictionary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDictionary>()?;
+    m.add_class::<PyDictIter>()?;
     Ok(())
 }

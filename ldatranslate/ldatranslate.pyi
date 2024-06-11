@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional
+from typing import Optional, Iterator
 
 
 class PyVocabulary:
@@ -23,6 +23,7 @@ class PyDictionary:
     def get_translation_b_to_a(self, word: str) -> list[str] | None: ...
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
+    def __iter__(self) -> Iterator[tuple[str, str]]: ...
     def save(self, path: str): ...
     @staticmethod
     def load(path: str) -> 'PyDictionary': ...
@@ -89,9 +90,11 @@ class PyVariableProvider:
     def add_for_word_in_topic_b(self, topic_id: int, word_id: int, key: str, value: str | bool | int | float): ...
 
 class KeepOriginalWord(Enum):
-    Always = object()
-    IfNoTranslation = object()
-    Never = object()
+    pass
+
+class BuildInVoting(Enum):
+    def limit(self, limit: int) -> PyVoting:...
+
 
 class PyTranslationConfig:
     def __init__(self, voting: str | PyVoting, epsilon: float | None = None, threshold: float | None = None,

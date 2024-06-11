@@ -12,6 +12,7 @@ use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
 use crate::topicmodel::topic_model::MappableTopicModel;
+use crate::voting::BuildInVoting;
 
 #[pyclass]
 #[derive(Debug, Clone)]
@@ -22,6 +23,7 @@ pub struct PyTranslationConfig {
 #[derive(FromPyObject)]
 pub enum VotingArg<'a> {
     Voting(PyVoting),
+    BuildIn(BuildInVoting),
     Parseable(String),
     #[pyo3(transparent)]
     CatchAll(&'a PyAny)
@@ -38,38 +40,37 @@ impl PyTranslationConfig {
         top_candidate_limit: Option<usize>,
         voting_registry: Option<PyVotingRegistry>
     ) -> PyResult<Self> {
-        let inner = match voting {
+        let voting = match voting {
             VotingArg::Voting(voting) => {
-                TranslateConfig::new(
-                    epsilon,
-                    voting,
-                    threshold,
-                    keep_original_word.unwrap_or(KeepOriginalWord::Never),
-                    top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten()
-                )
+                voting
             }
             VotingArg::Parseable(voting) => {
                 match parse::<nom::error::Error<_>>(ParserInput::new(&voting, voting_registry.unwrap_or_default().registry())) {
                     Ok((_, value)) => {
-                        TranslateConfig::new(
-                            epsilon,
-                            value.into(),
-                            threshold,
-                            keep_original_word.unwrap_or(KeepOriginalWord::Never),
-                            top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten()
-                        )
+                        value.into()
                     }
                     Err(err) => {
                         return Err(PyValueError::new_err(err.to_string()))
                     }
                 }
             }
+            VotingArg::BuildIn(build_in) => {
+                build_in.into()
+            }
             VotingArg::CatchAll(_) => {
                 return Err(PyValueError::new_err("Not a PyVoting or a String!".to_string()))
             }
         };
 
-        Ok(Self{ inner })
+        Ok(Self{
+            inner: TranslateConfig::new(
+                epsilon,
+                voting,
+                threshold,
+                keep_original_word.unwrap_or(KeepOriginalWord::Never),
+                top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten()
+            )
+        })
     }
 }
 

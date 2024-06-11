@@ -5,13 +5,16 @@ use itertools::Itertools;
 use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::variable_names::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
-use crate::voting::{VotingMethod, VotingMethodMarker, VotingResult};
+use crate::voting::{VotingMethod, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::{Aggregation, AggregationError};
 use crate::voting::aggregations::AggregationType::{AvgOf, GAvgOf, SumOf};
 use crate::voting::display::{DisplayTree, IndentWriter};
 use crate::voting::traits::LimitableVotingMethodMarker;
 use crate::voting::VotingExpressionError::{Eval, NoValue};
-
+use pyo3::{pyclass, pymethods, PyResult};
+use pyo3::exceptions::PyValueError;
+use crate::py::voting::PyVoting;
+use crate::voting::parser::ParseResult::Limited;
 
 /// An empty voting method if nothing works
 pub struct EmptyVotingMethod;
@@ -20,7 +23,6 @@ impl LimitableVotingMethodMarker for EmptyVotingMethod {}
 impl VotingMethodMarker for EmptyVotingMethod {}
 
 impl VotingMethod for EmptyVotingMethod {
-
     fn execute<A, B>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
         return Err(NoValue)
     }
@@ -28,6 +30,7 @@ impl VotingMethod for EmptyVotingMethod {
 
 /// All possible buildin votings
 #[derive(Debug, Copy, Clone, EnumString, IntoStaticStr, Display, VariantArray)]
+#[pyclass]
 pub enum BuildInVoting {
     OriginalScore,
     Voters,
@@ -47,6 +50,26 @@ pub enum BuildInVoting {
     WCombSumG,
     WGCombSum,
     PCombSum
+}
+
+#[pymethods]
+impl BuildInVoting {
+    pub fn limit(&self, limit: usize) -> PyResult<PyVoting> {
+        if let Some(limit) = NonZeroUsize::new(limit) {
+            Ok(
+                PyVoting::from(
+                    Limited(
+                        VotingWithLimit::new(
+                            limit,
+                            Box::new(self.into())
+                        )
+                    )
+                )
+            )
+        } else {
+            Err(PyValueError::new_err("Limit has to be greater than 0!".to_string()))
+        }
+    }
 }
 
 impl LimitableVotingMethodMarker for BuildInVoting {}
