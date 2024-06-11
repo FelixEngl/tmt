@@ -61,7 +61,7 @@ impl BuildInVoting {
                     Limited(
                         VotingWithLimit::new(
                             limit,
-                            Box::new(self.into())
+                            Box::new((*self).into())
                         )
                     )
                 )
