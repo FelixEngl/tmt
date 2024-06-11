@@ -5,10 +5,12 @@ use std::hash::Hash;
 use std::io::Write;
 use std::ops::{Range};
 use std::slice::Iter;
-use nom::combinator::value;
-use pyo3::{Bound, FromPyObject, pyclass, pymethods, PyResult};
+use pyo3::{Bound, FromPyObject, pyclass, pyfunction, pymethods, PyResult, wrap_pyfunction};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
+use crate::py::dictionary::PyDictionary;
+use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
 
@@ -77,7 +79,14 @@ impl PyVocabulary {
 
     #[staticmethod]
     pub fn load(path: &str) -> PyResult<PyVocabulary> {
-        Ok(VocabularyImpl::<String>::load_from_file(path)?)
+        match VocabularyImpl::<String>::load_from_file(path) {
+            Ok(inner) => {
+                Ok(Self{ inner })
+            }
+            Err(value) => {
+                Err(PyValueError::new_err(value.to_string()))
+            }
+        }
     }
 }
 
@@ -170,12 +179,19 @@ impl<T> From<Vec<T>> for PyVocabulary where T: Into<String> {
 }
 
 impl From<VocabularyImpl<String>> for PyVocabulary {
+    #[inline(always)]
     fn from(inner: VocabularyImpl<String>) -> Self {
         Self { inner }
     }
 }
 
+#[pyfunction]
+pub fn topic_specific_vocabulary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
+    create_topic_model_specific_dictionary(vocabulary, dictionary).into()
+}
+
 pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVocabulary>()?;
+    m.add_function(wrap_pyfunction!(topic_specific_vocabulary, m)?)?;
     Ok(())
 }

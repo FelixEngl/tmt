@@ -10,6 +10,7 @@ use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel::dictionary::{Dictionary, DictionaryImpl, DictionaryMut, DictionaryWithVoc};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, Invariant, Translation};
 use crate::topicmodel::reference::HashRef;
+use crate::topicmodel::vocabulary::VocabularyImpl;
 
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -78,6 +79,7 @@ impl PyDictionary {
         }
     }
 
+    #[staticmethod]
     pub fn load(path: &str) -> PyResult<Self> {
         let mut reader = File::options().read(true).create_new(true).open(path)?;
         match serde_json::from_reader(&mut reader) {
@@ -171,6 +173,19 @@ impl DictionaryMut<String, PyVocabulary> for PyDictionary {
 
     fn translate_value_to_values<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a HashRef<String>>> where String: Borrow<Q>, Q: Hash + Eq, PyVocabulary: 'a {
         self.inner.translate_value_to_values::<D, _>(word)
+    }
+}
+
+impl From<DictionaryImpl<String, VocabularyImpl<String>>> for PyDictionary {
+    fn from(value: DictionaryImpl<String, VocabularyImpl<String>>) -> Self {
+        Self { inner: value.map(|value| value.clone()) }
+    }
+}
+
+impl From<DictionaryImpl<String, PyVocabulary>> for PyDictionary {
+    #[inline(always)]
+    fn from(inner: DictionaryImpl<String, PyVocabulary>) -> Self {
+        Self { inner }
     }
 }
 

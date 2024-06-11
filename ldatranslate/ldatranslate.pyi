@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Optional
+
 
 class PyVocabulary:
     def __init__(self, size: None | int | list[str] = None) -> None: ...
@@ -43,6 +45,8 @@ class PyTopicModel:
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
 
+    def show_top(self, n: int | None = None):...
+
     def get_doc_probability(self, doc: list[str], alpha: float, gamma_threshold: float,
                             minimum_probability: None | float = None,
                             minimum_phi_value: None | float = None,
@@ -53,7 +57,7 @@ class PyTopicModel:
 
 class PyVoting:
     @staticmethod
-    def parse(value: str, registry: 'PyVotingRegistry' | None = None) -> 'PyVoting': ...
+    def parse(value: str, registry: Optional['PyVotingRegistry'] = None) -> 'PyVoting': ...
 
 class PyVotingRegistry:
     def __init__(self) -> None: ...
@@ -85,9 +89,9 @@ class PyVariableProvider:
     def add_for_word_in_topic_b(self, topic_id: int, word_id: int, key: str, value: str | bool | int | float): ...
 
 class KeepOriginalWord(Enum):
-    Always = 0
-    IfNoTranslation = 1
-    Never = 2
+    Always = object()
+    IfNoTranslation = object()
+    Never = object()
 
 class PyTranslationConfig:
     def __init__(self, voting: str | PyVoting, epsilon: float | None = None, threshold: float | None = None,
@@ -101,3 +105,6 @@ def translate_topic_model(topic_model: PyTopicModel,
                           dictionary: PyDictionary,
                           config: PyTranslationConfig,
                           provider: PyVariableProvider | None = None) -> PyTopicModel: ...
+
+
+def topic_specific_vocabulary(dictionary: PyDictionary, vocabulary: PyVocabulary) -> PyDictionary: ...

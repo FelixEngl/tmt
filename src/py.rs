@@ -1,8 +1,9 @@
 use pyo3::{Bound, PyResult};
 use pyo3::prelude::PyModule;
-use crate::py::dictionary::{dictionary_module};
-use crate::py::topic_model::{topic_model_module};
-use crate::py::translate::{translate_module};
+use crate::py::dictionary::dictionary_module;
+use crate::py::topic_model::topic_model_module;
+use crate::py::translate::translate_module;
+use crate::py::variable_provider::variable_provider_module;
 use crate::py::vocabulary::vocabulary_module;
 use crate::py::voting::voting_module;
 
@@ -19,5 +20,8 @@ pub(crate) fn register_modules(m: &Bound<'_, PyModule>) -> PyResult<()>{
     dictionary_module(m)?;
     topic_model_module(m)?;
     translate_module(m)?;
-    voting_module(m)
+    voting_module(m)?;
+    variable_provider_module(m)?;
+
+    Ok(())
 }

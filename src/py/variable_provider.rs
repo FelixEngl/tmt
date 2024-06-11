@@ -1,11 +1,11 @@
 use evalexpr::{ContextWithMutableVariables, Value};
-use pyo3::{Bound, FromPyObject, PyAny, pyclass, PyErr, pymethods, PyResult, wrap_pyfunction};
+use pyo3::{Bound, FromPyObject, PyAny, pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut, VariableProviderResult};
 use crate::py::dictionary::PyDictionary;
 use crate::py::topic_model::PyTopicModel;
-use crate::topicmodel::dictionary::{Dictionary, DictionaryMut};
+use crate::topicmodel::dictionary::{DictionaryMut};
 use crate::topicmodel::dictionary::direction::AToB;
 use crate::topicmodel::topic_model::{BasicTopicModel};
 use crate::topicmodel::vocabulary::Vocabulary;
@@ -220,7 +220,7 @@ impl PyVariableProviderBuilder {
     }
 }
 
-pub(crate) fn translate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub(crate) fn variable_provider_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVariableProvider>()?;
     m.add_class::<PyVariableProviderBuilder>()?;
     Ok(())

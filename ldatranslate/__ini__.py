@@ -1,1 +1,1 @@
-from .my_project import *
+from .ldatranslate import *

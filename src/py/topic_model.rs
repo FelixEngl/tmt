@@ -69,6 +69,15 @@ impl PyTopicModel {
         Ok(Self { inner: TopicModel::<_,PyVocabulary>::load(path, true)?.0 })
     }
 
+    pub fn show_top(&self, n: Option<usize>) -> PyResult<()> {
+        if let Some(n) = n {
+            self.inner.show(n)?
+        } else {
+            self.inner.show_10()?
+        };
+        Ok(())
+    }
+
     pub fn __repr__(&self) -> String {
         format!("PyTopicModel({:?})", self.inner)
     }
