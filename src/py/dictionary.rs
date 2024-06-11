@@ -1,15 +1,18 @@
 use std::borrow::Borrow;
+use std::fs::File;
 use std::hash::Hash;
 use itertools::Itertools;
 use pyo3::{Bound, pyclass, pymethods, PyResult};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
+use serde::{Deserialize, Serialize};
 use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel::dictionary::{Dictionary, DictionaryImpl, DictionaryMut, DictionaryWithVoc};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, Invariant, Translation};
 use crate::topicmodel::reference::HashRef;
 
 #[pyclass]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyDictionary {
     inner: DictionaryImpl<String, PyVocabulary>
 }
@@ -21,6 +24,14 @@ impl PyDictionary {
         Self {
             inner: Default::default()
         }
+    }
+
+    pub fn voc_a(&self) -> PyVocabulary {
+        self.inner.voc_a().clone()
+    }
+
+    pub fn voc_b(&self) -> PyVocabulary {
+        self.inner.voc_b().clone()
     }
 
     pub fn add_word_pair(&mut self, word_a: String, word_b: String) {
@@ -55,6 +66,26 @@ impl PyDictionary {
 
     pub fn __str__(&self) -> String {
         self.inner.to_string()
+    }
+
+    pub fn save(&self, path: &str) -> PyResult<()> {
+        let mut writer = File::options().write(true).create_new(true).open(path)?;
+        match serde_json::to_writer(&mut writer, &self) {
+            Ok(_) => {Ok(())}
+            Err(err) => {
+                return Err(PyValueError::new_err(err.to_string()))
+            }
+        }
+    }
+
+    pub fn load(path: &str) -> PyResult<Self> {
+        let mut reader = File::options().read(true).create_new(true).open(path)?;
+        match serde_json::from_reader(&mut reader) {
+            Ok(result) => {Ok(result)}
+            Err(err) => {
+                return Err(PyValueError::new_err(err.to_string()))
+            }
+        }
     }
 }
 

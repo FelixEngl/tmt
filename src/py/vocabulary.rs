@@ -5,21 +5,29 @@ use std::hash::Hash;
 use std::io::Write;
 use std::ops::{Range};
 use std::slice::Iter;
-use pyo3::{Bound, pyclass, pymethods, PyResult};
+use nom::combinator::value;
+use pyo3::{Bound, FromPyObject, pyclass, pymethods, PyResult};
 use pyo3::prelude::{PyModule, PyModuleMethods};
+use serde::{Deserialize, Serialize};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
 
 #[pyclass]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyVocabulary {
     inner: VocabularyImpl<String>
+}
+
+#[derive(FromPyObject)]
+pub enum ListOrInt {
+    List(Vec<String>),
+    Int(usize)
 }
 
 #[pymethods]
 impl PyVocabulary {
     #[new]
-    pub fn new(size: Option<usize>) -> Self {
+    pub fn new(size: Option<ListOrInt>) -> Self {
         match size {
             None => {
                 Self {
@@ -27,8 +35,13 @@ impl PyVocabulary {
                 }
             }
             Some(value) => {
-                Self {
-                    inner: VocabularyImpl::with_capacity(value)
+                match value {
+                    ListOrInt::List(values) => Self {
+                            inner: VocabularyImpl::from(values)
+                    },
+                    ListOrInt::Int(value) => Self {
+                        inner: VocabularyImpl::with_capacity(value)
+                    }
                 }
             }
         }
@@ -40,6 +53,10 @@ impl PyVocabulary {
 
     pub fn __str__(&self) -> String {
         self.inner.to_string()
+    }
+
+    pub fn __len__(&self) -> usize {
+        self.inner.len()
     }
 
     pub fn add(&mut self, word: String) -> usize {
@@ -54,10 +71,13 @@ impl PyVocabulary {
         self.inner.get_value(id).map(|value| value.as_ref())
     }
 
-    pub fn to_json(&self) -> PyResult<String> {
-        let mut str = Vec::new();
-        self.inner.save_to_output(&mut str)?;
-        Ok(String::from_utf8(str)?)
+    pub fn save(&self, path: &str) -> PyResult<usize> {
+        Ok(self.inner.save_to_file(path)?)
+    }
+
+    #[staticmethod]
+    pub fn load(path: &str) -> PyResult<PyVocabulary> {
+        Ok(VocabularyImpl::<String>::load_from_file(path)?)
     }
 }
 

@@ -26,6 +26,13 @@ impl PyVotingRegistry {
 #[pymethods]
 impl PyVotingRegistry {
 
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            inner: VotingRegistry::new()
+        }
+    }
+
     pub fn get_registered(&self, name: &str) -> Option<PyVoting> {
         self.inner.get(name).map(PyVoting::from)
     }

@@ -48,6 +48,18 @@ impl PyTopicModel {
         }
     }
 
+    #[getter]
+    #[pyo3(name="k")]
+    pub fn py_k(&self) -> usize {
+        self.inner.k()
+    }
+
+    #[pyo3(name="get_topic")]
+    pub fn py_topic(&self, topic_id: usize) -> Option<Vec<f64>> {
+        self.inner.get_topic(topic_id).cloned()
+    }
+
+
     pub fn save(&self, path: &str) -> PyResult<usize> {
         Ok(self.inner.save(path, TopicModelVersion::V1, true, true)?)
     }
