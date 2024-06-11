@@ -8,6 +8,7 @@ mod voting;
 mod toolkit;
 mod variable_names;
 pub mod py;
+mod external_variable_provider;
 
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to

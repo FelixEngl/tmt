@@ -11,6 +11,7 @@ pub mod vocabulary;
 pub mod dictionary;
 pub mod translate;
 pub mod voting;
+mod variable_provider;
 
 
 pub(crate) fn register_modules(m: &Bound<'_, PyModule>) -> PyResult<()>{

@@ -85,6 +85,11 @@ impl PyTopicModel {
             per_word_topics.unwrap_or_default()
         )
     }
+
+    pub fn vocabulary(&self) -> PyVocabulary {
+        self.inner.vocabulary().clone()
+    }
+
 }
 
 impl BasicTopicModel for PyTopicModel {

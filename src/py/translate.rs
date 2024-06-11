@@ -4,6 +4,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::py::dictionary::PyDictionary;
 use crate::py::topic_model::PyTopicModel;
+use crate::py::variable_provider::PyVariableProvider;
 use crate::py::vocabulary::PyVocabulary;
 use crate::py::voting::{PyVoting, PyVotingRegistry};
 use crate::translate::{KeepOriginalWord, TranslateConfig};
@@ -73,8 +74,8 @@ impl PyTranslationConfig {
 }
 
 #[pyfunction]
-pub fn translate_topic_model(topic_model: &PyTopicModel, dictionary: &PyDictionary, config: &PyTranslationConfig) -> PyResult<PyTopicModel> {
-    match translate(topic_model, dictionary, &config.inner) {
+pub fn translate_topic_model(topic_model: &PyTopicModel, dictionary: &PyDictionary, config: &PyTranslationConfig, provider: Option<&PyVariableProvider>) -> PyResult<PyTopicModel> {
+    match translate(topic_model, dictionary, &config.inner, provider) {
         Ok(result) => {
             Ok(PyTopicModel::wrap(result.map::<PyVocabulary>()))
         }
@@ -84,8 +85,10 @@ pub fn translate_topic_model(topic_model: &PyTopicModel, dictionary: &PyDictiona
     }
 }
 
+
 pub(crate) fn translate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTranslationConfig>()?;
+    m.add_class::<KeepOriginalWord>()?;
     m.add_function(wrap_pyfunction!(translate_topic_model, m)?)?;
     Ok(())
 }
