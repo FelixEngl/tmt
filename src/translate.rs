@@ -12,7 +12,7 @@ use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
 use crate::toolkit::evalexpr::{CombineableContext};
 use crate::topicmodel::topic_model::{BasicTopicModel, TopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
-use crate::topicmodel::dictionary::{DictionaryWithVoc};
+use crate::topicmodel::dictionary::{DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{AToB, BToA};
 use crate::topicmodel::vocabulary::{Vocabulary, VocabularyImpl, VocabularyMut};
 use crate::translate::LanguageOrigin::{Origin, Target};
@@ -172,7 +172,7 @@ pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
     T: Hash + Eq + Ord,
     V: VotingMethodMarker,
     Voc: VocabularyMut<T>,
-    D: DictionaryWithVoc<T, Voc>,
+    D: DictionaryWithVocabulary<T, Voc>,
     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
 {
     translate_topic_model(
@@ -193,7 +193,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
     T: Hash + Eq + Ord,
     V: VotingMethodMarker,
     Voc: VocabularyMut<T>,
-    D: DictionaryWithVoc<T, Voc>,
+    D: DictionaryWithVocabulary<T, Voc>,
     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
     P: VariableProviderOut
 {
@@ -382,7 +382,7 @@ impl Ord for Candidate {
 
 fn translate_topic<Model, T, V, Voc, P>(
     topic_model: &Model,
-    dictionary: &impl DictionaryWithVoc<T, Voc>,
+    dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
     topic: &Vec<f64>,
     topic_context: (impl Context + Send + Sync),
@@ -450,7 +450,7 @@ fn translate_topic<Model, T, V, Voc, P>(
 #[inline(always)]
 fn translate_single_candidate<Model, T, V, Voc, P>(
     topic_model: &Model,
-    dictionary: &impl DictionaryWithVoc<T, Voc>,
+    dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
     topic_context: &(impl Context + Send + Sync),
     config: &TranslateConfig<V>,
@@ -678,7 +678,7 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
 #[cfg(test)]
 mod test {
     use std::num::NonZeroUsize;
-    use crate::topicmodel::dictionary::{DictionaryImpl, DictionaryMut};
+    use crate::topicmodel::dictionary::{Dictionary, DictionaryMut};
     use crate::topicmodel::dictionary::direction::Invariant;
     use crate::topicmodel::topic_model::{TopicModel};
     use crate::topicmodel::vocabulary::{VocabularyImpl, VocabularyMut};
@@ -724,7 +724,7 @@ mod test {
             "Motorflugzeug".to_string(),
         ]);
 
-        let mut dict = DictionaryImpl::new();
+        let mut dict = Dictionary::new();
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
