@@ -157,6 +157,14 @@ impl VocabularyMut<String> for PyVocabulary {
                     Q: Hash + Eq;
         }
     }
+
+    fn filter_by_id<F: Fn(usize) -> bool>(&self, filter: F) -> Self where Self: Sized {
+        self.inner.filter_by_id(filter).into()
+    }
+
+    fn filter_by_value<'a, F: Fn(&'a HashRef<String>) -> bool>(&'a self, filter: F) -> Self where Self: Sized, String: 'a {
+        self.inner.filter_by_value(filter).into()
+    }
 }
 impl StoreableVocabulary<String> for PyVocabulary {
     fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {

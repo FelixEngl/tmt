@@ -93,6 +93,12 @@ pub trait VocabularyMut<T>: Vocabulary<T> where T: Eq + Hash {
         where
             T: Borrow<Q>,
             Q: Hash + Eq;
+
+
+    /// Returns a new vocabulary filtered by the ids
+    fn filter_by_id<F: Fn(usize) -> bool>(&self, filter: F) -> Self where Self: Sized;
+
+    fn filter_by_value<'a, F: Fn(&'a HashRef<T>) -> bool>(&'a self, filter: F) -> Self where Self: Sized, T: 'a;
 }
 
 pub trait MappableVocabulary<T>: Vocabulary<T> where T: Eq + Hash {
@@ -191,6 +197,7 @@ impl <T> Vocabulary<T> for VocabularyImpl<T> {
     fn contains_id(&self, id: usize) -> bool {
         self.id2entry.len() > id
     }
+
 }
 
 
@@ -272,6 +279,27 @@ impl<T> VocabularyMut<T> for VocabularyImpl<T> where T: Eq + Hash {
             Q: Hash + Eq {
 
         self.entry2id.contains_key(Wrapper::wrap(value))
+    }
+
+
+    fn filter_by_id<F: Fn(usize) -> bool>(&self, filter: F) -> Self where Self: Sized {
+        self.id2entry.iter().enumerate().filter_map(|(id, value)| {
+            if filter(id) {
+                Some(value.clone())
+            } else {
+                None
+            }
+        }).collect()
+    }
+
+    fn filter_by_value<'a, F: Fn(&'a HashRef<T>) -> bool>(&'a self, filter: F) -> Self where Self: Sized, T: 'a {
+        self.id2entry.iter().filter_map(|value| {
+            if filter(value) {
+                Some(value.clone())
+            } else {
+                None
+            }
+        }).collect()
     }
 }
 

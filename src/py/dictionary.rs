@@ -1,17 +1,17 @@
 use std::borrow::Borrow;
 use std::fs::File;
 use std::hash::Hash;
-use std::mem;
 use itertools::Itertools;
 use pyo3::{Bound, pyclass, pymethods, PyRef, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, Dictionary, DictionaryMut, DictionaryWithVocabulary, DictIter};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithMetaIterator, DictionaryWithVocabulary, DictIter, DirectionTuple};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, Invariant, Translation};
+use crate::topicmodel::dictionary::metadata::SolvedMetadata;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{Vocabulary, VocabularyImpl};
+use crate::topicmodel::vocabulary::{VocabularyImpl};
 
 
 
@@ -19,7 +19,7 @@ use crate::topicmodel::vocabulary::{Vocabulary, VocabularyImpl};
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyDictionary {
-    inner: Dictionary<String, PyVocabulary>,
+    inner: DictionaryWithMeta<String, PyVocabulary>,
 }
 
 #[pymethods]
@@ -40,7 +40,7 @@ impl PyDictionary {
     }
 
     pub fn add_word_pair(&mut self, word_a: String, word_b: String) -> (usize, usize) {
-        self.inner.insert_value::<Invariant>(word_a, word_b)
+        self.inner.insert_value::<Invariant>(word_a, word_b).to_ab_tuple()
     }
 
     pub fn get_translation_a_to_b(&self, word: &str) -> Option<Vec<String>> {
@@ -101,8 +101,7 @@ impl PyDictionary {
 
 #[pyclass]
 pub struct PyDictIter {
-    inner: PyDictionary,
-    iter: DictIter<'static>,
+    inner: DictionaryWithMetaIterator<DictionaryWithMeta<String, PyVocabulary>, String, PyVocabulary>,
 }
 
 unsafe impl Send for PyDictIter{}
@@ -110,12 +109,13 @@ unsafe impl Sync for PyDictIter{}
 
 impl PyDictIter {
     pub fn new(inner: PyDictionary) -> Self {
-        let iter: DictIter<'static> = unsafe{ mem::transmute(inner.inner.iter()) };
-        Self { inner, iter }
+        Self { inner: inner.inner.into_iter() }
     }
 
     pub fn into_inner(self) -> PyDictionary {
-        self.inner
+        PyDictionary {
+            inner: self.inner.into_inner()
+        }
     }
 }
 
@@ -125,11 +125,12 @@ impl PyDictIter {
         slf
     }
 
-    fn __next__(&mut self) -> Option<(String, String)> {
-        let (a, b) = self.iter.next()?.to_ab_tuple();
+    fn __next__(&mut self) -> Option<((usize, String, Option<SolvedMetadata>), (usize, String, Option<SolvedMetadata>))> {
+        let ((a, word_a, meta_a), (b, word_b, meta_b)) = self.inner.next()?.to_ab_tuple();
+
         Some((
-            self.inner.voc_a().get_value(a).unwrap().to_string(),
-            self.inner.voc_b().get_value(b).unwrap().to_string()
+            (a, word_a.to_string(), meta_a),
+            (b, word_b.to_string(), meta_b)
         ))
     }
 }
@@ -162,6 +163,7 @@ impl BasicDictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
 }
 
 impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
+
     #[inline(always)]
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         self.inner.can_translate_id::<D>(id)
@@ -193,16 +195,30 @@ impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
     }
 }
 
+impl DictionaryFilterable<String, PyVocabulary> for PyDictionary {
+    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
+        Self {
+            inner: self.inner.filter_by_ids(filter_a, filter_b)
+        }
+    }
+
+    fn filter_by_values<'a, Fa: Fn(&'a HashRef<String>) -> bool, Fb: Fn(&'a HashRef<String>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, String: 'a {
+        Self {
+            inner: self.inner.filter_by_values(filter_a, filter_b)
+        }
+    }
+}
+
 impl DictionaryMut<String, PyVocabulary> for PyDictionary {
-    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<String>, word_b: HashRef<String>) -> (usize, usize) {
+    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<String>, word_b: HashRef<String>) -> DirectionTuple<usize, usize> {
         self.inner.insert_hash_ref::<D>(word_a, word_b)
     }
 
-    fn insert_value<D: Direction>(&mut self, word_a: String, word_b: String) -> (usize, usize) {
+    fn insert_value<D: Direction>(&mut self, word_a: String, word_b: String) -> DirectionTuple<usize, usize> {
         self.inner.insert_value::<D>(word_a, word_b)
     }
 
-    fn insert<D: Direction>(&mut self, word_a: impl Into<String>, word_b: impl Into<String>) -> (usize, usize) {
+    fn insert<D: Direction>(&mut self, word_a: impl Into<String>, word_b: impl Into<String>) -> DirectionTuple<usize, usize> {
         self.inner.insert::<D>(word_a, word_b)
     }
 
@@ -229,19 +245,20 @@ impl DictionaryMut<String, PyVocabulary> for PyDictionary {
 
 impl From<Dictionary<String, VocabularyImpl<String>>> for PyDictionary {
     fn from(value: Dictionary<String, VocabularyImpl<String>>) -> Self {
-        Self { inner: value.map(|value| value.clone()) }
+        Self { inner: value.map(|value| value.clone()).into() }
     }
 }
 
 impl From<Dictionary<String, PyVocabulary>> for PyDictionary {
     #[inline(always)]
     fn from(inner: Dictionary<String, PyVocabulary>) -> Self {
-        Self { inner }
+        Self { inner: inner.into() }
     }
 }
 
 pub(crate) fn dictionary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDictionary>()?;
     m.add_class::<PyDictIter>()?;
+    m.add_class::<SolvedMetadata>()?;
     Ok(())
 }

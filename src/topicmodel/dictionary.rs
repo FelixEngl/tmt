@@ -1,24 +1,22 @@
 #![allow(dead_code)]
 
+pub mod metadata;
+
 use std::borrow::Borrow;
-use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::iter::{Chain, Cloned, Enumerate, FlatMap, Map};
 use std::marker::PhantomData;
 use std::slice::Iter;
-use std::sync::Arc;
-use itertools::{Itertools, Position};
-use once_cell::sync::OnceCell;
+use itertools::{Itertools, Position, Unique};
 use serde::{Deserialize, Serialize};
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
-use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, Language, Translation};
+use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, Invariant, Language, Translation};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{MappableVocabulary, Vocabulary, VocabularyMut};
-use string_interner::{DefaultStringInterner, DefaultSymbol as InternedString, DefaultSymbol};
+use strum::{EnumIs};
 
-
-use strum::EnumIs;#[macro_export]
+use crate::topicmodel::dictionary::metadata::{MetadataContainer, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataRef, SolvedMetadata};#[macro_export]
 macro_rules! dict_insert {
     ($d: ident, $a: tt : $b: tt) => {
         $crate::topicmodel::dictionary::DictionaryMut::insert_value::<$crate::topicmodel::dictionary::direction::Invariant>(&mut $d, $a, $b)
@@ -67,17 +65,21 @@ pub trait BasicDictionary: Send + Sync {
 
     /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
     fn iter(&self) -> DictIter {
-        DictIter::new(self)
+        DictIterImpl::new(self).unique()
     }
 }
 
-#[derive(Debug, Copy, Clone, EnumIs)]
+#[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash)]
 pub enum DirectionTuple<Ta, Tb> {
     AToB{
         a: Ta,
         b: Tb
     },
     BToA {
+        a: Ta,
+        b: Tb
+    },
+    Invariant {
         a: Ta,
         b: Tb
     }
@@ -88,12 +90,14 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
         match self {
             DirectionTuple::AToB { a, .. } => {a}
             DirectionTuple::BToA { a, .. } => {a}
+            DirectionTuple::Invariant { a, .. } => {a}
         }
     }
     pub fn b(&self) -> &Tb {
         match self {
             DirectionTuple::AToB { b, .. } => {b}
             DirectionTuple::BToA { b, .. } => {b}
+            DirectionTuple::Invariant { b, .. } => {b}
         }
     }
 
@@ -101,32 +105,102 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
         match self {
             DirectionTuple::AToB { a, b } => {(a, b)}
             DirectionTuple::BToA { a, b } => {(a, b)}
+            DirectionTuple::Invariant { a, b } => {(a, b)}
+        }
+    }
+
+    pub fn map<Ra, Rb, F1: FnOnce(Ta) -> Ra, F2: FnOnce(Tb) -> Rb>(self, map_a: F1, map_b: F2) -> DirectionTuple<Ra, Rb> {
+        match self {
+            DirectionTuple::AToB { a, b } => {
+                DirectionTuple::AToB { a: map_a(a), b: map_b(b) }
+            }
+            DirectionTuple::BToA { a, b } => {
+                DirectionTuple::BToA { a: map_a(a), b: map_b(b) }
+            }
+            DirectionTuple::Invariant { a, b } => {
+                DirectionTuple::Invariant { a: map_a(a), b: map_b(b) }
+            }
         }
     }
 }
 
-/// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
-pub struct DictIter<'a> {
-    iter: Chain<ABIter<'a>, BAIter<'a>>,
+impl<T> DirectionTuple<T, T>  {
+    pub fn map_both<R, F: Fn(T) -> R>(self, mapping: F) -> DirectionTuple<R, R> {
+        match self {
+            DirectionTuple::AToB { a, b } => {
+                DirectionTuple::AToB { a: mapping(a), b: mapping(b) }
+            }
+            DirectionTuple::BToA { a, b } => {
+                DirectionTuple::BToA { a: mapping(a), b: mapping(b) }
+            }
+            DirectionTuple::Invariant { a, b } => {
+                DirectionTuple::Invariant { a: mapping(a), b: mapping(b) }
+            }
+        }
+    }
 }
 
+impl<Ta: Display, Tb: Display> Display for  DirectionTuple<Ta, Tb>  {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DirectionTuple::AToB { a, b } => {
+                write!(f, "AToB{{{a}, {b}}}")
+            }
+            DirectionTuple::BToA { a, b } => {
+                write!(f, "BToA{{{a}, {b}}}")
+            }
+            DirectionTuple::Invariant { a, b } => {
+                write!(f, "Invariant{{{a}, {b}}}")
+            }
+        }
+    }
+}
+
+pub type DictIter<'a> = Unique<DictIterImpl<'a>>;
+/// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
+pub struct DictIterImpl<'a> {
+    a_to_b: &'a Vec<Vec<usize>>,
+    b_to_a: &'a Vec<Vec<usize>>,
+    iter: Chain<ABIter<'a>, BAIter<'a>>,
+}
 type ABIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleFirst<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>>;
 type BAIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>>;
-
-impl<'a> DictIter<'a> {
+impl<'a> DictIterImpl<'a> {
     fn new(dict: &'a (impl BasicDictionary + ?Sized)) -> Self {
         let a_to_b: ABIter = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a).map(|(a, b) | DirectionTuple::AToB {a, b}));
         let b_to_a: BAIter = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b).map(|(a, b) | DirectionTuple::AToB {a, b}));
         let iter: Chain<ABIter, BAIter> = a_to_b.chain(b_to_a);
-        Self { iter }
+        Self {
+            a_to_b: dict.map_a_to_b(),
+            b_to_a: dict.map_b_to_a(),
+            iter
+        }
     }
 }
-
-impl<'a> Iterator for DictIter<'a> {
+impl<'a> Iterator for DictIterImpl<'a> {
     type Item = DirectionTuple<usize, usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        let current = self.iter.next()?;
+        Some(
+            match current {
+                all @ DirectionTuple::AToB { a, b } => {
+                    if self.b_to_a[b].contains(&a) {
+                        DirectionTuple::Invariant {a, b}
+                    } else {
+                        all
+                    }
+                }
+                all @ DirectionTuple::BToA { a, b } => {
+                    if self.a_to_b[a].contains(&b) {
+                        DirectionTuple::Invariant {a, b}
+                    } else {
+                        all
+                    }
+                }
+                _ => unreachable!()
+            }
+        )
     }
 }
 
@@ -138,6 +212,7 @@ pub trait BasicDictionaryWithVocabulary<T, V>: BasicDictionary {
 }
 
 pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<T, V> where V: Vocabulary<T> {
+
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         if D::A2B {
             self.voc_a().contains_id(id) && self.map_a_to_b().get(id).is_some_and(|value| !value.is_empty())
@@ -222,13 +297,13 @@ impl<'a, T, L, D, V> Iterator for DictLangIter<'a, T, L, D, V> where L: Language
 }
 
 pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
-    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> (usize, usize);
+    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize>;
 
-    fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> (usize, usize) {
+    fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         self.insert_hash_ref::<D>(HashRef::new(word_a), HashRef::new(word_b))
     }
 
-    fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> (usize, usize) {
+    fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
         self.insert_value::<D>(word_a.into(), word_b.into())
     }
 
@@ -279,6 +354,11 @@ pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash
     {
         Some(self.ids_to_values::<D>(self.translate_value_to_ids::<D, Q>(word)?))
     }
+}
+pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default {
+    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized;
+
+    fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a;
 }
 
 
@@ -448,7 +528,7 @@ impl<T, V> DictionaryWithVocabulary<T, V> for  Dictionary<T, V> where V: Vocabul
 }
 
 impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
-    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> (usize, usize) {
+    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
         let id_a = self.voc_a.add_hash_ref(word_a);
         let id_b = self.voc_b.add_hash_ref(word_b);
         if D::A2B {
@@ -464,6 +544,9 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
                     self.map_a_to_b.get_unchecked_mut(id_a).push(id_b);
                 }
             }
+            if !D::B2A {
+                return DirectionTuple::AToB {a: id_a, b: id_b};
+            }
         }
         if D::B2A {
             if let Some(found) = self.map_b_to_a.get_mut(id_b) {
@@ -478,8 +561,12 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
                     self.map_b_to_a.get_unchecked_mut(id_b).push(id_a);
                 }
             }
+            if !D::A2B {
+                return DirectionTuple::BToA {a: id_a, b: id_b};
+            }
         }
-        (id_a, id_b)
+
+        DirectionTuple::Invariant {a: id_a, b: id_b}
     }
 
     fn translate_value_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>>
@@ -505,7 +592,98 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
             self.voc_b.get_id(id)
         }
     }
+}
+impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default{
+    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
+        let mut new_dict = Dictionary::new();
 
+        for value in self.iter() {
+            match value {
+                DirectionTuple::AToB { a, b } => {
+                    if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    }
+                }
+                DirectionTuple::BToA { a, b } => {
+                    if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    }
+                }
+                DirectionTuple::Invariant { a, b } => {
+                    if filter_a(a) && filter_b(b) {
+                        new_dict.insert_hash_ref::<Invariant>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    } else if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    } else if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    }
+                }
+            }
+        }
+
+        new_dict
+    }
+
+    fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
+        let mut new_dict = Dictionary::new();
+        for value in self.iter() {
+            let a = self.id_to_word::<A>(*value.a()).unwrap();
+            let b = self.id_to_word::<B>(*value.b()).unwrap();
+            match value {
+                DirectionTuple::AToB { .. } => {
+                    if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    }
+                }
+                DirectionTuple::BToA { .. } => {
+                    if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    }
+                }
+                DirectionTuple::Invariant { .. } => {
+                    if filter_a(a) && filter_b(b) {
+                        new_dict.insert_hash_ref::<Invariant>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    } else if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    } else if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    }
+                }
+            }
+        }
+
+        new_dict
+    }
 }
 
 impl<T: Display, V: Vocabulary<T>> Display for Dictionary<T, V> {
@@ -534,7 +712,7 @@ impl<T: Display, V: Vocabulary<T>> Display for Dictionary<T, V> {
 
                     }
                 } else {
-                    write!(f, "    - None -")?;
+                    write!(f, "    - None -\n")?;
                 }
             }
             Ok(())
@@ -563,8 +741,8 @@ impl DictionaryIteratorPointerState {
     }
 }
 
-/// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
-pub struct DictionaryIterator<T, V, D> where D: BasicDictionaryWithVocabulary<T, V> {
+/// Iterates over all mappings (a to b and b to a).
+pub struct DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
     pos: usize,
     index: usize,
     state: DictionaryIteratorPointerState,
@@ -572,7 +750,7 @@ pub struct DictionaryIterator<T, V, D> where D: BasicDictionaryWithVocabulary<T,
     _types: PhantomData<fn(T, V)->()>
 }
 
-impl<T, V, D> DictionaryIterator<T, V, D> where D: BasicDictionaryWithVocabulary<T, V> {
+impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
     pub fn new(inner: D) -> Self {
         let mut new = Self {
             pos: 0,
@@ -626,21 +804,47 @@ impl<T, V, D> DictionaryIterator<T, V, D> where D: BasicDictionaryWithVocabulary
     }
 
     /// This one should only be called when `self.state` is not finished!
-    fn get_current(&self) -> Option<(usize, usize)> {
+    fn get_current(&self) -> Option<DirectionTuple<(usize, HashRef<T>), (usize, HashRef<T>)>> {
         match self.state {
             DictionaryIteratorPointerState::NextAB => {
-                Some((self.pos, *self.inner.map_a_to_b().get(self.pos)?.get(self.index)?))
+                let b = *self.inner.map_a_to_b().get(self.pos)?.get(self.index)?;
+                let a_value = (self.pos, self.inner.id_to_word::<A>(self.pos).unwrap().clone());
+                let b_value = (b, self.inner.id_to_word::<B>(b).unwrap().clone());
+                Some(if self.inner.map_b_to_a()[b].contains(&self.pos) {
+                    DirectionTuple::Invariant {
+                        a: a_value,
+                        b: b_value
+                    }
+                } else {
+                    DirectionTuple::AToB {
+                        a: a_value,
+                        b: b_value
+                    }
+                })
             }
             DictionaryIteratorPointerState::NextBA => {
-                Some((*self.inner.map_b_to_a().get(self.pos)?.get(self.index)?, self.pos))
+                let a = *self.inner.map_b_to_a().get(self.pos)?.get(self.index)?;
+                let a_value = (a, self.inner.id_to_word::<A>(a).unwrap().clone());
+                let b_value = (self.pos, self.inner.id_to_word::<B>(self.pos).unwrap().clone());
+                Some(if self.inner.map_a_to_b()[a].contains(&self.pos) {
+                    DirectionTuple::Invariant {
+                        a: a_value,
+                        b: b_value
+                    }
+                } else {
+                    DirectionTuple::BToA {
+                        a: a_value,
+                        b: b_value
+                    }
+                })
             }
             DictionaryIteratorPointerState::Finished => unreachable!()
         }
     }
 }
 
-impl<T, V, D> Iterator for DictionaryIterator<T, V, D> where D: BasicDictionaryWithVocabulary<T, V> {
-    type Item = (usize, usize);
+impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+    type Item = DirectionTuple<(usize, HashRef<T>), (usize, HashRef<T>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.state.is_finished() {
@@ -649,9 +853,7 @@ impl<T, V, D> Iterator for DictionaryIterator<T, V, D> where D: BasicDictionaryW
         loop {
             match self.get_current() {
                 None => {
-                    if self.increment_pos_and_idx() {
-
-                    } else {
+                    if !self.increment_pos_and_idx() {
                         break None;
                     }
                 }
@@ -661,16 +863,17 @@ impl<T, V, D> Iterator for DictionaryIterator<T, V, D> where D: BasicDictionaryW
                 }
             }
         }
-
     }
 }
 
-impl<T, V> IntoIterator for Dictionary<T, V> {
-    type Item = (usize, usize);
-    type IntoIter = DictionaryIterator<T, V, Dictionary<T, V>>;
+pub type DictionaryIterator<T, V> = Unique<DictionaryIteratorImpl<T, V, Dictionary<T, V>>>;
+
+impl<T, V> IntoIterator for Dictionary<T, V> where V: Vocabulary<T>, T: Eq + Hash {
+    type Item = DirectionTuple<(usize, HashRef<T>), (usize, HashRef<T>)>;
+    type IntoIter = DictionaryIterator<T, V>;
 
     fn into_iter(self) -> Self::IntoIter {
-        DictionaryIterator::new(self)
+        DictionaryIteratorImpl::new(self).unique()
     }
 }
 
@@ -743,311 +946,13 @@ pub mod direction {
 }
 
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct Metadata {
-    #[serde(with = "metadata_interned_field_serializer")]
-    pub associated_dictionaries: OnceCell<Vec<InternedString>>,
-    #[serde(with = "metadata_interned_field_serializer")]
-    pub meta_tags: OnceCell<Vec<InternedString>>,
-}
-
-impl Metadata {
-    pub fn has_associated_dictionary(&self, q: DefaultSymbol) -> bool {
-        self.associated_dictionaries.get().is_some_and(|value| value.contains(&q))
-    }
-
-    pub fn has_meta_tag(&self, q: DefaultSymbol) -> bool {
-        self.meta_tags.get().is_some_and(|value| value.contains(&q))
-    }
-
-    pub unsafe fn add_dictionary(&mut self, dictionary: InternedString) {
-        if let Some(to_edit) = self.associated_dictionaries.get_mut() {
-            if to_edit.is_empty() || !to_edit.contains(&dictionary) {
-                to_edit.push(dictionary)
-            }
-        } else {
-            let mut new = Vec::with_capacity(1);
-            new.push(dictionary);
-            self.associated_dictionaries.set(new).expect("This should be unset!");
-        }
-    }
-
-    pub unsafe fn add_tag(&mut self, tag: InternedString) {
-        if let Some(to_edit) = self.meta_tags.get_mut() {
-            if to_edit.is_empty() || !to_edit.contains(&tag) {
-                to_edit.push(tag)
-            }
-        } else {
-            let mut new = Vec::with_capacity(1);
-            new.push(tag);
-            self.meta_tags.set(new).expect("This should be unset!");
-        }
-    }
-
-    pub unsafe fn add_all_dictionary(&mut self, dictionaries: &[InternedString]) {
-        if let Some(to_edit) = self.associated_dictionaries.get_mut() {
-            let mut set = HashSet::with_capacity(dictionaries.len() + to_edit.len());
-            set.extend(to_edit.drain(..));
-            set.extend(dictionaries);
-            to_edit.extend(set);
-        } else {
-            let mut new = Vec::with_capacity(dictionaries.len());
-            new.extend(dictionaries.into_iter().unique());
-            self.associated_dictionaries.set(new).expect("This should be unset!");
-        }
-    }
-
-    pub unsafe fn add_all_tag(&mut self, tags: &[InternedString]) {
-        if let Some(to_edit) = self.meta_tags.get_mut() {
-            let mut set = HashSet::with_capacity(tags.len() + to_edit.len());
-            set.extend(to_edit.drain(..));
-            set.extend(tags);
-            to_edit.extend(set);
-        } else {
-            let mut new = Vec::with_capacity(tags.len());
-            new.extend(tags.into_iter().unique());
-            self.meta_tags.set(new).expect("This should be unset!");
-        }
-    }
-}
-
-mod metadata_interned_field_serializer { use std::fmt::Formatter;
-    use itertools::Itertools;
-    use once_cell::sync::OnceCell;
-    use serde::{Deserializer, Serialize, Serializer};
-    use serde::de::{Error, Unexpected, Visitor};
-    use string_interner::{DefaultSymbol, Symbol};
-    use string_interner::symbol::SymbolU32;
-
-    pub(crate) fn serialize<S>(target: &OnceCell<Vec<DefaultSymbol>>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        let to_ser = if let Some(value) = target.get() {
-            Some(value.iter().map(|value| value.to_usize()).collect_vec())
-        } else {
-            None
-        };
-        to_ser.serialize(serializer)
-    }
-
-    struct SymbolU32Visitor;
-
-    impl<'de> Visitor<'de> for SymbolU32Visitor {
-        type Value = SymbolU32;
-
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("The default symbols are between 0 and u32::MAX-1.")
-        }
-
-        fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E> where E: Error {
-            match DefaultSymbol::try_from_usize(v as usize) {
-                None => {
-                    Err(E::invalid_value(
-                        Unexpected::Unsigned(v as u64),
-                        &self
-                    ))
-                }
-                Some(value) => {
-                    Ok(value)
-                }
-            }
-        }
-    }
-
-    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<OnceCell<Vec<DefaultSymbol>>, D::Error> where D: Deserializer<'de> {
-        let cell = OnceCell::new();
-        let content: Option<Vec<usize>> = serde::de::Deserialize::deserialize(deserializer)?;
-        if let Some(content) = content {
-            cell.set(
-                content.into_iter().map(|value|
-                    DefaultSymbol::try_from_usize(value)
-                        .ok_or_else(||
-                            Error::invalid_value(
-                                Unexpected::Unsigned(value as u64),
-                                &SymbolU32Visitor
-                            )
-                        )
-                ).collect::<Result<Vec<_>, _>>()?
-            ).unwrap();
-        }
-        Ok(cell)
-    }
-}
-
-pub struct MetadataMutRef<'a, D> where D: BasicDictionaryWithMeta + ?Sized {
-    meta: &'a mut Metadata,
-    // always outlifes meta
-    dict_ref: *mut D
-}
-
-impl<'a, D> MetadataMutRef<'a, D>  where D: BasicDictionaryWithMeta + ?Sized {
-    fn new(dict_ref: *mut D, meta: &'a mut Metadata) -> Self {
-        Self { meta, dict_ref }
-    }
-
-    pub fn push_associated_dictionary(&mut self, dictionary: impl AsRef<str>) {
-        let interned = unsafe{&mut *self.dict_ref}.get_dictionary_interner_mut().get_or_intern(dictionary);
-        unsafe {
-            self.meta.add_dictionary(interned);
-        }
-    }
-
-    pub fn push_meta_tag(&mut self, tag: impl AsRef<str>) {
-        let interned = unsafe{&mut *self.dict_ref}.get_tag_interner_mut().get_or_intern(tag);
-        unsafe {
-            self.meta.add_tag(interned);
-        }
-    }
-}
-
-
-
-pub struct MetadataRef<'a, D> where D: BasicDictionaryWithMeta + ?Sized {
-    raw: &'a Metadata,
-    dict: &'a D,
-    associated_dictionary_cached: Arc<OnceCell<Vec<&'a str>>>,
-    meta_tags_cached: Arc<OnceCell<Vec<&'a str>>>,
-}
-
-impl<'a, D: BasicDictionaryWithMeta> MetadataRef<'a, D> where D: BasicDictionaryWithMeta + ?Sized {
-
-    pub fn new(raw: &'a Metadata, dict: &'a D) -> Self {
-        Self {
-            raw,
-            dict,
-            associated_dictionary_cached: Default::default(),
-            meta_tags_cached: Default::default()
-        }
-    }
-
-    pub fn raw(&self) -> &'a Metadata {
-        self.raw
-    }
-
-    pub fn dict(&self) -> &'a D {
-        self.dict
-    }
-
-    pub fn has_associated_dictionary(&self, q: impl AsRef<str>) -> bool {
-        self.dict.get_dictionary_interner().get(q).is_some_and(|value| self.raw.has_associated_dictionary(value))
-    }
-
-    pub fn has_meta_tag(&self, q: impl AsRef<str>) -> bool {
-        self.dict.get_tag_interner().get(q).is_some_and(|value| self.raw.has_meta_tag(value))
-    }
-
-    pub fn associated_dictionaries(&self) -> Option<&Vec<&'a str>> {
-        if let Some(found) = self.associated_dictionary_cached.get() {
-            Some(found)
-        } else {
-            if let Some(inner) = self.raw.associated_dictionaries.get() {
-                let interner = self.dict.get_dictionary_interner();
-                self.associated_dictionary_cached.set(
-                    inner.iter().map(|value| {
-                        interner.resolve(value.clone()).expect("This should be known!")
-                    }).collect()
-                ).unwrap();
-                self.associated_dictionary_cached.get()
-            } else {
-                None
-            }
-        }
-    }
-
-    pub fn meta_tags(&self) -> Option<&Vec<&'a str>> {
-        if let Some(found) = self.meta_tags_cached.get() {
-            Some(found)
-        } else {
-            if let Some(inner) = self.raw.meta_tags.get() {
-                let interner = self.dict.get_tag_interner();
-                self.meta_tags_cached.set(
-                    inner.iter().map(|value| {
-                        interner.resolve(value.clone()).expect("This should be known!")
-                    }).collect()
-                ).unwrap();
-                self.meta_tags_cached.get()
-            } else {
-                None
-            }
-        }
-    }
-
-    pub fn clone_metadata(self) -> Metadata {
-        self.raw.clone()
-    }
-}
-
-impl<D> Debug for MetadataRef<'_, D> where D: BasicDictionaryWithMeta + Debug {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MetadataRef")
-            .field("inner", self.raw)
-            .field("associated_dictionary_cached", &self.associated_dictionary_cached.get())
-            .field("meta_tags_cached", &self.meta_tags_cached.get())
-            .finish_non_exhaustive()
-    }
-}
-
-impl<'a, D> Clone for MetadataRef<'a, D>  where D: BasicDictionaryWithMeta {
-    fn clone(&self) -> Self {
-        Self {
-            raw: self.raw,
-            dict: self.dict,
-            associated_dictionary_cached: self.associated_dictionary_cached.clone(),
-            meta_tags_cached: self.meta_tags_cached.clone()
-        }
-    }
-}
-
-impl<D> Display for MetadataRef<'_, D> where D: BasicDictionaryWithMeta {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let a = match self.associated_dictionaries() {
-            None => {
-                "None".to_string()
-            }
-            Some(value) => {
-                value.join(", ")
-            }
-        };
-
-        let b = match self.meta_tags() {
-            None => {
-                "None".to_string()
-            }
-            Some(value) => {
-                value.join(", ")
-            }
-        };
-        write!(f, "MetadataRef{{[{a}], [{b}]}}")
-    }
-}
-
 pub trait BasicDictionaryWithMeta: BasicDictionary {
-    fn get_dictionary_interner(&self) -> &DefaultStringInterner;
-    fn get_dictionary_interner_mut(&mut self) -> &mut DefaultStringInterner;
-
-    fn get_tag_interner(&self) -> &DefaultStringInterner;
-    fn get_tag_interner_mut(&mut self) -> &mut DefaultStringInterner;
-
-    fn set_dictionary_for<L: Language>(&mut self, word_id: usize, dict: &str) {
-        self.get_or_init_meta::<L>(word_id).push_associated_dictionary(dict)
-    }
-
-    fn set_meta_tag_for<L: Language>(&mut self, word_id: usize, tag: &str) {
-        self.get_or_init_meta::<L>(word_id).push_meta_tag(tag)
-    }
-
-
-    fn get_meta<L: Language>(&self, word_id: usize) -> Option<&Metadata>;
-    fn get_meta_mut<L: Language>(&mut self, word_id: usize) -> Option<MetadataMutRef<Self>>;
-    fn get_or_init_meta<L: Language>(&mut self, word_id: usize) -> MetadataMutRef<Self>;
-
-    fn get_meta_ref<L: Language>(&self, word_id: usize) -> Option<MetadataRef<Self>> {
-        Some(MetadataRef::new(self.get_meta::<L>(word_id)?, self))
-    }
+    fn metadata(&self) -> &MetadataContainer;
+    fn metadata_mut(&mut self) -> &mut MetadataContainer;
 
     fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self> {
         DictionaryWithMetaIter::new(self)
     }
-
-    fn reserve_meta(&mut self);
 }
 
 pub struct DictionaryWithMetaIter<'a, D> where D: BasicDictionaryWithMeta + ?Sized {
@@ -1065,7 +970,7 @@ impl<'a, D> DictionaryWithMetaIter<'a, D> where D: BasicDictionaryWithMeta + ?Si
 }
 
 impl<'a, D> Iterator for DictionaryWithMetaIter<'a, D> where D: BasicDictionaryWithMeta {
-    type Item = DirectionTuple<(usize, Option<MetadataRef<'a, D>>), (usize, Option<MetadataRef<'a, D>>)>;
+    type Item = DirectionTuple<(usize, Option<MetadataRef<'a>>), (usize, Option<MetadataRef<'a>>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let tuple = self.iter.next()?;
@@ -1075,14 +980,20 @@ impl<'a, D> Iterator for DictionaryWithMetaIter<'a, D> where D: BasicDictionaryW
             match tuple {
                 DirectionTuple::AToB { .. } => {
                     DirectionTuple::AToB {
-                        a: (a, self.dictionary_with_meta.get_meta_ref::<A>(a)),
-                        b: (b, self.dictionary_with_meta.get_meta_ref::<B>(b))
+                        a: (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
+                        b: (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
                     }
                 }
                 DirectionTuple::BToA { .. } => {
                     DirectionTuple::BToA {
-                        a: (a, self.dictionary_with_meta.get_meta_ref::<A>(a)),
-                        b: (b, self.dictionary_with_meta.get_meta_ref::<B>(b))
+                        a: (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
+                        b: (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
+                    }
+                }
+                DirectionTuple::Invariant { .. } => {
+                    DirectionTuple::Invariant {
+                        a: (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
+                        b: (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
                     }
                 }
             }
@@ -1091,56 +1002,67 @@ impl<'a, D> Iterator for DictionaryWithMetaIter<'a, D> where D: BasicDictionaryW
 }
 
 
-
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct DictionaryWithMeta<T, V> {
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
     inner: Dictionary<T, V>,
-    dictionary_interner: DefaultStringInterner,
-    tag_interner: DefaultStringInterner,
-    meta_a: Vec<Metadata>,
-    meta_b: Vec<Metadata>,
+    metadata: MetadataContainer
+}
+
+impl<T, V> DictionaryWithMeta<T, V> {
+    fn new(inner: Dictionary<T, V>, metadata: MetadataContainer) -> Self {
+        Self { inner, metadata }
+    }
+}
+
+impl<T, V> DictionaryWithMeta<T, V> where V: Vocabulary<T> {
+    fn metadata_with_dict(&self) -> MetadataContainerWithDict<Self, T, V> where Self: Sized {
+        MetadataContainerWithDict::wrap(self)
+    }
+
+    fn metadata_with_dict_mut(&mut self) -> MetadataContainerWithDictMut<Self, T, V> where Self: Sized {
+        MetadataContainerWithDictMut::wrap(self)
+    }
 }
 unsafe impl<T, V> Send for DictionaryWithMeta<T, V>{}
 unsafe impl<T, V> Sync for DictionaryWithMeta<T, V>{}
 impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + Default, T: Hash + Eq  {
 
-    fn insert_meta_for_create_subset<'a, L: Language>(&mut self, word_id: usize, metadata_ref: MetadataRef<'a, DictionaryWithMeta<T, V>>) {
+    fn insert_meta_for_create_subset<'a, L: Language>(&mut self, word_id: usize, metadata_ref: MetadataRef<'a>) {
         let tags = metadata_ref.raw.meta_tags.get();
         let dics = metadata_ref.raw.associated_dictionaries.get();
+        let unstemmed = metadata_ref.raw.unstemmed.get();
 
         if tags.is_none() && dics.is_none() {
             return;
         }
 
-        let meta = self.get_or_init_meta::<L>(word_id).meta;
+        let meta = self.metadata.get_or_init_meta::<L>(word_id).meta;
 
         if let Some(dics) = dics {
-            unsafe { meta.add_all_dictionary(&dics) }
+            unsafe { meta.add_all_associated_dictionaries(&dics) }
         }
         if let Some(tags) = tags {
-            unsafe { meta.add_all_dictionary(&tags) }
+            unsafe { meta.add_all_meta_tags(&tags) }
+        }
+        if let Some(unstemmed) = unstemmed {
+            unsafe { meta.add_all_unstemmed(&unstemmed) }
         }
     }
 
-    pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V> where F1: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef<DictionaryWithMeta<T, V>>>) -> bool, F2: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef<DictionaryWithMeta<T, V>>>) -> bool {
+    pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V> where F1: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef>) -> bool, F2: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef>) -> bool {
         let mut new = Self {
             inner: Dictionary::new(),
-            dictionary_interner: self.dictionary_interner.clone(),
-            tag_interner: self.tag_interner.clone(),
-            meta_a: Default::default(),
-            meta_b: Default::default(),
+            metadata: self.metadata.copy_keep_vocebulary()
         };
         for value in self.iter_with_meta() {
-
-
             match value {
                 DirectionTuple::AToB { a:(word_id_a, meta_a), b:(word_id_b, meta_b) } => {
                     if filter_a(self, word_id_a, meta_a.as_ref()) {
                         if filter_b(self, word_id_b, meta_b.as_ref()) {
                             let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
                             let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
-                            let (word_a, word_b) = new.insert_hash_ref::<AToB>(word_a.clone(), word_b.clone());
+                            let (word_a, word_b) = new.insert_hash_ref::<AToB>(word_a.clone(), word_b.clone()).to_ab_tuple();
                             if let Some(meta_a) = meta_a {
                                 new.insert_meta_for_create_subset::<A>(word_a, meta_a);
                             }
@@ -1155,7 +1077,22 @@ impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + Default, T: Hash
                         if filter_b(self, word_id_b, meta_b.as_ref()) {
                             let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
                             let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
-                            let (word_a, word_b) = new.insert_hash_ref::<BToA>(word_a.clone(), word_b.clone());
+                            let (word_a, word_b) = new.insert_hash_ref::<BToA>(word_a.clone(), word_b.clone()).to_ab_tuple();
+                            if let Some(meta_a) = meta_a {
+                                new.insert_meta_for_create_subset::<A>(word_a, meta_a);
+                            }
+                            if let Some(meta_b) = meta_b {
+                                new.insert_meta_for_create_subset::<B>(word_b, meta_b);
+                            }
+                        }
+                    }
+                },
+                DirectionTuple::Invariant { a:(word_id_a, meta_a), b:(word_id_b, meta_b) } => {
+                    if filter_a(self, word_id_a, meta_a.as_ref()) {
+                        if filter_b(self, word_id_b, meta_b.as_ref()) {
+                            let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
+                            let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
+                            let (word_a, word_b) = new.insert_hash_ref::<Invariant>(word_a.clone(), word_b.clone()).to_ab_tuple();
                             if let Some(meta_a) = meta_a {
                                 new.insert_meta_for_create_subset::<A>(word_a, meta_a);
                             }
@@ -1171,50 +1108,26 @@ impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + Default, T: Hash
         new
     }
 }
+
 impl<T, V> DictionaryWithMeta<T, V> where V: Vocabulary<T> + Default {
     pub fn from_voc_a(voc_a: V) -> Self {
-        Self {
-            inner: Dictionary::from_voc_a(voc_a),
-            dictionary_interner: Default::default(),
-            tag_interner: Default::default(),
-            meta_a: Default::default(),
-            meta_b: Default::default(),
-        }
+        Self::new(
+            Dictionary::from_voc_a(voc_a),
+            Default::default()
+        )
     }
 }
-
 impl<T, V> DictionaryWithMeta<T, V> where V: Vocabulary<T> {
     pub fn from_voc(voc_a: V, voc_b: V) -> Self {
-        Self {
-            inner: Dictionary::from_voc(voc_a, voc_b),
-            dictionary_interner: Default::default(),
-            tag_interner: Default::default(),
-            meta_a: Default::default(),
-            meta_b: Default::default(),
-        }
-    }
-}
-
-impl<T, V> DictionaryWithMeta<T, V> where V: Default {
-    pub fn new() -> Self {
-        Self {
-            inner: Default::default(),
-            dictionary_interner: Default::default(),
-            tag_interner: Default::default(),
-            meta_a: Default::default(),
-            meta_b: Default::default(),
-        }
+        Self::new(
+            Dictionary::from_voc(voc_a, voc_b),
+            Default::default()
+        )
     }
 }
 impl<T, V> Clone for DictionaryWithMeta<T, V> where V: Clone {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            dictionary_interner: self.dictionary_interner.clone(),
-            tag_interner: self.tag_interner.clone(),
-            meta_a: self.meta_a.clone(),
-            meta_b: self.meta_b.clone()
-        }
+        Self::new(self.inner.clone(), self.metadata.clone())
     }
 }
 impl<T, V> BasicDictionary for DictionaryWithMeta<T, V> {
@@ -1230,62 +1143,12 @@ impl<T, V> BasicDictionary for DictionaryWithMeta<T, V> {
     }
 }
 impl<T, V> BasicDictionaryWithMeta for DictionaryWithMeta<T, V> where V: Vocabulary<T> {
-    fn get_dictionary_interner(&self) -> &DefaultStringInterner {
-        &self.dictionary_interner
+    fn metadata(&self) -> &MetadataContainer {
+        &self.metadata
     }
 
-    fn get_dictionary_interner_mut(&mut self) -> &mut DefaultStringInterner {
-        &mut self.dictionary_interner
-    }
-
-    fn get_tag_interner(&self) -> &DefaultStringInterner {
-        &self.tag_interner
-    }
-
-    fn get_tag_interner_mut(&mut self) -> &mut DefaultStringInterner {
-        &mut self.tag_interner
-    }
-
-    fn get_meta<L: Language>(&self, word_id: usize) -> Option<&Metadata> {
-        if L::A2B {
-            self.meta_a.get(word_id)
-        } else {
-            self.meta_b.get(word_id)
-        }
-    }
-
-    fn get_meta_mut<L: Language>(&mut self, word_id: usize) -> Option<MetadataMutRef<Self>> {
-        let ptr = self as *mut Self;
-        let value = unsafe{&mut*ptr};
-        let result = if L::A2B {
-            value.meta_a.get_mut(word_id)
-        } else {
-            value.meta_b.get_mut(word_id)
-        }?;
-        Some(MetadataMutRef::new(ptr, result))
-    }
-
-    fn get_or_init_meta<L: Language>(&mut self, word_id: usize) -> MetadataMutRef<Self> {
-        let ptr = self as *mut Self;
-
-        let targ = if L::A2B {
-            &mut self.meta_a
-        } else {
-            &mut self.meta_b
-        };
-
-        if word_id >= targ.len() {
-            for _ in 0..(word_id - targ.len()) + 1 {
-                targ.push(Metadata::default())
-            }
-        }
-
-        unsafe { MetadataMutRef::new(ptr, targ.get_unchecked_mut(word_id)) }
-    }
-
-    fn reserve_meta(&mut self) {
-        self.meta_a.resize(self.inner.voc_a.len(), Metadata::default());
-        self.meta_b.resize(self.inner.voc_b.len(), Metadata::default());
+    fn metadata_mut(&mut self) -> &mut MetadataContainer {
+        &mut self.metadata
     }
 }
 impl<T, V> BasicDictionaryWithVocabulary<T, V> for DictionaryWithMeta<T, V> {
@@ -1298,16 +1161,14 @@ impl<T, V> BasicDictionaryWithVocabulary<T, V> for DictionaryWithMeta<T, V> {
 }
 impl<T, V> DictionaryWithMeta<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
     pub fn map<Q: Eq + Hash, Voc, F>(self, f: F) -> DictionaryWithMeta<Q, Voc> where F: for<'a> Fn(&'a T)-> Q, Voc: From<Vec<Q>> {
-        DictionaryWithMeta::<Q, Voc> {
-            inner: self.inner.map(f),
-            dictionary_interner: self.dictionary_interner,
-            tag_interner: self.tag_interner,
-            meta_a: self.meta_a,
-            meta_b: self.meta_b,
-        }
+        DictionaryWithMeta::<Q, Voc>::new(
+            self.inner.map(&f),
+            self.metadata.clone()
+        )
     }
 }
 impl<T, V> DictionaryWithVocabulary<T, V> for  DictionaryWithMeta<T, V> where V: Vocabulary<T> {
+
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         self.inner.can_translate_id::<D>(id)
     }
@@ -1325,7 +1186,7 @@ impl<T, V> DictionaryWithVocabulary<T, V> for  DictionaryWithMeta<T, V> where V:
     }
 }
 impl<T, V> DictionaryMut<T, V> for  DictionaryWithMeta<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
-    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> (usize, usize) {
+    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
         self.inner.insert_hash_ref::<D>(word_a, word_b)
     }
 
@@ -1345,39 +1206,173 @@ impl<T, V> DictionaryMut<T, V> for  DictionaryWithMeta<T, V> where T: Eq + Hash,
     }
 
 }
-impl<T: Display, V: Vocabulary<T>> Display for DictionaryWithMeta<T, V> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.inner, f)?;
-        write!(f, "\n------\n")?;
-        write!(f, "Metadata A:\n")?;
-        if self.meta_a.is_empty() {
-            write!(f, "  ==UNSET==\n")?;
-        } else {
-            for word_id in self.inner.voc_a.ids() {
-                if let Some(value) = self.get_meta_ref::<A>(word_id) {
-                    write!(f, "    {}: {}\n", self.id_to_word::<AToB>(word_id).unwrap(), value)?;
+impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default{
+    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
+        let mut new_dict = DictionaryWithMeta::new(
+            Default::default(),
+            self.metadata.copy_keep_vocebulary()
+        );
+
+        for value in self.iter() {
+            match value {
+                DirectionTuple::AToB { a, b } => {
+                    if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    }
+                }
+                DirectionTuple::BToA { a, b } => {
+                    if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    }
+                }
+                DirectionTuple::Invariant { a, b } => {
+                    if filter_a(a) && filter_b(b) {
+                        new_dict.insert_hash_ref::<Invariant>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    } else if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    } else if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            self.id_to_word::<A>(a).unwrap().clone(),
+                            self.id_to_word::<B>(b).unwrap().clone()
+                        );
+                    }
                 }
             }
         }
 
-        write!(f, "\n------\n")?;
-        write!(f, "Metadata B:\n")?;
-        if self.meta_b.is_empty() {
-            write!(f, "  ==UNSET==\n")?;
-        } else {
-            for word_id in self.inner.voc_b.ids() {
-                if let Some(value) = self.get_meta_ref::<B>(word_id) {
-                    write!(f, "    {}: {}\n", self.id_to_word::<BToA>(word_id).unwrap(), value)?;
+        new_dict
+    }
+
+    fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
+        let mut new_dict = DictionaryWithMeta::new(
+            Default::default(),
+            self.metadata.copy_keep_vocebulary()
+        );
+        for value in self.iter() {
+            let a = self.id_to_word::<A>(*value.a()).unwrap();
+            let b = self.id_to_word::<B>(*value.b()).unwrap();
+            match value {
+                DirectionTuple::AToB { .. } => {
+                    if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    }
+                }
+                DirectionTuple::BToA { .. } => {
+                    if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    }
+                }
+                DirectionTuple::Invariant { .. } => {
+                    if filter_a(a) && filter_b(b) {
+                        new_dict.insert_hash_ref::<Invariant>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    } else if filter_a(a) {
+                        new_dict.insert_hash_ref::<AToB>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    } else if filter_b(b) {
+                        new_dict.insert_hash_ref::<BToA>(
+                            a.clone(),
+                            b.clone()
+                        );
+                    }
                 }
             }
         }
+
+        new_dict
+    }
+}
+
+impl<T: Display, V: Vocabulary<T>> Display for DictionaryWithMeta<T, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.inner, f)?;
+        write!(f, "\n------\n")?;
+        write!(f, "{}", self.metadata_with_dict())?;
         Ok(())
+    }
+}
+
+impl<T, V> From<Dictionary<T, V>> for DictionaryWithMeta<T, V> {
+    fn from(value: Dictionary<T, V>) -> Self {
+        Self::new(
+            value,
+            MetadataContainer::create()
+        )
+    }
+}
+
+impl<T, V> IntoIterator for DictionaryWithMeta<T, V> where V: Vocabulary<T>, T: Hash + Eq {
+    type Item = DirectionTuple<(usize, HashRef<T>, Option<SolvedMetadata>), (usize, HashRef<T>, Option<SolvedMetadata>)>;
+    type IntoIter = DictionaryWithMetaIterator<DictionaryWithMeta<T, V>, T, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DictionaryWithMetaIterator::new(self)
+    }
+}
+
+
+pub struct DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+    inner: DictionaryIteratorImpl<T, V, D>
+}
+
+impl<D, T, V> DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: Vocabulary<T>  {
+    pub fn new(inner: D) -> Self {
+        Self {
+            inner: DictionaryIteratorImpl::new(inner)
+        }
+    }
+
+    pub fn into_inner(self) -> D {
+        self.inner.inner
+    }
+}
+
+impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+    type Item = DirectionTuple<(usize, HashRef<T>, Option<SolvedMetadata>), (usize, HashRef<T>, Option<SolvedMetadata>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.inner.next()?;
+
+        Some(
+            next.map(
+                |(id, href)| {
+                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(MetadataRef::to_solved_metadata);
+                    (id, href, value)
+                },
+                |(id, href)| {
+                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(MetadataRef::to_solved_metadata);
+                    (id, href, value)
+                }
+            )
+        )
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryMut, DictionaryWithMeta};
+    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary};
     use crate::topicmodel::dictionary::direction::{A, B, Invariant};
     use crate::topicmodel::vocabulary::{VocabularyImpl, VocabularyMut};
 
@@ -1417,7 +1412,7 @@ mod test {
 
         let mut dict = DictionaryWithMeta::from_voc(voc_a.clone(), voc_b.clone());
         {
-            dict.reserve_meta();
+            dict.metadata_with_dict_mut().reserve_meta();
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
@@ -1439,63 +1434,81 @@ mod test {
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Motorflugzeug").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("flyer").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airman").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.get_or_init_meta::<A>(a);
+            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictE");
             drop(meta_a);
-            let mut meta_b = dict.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictC");
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("wing").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.get_or_init_meta::<A>(a);
+            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
-            let mut meta_b = dict.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.get_or_init_meta::<A>(a);
+            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictC");
             drop(meta_a);
-            let mut meta_b = dict.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.get_or_init_meta::<A>(a);
+            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
             drop(meta_a);
-            let mut meta_b = dict.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictB");
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.get_or_init_meta::<A>(a);
+            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
-            let mut meta_b = dict.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
 
             drop(meta_b);
-            let mut meta_a = dict.get_or_init_meta::<A>(0);
+            let mut meta_a = dict.metadata.get_or_init_meta::<A>(0);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
         }
 
         println!("{}", dict);
 
-        let mut result = dict.create_subset_with_filters(
-            |dict, v, meaning| {
+        let result = dict.create_subset_with_filters(
+            |_, _, meaning| {
                 if let Some(found) = meaning {
                     found.has_associated_dictionary("DictA") || found.has_associated_dictionary("DictB")
                 } else {
                     false
                 }
             },
-            |dict, v, meaning| { true }
+            |_,_,_| { true }
         );
-        result.reserve_meta();
         println!(".=======.");
         println!("{}", result);
+        println!("--==========--");
+
+        for value in dict.iter_with_meta() {
+            println!("{}", value.map(
+                |(id, meta)| {
+                    format!("'{}({id})': {}", dict.id_to_word::<A>(id).unwrap().to_string(), meta.map_or("NONE".to_string(), |value| value.to_solved_metadata().to_string()))
+                },
+                |(id, meta)| {
+                    format!("'{}({id})': {}", dict.id_to_word::<B>(id).unwrap().to_string(), meta.map_or("NONE".to_string(), |value| value.to_solved_metadata().to_string()))
+                }
+            ))
+        }
+        println!("--==========--");
+        for value in dict.into_iter() {
+            println!("'{}({})': {}, '{}({})': {}",
+                     value.a().1, value.a().0, value.a().clone().2.map_or("NONE".to_string(), |value| value.to_string()),
+                     value.b().1, value.b().0, value.b().clone().2.map_or("NONE".to_string(), |value| value.to_string())
+            )
+        }
     }
 }

@@ -39,5 +39,8 @@ evalexpr = "11"
 nom = "7"
 num = "0.4"
 num_enum = "0.7"
+derive_more = "0.99"
+paste = "1.0"
+#derive-where = "1.2"
 
 indenter = { version = "0", features = ["std"] }
