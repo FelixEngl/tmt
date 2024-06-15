@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod metadata;
+pub mod direction;
 
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Formatter};
@@ -11,7 +12,7 @@ use std::slice::Iter;
 use itertools::{Itertools, Position, Unique};
 use serde::{Deserialize, Serialize};
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
-use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, Invariant, Language, Translation};
+use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, Translation};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{MappableVocabulary, Vocabulary, VocabularyMut};
 use strum::{EnumIs};
@@ -55,7 +56,7 @@ pub trait BasicDictionary: Send + Sync {
     fn map_b_to_a(&self) -> &Vec<Vec<usize>>;
 
     fn translate_id_to_ids<D: Translation>(&self, word_id: usize) -> Option<&Vec<usize>> {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             self.map_a_to_b().get(word_id)
         } else {
             self.map_b_to_a().get(word_id)
@@ -69,92 +70,14 @@ pub trait BasicDictionary: Send + Sync {
     }
 }
 
-#[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash)]
-pub enum DirectionTuple<Ta, Tb> {
-    AToB{
-        a: Ta,
-        b: Tb
-    },
-    BToA {
-        a: Ta,
-        b: Tb
-    },
-    Invariant {
-        a: Ta,
-        b: Tb
-    }
-}
 
-impl<Ta, Tb> DirectionTuple<Ta, Tb> {
-    pub fn a(&self) -> &Ta {
-        match self {
-            DirectionTuple::AToB { a, .. } => {a}
-            DirectionTuple::BToA { a, .. } => {a}
-            DirectionTuple::Invariant { a, .. } => {a}
-        }
-    }
-    pub fn b(&self) -> &Tb {
-        match self {
-            DirectionTuple::AToB { b, .. } => {b}
-            DirectionTuple::BToA { b, .. } => {b}
-            DirectionTuple::Invariant { b, .. } => {b}
-        }
-    }
 
-    pub fn to_ab_tuple(self) -> (Ta, Tb) {
-        match self {
-            DirectionTuple::AToB { a, b } => {(a, b)}
-            DirectionTuple::BToA { a, b } => {(a, b)}
-            DirectionTuple::Invariant { a, b } => {(a, b)}
-        }
-    }
 
-    pub fn map<Ra, Rb, F1: FnOnce(Ta) -> Ra, F2: FnOnce(Tb) -> Rb>(self, map_a: F1, map_b: F2) -> DirectionTuple<Ra, Rb> {
-        match self {
-            DirectionTuple::AToB { a, b } => {
-                DirectionTuple::AToB { a: map_a(a), b: map_b(b) }
-            }
-            DirectionTuple::BToA { a, b } => {
-                DirectionTuple::BToA { a: map_a(a), b: map_b(b) }
-            }
-            DirectionTuple::Invariant { a, b } => {
-                DirectionTuple::Invariant { a: map_a(a), b: map_b(b) }
-            }
-        }
-    }
-}
 
-impl<T> DirectionTuple<T, T>  {
-    pub fn map_both<R, F: Fn(T) -> R>(self, mapping: F) -> DirectionTuple<R, R> {
-        match self {
-            DirectionTuple::AToB { a, b } => {
-                DirectionTuple::AToB { a: mapping(a), b: mapping(b) }
-            }
-            DirectionTuple::BToA { a, b } => {
-                DirectionTuple::BToA { a: mapping(a), b: mapping(b) }
-            }
-            DirectionTuple::Invariant { a, b } => {
-                DirectionTuple::Invariant { a: mapping(a), b: mapping(b) }
-            }
-        }
-    }
-}
 
-impl<Ta: Display, Tb: Display> Display for  DirectionTuple<Ta, Tb>  {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DirectionTuple::AToB { a, b } => {
-                write!(f, "AToB{{{a}, {b}}}")
-            }
-            DirectionTuple::BToA { a, b } => {
-                write!(f, "BToA{{{a}, {b}}}")
-            }
-            DirectionTuple::Invariant { a, b } => {
-                write!(f, "Invariant{{{a}, {b}}}")
-            }
-        }
-    }
-}
+
+
+
 
 pub type DictIter<'a> = Unique<DictIterImpl<'a>>;
 /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
@@ -167,8 +90,8 @@ type ABIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleFirst<Cloned
 type BAIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>>;
 impl<'a> DictIterImpl<'a> {
     fn new(dict: &'a (impl BasicDictionary + ?Sized)) -> Self {
-        let a_to_b: ABIter = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a).map(|(a, b) | DirectionTuple::AToB {a, b}));
-        let b_to_a: BAIter = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b).map(|(a, b) | DirectionTuple::AToB {a, b}));
+        let a_to_b: ABIter = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a).map(|(a, b) | DirectionTuple::a_to_b(a, b)));
+        let b_to_a: BAIter = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b).map(|(a, b) | DirectionTuple::b_to_a(a, b)));
         let iter: Chain<ABIter, BAIter> = a_to_b.chain(b_to_a);
         Self {
             a_to_b: dict.map_a_to_b(),
@@ -181,26 +104,21 @@ impl<'a> Iterator for DictIterImpl<'a> {
     type Item = DirectionTuple<usize, usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let current = self.iter.next()?;
-        Some(
-            match current {
-                all @ DirectionTuple::AToB { a, b } => {
-                    if self.b_to_a[b].contains(&a) {
-                        DirectionTuple::Invariant {a, b}
-                    } else {
-                        all
-                    }
+        let mut tuple = self.iter.next()?;
+        match &tuple.direction {
+            DirectionKind::AToB => {
+                if self.b_to_a[tuple.b].contains(&tuple.a) {
+                    tuple.direction = DirectionKind::Invariant
                 }
-                all @ DirectionTuple::BToA { a, b } => {
-                    if self.a_to_b[a].contains(&b) {
-                        DirectionTuple::Invariant {a, b}
-                    } else {
-                        all
-                    }
-                }
-                _ => unreachable!()
             }
-        )
+            DirectionKind::BToA => {
+                if self.a_to_b[tuple.a].contains(&tuple.b) {
+                    tuple.direction = DirectionKind::Invariant
+                }
+            }
+            _ => unreachable!()
+        }
+        Some(tuple)
     }
 }
 
@@ -214,7 +132,7 @@ pub trait BasicDictionaryWithVocabulary<T, V>: BasicDictionary {
 pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<T, V> where V: Vocabulary<T> {
 
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             self.voc_a().contains_id(id) && self.map_a_to_b().get(id).is_some_and(|value| !value.is_empty())
         } else {
             self.voc_b().contains_id(id) && self.map_b_to_a().get(id).is_some_and(|value| !value.is_empty())
@@ -222,7 +140,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<T, V> wh
     }
 
     fn id_to_word<'a, D: Translation>(&'a self, id: usize) -> Option<&'a HashRef<T>> where V: 'a {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             self.voc_a().get_value(id)
         } else {
             self.voc_b().get_value(id)
@@ -230,7 +148,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<T, V> wh
     }
 
     fn ids_to_id_entry<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<(usize, &'a HashRef<T>)> where V: 'a {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             ids.iter().map(|value| unsafe {
                 self.voc_b().get_id_entry(*value).unwrap_unchecked()
             }).collect()
@@ -242,7 +160,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<T, V> wh
     }
 
     fn ids_to_values<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<&'a HashRef<T>> where V: 'a {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             ids.iter().map(|value| unsafe {
                 self.voc_b().get_value(*value).unwrap_unchecked()
             }).collect()
@@ -275,7 +193,7 @@ pub struct DictLangIter<'a, T, L, D: ?Sized, V> where L: Language {
 impl<'a, T, L, D: ?Sized, V> DictLangIter<'a, T, L, D, V> where L: Language, V: Vocabulary<T> + 'a, D: BasicDictionaryWithVocabulary<T, V> {
     fn new(dict: &'a D) -> Self {
         Self {
-            iter: if L::A2B {
+            iter: if L::DIRECTION.is_a_to_b() {
                 dict.voc_a().iter().enumerate()
             } else {
                 dict.voc_b().iter().enumerate()
@@ -320,7 +238,7 @@ pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash
             T: Borrow<Q>,
             Q: Hash + Eq
     {
-        let id = if D::A2B {
+        let id = if D::DIRECTION.is_a_to_b() {
             self.voc_a().get_id(word)
         } else {
             self.voc_b().get_id(word)
@@ -332,7 +250,7 @@ pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash
         where
             T: Borrow<Q>,
             Q: Hash + Eq {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             self.voc_a().get_id(id)
         } else {
             self.voc_b().get_id(id)
@@ -455,7 +373,7 @@ impl<T, V> BasicDictionary for Dictionary<T, V> {
     }
 
     fn translate_id_to_ids<D: Translation>(&self, word_id: usize) -> Option<&Vec<usize>> {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             &self.map_a_to_b
         } else {
             &self.map_b_to_a
@@ -487,7 +405,7 @@ impl<T, V> Dictionary<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
 
 impl<T, V> DictionaryWithVocabulary<T, V> for  Dictionary<T, V> where V: Vocabulary<T> {
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             self.voc_a.contains_id(id) && self.map_a_to_b.get(id).is_some_and(|value| !value.is_empty())
         } else {
             self.voc_b.contains_id(id) && self.map_b_to_a.get(id).is_some_and(|value| !value.is_empty())
@@ -495,7 +413,7 @@ impl<T, V> DictionaryWithVocabulary<T, V> for  Dictionary<T, V> where V: Vocabul
     }
 
     fn id_to_word<'a, D: Translation>(&'a self, id: usize) -> Option<&'a HashRef<T>> where V: 'a {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             self.voc_a.get_value(id)
         } else {
             self.voc_b.get_value(id)
@@ -503,7 +421,7 @@ impl<T, V> DictionaryWithVocabulary<T, V> for  Dictionary<T, V> where V: Vocabul
     }
 
     fn ids_to_id_entry<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<(usize, &'a HashRef<T>)> where V: 'a {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             ids.iter().map(|value| unsafe {
                 self.voc_b.get_id_entry(*value).unwrap_unchecked()
             }).collect()
@@ -515,7 +433,7 @@ impl<T, V> DictionaryWithVocabulary<T, V> for  Dictionary<T, V> where V: Vocabul
     }
 
     fn ids_to_values<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<&'a HashRef<T>> where V: 'a {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             ids.iter().map(|value| unsafe {
                 self.voc_b.get_value(*value).unwrap_unchecked()
             }).collect()
@@ -531,7 +449,7 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
     fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
         let id_a = self.voc_a.add_hash_ref(word_a);
         let id_b = self.voc_b.add_hash_ref(word_b);
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             if let Some(found) = self.map_a_to_b.get_mut(id_a) {
                 if !found.contains(&id_b) {
                     found.push(id_b)
@@ -544,11 +462,11 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
                     self.map_a_to_b.get_unchecked_mut(id_a).push(id_b);
                 }
             }
-            if !D::B2A {
-                return DirectionTuple::AToB {a: id_a, b: id_b};
+            if !D::DIRECTION.is_b_to_a() {
+                return DirectionTuple::a_to_b(id_a, id_b);
             }
         }
-        if D::B2A {
+        if D::DIRECTION.is_b_to_a() {
             if let Some(found) = self.map_b_to_a.get_mut(id_b) {
                 if !found.contains(&id_a) {
                     found.push(id_a)
@@ -561,12 +479,12 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
                     self.map_b_to_a.get_unchecked_mut(id_b).push(id_a);
                 }
             }
-            if !D::A2B {
-                return DirectionTuple::BToA {a: id_a, b: id_b};
+            if !D::DIRECTION.is_a_to_b() {
+                return DirectionTuple::b_to_a(id_a, id_b);
             }
         }
 
-        DirectionTuple::Invariant {a: id_a, b: id_b}
+        DirectionTuple::invariant(id_a, id_b)
     }
 
     fn translate_value_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>>
@@ -574,7 +492,7 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
             T: Borrow<Q>,
             Q: Hash + Eq
     {
-        let id = if D::A2B {
+        let id = if D::DIRECTION.is_a_to_b() {
             self.voc_a.get_id(word)
         } else {
             self.voc_b.get_id(word)
@@ -586,7 +504,7 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
         where
             T: Borrow<Q>,
             Q: Hash + Eq {
-        if D::A2B {
+        if D::DIRECTION.is_a_to_b() {
             self.voc_a.get_id(id)
         } else {
             self.voc_b.get_id(id)
@@ -597,9 +515,9 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
         let mut new_dict = Dictionary::new();
 
-        for value in self.iter() {
-            match value {
-                DirectionTuple::AToB { a, b } => {
+        for DirectionTuple{a, b, direction} in self.iter() {
+            match direction {
+                DirectionKind::AToB => {
                     if filter_a(a) {
                         new_dict.insert_hash_ref::<AToB>(
                             self.id_to_word::<A>(a).unwrap().clone(),
@@ -607,7 +525,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
                         );
                     }
                 }
-                DirectionTuple::BToA { a, b } => {
+                DirectionKind::BToA => {
                     if filter_b(b) {
                         new_dict.insert_hash_ref::<BToA>(
                             self.id_to_word::<A>(a).unwrap().clone(),
@@ -615,7 +533,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
                         );
                     }
                 }
-                DirectionTuple::Invariant { a, b } => {
+                DirectionKind::Invariant => {
                     if filter_a(a) && filter_b(b) {
                         new_dict.insert_hash_ref::<Invariant>(
                             self.id_to_word::<A>(a).unwrap().clone(),
@@ -641,11 +559,11 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
 
     fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
         let mut new_dict = Dictionary::new();
-        for value in self.iter() {
-            let a = self.id_to_word::<A>(*value.a()).unwrap();
-            let b = self.id_to_word::<B>(*value.b()).unwrap();
-            match value {
-                DirectionTuple::AToB { .. } => {
+        for DirectionTuple{a, b, direction} in self.iter() {
+            let a = self.id_to_word::<A>(a).unwrap();
+            let b = self.id_to_word::<B>(b).unwrap();
+            match direction {
+                DirectionKind::AToB => {
                     if filter_a(a) {
                         new_dict.insert_hash_ref::<AToB>(
                             a.clone(),
@@ -653,7 +571,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
                         );
                     }
                 }
-                DirectionTuple::BToA { .. } => {
+                DirectionKind::BToA => {
                     if filter_b(b) {
                         new_dict.insert_hash_ref::<BToA>(
                             a.clone(),
@@ -661,18 +579,20 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
                         );
                     }
                 }
-                DirectionTuple::Invariant { .. } => {
-                    if filter_a(a) && filter_b(b) {
+                DirectionKind::Invariant => {
+                    let filter_a = filter_a(a);
+                    let filter_b = filter_b(b);
+                    if filter_a && filter_b {
                         new_dict.insert_hash_ref::<Invariant>(
                             a.clone(),
                             b.clone()
                         );
-                    } else if filter_a(a) {
+                    } else if filter_a {
                         new_dict.insert_hash_ref::<AToB>(
                             a.clone(),
                             b.clone()
                         );
-                    } else if filter_b(b) {
+                    } else if filter_b {
                         new_dict.insert_hash_ref::<BToA>(
                             a.clone(),
                             b.clone()
@@ -689,7 +609,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
 impl<T: Display, V: Vocabulary<T>> Display for Dictionary<T, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         fn write_language<L: Language, T: Display, V: Vocabulary<T>>(dictionary: &Dictionary<T, V>, f: &mut Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}:\n", L::LANGUAGE_NAME)?;
+            write!(f, "{}:\n", L::LANG)?;
             for (position_a, (id_a, value_a, translations)) in dictionary.iter_language::<L>().with_position() {
                 write!(f, "  {value_a}({id_a}):\n")?;
                 if let Some(translations) = translations {
@@ -811,15 +731,9 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
                 let a_value = (self.pos, self.inner.id_to_word::<A>(self.pos).unwrap().clone());
                 let b_value = (b, self.inner.id_to_word::<B>(b).unwrap().clone());
                 Some(if self.inner.map_b_to_a()[b].contains(&self.pos) {
-                    DirectionTuple::Invariant {
-                        a: a_value,
-                        b: b_value
-                    }
+                    DirectionTuple::invariant(a_value, b_value)
                 } else {
-                    DirectionTuple::AToB {
-                        a: a_value,
-                        b: b_value
-                    }
+                    DirectionTuple::a_to_b(a_value, b_value)
                 })
             }
             DictionaryIteratorPointerState::NextBA => {
@@ -827,15 +741,9 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
                 let a_value = (a, self.inner.id_to_word::<A>(a).unwrap().clone());
                 let b_value = (self.pos, self.inner.id_to_word::<B>(self.pos).unwrap().clone());
                 Some(if self.inner.map_a_to_b()[a].contains(&self.pos) {
-                    DirectionTuple::Invariant {
-                        a: a_value,
-                        b: b_value
-                    }
+                    DirectionTuple::invariant(a_value, b_value)
                 } else {
-                    DirectionTuple::BToA {
-                        a: a_value,
-                        b: b_value
-                    }
+                    DirectionTuple::b_to_a(a_value, b_value)
                 })
             }
             DictionaryIteratorPointerState::Finished => unreachable!()
@@ -878,73 +786,6 @@ impl<T, V> IntoIterator for Dictionary<T, V> where V: Vocabulary<T>, T: Eq + Has
 }
 
 
-pub mod direction {
-
-    mod private {
-        pub(crate) trait Sealed{}
-    }
-
-    /// A direction for a translation
-    #[allow(private_bounds)]
-    pub trait Direction: private::Sealed {
-        const A2B: bool;
-        const B2A: bool;
-        const DIRECTION_NAME: &'static str;
-    }
-
-    ///
-    #[allow(private_bounds)]
-    pub trait Translation: Direction + private::Sealed {}
-
-    #[allow(private_bounds)]
-    pub trait Language: Translation + Direction + private::Sealed{
-        const A: bool;
-        const B: bool;
-        const LANGUAGE_NAME: &'static str;
-    }
-
-    pub struct A;
-    impl private::Sealed for A{}
-    impl Language for A{
-        const A: bool = true;
-        const B: bool = false;
-        const LANGUAGE_NAME: &'static str = "A";
-    }
-
-    pub type AToB = A;
-    impl Direction for AToB {
-        const A2B: bool = true;
-        const B2A: bool = false;
-        const DIRECTION_NAME: &'static str = "AToB";
-    }
-    impl Translation for AToB {}
-
-
-    pub struct B;
-    impl private::Sealed for B{}
-    impl Language for B {
-        const A: bool = false;
-        const B: bool = true;
-        const LANGUAGE_NAME: &'static str = "B";
-    }
-    pub type BToA = B;
-    impl Direction for BToA {
-        const A2B: bool = false;
-        const B2A: bool = true;
-        const DIRECTION_NAME: &'static str = "BToA";
-    }
-    impl Translation for BToA {}
-
-    pub struct Invariant;
-    impl private::Sealed for Invariant {}
-    impl Direction for Invariant {
-        const A2B: bool = true;
-        const B2A: bool = true;
-        const DIRECTION_NAME: &'static str = "Invariant";
-    }
-
-}
-
 
 pub trait BasicDictionaryWithMeta: BasicDictionary {
     fn metadata(&self) -> &MetadataContainer;
@@ -973,28 +814,26 @@ impl<'a, D> Iterator for DictionaryWithMetaIter<'a, D> where D: BasicDictionaryW
     type Item = DirectionTuple<(usize, Option<MetadataRef<'a>>), (usize, Option<MetadataRef<'a>>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let tuple = self.iter.next()?;
-        let a = *tuple.a();
-        let b = *tuple.b();
+        let DirectionTuple{a, b, direction} = self.iter.next()?;
         Some(
-            match tuple {
-                DirectionTuple::AToB { .. } => {
-                    DirectionTuple::AToB {
-                        a: (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        b: (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
-                    }
+            match direction {
+                DirectionKind::AToB => {
+                    DirectionTuple::a_to_b(
+                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
+                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
+                    )
                 }
-                DirectionTuple::BToA { .. } => {
-                    DirectionTuple::BToA {
-                        a: (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        b: (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
-                    }
+                DirectionKind::BToA => {
+                    DirectionTuple::b_to_a(
+                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
+                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
+                    )
                 }
-                DirectionTuple::Invariant { .. } => {
-                    DirectionTuple::Invariant {
-                        a: (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        b: (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
-                    }
+                DirectionKind::Invariant => {
+                    DirectionTuple::invariant(
+                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
+                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
+                    )
                 }
             }
         )
@@ -1055,55 +894,34 @@ impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + Default, T: Hash
             inner: Dictionary::new(),
             metadata: self.metadata.copy_keep_vocebulary()
         };
-        for value in self.iter_with_meta() {
-            match value {
-                DirectionTuple::AToB { a:(word_id_a, meta_a), b:(word_id_b, meta_b) } => {
-                    if filter_a(self, word_id_a, meta_a.as_ref()) {
-                        if filter_b(self, word_id_b, meta_b.as_ref()) {
-                            let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
-                            let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
-                            let (word_a, word_b) = new.insert_hash_ref::<AToB>(word_a.clone(), word_b.clone()).to_ab_tuple();
-                            if let Some(meta_a) = meta_a {
-                                new.insert_meta_for_create_subset::<A>(word_a, meta_a);
-                            }
-                            if let Some(meta_b) = meta_b {
-                                new.insert_meta_for_create_subset::<B>(word_b, meta_b);
-                            }
+        for DirectionTuple{
+            a: (word_id_a, meta_a),
+            b: (word_id_b, meta_b),
+            direction
+        } in self.iter_with_meta() {
+            if filter_a(self, word_id_a, meta_a.as_ref()) {
+                if filter_b(self, word_id_b, meta_b.as_ref()) {
+                    let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
+                    let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
+                    let DirectionTuple{ a: word_a, b: word_b, direction: _ } = match direction {
+                        DirectionKind::AToB => {
+                            new.insert_hash_ref::<AToB>(word_a.clone(), word_b.clone())
                         }
+                        DirectionKind::BToA => {
+                            new.insert_hash_ref::<BToA>(word_a.clone(), word_b.clone())
+                        },
+                        DirectionKind::Invariant => {
+                            new.insert_hash_ref::<Invariant>(word_a.clone(), word_b.clone())
+                        }
+                    };
+                    if let Some(meta_a) = meta_a {
+                        new.insert_meta_for_create_subset::<A>(word_a, meta_a);
                     }
-                }
-                DirectionTuple::BToA { a:(word_id_a, meta_a), b:(word_id_b, meta_b) } => {
-                    if filter_a(self, word_id_a, meta_a.as_ref()) {
-                        if filter_b(self, word_id_b, meta_b.as_ref()) {
-                            let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
-                            let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
-                            let (word_a, word_b) = new.insert_hash_ref::<BToA>(word_a.clone(), word_b.clone()).to_ab_tuple();
-                            if let Some(meta_a) = meta_a {
-                                new.insert_meta_for_create_subset::<A>(word_a, meta_a);
-                            }
-                            if let Some(meta_b) = meta_b {
-                                new.insert_meta_for_create_subset::<B>(word_b, meta_b);
-                            }
-                        }
-                    }
-                },
-                DirectionTuple::Invariant { a:(word_id_a, meta_a), b:(word_id_b, meta_b) } => {
-                    if filter_a(self, word_id_a, meta_a.as_ref()) {
-                        if filter_b(self, word_id_b, meta_b.as_ref()) {
-                            let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
-                            let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
-                            let (word_a, word_b) = new.insert_hash_ref::<Invariant>(word_a.clone(), word_b.clone()).to_ab_tuple();
-                            if let Some(meta_a) = meta_a {
-                                new.insert_meta_for_create_subset::<A>(word_a, meta_a);
-                            }
-                            if let Some(meta_b) = meta_b {
-                                new.insert_meta_for_create_subset::<B>(word_b, meta_b);
-                            }
-                        }
+                    if let Some(meta_b) = meta_b {
+                        new.insert_meta_for_create_subset::<B>(word_b, meta_b);
                     }
                 }
             }
-
         }
         new
     }
@@ -1213,9 +1031,9 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
             self.metadata.copy_keep_vocebulary()
         );
 
-        for value in self.iter() {
-            match value {
-                DirectionTuple::AToB { a, b } => {
+        for DirectionTuple{a, b, direction} in self.iter() {
+            match direction {
+                DirectionKind::AToB => {
                     if filter_a(a) {
                         new_dict.insert_hash_ref::<AToB>(
                             self.id_to_word::<A>(a).unwrap().clone(),
@@ -1223,7 +1041,7 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
                         );
                     }
                 }
-                DirectionTuple::BToA { a, b } => {
+                DirectionKind::BToA => {
                     if filter_b(b) {
                         new_dict.insert_hash_ref::<BToA>(
                             self.id_to_word::<A>(a).unwrap().clone(),
@@ -1231,18 +1049,20 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
                         );
                     }
                 }
-                DirectionTuple::Invariant { a, b } => {
-                    if filter_a(a) && filter_b(b) {
+                DirectionKind::Invariant => {
+                    let filter_a = filter_a(a);
+                    let filter_b = filter_b(b);
+                    if filter_a && filter_b {
                         new_dict.insert_hash_ref::<Invariant>(
                             self.id_to_word::<A>(a).unwrap().clone(),
                             self.id_to_word::<B>(b).unwrap().clone()
                         );
-                    } else if filter_a(a) {
+                    } else if filter_a {
                         new_dict.insert_hash_ref::<AToB>(
                             self.id_to_word::<A>(a).unwrap().clone(),
                             self.id_to_word::<B>(b).unwrap().clone()
                         );
-                    } else if filter_b(b) {
+                    } else if filter_b {
                         new_dict.insert_hash_ref::<BToA>(
                             self.id_to_word::<A>(a).unwrap().clone(),
                             self.id_to_word::<B>(b).unwrap().clone()
@@ -1260,11 +1080,11 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
             Default::default(),
             self.metadata.copy_keep_vocebulary()
         );
-        for value in self.iter() {
-            let a = self.id_to_word::<A>(*value.a()).unwrap();
-            let b = self.id_to_word::<B>(*value.b()).unwrap();
-            match value {
-                DirectionTuple::AToB { .. } => {
+        for DirectionTuple{a, b, direction} in self.iter() {
+            let a = self.id_to_word::<A>(a).unwrap();
+            let b = self.id_to_word::<B>(b).unwrap();
+            match direction {
+                DirectionKind::AToB => {
                     if filter_a(a) {
                         new_dict.insert_hash_ref::<AToB>(
                             a.clone(),
@@ -1272,7 +1092,7 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
                         );
                     }
                 }
-                DirectionTuple::BToA { .. } => {
+                DirectionKind::BToA => {
                     if filter_b(b) {
                         new_dict.insert_hash_ref::<BToA>(
                             a.clone(),
@@ -1280,18 +1100,20 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
                         );
                     }
                 }
-                DirectionTuple::Invariant { .. } => {
-                    if filter_a(a) && filter_b(b) {
+                DirectionKind::Invariant => {
+                    let filter_a = filter_a(a);
+                    let filter_b = filter_b(a);
+                    if filter_a && filter_b {
                         new_dict.insert_hash_ref::<Invariant>(
                             a.clone(),
                             b.clone()
                         );
-                    } else if filter_a(a) {
+                    } else if filter_a {
                         new_dict.insert_hash_ref::<AToB>(
                             a.clone(),
                             b.clone()
                         );
-                    } else if filter_b(b) {
+                    } else if filter_b {
                         new_dict.insert_hash_ref::<BToA>(
                             a.clone(),
                             b.clone()
@@ -1373,7 +1195,7 @@ impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDic
 #[cfg(test)]
 mod test {
     use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary};
-    use crate::topicmodel::dictionary::direction::{A, B, Invariant};
+    use crate::topicmodel::dictionary::direction::{A, B, DirectionTuple, Invariant};
     use crate::topicmodel::vocabulary::{VocabularyImpl, VocabularyMut};
 
     #[test]
@@ -1434,21 +1256,21 @@ mod test {
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Motorflugzeug").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("flyer").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airman").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictE");
             drop(meta_a);
             let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictC");
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("wing").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
             let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictC");
@@ -1456,7 +1278,7 @@ mod test {
             let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
@@ -1464,7 +1286,7 @@ mod test {
             let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictB");
-            let (a, b) = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),).to_ab_tuple();
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
@@ -1506,8 +1328,8 @@ mod test {
         println!("--==========--");
         for value in dict.into_iter() {
             println!("'{}({})': {}, '{}({})': {}",
-                     value.a().1, value.a().0, value.a().clone().2.map_or("NONE".to_string(), |value| value.to_string()),
-                     value.b().1, value.b().0, value.b().clone().2.map_or("NONE".to_string(), |value| value.to_string())
+                     value.a.1, value.a.0, value.a.clone().2.map_or("NONE".to_string(), |value| value.to_string()),
+                     value.b.1, value.b.0, value.b.clone().2.map_or("NONE".to_string(), |value| value.to_string())
             )
         }
     }

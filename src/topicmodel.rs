@@ -15,7 +15,6 @@ mod io;
 pub mod reference;
 mod math;
 
-
 pub fn create_topic_model_specific_dictionary<T: Eq + Hash + Clone, V>(vocabulary: &(impl Vocabulary<T> + MappableVocabulary<T> + Clone), dictionary: &impl DictionaryMut<T, V>) -> Dictionary<T, VocabularyImpl<T>> where V: VocabularyMut<T> {
     let mut new_dict: Dictionary<_, VocabularyImpl<_>> = Dictionary::from_voc_a(vocabulary.clone().map(|value| value.clone()));
     let translations: Vec<(HashRef<T>, Option<Vec<&HashRef<T>>>)> = {
@@ -28,7 +27,7 @@ pub fn create_topic_model_specific_dictionary<T: Eq + Hash + Clone, V>(vocabular
         for (t, other) in translations.iter() {
             if let Some(other) = other {
                 for o in other {
-                    if D::A2B {
+                    if D::DIRECTION.is_a_to_b() {
                         dict.insert_hash_ref::<D>(t.clone(), (*o).clone());
                     } else {
                         dict.insert_hash_ref::<D>((*o).clone(), t.clone());

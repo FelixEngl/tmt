@@ -7,13 +7,11 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithMetaIterator, DictionaryWithVocabulary, DictIter, DirectionTuple};
-use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, Invariant, Translation};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithMetaIterator, DictionaryWithVocabulary, DictIter};
+use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, LanguageKind, Translation};
 use crate::topicmodel::dictionary::metadata::SolvedMetadata;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{VocabularyImpl};
-
-
 
 
 #[pyclass]
@@ -39,8 +37,8 @@ impl PyDictionary {
         self.inner.voc_b().clone()
     }
 
-    pub fn add_word_pair(&mut self, word_a: String, word_b: String) -> (usize, usize) {
-        self.inner.insert_value::<Invariant>(word_a, word_b).to_ab_tuple()
+    pub fn add_word_pair(&mut self, word_a: String, word_b: String) -> (usize, usize, DirectionKind) {
+        self.inner.insert_value::<Invariant>(word_a, word_b).to_tuple()
     }
 
     pub fn get_translation_a_to_b(&self, word: &str) -> Option<Vec<String>> {
@@ -125,12 +123,17 @@ impl PyDictIter {
         slf
     }
 
-    fn __next__(&mut self) -> Option<((usize, String, Option<SolvedMetadata>), (usize, String, Option<SolvedMetadata>))> {
-        let ((a, word_a, meta_a), (b, word_b, meta_b)) = self.inner.next()?.to_ab_tuple();
+    fn __next__(&mut self) -> Option<((usize, String, Option<SolvedMetadata>), (usize, String, Option<SolvedMetadata>), DirectionKind)> {
+        let DirectionTuple{
+            a: (a, word_a, meta_a),
+            b: (b, word_b, meta_b),
+            direction
+        } = self.inner.next()?;
 
         Some((
             (a, word_a.to_string(), meta_a),
-            (b, word_b.to_string(), meta_b)
+            (b, word_b.to_string(), meta_b),
+            direction
         ))
     }
 }
@@ -260,5 +263,7 @@ pub(crate) fn dictionary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDictionary>()?;
     m.add_class::<PyDictIter>()?;
     m.add_class::<SolvedMetadata>()?;
+    m.add_class::<DirectionKind>()?;
+    m.add_class::<LanguageKind>()?;
     Ok(())
 }

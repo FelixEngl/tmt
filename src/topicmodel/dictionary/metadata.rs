@@ -71,7 +71,7 @@ impl MetadataContainer {
     }
 
     pub fn get_meta<L: Language>(&self, word_id: usize) -> Option<&Metadata> {
-        if L::A2B {
+        if L::LANG.is_a() {
             self.meta_a.get(word_id)
         } else {
             self.meta_b.get(word_id)
@@ -81,7 +81,7 @@ impl MetadataContainer {
     pub fn get_meta_mut<L: Language>(&mut self, word_id: usize) -> Option<MetadataMutRef> {
         let ptr = self as *mut Self;
         let value = unsafe{&mut*ptr};
-        let result = if L::A2B {
+        let result = if L::LANG.is_a() {
             value.meta_a.get_mut(word_id)
         } else {
             value.meta_b.get_mut(word_id)
@@ -93,7 +93,7 @@ impl MetadataContainer {
     pub fn get_or_init_meta<L: Language>(&mut self, word_id: usize) -> MetadataMutRef {
         let ptr = self as *mut Self;
 
-        let targ = if L::A2B {
+        let targ = if L::LANG.is_a() {
             &mut self.meta_a
         } else {
             &mut self.meta_b
