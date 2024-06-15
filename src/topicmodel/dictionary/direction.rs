@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs, EnumString, IntoStaticStr};
@@ -96,6 +97,12 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
         return (self.a, self.b, self.direction)
     }
 }
+impl<Ta, Tb> DirectionTuple<Ta, Tb> where Ta: Clone, Tb: Clone {
+    pub fn value_tuple(&self) -> (Ta, Tb) {
+        (self.a.clone(), self.b.clone())
+    }
+}
+
 
 impl<T> DirectionTuple<T, T>  {
     pub fn map_both<R, F: Fn(T) -> R>(self, mapping: F) -> DirectionTuple<R, R> {
