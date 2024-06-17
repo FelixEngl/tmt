@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::Range;
 use std::sync::Arc;
+use itertools::Itertools;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use topic_model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
@@ -111,6 +112,17 @@ impl PyTopicModel {
         self.inner.vocabulary().clone()
     }
 
+    pub fn get_words_of_topic_sorted(&self, topic_id: usize) -> Option<Vec<(String, f64)>> {
+        self.get_words_for_topic_sorted(topic_id)
+            .map(|value|
+                value
+                    .iter()
+                    .map(|v| (self.inner.vocabulary().id_wo_word(v.word_id).unwrap().to_string(), v.probability))
+                    .collect_vec()
+            )
+
+    }
+
 }
 
 impl BasicTopicModel for PyTopicModel {
@@ -168,6 +180,8 @@ impl BasicTopicModel for PyTopicModel {
             /// Get all [WordMeta] values with a similar importance in `topic_id` than `word_id`.
             /// (including the `word_id`)
             fn get_all_similar_important(&self, topic_id: TopicId, word_id: WordId) -> Option<&Vec<Arc<WordMeta>>>;
+
+            fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<&[Arc<WordMeta>]>;
 
             /// Get the `n` best [WordMeta] in `topic_id` by their position.
             fn get_n_best_for_topic(&self, topic_id: TopicId, n: usize) -> Option<&[Arc<WordMeta>]>;

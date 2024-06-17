@@ -130,6 +130,8 @@ class PyTopicModel:
 
     def vocabulary(self) -> PyVocabulary: ...
 
+    def get_words_of_topic_sorted(self, topic: int) -> list[tuple[str, float]]:...
+
 
 class PyVoting:
     @staticmethod

@@ -226,6 +226,8 @@ pub trait BasicTopicModel: Send + Sync {
     /// (including the `word_id`)
     fn get_all_similar_important(&self, topic_id: TopicId, word_id: WordId) -> Option<&Vec<Arc<WordMeta>>>;
 
+    fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<&[Arc<WordMeta>]>;
+
     /// Get the `n` best [WordMeta] in `topic_id` by their position.
     fn get_n_best_for_topic(&self, topic_id: TopicId, n: usize) -> Option<&[Arc<WordMeta>]>;
 
@@ -713,6 +715,12 @@ impl<T, V> BasicTopicModel for TopicModel<T, V> where V: Vocabulary<T> {
         topic.by_importance.get(topic.by_words.get(word_id)?.importance)
     }
 
+    fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<&[Arc<WordMeta>]> {
+        let metas = self.topic_metas.get(topic_id)?;
+        Some(&metas.by_position)
+    }
+
+
     fn get_n_best_for_topic(&self, topic_id: usize, n: usize) -> Option<&[Arc<WordMeta>]> {
         let metas = self.topic_metas.get(topic_id)?;
         Some(&metas.by_position[..min(n, metas.by_position.len())])
@@ -803,6 +811,10 @@ impl<T, V> TopicModelWithDocumentStats for TopicModel<T, V> {
     fn document_lengths(&self) -> &DocumentTo<DocumentLength> {
         &self.document_lengths
     }
+}
+
+impl<T, V> TopicModel<T, V> where V: Vocabulary<T> {
+
 }
 
 impl<T: Display, V> TopicModel<T, V> where V: Vocabulary<T> {
