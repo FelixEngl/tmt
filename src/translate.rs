@@ -143,26 +143,6 @@ impl<T> Deref for LanguageOrigin<T> {
 }
 
 
-// pub fn translate_topic_model_with_provider<'a, Model, D, T, Voc, V, P>(
-//     topic_model: &'a Model,
-//     dictionary: &'a D,
-//     translate_config: &TranslateConfig<V>,
-//     provider: &P
-// ) -> Result<TopicModel<T, VocabularyImpl<T>>, TranslateError<'a, Model, D>> where
-//     T: Hash + Eq + Ord,
-//     V: VotingMethodMarker,
-//     Voc: VocabularyMut<T>,
-//     D: DictionaryWithVoc<T, Voc>,
-//     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-//     P: VariableProviderOut
-// {
-//     translate_topic_model(
-//         topic_model,
-//         dictionary,
-//         translate_config,
-//         Some(provider)
-//     )
-// }
 
 pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
     topic_model: &'a Model,

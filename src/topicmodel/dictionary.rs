@@ -62,6 +62,9 @@ pub trait BasicDictionary: Send + Sync {
         }
     }
 
+    /// Switches language a and b
+    fn switch_languages(self) -> Self where Self: Sized;
+
 
     /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
     fn iter(&self) -> DictIter {
@@ -295,6 +298,16 @@ impl<T, V> BasicDictionary for Dictionary<T, V> {
         } else {
             &self.map_b_to_a
         }.get(word_id)
+    }
+
+    fn switch_languages(self) -> Self where Self: Sized {
+        Self {
+            voc_a: self.voc_b,
+            voc_b: self.voc_a,
+            map_a_to_b: self.map_b_to_a,
+            map_b_to_a: self.map_a_to_b,
+            _word_type: PhantomData
+        }
     }
 }
 
@@ -734,6 +747,13 @@ impl<T, V> BasicDictionary for DictionaryWithMeta<T, V> {
 
     fn translate_id_to_ids<D: Translation>(&self, word_id: usize) -> Option<&Vec<usize>> {
         self.inner.translate_id_to_ids::<D>(word_id)
+    }
+
+    fn switch_languages(self) -> Self where Self: Sized {
+        Self {
+            inner: self.inner.switch_languages(),
+            metadata: self.metadata.switch_languages()
+        }
     }
 }
 impl<T, V> BasicDictionaryWithMeta for DictionaryWithMeta<T, V> where V: Vocabulary<T> {

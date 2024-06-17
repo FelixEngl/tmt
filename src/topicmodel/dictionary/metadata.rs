@@ -39,6 +39,16 @@ impl MetadataContainer {
         }
     }
 
+    pub fn switch_languages(self) -> Self {
+        Self {
+            meta_a: self.meta_b,
+            meta_b: self.meta_a,
+            tag_interner: self.tag_interner,
+            unstemmed_voc: self.unstemmed_voc,
+            dictionary_interner: self.dictionary_interner
+        }
+    }
+
     pub fn get_dictionary_interner(&self) -> &DefaultStringInterner {
         &self.dictionary_interner
     }
@@ -728,6 +738,10 @@ impl SolvedMetadata {
     #[getter]
     pub fn unstemmed(&self) -> Option<Vec<(String, Vec<String>)>> {
         self.unstemmed.clone()
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.to_string()
     }
 
     pub fn __str__(&self) -> String {

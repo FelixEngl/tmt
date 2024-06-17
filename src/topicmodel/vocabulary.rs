@@ -12,6 +12,7 @@ use std::ops::{Bound, Deref, Range};
 use std::path::Path;
 use std::slice::Iter;
 use std::str::FromStr;
+use std::vec::IntoIter;
 use itertools::Itertools;
 use rayon::prelude::{FromParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -433,6 +434,15 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for VocabularyImpl<
     }
 }
 
+
+impl<T> IntoIterator for VocabularyImpl<T> {
+    type Item = HashRef<T>;
+    type IntoIter = IntoIter<HashRef<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.id2entry.into_iter()
+    }
+}
 
 
 impl<T> IntoParallelIterator for VocabularyImpl<T> {

@@ -898,7 +898,11 @@ impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug, V> TopicModel<T, V> where V:
         let version = match fs.create_reader_to(PATH_VERSION_INFO) {
             Ok((mut reader, _)) => {
                 reader.read_to_string(&mut buf)?;
-                buf.trim().parse()?
+                if buf.is_empty() {
+                    TopicModelVersion::V1
+                } else {
+                    buf.trim().parse()?
+                }
             }
             Err(PathNotFound(_)) => {
                 TopicModelVersion::V1
@@ -1332,7 +1336,7 @@ mod test {
     fn try_infer(){
         let before = std::time::Instant::now();
         let model = TopicModel::load_string_model(
-            r"C:\git\ldatranslation_v3\bambergdictionary\dictionaryprocessor\lda\aligned-v2\en\trained_lda\lda",
+            r"E:\git\ldatranslation\bambergdictionary\dictionaryprocessor\lda\translations\aligned-v1_never\en\lda\combSum_2-limit_a-aligned-v1",
             true
         ).unwrap().0;
         println!("{}", (std::time::Instant::now() - before).as_secs());

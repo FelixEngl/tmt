@@ -88,13 +88,14 @@ impl TopicModelFSRead {
                         return Err(TopicModelIOError::IllegalPath(p.clone()));
                     }
 
+
+
                     if let Some(pos) = zip_archive.index_for_path(&p) {
                         (pos, true)
                     } else {
                         return Err(TopicModelIOError::PathNotFound(p));
                     }
                 };
-
                 let found = zip_archive.by_index(pos)?;
                 Ok((TopicModelReader::Zip(found), deflated))
             }

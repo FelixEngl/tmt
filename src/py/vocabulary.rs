@@ -5,11 +5,12 @@ use std::hash::Hash;
 use std::io::Write;
 use std::ops::{Range};
 use std::slice::Iter;
-use pyo3::{Bound, FromPyObject, pyclass, pyfunction, pymethods, PyResult, wrap_pyfunction};
+use std::vec::IntoIter;
+use pyo3::{Bound, FromPyObject, pyclass, pyfunction, pymethods, PyRef, PyResult, wrap_pyfunction};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
-use crate::py::dictionary::PyDictionary;
+use crate::py::dictionary::{PyDictionary};
 use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
@@ -59,6 +60,14 @@ impl PyVocabulary {
 
     pub fn __len__(&self) -> usize {
         self.inner.len()
+    }
+
+    pub fn __contains__(&self, value: &str) -> bool {
+        self.inner.contains(value)
+    }
+
+    pub fn __iter__(&self) -> PyVocIter {
+        PyVocIter::new(self.clone())
     }
 
     pub fn add(&mut self, word: String) -> usize {
@@ -193,6 +202,32 @@ impl From<VocabularyImpl<String>> for PyVocabulary {
     }
 }
 
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyVocIter {
+    iter: IntoIter<HashRef<String>>
+}
+
+unsafe impl Send for PyVocIter{}
+unsafe impl Sync for PyVocIter{}
+
+impl PyVocIter {
+    pub fn new(voc: PyVocabulary) -> Self {
+        Self { iter: voc.inner.into_iter() }
+    }
+}
+
+#[pymethods]
+impl PyVocIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> Option<String> {
+        Some(self.iter.next()?.to_string())
+    }
+}
+
 #[pyfunction]
 pub fn topic_specific_vocabulary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
     create_topic_model_specific_dictionary(vocabulary, dictionary).into()
@@ -200,6 +235,7 @@ pub fn topic_specific_vocabulary(dictionary: &PyDictionary, vocabulary: &PyVocab
 
 pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVocabulary>()?;
+    m.add_class::<PyVocIter>()?;
     m.add_function(wrap_pyfunction!(topic_specific_vocabulary, m)?)?;
     Ok(())
 }

@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
+use std::io::{BufReader, BufWriter, Write};
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pymethods, PyObject, PyRef, PyResult, Python};
 use pyo3::exceptions::PyValueError;
@@ -16,7 +17,7 @@ use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, Dire
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter};
 use crate::topicmodel::dictionary::metadata::SolvedMetadata;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{VocabularyImpl};
+use crate::topicmodel::vocabulary::{VocabularyImpl, VocabularyMut};
 
 #[derive(FromPyObject, Clone, Debug, Serialize, Deserialize)]
 pub enum SingleOrVec<T> {
@@ -221,12 +222,12 @@ impl PyDictionaryEntry {
     }
 
 
-    pub fn set_unstemmed_word_a(&mut self, word: &str, unstemmed: Option<&str>) -> PyResult<()> {
-        self.set_unstemmed_word::<A>(word, unstemmed);
+    pub fn set_unstemmed_word_a(&mut self, word: &str, unstemmed_meta: Option<&str>) -> PyResult<()> {
+        self.set_unstemmed_word::<A>(word, unstemmed_meta);
         Ok(())
     }
-    pub fn set_unstemmed_word_b(&mut self, word: &str, unstemmed: Option<&str>) -> PyResult<()> {
-        self.set_unstemmed_word::<B>(word, unstemmed);
+    pub fn set_unstemmed_word_b(&mut self, word: &str, unstemmed_meta: Option<&str>) -> PyResult<()> {
+        self.set_unstemmed_word::<B>(word, unstemmed_meta);
         Ok(())
     }
 
@@ -336,6 +337,22 @@ impl PyDictionary {
         self.inner.voc_b().clone()
     }
 
+    pub fn voc_a_contains(&self, value: &str) -> bool {
+        self.inner.voc_a().contains(value)
+    }
+
+    pub fn voc_b_contains(&self, value: &str) -> bool {
+        self.inner.voc_b().contains(value)
+    }
+
+    pub fn __contains__(&self, value: &str) -> bool {
+        return self.voc_a_contains(value) || self.voc_b_contains(value)
+    }
+
+    pub fn switch_a_to_b(&self) -> Self {
+        self.clone().switch_languages()
+    }
+
     pub fn add(&mut self, value: PyDictionaryEntry) -> (usize, usize, DirectionKind) {
         self.add_word_pair(
             value.word_a,
@@ -422,9 +439,13 @@ impl PyDictionary {
     }
 
     pub fn save(&self, path: &str) -> PyResult<()> {
-        let mut writer = File::options().write(true).create_new(true).open(path)?;
+        let writer = File::options().write(true).create_new(true).open(path)?;
+        let mut writer = BufWriter::with_capacity(1024*32, writer);
         match serde_json::to_writer(&mut writer, &self) {
-            Ok(_) => {Ok(())}
+            Ok(_) => {
+                writer.flush()?;
+                Ok(())
+            }
             Err(err) => {
                 return Err(PyValueError::new_err(err.to_string()))
             }
@@ -433,7 +454,8 @@ impl PyDictionary {
 
     #[staticmethod]
     pub fn load(path: &str) -> PyResult<Self> {
-        let mut reader = File::options().read(true).create_new(true).open(path)?;
+        let reader = File::options().read(true).open(path)?;
+        let mut reader = BufReader::with_capacity(1024*32, reader);
         match serde_json::from_reader(&mut reader) {
             Ok(result) => {Ok(result)}
             Err(err) => {
@@ -519,6 +541,12 @@ impl BasicDictionary for PyDictionary {
     #[inline(always)]
     fn translate_id_to_ids<D: Translation>(&self, word_id: usize) -> Option<&Vec<usize>> {
         self.inner.translate_id_to_ids::<D>(word_id)
+    }
+
+    fn switch_languages(self) -> Self where Self: Sized {
+        Self {
+            inner: self.inner.switch_languages()
+        }
     }
 }
 
