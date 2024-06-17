@@ -1,11 +1,22 @@
 from enum import Enum
-from typing import Optional, Iterator
+from typing import Optional, Iterator, Callable
+
 
 class DirectionKind(Enum):
     pass
 
 class LanguageKind(Enum):
     pass
+
+
+class SolvedMetadata:
+    @property
+    def associated_dictionaries(self) -> None | list[str]:...
+    @property
+    def meta_tags(self) -> None | list[str]:...
+    @property
+    def unstemmed(self) -> None | list[tuple[str, list[str]]]:...
+    def __str__(self):...
 
 
 class PyVocabulary:
@@ -20,11 +31,68 @@ class PyVocabulary:
     @staticmethod
     def load(path: str) -> 'PyVocabulary': ...
 
+
+class PyDictionaryEntry:
+    dictionary_a: None | set[str]
+    dictionary_b: None | set[str]
+    meta_a: None | set[str]
+    meta_b: None | set[str]
+    unstemmed_a: None | dict[str, set[str]]
+    unstemmed_b: None | dict[str, set[str]]
+
+    def __init__(self,
+        word_a: str,
+        word_b: str,
+        dictionary_a: None | str | list[str] | tuple[str, ...] = None,
+        dictionary_b: None | str | list[str] | tuple[str, ...] = None,
+        meta_value_a: None | str | list[str] | tuple[str, ...] = None,
+        meta_value_b: None | str | list[str] | tuple[str, ...] = None,
+        unstemmed_a: None | str | list[str] | tuple[str, ...] = None,
+        unstemmed_b: None | str | list[str] | tuple[str, ...] = None,
+    ) -> None:...
+
+
+    @property
+    def word_a(self) -> str:...
+
+    @property
+    def word_b(self) -> str:...
+
+    def set_dictionary_a_value(self, value: str):...
+    def set_meta_a_value(self, value: str):...
+    def set_unstemmed_word_a(self, value: str):...
+    def set_dictionary_b_value(self, value: str):...
+    def set_meta_b_value(self, value: str):...
+    def set_unstemmed_word_b(self, value: str):...
+
+    def __repr__(self):...
+    def __str__(self):...
+
+
 class PyDictionary:
     def __init__(self) -> None: ...
+    @property
     def voc_a(self) -> PyVocabulary: ...
+    @property
     def voc_b(self) -> PyVocabulary: ...
-    def add_word_pair(self, word_a: str, word_b: str) -> tuple[int, int, DirectionKind]: ...
+
+    def add(
+            self,
+            entry: PyDictionaryEntry,
+    ) -> tuple[int, int, DirectionKind]: ...
+
+    def add_word_pair(
+            self,
+            word_a: str,
+            word_b: str,
+            dictionary_a: None | str | list[str] | tuple[str, ...] = None,
+            dictionary_b: None | str | list[str] | tuple[str, ...] = None,
+            meta_value_a: None | str | list[str] | tuple[str, ...] = None,
+            meta_value_b: None | str | list[str] | tuple[str, ...] = None,
+            unstemmed_a: None | str | list[str] | tuple[str, ...] = None,
+            unstemmed_b: None | str | list[str] | tuple[str, ...] = None,
+    ) -> tuple[int, int, DirectionKind]: ...
+
     def get_translation_a_to_b(self, word: str) -> list[str] | None: ...
     def get_translation_b_to_a(self, word: str) -> list[str] | None: ...
     def __repr__(self) -> str: ...
@@ -33,6 +101,7 @@ class PyDictionary:
     def save(self, path: str): ...
     @staticmethod
     def load(path: str) -> 'PyDictionary': ...
+    def filter(self, filter_a: Callable[[str, None | SolvedMetadata], bool], filter_b: Callable[[str, None | SolvedMetadata], bool]) -> 'PyDictionary':...
 
 
 class PyTopicModel:

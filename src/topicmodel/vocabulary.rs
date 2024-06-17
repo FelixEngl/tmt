@@ -62,6 +62,7 @@ pub trait Vocabulary<T>: Send + Sync {
 
 }
 
+
 pub trait VocabularyMut<T>: Vocabulary<T> where T: Eq + Hash {
     /// Adds the `value` to the vocabulary and returns the associated id
     fn add_hash_ref(&mut self, value: HashRef<T>) -> usize;

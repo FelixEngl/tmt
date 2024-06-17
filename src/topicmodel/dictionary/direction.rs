@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs, EnumString, IntoStaticStr};
