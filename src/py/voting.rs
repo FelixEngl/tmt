@@ -135,8 +135,8 @@ impl<T> From<T> for PyVoting where T: Into<ParseResult> {
 }
 
 pub(crate) fn voting_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyVotingRegistry>()?;
-    m.add_class::<PyVoting>()?;
     m.add_class::<BuildInVoting>()?;
+    m.add_class::<PyVoting>()?;
+    m.add_class::<PyVotingRegistry>()?;
     Ok(())
 }
