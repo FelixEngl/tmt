@@ -52,16 +52,12 @@ impl Into<LanguageHint> for LanguageHintValue {
 impl PyVocabulary {
     #[new]
     pub fn new(language: Option<LanguageHintValue>, size: Option<ListOrInt>) -> Self {
-
-        let language = match language {
-            None => {LanguageHint::default()}
-            Some(value) => {value.into()}
-        };
+        let language = language.map(|value| value.into());
 
         match size {
             None => {
                 Self {
-                    inner: VocabularyImpl::new_for(language)
+                    inner: VocabularyImpl::new(language)
                 }
             }
             Some(value) => {

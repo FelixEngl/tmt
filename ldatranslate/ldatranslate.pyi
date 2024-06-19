@@ -1,3 +1,4 @@
+import os
 from enum import Enum
 from os import PathLike
 from pathlib import Path
@@ -154,6 +155,13 @@ class PyTopicModel:
 
     def get_words_of_topic_sorted(self, topic: int) -> list[tuple[str, float]]:...
 
+    def save_json(self, path: str | Path | os.PathLike):...
+
+    @staticmethod
+    def load_json(path: str | Path | os.PathLike) -> 'PyTopicModel':...
+    def save_binary(self, path: str | Path | os.PathLike):...
+    @staticmethod
+    def load_binary(path: str | Path | os.PathLike) -> 'PyTopicModel':...
 
 class PyVoting:
     @staticmethod
@@ -189,7 +197,12 @@ class PyVariableProvider:
     def add_for_word_in_topic_b(self, topic_id: int, word_id: int, key: str, value: str | bool | int | float): ...
 
 class KeepOriginalWord(Enum):
-    pass
+    Always: KeepOriginalWord
+    IfNoTranslation: KeepOriginalWord
+    Never: KeepOriginalWord
+
+
+
 
 
 class BuildInVoting(Enum):

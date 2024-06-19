@@ -23,7 +23,9 @@ use itertools::{Itertools, multiunzip, multizip};
 use rand::thread_rng;
 use rand_distr::Distribution;
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::ser::{SerializeSeq, SerializeStruct};
 use crate::toolkit::normal_number::IsNormalNumber;
 
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
@@ -86,8 +88,123 @@ impl TopicMeta {
     }
 }
 
+impl Serialize for TopicMeta {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        if serializer.is_human_readable() {
+            let mut ser = serializer.serialize_struct("TopicMeta", 2)?;
+            ser.serialize_field("stats", &self.stats)?;
+            ser.serialize_field("bywords", &self.by_words)?;
+            ser.end()
+        } else {
+            let mut ser = serializer.serialize_seq(Some(2))?;
+            ser.serialize_element(&self.stats)?;
+            ser.serialize_element(&self.by_words)?;
+            ser.end()
+        }
+    }
+}
+
+
+impl<'de> Deserialize<'de> for TopicMeta {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        struct TopicMetaVisitor;
+
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "lowercase")]
+        enum Field { Stats, ByWords }
+
+        impl<'de> Visitor<'de> for TopicMetaVisitor {
+            type Value = TopicMeta;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("a TopicMeta")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error> where A: SeqAccess<'de> {
+                let stats_field = seq.next_element()?.ok_or_else(|| de::Error::missing_field("stats"))?;
+                let by_words_field: Vec<Arc<WordMeta>> = seq.next_element()?.ok_or_else(|| de::Error::missing_field("bywords"))?;
+                let mut position_to_meta: PositionTo<Arc<WordMeta>> = by_words_field.clone();
+                position_to_meta.sort_by_key(|value| value.position);
+
+                let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
+
+                for value in position_to_meta.iter() {
+                    while importance_to_meta.len() <= value.importance {
+                        importance_to_meta.push(Vec::new())
+                    }
+                    unsafe{importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());}
+                }
+
+                Ok(
+                    TopicMeta::new(
+                        stats_field,
+                        by_words_field,
+                        position_to_meta,
+                        importance_to_meta
+                    )
+                )
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
+                let mut stats_field = None;
+                let mut by_words_field = None;
+                while let Some(key) = map.next_key::<Field>()? {
+                    match key {
+                        Field::Stats => {
+                            if stats_field.is_some() {
+                                return Err(de::Error::duplicate_field("stats"));
+                            }
+                            stats_field = Some(map.next_value::<TopicStats>()?);
+                        }
+                        Field::ByWords => {
+                            if by_words_field.is_some() {
+                                return Err(de::Error::duplicate_field("bywords"));
+                            }
+                            by_words_field = Some(map.next_value::<WordTo<Arc<WordMeta>>>()?)
+                        }
+                    }
+                }
+                let stats_field = stats_field.ok_or_else(|| de::Error::missing_field("stats"))?;
+                let by_words_field = by_words_field.ok_or_else(|| de::Error::missing_field("bywords"))?;
+                let mut position_to_meta: PositionTo<Arc<WordMeta>> = by_words_field.clone();
+                position_to_meta.sort_by_key(|value| value.position);
+
+                let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
+
+                for value in position_to_meta.iter() {
+                    while importance_to_meta.len() <= value.importance {
+                        importance_to_meta.push(Vec::new())
+                    }
+                    unsafe{importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());}
+                }
+
+                Ok(
+                    TopicMeta::new(
+                        stats_field,
+                        by_words_field,
+                        position_to_meta,
+                        importance_to_meta
+                    )
+                )
+            }
+        }
+
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_struct(
+                "TopicMeta",
+                &["stats", "bywords"],
+                TopicMetaVisitor
+            )
+        } else {
+            deserializer.deserialize_seq(TopicMetaVisitor)
+        }
+
+
+    }
+}
+
 /// The meta for a word.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WordMeta {
     pub topic_id: TopicId,
     pub word_id: WordId,
@@ -365,14 +482,16 @@ impl<TopicModel, T, Voc> DisplayableTopicModel<T, Voc> for TopicModel
 {}
 
 /// A topic model
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TopicModel<T, V> {
     topics: TopicTo<WordTo<Probability>>,
+    #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
     vocabulary: V,
     used_vocab_frequency: WordTo<WordFrequency>,
     doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
     document_lengths: DocumentTo<DocumentLength>,
     topic_metas: TopicTo<TopicMeta>,
+    #[serde(skip)]
     _word_type: PhantomData<T>
 }
 
@@ -811,10 +930,6 @@ impl<T, V> TopicModelWithDocumentStats for TopicModel<T, V> {
     fn document_lengths(&self) -> &DocumentTo<DocumentLength> {
         &self.document_lengths
     }
-}
-
-impl<T, V> TopicModel<T, V> where V: Vocabulary<T> {
-
 }
 
 impl<T: Display, V> TopicModel<T, V> where V: Vocabulary<T> {
@@ -1277,6 +1392,7 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
 
 #[cfg(test)]
 mod test {
+    use itertools::{assert_equal, Itertools};
     use crate::topicmodel::enums::TopicModelVersion;
     use crate::topicmodel::topic_model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
     use crate::topicmodel::vocabulary::{StringVocabulary, VocabularyImpl, VocabularyMut};
@@ -1315,11 +1431,46 @@ mod test {
     }
 
     #[test]
+    fn can_load_and_unlad_json(){
+        let topic_model = create_test_data();
+
+        let ser = serde_json::to_string_pretty(&topic_model).unwrap();
+        println!("{}", ser);
+        let topic: TopicModel<String, VocabularyImpl<String>> = serde_json::from_str(&ser).unwrap();
+
+        for (a, b) in topic_model.topic_metas.iter().zip_eq(topic.topic_metas.iter()) {
+            assert_equal(a.by_words.clone(), b.by_words.clone());
+            assert_equal(a.by_position.clone(), b.by_position.clone());
+            for (k, v) in a.by_importance.clone().into_iter().zip_eq(b.by_importance.clone().into_iter()) {
+                assert_equal(k, v);
+            }
+        }
+    }
+
+    #[test]
+    fn can_load_and_unlad_binary(){
+        let topic_model = create_test_data();
+
+        let ser = bincode::serialize(&topic_model).unwrap();
+        let topic: TopicModel<String, VocabularyImpl<String>> = bincode::deserialize(&ser).unwrap();
+
+        for (a, b) in topic_model.topic_metas.iter().zip_eq(topic.topic_metas.iter()) {
+            assert_equal(a.by_words.clone(), b.by_words.clone());
+            assert_equal(a.by_position.clone(), b.by_position.clone());
+            for (k, v) in a.by_importance.clone().into_iter().zip_eq(b.by_importance.clone().into_iter()) {
+                assert_equal(k, v);
+            }
+        }
+    }
+
+
+    #[test]
     fn can_load_and_unload(){
         let topic_model = create_test_data();
-        const P: &str = "test\\def";
 
-        std::fs::create_dir("test").unwrap();
+        const P: &str = "test2\\def";
+
+        std::fs::create_dir("test2");
         topic_model.save(P, TopicModelVersion::V1, true, true).unwrap();
 
         let (loaded, _) = TopicModel::load_string_model(P, false).unwrap();
@@ -1330,6 +1481,8 @@ mod test {
         topic_model.normalize().show_10().unwrap();
 
         std::fs::remove_dir_all(P).unwrap();
+
+
     }
 
     #[test]

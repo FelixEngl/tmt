@@ -16,8 +16,8 @@ use std::vec::IntoIter;
 use itertools::Itertools;
 use rayon::prelude::{FromParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::{MapAccess, Visitor};
-use serde::ser::SerializeStruct;
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::ser::{SerializeSeq, SerializeStruct};
 use thiserror::Error;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
@@ -180,9 +180,9 @@ impl <T> VocabularyImpl<T> {
         }
     }
 
-    pub fn with_capacity(language: impl Into<LanguageHint>, capacity: usize) -> Self {
+    pub fn with_capacity(language: Option<LanguageHint>, capacity: usize) -> Self {
         Self {
-            language: Some(language.into()),
+            language,
             entry2id: HashMap::with_capacity(capacity),
             id2entry: Vec::with_capacity(capacity)
         }
@@ -254,11 +254,11 @@ impl<T> AsRef<Vec<HashRef<T>>> for VocabularyImpl<T> {
 }
 
 impl<T: Eq + Hash> VocabularyImpl<T> {
-    pub fn create_from(language: LanguageHint, value: Vec<T>) -> Self {
+    pub fn create_from(language: Option<LanguageHint>, value: Vec<T>) -> Self {
         let id2entry = value.into_iter().map(|value| HashRef::new(value)).collect_vec();
         let entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
         Self {
-            language: Some(language),
+            language,
             id2entry,
             entry2id
         }
@@ -267,7 +267,7 @@ impl<T: Eq + Hash> VocabularyImpl<T> {
 
 impl<T: Eq + Hash> From<Vec<T>> for VocabularyImpl<T>  {
     fn from(value: Vec<T>) -> Self {
-        Self::create_from(LanguageHint::default(), value)
+        Self::create_from(None, value)
     }
 }
 
@@ -437,16 +437,24 @@ impl<T> From<Option<LanguageHint>> for VocabularyImpl<T> {
 
 impl<T: Serialize> Serialize for VocabularyImpl<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        let mut st = serializer.serialize_struct("Vocabulary", 2)?;
-        st.serialize_field(
-            "language",
-            &self.language
-        )?;
-        st.serialize_field(
-            "id2entry",
-            &self.id2entry.iter().map(|it| it.as_ref()).collect_vec()
-        )?;
-        st.end()
+        if serializer.is_human_readable() {
+            let mut st = serializer.serialize_struct("Vocabulary", 2)?;
+            st.serialize_field(
+                "language",
+                &self.language
+            )?;
+            st.serialize_field(
+                "id2entry",
+                &self.id2entry.iter().map(|it| it.as_ref()).collect_vec()
+            )?;
+            st.end()
+        } else {
+            let mut st = serializer.serialize_seq(Some(2))?;
+            st.serialize_element(&self.language)?;
+            st.serialize_element(&self.id2entry.iter().map(|it| it.as_ref()).collect_vec())?;
+            st.end()
+        }
+
     }
 }
 
@@ -472,6 +480,15 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for VocabularyImpl<
                 formatter.write_str("struct Vocabulary")
             }
 
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error> where A: SeqAccess<'de> {
+                let first = seq.next_element()?.ok_or_else(|| de::Error::missing_field("language"))?;
+                let second: Vec<T> = seq.next_element()?.ok_or_else(|| de::Error::missing_field("id2entry"))?;
+                Ok(VocabularyImpl::create_from(
+                    first,
+                    second
+                ))
+            }
+
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
                 let mut id2entry_field = None;
                 let mut language_field = None;
@@ -487,19 +504,23 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for VocabularyImpl<
                             if language_field.is_some() {
                                 return Err(de::Error::duplicate_field("language"));
                             }
-                            language_field = Some(map.next_value::<LanguageHint>()?)
+                            language_field = map.next_value::<Option<LanguageHint>>()?;
                         }
                     }
                 }
                 if let Some(field_value) = id2entry_field {
-                    Ok(VocabularyImpl::create_from(language_field.unwrap_or_default(), field_value))
+                    Ok(VocabularyImpl::create_from(language_field, field_value))
                 } else {
                     Err(de::Error::missing_field("id2entry"))
                 }
             }
         }
 
-        deserializer.deserialize_struct("Vocabulary", &["id2entry"], VocabularyVisitor::<T>::new())
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_struct("Vocabulary", &["language", "id2entry"], VocabularyVisitor::<T>::new())
+        } else {
+            deserializer.deserialize_seq(VocabularyVisitor::<T>::new())
+        }
     }
 }
 

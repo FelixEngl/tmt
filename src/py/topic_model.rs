@@ -1,13 +1,16 @@
 use std::borrow::Borrow;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
+use std::fs::File;
 use std::hash::Hash;
+use std::io::{BufReader, BufWriter};
 use std::ops::Range;
 use std::path::{PathBuf};
 use std::sync::Arc;
 use itertools::Itertools;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use topic_model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
 use topicmodel::topic_model;
 use crate::py::vocabulary::PyVocabulary;
@@ -18,7 +21,7 @@ use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabul
 use crate::topicmodel::vocabulary::{Vocabulary};
 
 #[pyclass]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PyTopicModel {
     inner: TopicModel<String, PyVocabulary>
 }
@@ -122,6 +125,24 @@ impl PyTopicModel {
                     .collect_vec()
             )
 
+    }
+
+
+    pub fn save_json(&self, path: PathBuf) -> PyResult<()> {
+        serde_json::to_writer(BufWriter::new(File::options().write(true).create_new(true).open(path)?), &self.inner).map_err(|value| PyValueError::new_err(value.to_string()))
+    }
+
+    pub fn save_binary(&self, path: PathBuf) -> PyResult<()> {
+        bincode::serialize_into(BufWriter::new(File::options().write(true).create_new(true).open(path)?), &self.inner).map_err(|value| PyValueError::new_err(value.to_string()))
+    }
+    #[staticmethod]
+    pub fn load_json(path: PathBuf) -> PyResult<Self> {
+        serde_json::from_reader(BufReader::new(File::options().read(true).open(path)?)).map_err(|value| PyValueError::new_err(value.to_string()))
+    }
+
+    #[staticmethod]
+    pub fn load_binary(path: PathBuf) -> PyResult<Self> {
+        bincode::deserialize_from(BufReader::new(File::options().read(true).open(path)?)).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
 }

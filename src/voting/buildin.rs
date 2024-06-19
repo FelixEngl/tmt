@@ -13,6 +13,7 @@ use crate::voting::traits::LimitableVotingMethodMarker;
 use crate::voting::VotingExpressionError::{Eval, NoValue};
 use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
+use serde::{Deserialize, Serialize};
 use crate::py::voting::PyVoting;
 use crate::voting::parser::ParseResult::Limited;
 
@@ -29,7 +30,7 @@ impl VotingMethod for EmptyVotingMethod {
 }
 
 /// All possible buildin votings
-#[derive(Debug, Copy, Clone, EnumString, IntoStaticStr, Display, VariantArray)]
+#[derive(Debug, Copy, Clone, EnumString, IntoStaticStr, Display, VariantArray, Serialize, Deserialize)]
 #[pyclass]
 pub enum BuildInVoting {
     OriginalScore,
