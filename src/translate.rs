@@ -8,7 +8,7 @@ use std::ops::Deref;
 use evalexpr::{Context, context_map, EmptyContextWithBuiltinFunctions, HashMapContext};
 use itertools::{Itertools};
 use rayon::prelude::*;
-use strum::{AsRefStr, Display, EnumString};
+use strum::{AsRefStr, Display, EnumString, ParseError};
 use thiserror::Error;
 use crate::toolkit::evalexpr::{CombineableContext};
 use crate::topicmodel::topic_model::{BasicTopicModel, TopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
@@ -19,7 +19,9 @@ use crate::translate::LanguageOrigin::{Origin, Target};
 use crate::variable_names::*;
 use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
 use crate::voting::traits::VotingMethodMarker;
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods, PyResult};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::PyAnyMethods;
 use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut};
 
 #[derive(Debug)]
@@ -63,6 +65,19 @@ pub enum KeepOriginalWord {
     #[strum(serialize = "NEVER")]
     #[default]
     Never
+}
+
+#[pymethods]
+impl KeepOriginalWord {
+    pub fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[staticmethod]
+    #[pyo3(name="from_string")]
+    pub fn from_string_py(value: &str) -> PyResult<Self> {
+        value.parse().map_err(|value: ParseError | PyValueError::new_err(value.to_string()))
+    }
 }
 
 #[derive(Debug, Error)]
@@ -177,9 +192,9 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
     P: VariableProviderOut
 {
-    if topic_model.vocabulary().len() != dictionary.voc_a().len() {
-        return Err(TranslateError::InvalidDictionary(topic_model, dictionary));
-    }
+    // if topic_model.vocabulary().len() != dictionary.voc_a().len() {
+    //     return Err(TranslateError::InvalidDictionary(topic_model, dictionary));
+    // }
 
     let epsilon = if let Some(value) = translate_config.epsilon {
         value

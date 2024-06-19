@@ -12,7 +12,7 @@ use itertools::{Itertools, Position};
 use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, Translation};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{MappableVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{MappableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter, DictIterImpl, DictLangIter};
 
 use crate::topicmodel::dictionary::metadata::{MetadataContainer, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataRef, SolvedMetadata};
@@ -689,6 +689,18 @@ pub struct DictionaryWithMeta<T, V> {
 impl<T, V> DictionaryWithMeta<T, V> {
     fn new(inner: Dictionary<T, V>, metadata: MetadataContainer) -> Self {
         Self { inner, metadata }
+    }
+
+    pub fn known_dictionaries(&self) -> Vec<&str> {
+        self.metadata.dictionary_interner.iter().map(|value| value.1).collect_vec()
+    }
+
+    pub fn tags(&self) -> Vec<&str> {
+        self.metadata.tag_interner.iter().map(|value| value.1).collect_vec()
+    }
+
+    pub fn unstemmed(&self) -> &VocabularyImpl<String> {
+        &self.metadata.unstemmed_voc
     }
 }
 

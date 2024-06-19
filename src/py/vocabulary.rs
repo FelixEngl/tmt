@@ -279,7 +279,7 @@ impl PyVocIter {
 
 #[pyfunction]
 pub fn topic_specific_vocabulary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
-    create_topic_model_specific_dictionary(vocabulary, dictionary).into()
+    create_topic_model_specific_dictionary(dictionary, vocabulary).into()
 }
 
 pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {

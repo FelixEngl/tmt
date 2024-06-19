@@ -333,6 +333,21 @@ impl PyDictionary {
     }
 
     #[getter]
+    pub fn known_dictionaries(&self) -> Vec<String> {
+        self.inner.known_dictionaries().into_iter().map(|value| value.to_string()).collect_vec()
+    }
+
+    #[getter]
+    pub fn tags(&self) -> Vec<String> {
+        self.inner.tags().into_iter().map(|value| value.to_string()).collect_vec()
+    }
+
+    #[getter]
+    pub fn unstemmed(&self) -> PyVocabulary {
+        self.inner.unstemmed().clone().into()
+    }
+
+    #[getter]
     pub fn translation_direction(&self) -> (Option<LanguageHint>, Option<LanguageHint>) {
         (self.voc_a().language_hint(), self.voc_b().language_hint())
     }

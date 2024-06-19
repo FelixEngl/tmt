@@ -1470,7 +1470,7 @@ mod test {
 
         const P: &str = "test2\\def";
 
-        std::fs::create_dir("test2");
+        let _ = std::fs::create_dir("test2");
         topic_model.save(P, TopicModelVersion::V1, true, true).unwrap();
 
         let (loaded, _) = TopicModel::load_string_model(P, false).unwrap();
