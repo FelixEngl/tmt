@@ -1283,7 +1283,7 @@ mod test {
 
 
     pub fn create_test_data() -> TopicModel<String, VocabularyImpl<String>> {
-        let mut voc: StringVocabulary = VocabularyImpl::new();
+        let mut voc: StringVocabulary = VocabularyImpl::default();
         voc.add("plane");
         voc.add("aircraft");
         voc.add("airplane");

@@ -672,7 +672,7 @@ mod test {
     #[test]
     fn test_complete_translation(){
 
-        let mut voc_a = VocabularyImpl::<String>::new();
+        let mut voc_a = VocabularyImpl::<String>::default();
         voc_a.extend(vec![
             "plane".to_string(),
             "aircraft".to_string(),
@@ -686,7 +686,7 @@ mod test {
             "foil".to_string(),
             "bearing surface".to_string()
         ]);
-        let mut voc_b = VocabularyImpl::<String>::new();
+        let mut voc_b = VocabularyImpl::<String>::default();
         voc_b.extend(vec![
             "Flugzeug".to_string(),
             "Flieger".to_string(),

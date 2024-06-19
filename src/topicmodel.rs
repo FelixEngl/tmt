@@ -14,6 +14,7 @@ pub mod enums;
 mod io;
 pub mod reference;
 mod math;
+pub mod language_hint;
 
 pub fn create_topic_model_specific_dictionary<T: Eq + Hash + Clone, V>(vocabulary: &(impl Vocabulary<T> + MappableVocabulary<T> + Clone), dictionary: &impl DictionaryMut<T, V>) -> Dictionary<T, VocabularyImpl<T>> where V: VocabularyMut<T> {
     let mut new_dict: Dictionary<_, VocabularyImpl<_>> = Dictionary::from_voc_a(vocabulary.clone().map(|value| value.clone()));
@@ -51,17 +52,18 @@ pub fn create_topic_model_specific_dictionary<T: Eq + Hash + Clone, V>(vocabular
 #[cfg(test)]
 mod test {
     use crate::topicmodel::{create_topic_model_specific_dictionary};
-    use crate::topicmodel::dictionary::Dictionary;
     use crate::{dict, voc};
 
     #[test]
     fn can_transfer(){
 
         let voc_a = voc![
+            for "de":
             "hallo", "welt"
         ];
 
         let dictionary = dict! {
+            for "de", "en":
             "hallo" : "hello"
             "hallo" : "hi"
             "welt" : "world"

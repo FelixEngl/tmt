@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::io::Write;
 use std::ops::{Range};
+use std::path::{PathBuf};
 use std::slice::Iter;
 use std::vec::IntoIter;
 use pyo3::{Bound, FromPyObject, pyclass, pyfunction, pymethods, PyRef, PyResult, wrap_pyfunction};
@@ -12,6 +13,7 @@ use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::dictionary::{PyDictionary};
 use crate::topicmodel::create_topic_model_specific_dictionary;
+use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
 
@@ -27,27 +29,68 @@ pub enum ListOrInt {
     Int(usize)
 }
 
+#[derive(FromPyObject)]
+pub enum LanguageHintValue {
+    Hint(LanguageHint),
+    Value(String)
+}
+
+impl Into<LanguageHint> for LanguageHintValue {
+    fn into(self) -> LanguageHint {
+        match self {
+            LanguageHintValue::Hint(value) => {
+                value
+            }
+            LanguageHintValue::Value(value) => {
+                value.into()
+            }
+        }
+    }
+}
+
 #[pymethods]
 impl PyVocabulary {
     #[new]
-    pub fn new(size: Option<ListOrInt>) -> Self {
+    pub fn new(language: Option<LanguageHintValue>, size: Option<ListOrInt>) -> Self {
+
+        let language = match language {
+            None => {LanguageHint::default()}
+            Some(value) => {value.into()}
+        };
+
         match size {
             None => {
                 Self {
-                    inner: VocabularyImpl::new()
+                    inner: VocabularyImpl::new_for(language)
                 }
             }
             Some(value) => {
                 match value {
                     ListOrInt::List(values) => Self {
-                            inner: VocabularyImpl::from(values)
+                            inner: VocabularyImpl::create_from(language, values)
                     },
                     ListOrInt::Int(value) => Self {
-                        inner: VocabularyImpl::with_capacity(value)
+                        inner: VocabularyImpl::with_capacity(language, value)
                     }
                 }
             }
         }
+    }
+
+    #[getter]
+    #[pyo3(name="language")]
+    pub fn language_hint(&self) -> Option<LanguageHint> {
+        self.language().cloned()
+    }
+
+    #[setter]
+    #[pyo3(name="set_language")]
+    pub fn set_language_hint(&mut self, value: Option<LanguageHintValue>) -> PyResult<()>{
+        self.set_language(value.map(|value| {
+            let x: LanguageHint = value.into();
+            x
+        }));
+        Ok(())
     }
 
     pub fn __repr__(&self) -> String {
@@ -82,12 +125,12 @@ impl PyVocabulary {
         self.inner.get_value(id).map(|value| value.as_ref())
     }
 
-    pub fn save(&self, path: &str) -> PyResult<usize> {
+    pub fn save(&self, path: PathBuf) -> PyResult<usize> {
         Ok(self.inner.save_to_file(path)?)
     }
 
     #[staticmethod]
-    pub fn load(path: &str) -> PyResult<PyVocabulary> {
+    pub fn load(path: PathBuf) -> PyResult<PyVocabulary> {
         match VocabularyImpl::<String>::load_from_file(path) {
             Ok(inner) => {
                 Ok(Self{ inner })
@@ -102,6 +145,10 @@ impl PyVocabulary {
 impl Vocabulary<String> for PyVocabulary {
     delegate::delegate! {
         to self.inner {
+            fn language(&self) -> Option<&LanguageHint>;
+
+            fn set_language(&mut self, new: Option<impl Into<LanguageHint>>) -> Option<LanguageHint>;
+
             /// The number of entries in the vocabulary
             fn len(&self) -> usize;
 
@@ -202,6 +249,12 @@ impl From<VocabularyImpl<String>> for PyVocabulary {
     }
 }
 
+impl From<Option<LanguageHint>> for  PyVocabulary {
+    fn from(value: Option<LanguageHint>) -> Self {
+        Self { inner: value.into() }
+    }
+}
+
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyVocIter {
@@ -236,6 +289,7 @@ pub fn topic_specific_vocabulary(dictionary: &PyDictionary, vocabulary: &PyVocab
 pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVocabulary>()?;
     m.add_class::<PyVocIter>()?;
+    m.add_class::<LanguageHint>()?;
     m.add_function(wrap_pyfunction!(topic_specific_vocabulary, m)?)?;
     Ok(())
 }

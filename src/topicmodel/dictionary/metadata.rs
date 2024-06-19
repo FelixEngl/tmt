@@ -29,7 +29,7 @@ pub struct MetadataContainer {
 
 impl MetadataContainer {
 
-    pub fn create() -> Self {
+    pub fn new() -> Self {
         Self{
             meta_a: Default::default(),
             meta_b: Default::default(),
@@ -949,7 +949,7 @@ mod test {
 
     #[test]
     fn test_if_it_works(){
-        let mut value = MetadataContainer::create();
+        let mut value = MetadataContainer::new();
         value.set_dictionary_for::<A>(0, "dict0");
         value.set_dictionary_for::<B>(0, "dict3");
         value.set_unstemmed_word_for::<A>(0, "test_word");

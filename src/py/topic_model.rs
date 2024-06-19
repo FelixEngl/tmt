@@ -3,6 +3,7 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::Range;
+use std::path::{PathBuf};
 use std::sync::Arc;
 use itertools::Itertools;
 use pyo3::exceptions::PyValueError;
@@ -61,12 +62,12 @@ impl PyTopicModel {
     }
 
 
-    pub fn save(&self, path: &str) -> PyResult<usize> {
+    pub fn save(&self, path: PathBuf) -> PyResult<usize> {
         Ok(self.inner.save(path, TopicModelVersion::V1, true, true)?)
     }
 
     #[staticmethod]
-    pub fn load(path: &str) -> PyResult<PyTopicModel> {
+    pub fn load(path: PathBuf) -> PyResult<PyTopicModel> {
         Ok(Self { inner: TopicModel::<_,PyVocabulary>::load(path, true)?.0 })
     }
 

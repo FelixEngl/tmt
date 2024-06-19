@@ -5,17 +5,19 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, BufWriter, Write};
+use std::path::{PathBuf};
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pymethods, PyObject, PyRef, PyResult, Python};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::types::PyFunction;
 use serde::{Deserialize, Serialize};
-use crate::py::vocabulary::PyVocabulary;
+use crate::py::vocabulary::{LanguageHintValue, PyVocabulary};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter};
 use crate::topicmodel::dictionary::metadata::SolvedMetadata;
+use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{VocabularyImpl, VocabularyMut};
 
@@ -321,10 +323,24 @@ pub struct PyDictionary {
 #[pymethods]
 impl PyDictionary {
     #[new]
-    pub fn new() -> Self {
+    pub fn new(language_a: Option<LanguageHintValue>, language_b: Option<LanguageHintValue>) -> Self {
         Self {
-            inner: Default::default(),
+            inner: DictionaryWithMeta::new_with(
+                language_a,
+                language_b
+            )
         }
+    }
+
+    #[getter]
+    pub fn translation_direction(&self) -> (Option<LanguageHint>, Option<LanguageHint>) {
+        (self.voc_a().language_hint(), self.voc_b().language_hint())
+    }
+
+    #[setter]
+    pub fn set_translation_direction(&mut self, option: (Option<LanguageHintValue>, Option<LanguageHintValue>)) {
+        self.inner.set_language::<A>(option.0.map(|value| value.into()));
+        self.inner.set_language::<B>(option.1.map(|value| value.into()));
     }
 
     #[getter]
@@ -438,7 +454,7 @@ impl PyDictionary {
         self.inner.to_string()
     }
 
-    pub fn save(&self, path: &str) -> PyResult<()> {
+    pub fn save(&self, path: PathBuf) -> PyResult<()> {
         let writer = File::options().write(true).create_new(true).open(path)?;
         let mut writer = BufWriter::with_capacity(1024*32, writer);
         match serde_json::to_writer(&mut writer, &self) {
@@ -453,7 +469,7 @@ impl PyDictionary {
     }
 
     #[staticmethod]
-    pub fn load(path: &str) -> PyResult<Self> {
+    pub fn load(path: PathBuf) -> PyResult<Self> {
         let reader = File::options().read(true).open(path)?;
         let mut reader = BufReader::with_capacity(1024*32, reader);
         match serde_json::from_reader(&mut reader) {
@@ -561,6 +577,10 @@ impl BasicDictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
 }
 
 impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
+    #[inline(always)]
+    fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
+        self.inner.set_language::<L>(value)
+    }
 
     #[inline(always)]
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {

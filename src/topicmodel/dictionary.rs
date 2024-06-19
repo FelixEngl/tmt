@@ -15,7 +15,8 @@ use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{MappableVocabulary, Vocabulary, VocabularyMut};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter, DictIterImpl, DictLangIter};
 
-use crate::topicmodel::dictionary::metadata::{MetadataContainer, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataRef, SolvedMetadata};#[macro_export]
+use crate::topicmodel::dictionary::metadata::{MetadataContainer, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataRef, SolvedMetadata};
+use crate::topicmodel::language_hint::LanguageHint;#[macro_export]
 
 macro_rules! dict_insert {
     ($d: ident, $a: tt : $b: tt) => {
@@ -37,19 +38,34 @@ macro_rules! dict_insert {
 
 #[macro_export]
 macro_rules! dict {
-    () => {Dictionary::<_, $crate::topicmodel::vocabulary::VocabularyImpl<_>>::new()};
+    () => {$crate::topicmodel::Dictionary::<_, $crate::topicmodel::vocabulary::VocabularyImpl<_>>::new()};
+    (for $lang_a: tt, $lang_b: tt;) => {$crate::topicmodel::Dictionary::<_, $crate::topicmodel::vocabulary::VocabularyImpl<_>>::new_with(Some($lang_a), Some($lang_b))};
+
+    (for $lang_a: tt, $lang_b: tt: $($a:tt $op:tt $b:tt)+) => {
+        {
+            let mut __dict = $crate::topicmodel::Dictionary::<_, $crate::topicmodel::vocabulary::VocabularyImpl<_>>::new_with(Some($lang_a), Some($lang_b));
+            $(
+                $crate::dict_insert!(__dict, $a $op $b);
+            )+
+            __dict
+        }
+    };
+
     ($($a:tt $op:tt $b:tt)+) => {
         {
-            let mut __dict = Dictionary::<_, $crate::topicmodel::vocabulary::VocabularyImpl<_>>::new();
+            let mut __dict = $crate::topicmodel::Dictionary::<_, $crate::topicmodel::vocabulary::VocabularyImpl<_>>::new();
             $(
                 $crate::dict_insert!(__dict, $a $op $b);
             )+
             __dict
         }
     }
+
+
 }
 
 pub trait BasicDictionary: Send + Sync {
+
     fn map_a_to_b(&self) -> &Vec<Vec<usize>>;
 
     fn map_b_to_a(&self) -> &Vec<Vec<usize>>;
@@ -79,6 +95,16 @@ pub trait BasicDictionaryWithVocabulary<T, V>: BasicDictionary {
 }
 
 pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<T, V> where V: Vocabulary<T> {
+
+    fn language<'a, L: Language>(&'a self) -> Option<&'a LanguageHint> where V: 'a {
+        if L::LANG.is_a() {
+            self.voc_a().language()
+        } else {
+            self.voc_b().language()
+        }
+    }
+
+    fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint>;
 
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         if D::DIRECTION.is_a_to_b() {
@@ -201,6 +227,8 @@ pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V:
 
 
 
+
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Dictionary<T, V> {
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
@@ -241,6 +269,19 @@ impl<T, V> Dictionary<T, V> where V: Vocabulary<T> + Default {
             voc_a,
             voc_b: Default::default(),
             map_a_to_b,
+            map_b_to_a: Default::default(),
+            _word_type: PhantomData
+        }
+    }
+}
+
+impl<T, V> Dictionary<T, V> where V: From<Option<LanguageHint>>  {
+    pub fn new_with(language_a: Option<impl Into<LanguageHint>>, language_b: Option<impl Into<LanguageHint>>) -> Self {
+
+        Self {
+            voc_a: language_a.map(|value| value.into()).into(),
+            voc_b: language_b.map(|value| value.into()).into(),
+            map_a_to_b: Default::default(),
             map_b_to_a: Default::default(),
             _word_type: PhantomData
         }
@@ -334,6 +375,14 @@ impl<T, V> Dictionary<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
 }
 
 impl<T, V> DictionaryWithVocabulary<T, V> for  Dictionary<T, V> where V: Vocabulary<T> {
+    fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
+        if L::LANG.is_a() {
+            self.voc_a.set_language(value)
+        } else {
+            self.voc_b.set_language(value)
+        }
+    }
+
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         if D::DIRECTION.is_a_to_b() {
             self.voc_a.contains_id(id) && self.map_a_to_b.get(id).is_some_and(|value| !value.is_empty())
@@ -539,7 +588,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
 impl<T: Display, V: Vocabulary<T>> Display for Dictionary<T, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         fn write_language<L: Language, T: Display, V: Vocabulary<T>>(dictionary: &Dictionary<T, V>, f: &mut Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}:\n", L::LANG)?;
+            write!(f, "{}:\n", dictionary.language::<L>().map_or_else(|| L::LANG.to_string(), |value| value.to_string()))?;
             for (position_a, (id_a, value_a, translations)) in dictionary.iter_language::<L>().with_position() {
                 write!(f, "  {value_a}({id_a}):\n")?;
                 if let Some(translations) = translations {
@@ -643,6 +692,16 @@ impl<T, V> DictionaryWithMeta<T, V> {
     }
 }
 
+
+impl<T, V> DictionaryWithMeta<T, V> where V: From<Option<LanguageHint>>  {
+    pub fn new_with(language_a: Option<impl Into<LanguageHint>>, language_b: Option<impl Into<LanguageHint>>) -> Self {
+        Self::new(
+            Dictionary::new_with(language_a, language_b),
+            MetadataContainer::new()
+        )
+    }
+}
+
 impl<T, V> DictionaryWithMeta<T, V> where V: Vocabulary<T> {
     fn metadata_with_dict(&self) -> MetadataContainerWithDict<Self, T, V> where Self: Sized {
         MetadataContainerWithDict::wrap(self)
@@ -679,8 +738,12 @@ impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + Default, T: Hash
     }
 
     pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V> where F1: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef>) -> bool, F2: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef>) -> bool {
+
         let mut new = Self {
-            inner: Dictionary::new(),
+            inner: Dictionary::new_with(
+                self.inner.voc_a.language().cloned(),
+                self.inner.voc_b.language().cloned()
+            ),
             metadata: self.metadata.copy_keep_vocebulary()
         };
         for DirectionTuple{
@@ -782,6 +845,9 @@ impl<T, V> DictionaryWithMeta<T, V> where T: Eq + Hash, V: MappableVocabulary<T>
     }
 }
 impl<T, V> DictionaryWithVocabulary<T, V> for  DictionaryWithMeta<T, V> where V: Vocabulary<T> {
+    fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
+        self.inner.set_language::<L>(value)
+    }
 
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         self.inner.can_translate_id::<D>(id)
@@ -936,7 +1002,7 @@ impl<T, V> From<Dictionary<T, V>> for DictionaryWithMeta<T, V> {
     fn from(value: Dictionary<T, V>) -> Self {
         Self::new(
             value,
-            MetadataContainer::create()
+            MetadataContainer::new()
         )
     }
 }
@@ -959,7 +1025,7 @@ mod test {
 
     #[test]
     fn can_create_with_meta(){
-        let mut voc_a = VocabularyImpl::<String>::new();
+        let mut voc_a = VocabularyImpl::<String>::default();
         voc_a.extend(vec![
             "plane".to_string(),
             "aircraft".to_string(),
@@ -973,7 +1039,7 @@ mod test {
             "foil".to_string(),
             "bearing surface".to_string()
         ]);
-        let mut voc_b = VocabularyImpl::<String>::new();
+        let mut voc_b = VocabularyImpl::<String>::default();
         voc_b.extend(vec![
             "Flugzeug".to_string(),
             "Flieger".to_string(),
