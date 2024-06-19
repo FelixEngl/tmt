@@ -713,7 +713,7 @@ impl<T, V> DictionaryWithMeta<T, V> where V: Vocabulary<T> {
 }
 unsafe impl<T, V> Send for DictionaryWithMeta<T, V>{}
 unsafe impl<T, V> Sync for DictionaryWithMeta<T, V>{}
-impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + Default, T: Hash + Eq  {
+impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + From<Option<LanguageHint>>, T: Hash + Eq  {
 
     fn insert_meta_for_create_subset<'a, L: Language>(&mut self, word_id: usize, metadata_ref: MetadataRef<'a>) {
         let tags = metadata_ref.raw.meta_tags.get();
