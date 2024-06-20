@@ -214,9 +214,26 @@ class KeepOriginalWord(Enum):
     def from_string_py(value: str) -> KeepOriginalWord:...
 
 
-
-
 class BuildInVoting(Enum):
+    OriginalScore: BuildInVoting
+    Voters: BuildInVoting
+    CombSum: BuildInVoting
+    GCombSum: BuildInVoting
+    CombSumTop: BuildInVoting
+    CombSumPow2: BuildInVoting
+    CombMax: BuildInVoting
+    RR: BuildInVoting
+    RRPow2: BuildInVoting
+    CombSumRR: BuildInVoting
+    CombSumRRPow2: BuildInVoting
+    CombSumPow2RR: BuildInVoting
+    CombSumPow2RRPow2: BuildInVoting
+    ExpCombMnz: BuildInVoting
+    WCombSum: BuildInVoting
+    WCombSumG: BuildInVoting
+    WGCombSum: BuildInVoting
+    PCombSum: BuildInVoting
+
     def limit(self, limit: int) -> PyVoting:...
 
 
