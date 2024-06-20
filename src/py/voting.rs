@@ -6,9 +6,10 @@ use pyo3::{Bound, pyclass,  pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use crate::voting::parser::input::ParserInput;
-use crate::voting::parser::{parse, ParseResult};
+use crate::voting::parser::{parse, InterpretedVoting};
 use crate::voting::registry::VotingRegistry;
 use crate::voting::{BuildInVoting, VotingMethod, VotingResult};
+use crate::voting::py::voting_filter_module;
 use crate::voting::traits::VotingMethodMarker;
 
 #[pyclass]
@@ -42,23 +43,23 @@ impl PyVotingRegistry {
         match parsed {
             Ok((_, result)) => {
                 match result {
-                    ParseResult::BuildIn(_) => {
+                    InterpretedVoting::BuildIn(_) => {
                         return Err(PyValueError::new_err("BuildIn functions can not be registered!".to_string()))
                     }
-                    ParseResult::FromRegistry(_) => {
+                    InterpretedVoting::FromRegistry(_) => {
                         return Err(PyValueError::new_err("The name is already registered!".to_string()))
                     }
-                    ParseResult::Parsed(parsed) => {
+                    InterpretedVoting::Parsed(parsed) => {
                         self.inner.register(name.to_string(), parsed);
                         Ok(())
                     }
-                    ParseResult::ForRegistry(value) => {
+                    InterpretedVoting::ForRegistry(value) => {
                         let func = Arc::new(value.1);
                         self.inner.register_arc(name.to_string(), func.clone());
                         self.inner.register_arc(value.0, func);
                         Ok(())
                     }
-                    ParseResult::Limited(_) => {
+                    InterpretedVoting::Limited(_) => {
                         return Err(PyValueError::new_err("You can not register a limited method!".to_string()))
                     }
                 }
@@ -74,21 +75,21 @@ impl PyVotingRegistry {
         match parsed {
             Ok((_, result)) => {
                 match &result {
-                    ParseResult::BuildIn(_) => {
+                    InterpretedVoting::BuildIn(_) => {
                         return Err(PyValueError::new_err("BuildIn functions can not be registered!".to_string()))
                     }
-                    ParseResult::FromRegistry(_) => {
+                    InterpretedVoting::FromRegistry(_) => {
                         return Err(PyValueError::new_err("The name is already registered!".to_string()))
                     }
-                    ParseResult::Parsed(_) => {
+                    InterpretedVoting::Parsed(_) => {
                         return Err(PyValueError::new_err("Missing the name for the registration!".to_string()))
                     }
-                    ParseResult::ForRegistry(value) => {
+                    InterpretedVoting::ForRegistry(value) => {
                         let func = Arc::new(value.1.clone());
                         self.inner.register_arc(value.0.to_string(), func);
                         Ok(())
                     }
-                    ParseResult::Limited(_) => {
+                    InterpretedVoting::Limited(_) => {
                         return Err(PyValueError::new_err("You can not register a limited method!".to_string()))
                     }
                 }
@@ -103,7 +104,7 @@ impl PyVotingRegistry {
 
 #[pyclass]
 #[derive(Clone, Debug)]
-pub struct PyVoting(ParseResult);
+pub struct PyVoting(InterpretedVoting);
 
 #[pymethods]
 impl PyVoting {
@@ -128,15 +129,20 @@ impl VotingMethod for PyVoting {
 
 impl VotingMethodMarker for PyVoting{}
 
-impl<T> From<T> for PyVoting where T: Into<ParseResult> {
+impl<T> From<T> for PyVoting where T: Into<InterpretedVoting> {
     fn from(value: T) -> Self {
         Self(value.into())
     }
 }
 
+
+
+
+
 pub(crate) fn voting_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BuildInVoting>()?;
     m.add_class::<PyVoting>()?;
     m.add_class::<PyVotingRegistry>()?;
+    voting_filter_module(m)?;
     Ok(())
 }

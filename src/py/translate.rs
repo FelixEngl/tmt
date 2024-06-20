@@ -1,7 +1,12 @@
 use std::num::NonZeroUsize;
+use std::str::FromStr;
+use derive_more::From;
+use evalexpr::{ContextWithMutableVariables, Value};
+use nom::combinator::value;
 use pyo3::{Bound, FromPyObject, PyAny, pyclass, pyfunction, pymethods, PyResult, wrap_pyfunction};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
+use pyo3::types::PyFunction;
 use crate::py::dictionary::PyDictionary;
 use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
@@ -9,45 +14,99 @@ use crate::py::vocabulary::PyVocabulary;
 use crate::py::voting::{PyVoting, PyVotingRegistry};
 use crate::translate::{KeepOriginalWord, TranslateConfig};
 use crate::voting::parser::input::ParserInput;
-use crate::voting::parser::{parse};
+use crate::voting::parser::{InterpretedVoting, parse};
 use crate::translate::translate_topic_model as translate;
 use crate::topicmodel::topic_model::MappableTopicModel;
-use crate::voting::BuildInVoting;
-
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct PyTranslationConfig {
-    inner: TranslateConfig<PyVoting>
-}
+use crate::voting::{BuildInVoting, VotingMethod, VotingResult};
+use crate::voting::py::PyVotingModel;
+use crate::voting::traits::VotingMethodMarker;
 
 #[derive(FromPyObject)]
 pub enum VotingArg<'a> {
     Voting(PyVoting),
     BuildIn(BuildInVoting),
     Parseable(String),
-    #[pyo3(transparent)]
-    CatchAll(&'a PyAny)
+    PyCallable(PyVotingModel<'a>),
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyTranslationConfig {
+    epsilon: Option<f64>,
+    threshold: Option<f64>,
+    keep_original_word: KeepOriginalWord,
+    top_candidate_limit: Option<NonZeroUsize>,
+}
+
+#[derive(FromPyObject)]
+pub enum KeepOriginalWordArg {
+    String(String),
+    Value(KeepOriginalWord)
+}
+
+impl TryInto<KeepOriginalWord> for KeepOriginalWordArg {
+    type Error = <KeepOriginalWord as FromStr>::Err;
+
+    fn try_into(self) -> Result<KeepOriginalWord, Self::Error> {
+        match self {
+            KeepOriginalWordArg::String(value) => {value.parse()}
+            KeepOriginalWordArg::Value(value) => {Ok(value)}
+        }
+    }
 }
 
 #[pymethods]
 impl PyTranslationConfig {
     #[new]
-    pub fn new<'a>(
-        voting: VotingArg<'a>,
+    pub fn new(
         epsilon: Option<f64>,
         threshold: Option<f64>,
-        keep_original_word: Option<KeepOriginalWord>,
+        keep_original_word: Option<KeepOriginalWordArg>,
         top_candidate_limit: Option<usize>,
-        voting_registry: Option<PyVotingRegistry>
     ) -> PyResult<Self> {
+        Ok(Self{
+             epsilon,
+             threshold,
+             keep_original_word: keep_original_word
+                 .unwrap_or(KeepOriginalWordArg::Value(KeepOriginalWord::Never))
+                 .try_into()
+                 .map_err(|value: <KeepOriginalWordArg as TryInto<KeepOriginalWord>>::Error| PyValueError::new_err(value.to_string()))?,
+             top_candidate_limit: top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten()
+        })
+    }
+}
+
+#[derive(Clone, Debug, From)]
+enum Wrapper<'a> {
+    External(PyVotingModel<'a>),
+    Internal(PyVoting)
+}
+
+impl VotingMethod for Wrapper<'_> {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+        match self {
+            Wrapper::External(value) => {
+                value.execute(global_context, voters)
+            }
+            Wrapper::Internal(value) => {
+                value.execute(global_context, voters)
+            }
+        }
+    }
+}
+
+impl VotingMethodMarker for Wrapper<'_> {}
+
+impl PyTranslationConfig {
+    fn to_translation_config(self, voting: VotingArg, voting_registry: Option<PyVotingRegistry>) -> PyResult<TranslateConfig<Wrapper>> {
         let voting = match voting {
             VotingArg::Voting(voting) => {
-                voting
+                Wrapper::Internal(voting)
             }
             VotingArg::Parseable(voting) => {
                 match parse::<nom::error::Error<_>>(ParserInput::new(&voting, voting_registry.unwrap_or_default().registry())) {
                     Ok((_, value)) => {
-                        value.into()
+                        Wrapper::Internal(value.into())
                     }
                     Err(err) => {
                         return Err(PyValueError::new_err(err.to_string()))
@@ -55,28 +114,36 @@ impl PyTranslationConfig {
                 }
             }
             VotingArg::BuildIn(build_in) => {
-                build_in.into()
+                Wrapper::Internal(build_in.into())
             }
-            VotingArg::CatchAll(_) => {
-                return Err(PyValueError::new_err("Not a PyVoting or a String!".to_string()))
+            VotingArg::PyCallable(def) => {
+                Wrapper::External(def)
             }
         };
 
-        Ok(Self{
-            inner: TranslateConfig::new(
-                epsilon,
+        Ok(
+            TranslateConfig::new(
                 voting,
-                threshold,
-                keep_original_word.unwrap_or(KeepOriginalWord::Never),
-                top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten()
+                self.epsilon,
+                self.threshold,
+                self.keep_original_word,
+                self.top_candidate_limit,
             )
-        })
+        )
     }
 }
 
 #[pyfunction]
-pub fn translate_topic_model(topic_model: &PyTopicModel, dictionary: &PyDictionary, config: &PyTranslationConfig, provider: Option<&PyVariableProvider>) -> PyResult<PyTopicModel> {
-    match translate(topic_model, dictionary, &config.inner, provider) {
+pub fn translate_topic_model<'a>(
+    topic_model: &PyTopicModel,
+    dictionary: &PyDictionary,
+    voting: VotingArg<'a>,
+    config: PyTranslationConfig,
+    provider: Option<&PyVariableProvider>,
+    voting_registry: Option<PyVotingRegistry>
+) -> PyResult<PyTopicModel> {
+    let cfg =config.to_translation_config(voting, voting_registry)?;
+    match translate(topic_model, dictionary, &cfg, provider) {
         Ok(result) => {
             Ok(PyTopicModel::wrap(result.map::<PyVocabulary>()))
         }

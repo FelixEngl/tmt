@@ -2,7 +2,7 @@ import os
 from enum import Enum
 from os import PathLike
 from pathlib import Path
-from typing import Optional, Iterator, Callable
+from typing import Optional, Iterator, Callable, Protocol
 
 
 class DirectionKind(Enum):
@@ -221,17 +221,41 @@ class BuildInVoting(Enum):
 
 
 class PyTranslationConfig:
-    def __init__(self, voting: str | PyVoting, epsilon: float | None = None, threshold: float | None = None,
-                 keep_original_word: KeepOriginalWord | None = None, top_candidate_limit: int | None = None,
-                 voting_registry: PyVotingRegistry | None = None) -> None: ...
+    def __init__(self,
+                 epsilon: float | None = None,
+                 threshold: float | None = None,
+                 keep_original_word: KeepOriginalWord | str | None = None,
+                 top_candidate_limit: int | None = None) -> None: ...
 
 
 
-
-def translate_topic_model(topic_model: PyTopicModel,
-                          dictionary: PyDictionary,
-                          config: PyTranslationConfig,
-                          provider: PyVariableProvider | None = None) -> PyTopicModel: ...
+PyExprValue = str | float | int | bool | None | list[PyExprValue]
 
 
+class PyContextWithMutableVariables:
+    """Be careful, you can NOT store this outside of the call."""
+    def __getitem__(self, item: str) -> PyExprValue:
+        """Raises a KeyError if item not contained."""
+        ...
+
+    def __setitem__(self, key: str, value: PyExprValue):
+        """Raises a ValueError if something goes wrong."""
+        ...
+
+    def __contains__(self, item: str) -> bool:
+        ...
+
+class VotingFunction(Protocol):
+    """Defines the format of the voting function"""
+    def __call__(self, global_context: PyContextWithMutableVariables, voters: list[PyContextWithMutableVariables]) -> PyExprValue:
+        ...
 def topic_specific_vocabulary(dictionary: PyDictionary, vocabulary: PyVocabulary) -> PyDictionary: ...
+
+def translate_topic_model(
+        topic_model: PyTopicModel,
+        dictionary: PyDictionary,
+        voting: PyVoting | str | VotingFunction,
+        config: PyTranslationConfig,
+        provider: PyVariableProvider | None = None,
+        registry: PyVotingRegistry | None = None
+) -> PyTopicModel: ...

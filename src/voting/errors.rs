@@ -1,4 +1,5 @@
 use evalexpr::EvalexprError;
+use pyo3::PyErr;
 use thiserror::Error;
 use crate::voting::aggregations::AggregationError;
 use crate::voting::parser::voting_function::IndexOrRange;
@@ -13,4 +14,6 @@ pub enum VotingExpressionError {
     TupleGet(String, IndexOrRange, usize),
     #[error("No value for working with was found!")]
     NoValue,
+    #[error(transparent)]
+    PythonError(PyErr)
 }

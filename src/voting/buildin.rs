@@ -15,7 +15,7 @@ use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use serde::{Deserialize, Serialize};
 use crate::py::voting::PyVoting;
-use crate::voting::parser::ParseResult::Limited;
+use crate::voting::parser::InterpretedVoting::Limited;
 
 /// An empty voting method if nothing works
 pub struct EmptyVotingMethod;

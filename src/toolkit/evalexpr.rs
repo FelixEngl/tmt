@@ -127,6 +127,7 @@ impl<A, B> CombineableContext<B> for A where A: Context, B: Context {
 
 
 
+
 /// Combines a global and a local context in a meaningful way.
 /// Borrows the local context in a mutable way
 #[derive(Debug)]
@@ -296,4 +297,5 @@ impl<'a, A, B> IterateVariablesContext for CombinedContextWrapper<'a, A, B> wher
         )
     }
 }
+
 

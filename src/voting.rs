@@ -17,6 +17,7 @@ pub mod display;
 pub mod errors;
 pub mod spy;
 pub mod traits;
+pub mod py;
 
 /// The result of a voting
 pub type VotingResult<T> = Result<T, VotingExpressionError>;

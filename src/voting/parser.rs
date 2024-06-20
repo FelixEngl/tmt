@@ -17,56 +17,56 @@ mod traits;
 pub mod input;
 
 #[derive(Debug, EnumIs, Clone)]
-pub enum ParseResult {
+pub enum InterpretedVoting {
     BuildIn(BuildInVoting),
     FromRegistry(Arc<VotingFunction>),
     Parsed(VotingFunction),
     ForRegistry(VotingAndName),
-    Limited(VotingWithLimit<Box<ParseResult>>)
+    Limited(VotingWithLimit<Box<InterpretedVoting>>),
 }
 
-pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, ParseResult, E> {
-    fn parse_internal<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, ParseResult, E> {
+pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, InterpretedVoting, E> {
+    fn parse_internal<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, InterpretedVoting, E> {
         alt((
-            map(build_in_voting, ParseResult::BuildIn),
+            map(build_in_voting, InterpretedVoting::BuildIn),
             map_res(variable_name, |value| match value.registry() {
                 None => {Err(NoRegistryProvided)}
                 Some(registry) => {
                     registry
                         .get(value.as_ref())
                         .ok_or_else(|| NoVotingInRegistryFound(value.to_string()))
-                        .map(ParseResult::FromRegistry)
+                        .map(InterpretedVoting::FromRegistry)
                 }
             }),
-            map(voting, ParseResult::ForRegistry),
-            map(global_voting_function, ParseResult::Parsed),
+            map(voting, InterpretedVoting::ForRegistry),
+            map(global_voting_function, InterpretedVoting::Parsed),
         ))(input)
     }
 
     alt((
-        map(parse_limited(parse_internal), ParseResult::Limited),
+        map(parse_limited(parse_internal), InterpretedVoting::Limited),
         parse_internal
     ))(input)
 }
 
-impl VotingMethodMarker for ParseResult{}
+impl VotingMethodMarker for InterpretedVoting {}
 
-impl VotingMethod for ParseResult {
+impl VotingMethod for InterpretedVoting {
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
         match self {
-            ParseResult::BuildIn(value) => {
+            InterpretedVoting::BuildIn(value) => {
                 value.execute(global_context, voters)
             }
-            ParseResult::FromRegistry(value) => {
+            InterpretedVoting::FromRegistry(value) => {
                 value.execute(global_context, voters)
             }
-            ParseResult::Parsed(value) => {
+            InterpretedVoting::Parsed(value) => {
                 value.execute(global_context, voters)
             }
-            ParseResult::ForRegistry(value) => {
+            InterpretedVoting::ForRegistry(value) => {
                 value.1.execute(global_context, voters)
             }
-            ParseResult::Limited(value) => {
+            InterpretedVoting::Limited(value) => {
                 value.execute(global_context, voters)
             }
         }
@@ -74,25 +74,25 @@ impl VotingMethod for ParseResult {
 }
 
 
-impl From<Arc<VotingFunction>> for ParseResult {
+impl From<Arc<VotingFunction>> for InterpretedVoting {
     fn from(value: Arc<VotingFunction>) -> Self {
         Self::FromRegistry(value)
     }
 }
 
-impl From<VotingFunction> for ParseResult {
+impl From<VotingFunction> for InterpretedVoting {
     fn from(value: VotingFunction) -> Self {
         Self::Parsed(value)
     }
 }
 
-impl From<VotingAndName> for ParseResult {
+impl From<VotingAndName> for InterpretedVoting {
     fn from(value: VotingAndName) -> Self {
         Self::ForRegistry(value)
     }
 }
 
-impl From<BuildInVoting> for ParseResult {
+impl From<BuildInVoting> for InterpretedVoting {
     fn from(value: BuildInVoting) -> Self {
         Self::BuildIn(value)
     }
@@ -103,7 +103,7 @@ impl From<BuildInVoting> for ParseResult {
 mod test {
     use nom::{Finish, IResult};
     use crate::voting::BuildInVoting;
-    use crate::voting::parser::{parse, ParseResult};
+    use crate::voting::parser::{parse, InterpretedVoting};
     use crate::voting::parser::input::ParserInput;
     use crate::voting::parser::logic::global_voting_function;
     use crate::voting::registry::VotingRegistry;
@@ -170,7 +170,7 @@ mod test {
         let result: IResult<_, _> = parse("Voters(20)".into());
         let (_, result) = result.unwrap();
         assert!(result.is_limited());
-        if let ParseResult::Limited(inner) = result {
+        if let InterpretedVoting::Limited(inner) = result {
             assert!(inner.expr.is_build_in())
         }
     }
@@ -183,7 +183,7 @@ mod test {
         }(20)".into());
         let (_, result) = result.unwrap();
         assert!(result.is_limited());
-        if let ParseResult::Limited(inner) = result {
+        if let InterpretedVoting::Limited(inner) = result {
             assert!(inner.expr.is_parsed())
         }
     }

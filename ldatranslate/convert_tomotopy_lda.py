@@ -15,7 +15,7 @@ class TomotopyModelAlike(Protocol):
     def get_topic_word_dist(self, topic: int) -> Iterable[Any | float]: ...
 
 
-def tomotopy_to_topic_model(model: TomotopyModelAlike, language: None | str |LanguageHint = None) -> PyTopicModel:
+def tomotopy_to_topic_model(model: TomotopyModelAlike, language: None | str | LanguageHint = None) -> PyTopicModel:
     """
     Allows to convert a tomotopy alike model to a PyTopicModel
     """

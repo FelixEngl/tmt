@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap};
 use std::collections::hash_map::Entry;
@@ -25,24 +26,24 @@ use crate::external_variable_provider::{VariableProvider, VariableProviderError,
 
 #[derive(Debug)]
 pub struct TranslateConfig<V: VotingMethodMarker> {
-    epsilon: Option<f64>,
     voting: V,
+    epsilon: Option<f64>,
     threshold: Option<f64>,
     keep_original_word: KeepOriginalWord,
     top_candidate_limit: Option<NonZeroUsize>,
 }
 
 impl<V> TranslateConfig<V> where V: VotingMethodMarker {
-    pub fn new(epsilon: Option<f64>, voting: V, threshold: Option<f64>, keep_original_word: KeepOriginalWord, top_candidate_limit: Option<NonZeroUsize>) -> Self {
+    pub fn new(voting: V, epsilon: Option<f64>, threshold: Option<f64>, keep_original_word: KeepOriginalWord, top_candidate_limit: Option<NonZeroUsize>) -> Self {
         Self { epsilon, voting, threshold, keep_original_word, top_candidate_limit }
     }
 }
 
-impl<V> Clone for TranslateConfig<V> where V: Clone + VotingMethodMarker {
+impl<'a, V> Clone for TranslateConfig<V> where V: VotingMethodMarker + Clone {
     fn clone(&self) -> Self {
         Self {
-            epsilon: self.epsilon,
             voting: self.voting.clone(),
+            epsilon: self.epsilon,
             threshold: self.threshold,
             keep_original_word: self.keep_original_word,
             top_candidate_limit: self.top_candidate_limit
