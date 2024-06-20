@@ -1,9 +1,8 @@
-use std::sync::Arc;
 use evalexpr::{ContextWithMutableVariables, EvalexprError, FloatType, IntType, Value};
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
-use pyo3::exceptions::{PyKeyError, PyNotImplementedError, PyValueError};
-use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
+use pyo3::exceptions::{PyKeyError, PyValueError};
+use pyo3::prelude::{PyModule, PyModuleMethods};
 use pyo3::types::PyFunction;
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
 use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
@@ -170,7 +169,7 @@ impl PyContextWithMutableVariables {
 
 impl PyContextWithMutableVariables {
     unsafe fn new<'a>(value: &'a mut dyn ContextWithMutableVariables) -> Self {
-        /// Transmute does not change the real lifeline!
+        // Transmute does not change the real lifeline!
         let value: &'static mut dyn ContextWithMutableVariables = std::mem::transmute::<&'a mut dyn ContextWithMutableVariables, &'static mut dyn ContextWithMutableVariables>(value);
         Self {
             inner: value
@@ -181,65 +180,4 @@ impl PyContextWithMutableVariables {
 pub(crate) fn voting_filter_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyContextWithMutableVariables>()?;
     Ok(())
-}
-
-
-#[cfg(test)]
-mod test {
-
-
-    pub trait MyTrait {
-        fn get_value_for(&mut self, key: &str) -> Option<usize>;
-    }
-
-    struct TestStruct {
-        ct: usize
-    }
-
-    impl TestStruct {
-        pub fn new() -> Self{
-            Self{ct: 0}
-        }
-    }
-
-    impl MyTrait for TestStruct {
-        fn get_value_for(&mut self, key: &str) -> Option<usize> {
-            self.ct += 1;
-            return Some(self.ct)
-        }
-    }
-
-    fn my_method<A>(my_class: &mut A) -> Option<usize> where A: MyTrait {
-        unsafe {
-            let mut wrapped = Pyo3Wrapper::new(my_class);
-            // some pythoncode calling it
-            wrapped.foo("hello!")
-        }
-    }
-
-    struct Pyo3Wrapper {
-        inner: *mut dyn MyTrait
-    }
-
-    impl Pyo3Wrapper {
-        unsafe fn new<'a>(value: &'a mut dyn MyTrait) -> Self {
-            let value: &'static mut dyn MyTrait = std::mem::transmute::<&'a mut dyn MyTrait, &'static mut dyn MyTrait>(value);
-            Self {
-                inner: value
-            }
-        }
-
-        fn foo(&mut self, key: &str) -> Option<usize> {
-            unsafe {
-                (&mut *self.inner).get_value_for(key)
-            }
-        }
-    }
-
-    #[test]
-    fn test(){
-        let mut x = TestStruct::new();
-        my_method(&mut x).unwrap();
-        assert_eq!(1, x.ct)
-    }
 }
