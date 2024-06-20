@@ -145,6 +145,10 @@ impl PyTopicModel {
         bincode::deserialize_from(BufReader::new(File::options().read(true).open(path)?)).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
+
+    pub fn normalize(&self) -> Self {
+        self.inner.normalize().into()
+    }
 }
 
 impl BasicTopicModel for PyTopicModel {

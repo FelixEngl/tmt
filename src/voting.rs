@@ -29,7 +29,7 @@ pub trait VotingMethod {
             A : ContextWithMutableVariables,
             B : ContextWithMutableVariables
     {
-        Ok(self.execute(global_context,voters)?.as_number()?)
+        Ok(self.execute(global_context, voters)?.as_number()?)
     }
 
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>

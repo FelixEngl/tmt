@@ -5,7 +5,7 @@ use std::error::Error;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use evalexpr::{Context, context_map, EmptyContextWithBuiltinFunctions, HashMapContext};
+use evalexpr::{Context, context_map, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext};
 use itertools::{Itertools};
 use rayon::prelude::*;
 use strum::{AsRefStr, Display, EnumString, ParseError};
@@ -21,7 +21,6 @@ use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
 use crate::voting::traits::VotingMethodMarker;
 use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::PyAnyMethods;
 use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut};
 
 #[derive(Debug)]
@@ -93,7 +92,7 @@ pub enum TranslateError<'a, Model, D> {
 }
 
 #[derive(Debug, Error)]
-#[error("Failedwith an error!")]
+#[error("Failed with an error! ({topic_id}, {word_id}) {source}")]
 pub struct TranslateErrorWithOrigin {
     topic_id: usize,
     word_id: usize,
@@ -520,6 +519,7 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
                     Some(
                         match voters {
                             Ok(mut voters) => {
+                                context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into()).expect("This should not fail!");
                                 match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
                                     Ok(result) => {
                                         Ok(Candidate::new(Target(candidate), result, original_word_id))
@@ -553,7 +553,8 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
             HAS_TRANSLATION => has_translation,
             IS_ORIGIN_WORD => true,
             SCORE_CANDIDATE => probability,
-            CANDIDATE_ID => word_id as i64
+            CANDIDATE_ID => word_id as i64,
+            NUMBER_OF_VOTERS => 1
         }.unwrap();
 
         let mut context = context.combine_with_mut(topic_context);

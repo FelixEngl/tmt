@@ -124,7 +124,7 @@ impl VotingMethod for BuildInVoting {
             }
             BuildInVoting::CombSumPow2 => {
                 let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(Value::Float(found.as_number().unwrap().powi(2)))
+                    Ok(Value::Float(found.as_number().expect("Expected a number for score in CombSumPow2").powi(2)))
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
@@ -137,8 +137,9 @@ impl VotingMethod for BuildInVoting {
                         Ok(found.clone())
                     } else {
                         Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                    })?.iter().max_partial().map_err(|_| AggregationError::NoMaxFound)?
-                        .unwrap()
+                    })?.iter().max_partial()
+                        .map_err(|_| AggregationError::NoMaxFound)?
+                        .expect("Expected a number for score in CombMax")
                         .clone()
                         .into()
                 )
@@ -153,7 +154,7 @@ impl VotingMethod for BuildInVoting {
             }
             BuildInVoting::RRPow2 => {
                 let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
-                    Ok(found.as_number().unwrap().powi(2).into())
+                    Ok(found.as_number().expect("Expected a number for rr in RRPow2").powi(2).into())
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                 })?;
@@ -162,7 +163,7 @@ impl VotingMethod for BuildInVoting {
             BuildInVoting::CombSumRR => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
                     if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().unwrap() * rr.as_number().unwrap()))
+                        Ok(Value::Float(score.as_number().expect("Expected a number for score in CombSumRR") * rr.as_number().expect("Expected a number for rr in CombSumRR")))
                     } else {
                         Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                     }
@@ -174,7 +175,7 @@ impl VotingMethod for BuildInVoting {
             BuildInVoting::CombSumRRPow2 => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
                     if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().unwrap() * rr.as_number().unwrap().powi(2)))
+                        Ok(Value::Float(score.as_number().expect("Expected a number for the score in CombSumRRPow2") * rr.as_number().expect("Expected a number for rr in CombSumRRPow2").powi(2)))
                     } else {
                         Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                     }
@@ -186,7 +187,7 @@ impl VotingMethod for BuildInVoting {
             BuildInVoting::CombSumPow2RR => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
                     if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().unwrap().powi(2) * rr.as_number().unwrap()))
+                        Ok(Value::Float(score.as_number().expect("Expected a number for the score in CombSumPow2RR").powi(2) * rr.as_number().expect("Expected a number for rr in CombSumPow2RR")))
                     } else {
                         Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                     }
@@ -198,7 +199,7 @@ impl VotingMethod for BuildInVoting {
             BuildInVoting::CombSumPow2RRPow2 => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
                     if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().unwrap().powi(2) * rr.as_number().unwrap().powi(2)))
+                        Ok(Value::Float(score.as_number().expect("Expected a number for the score in CombSumPow2RRPow2").powi(2) * rr.as_number().expect("Expected a number for rr in CombSumPow2RRPow2").powi(2)))
                     } else {
                         Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                     }
@@ -254,22 +255,13 @@ impl VotingMethod for BuildInVoting {
                         Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                     })?.into_iter())?;
                     let max_rr = voters.iter().map(|value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
-                        match found.as_int() {
-                            Ok(value) => {
-                                Ok(value)
-                            }
-                            Err(_) => {
-                                Err(EvalexprError::ExpectedInt {
-                                    actual: found.clone()
-                                })
-                            }
-                        }
+                        found.as_number()
                     } else {
                         Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                     }).process_results(|values| {
-                        values.max().unwrap()
-                    })?;
-                    Ok(((trans / get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_number()?) + max_rr as f64).into())
+                        values.max_partial().expect("Failed to find a maximum!")
+                    })?.expect("Failed to find a maximum!");
+                    Ok(((trans / get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_number()?) + max_rr).into())
                 }
             }
         }
