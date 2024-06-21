@@ -290,3 +290,26 @@ def translate_topic_model(
         provider: PyVariableProvider | None = None,
         registry: PyVotingRegistry | None = None
 ) -> PyTopicModel: ...
+
+
+class variable_names:
+    EPSILON: str
+    VOCABULARY_SIZE_A: str
+    VOCABULARY_SIZE_B: str
+    TOPIC_MAX_PROBABILITY: str
+    TOPIC_MIN_PROBABILITY: str
+    TOPIC_AVG_PROBABILITY: str
+    TOPIC_SUM_PROBABILITY: str
+    COUNT_OF_VOTERS: str
+    NUMBER_OF_VOTERS: str
+    HAS_TRANSLATION: str
+    IS_ORIGIN_WORD: str
+    SCORE_CANDIDATE: str
+    RECIPROCAL_RANK: str
+    REAL_RECIPROCAL_RANK: str
+    RANK: str
+    IMPORTANCE: str
+    SCORE: str
+    VOTER_ID: str
+    CANDIDATE_ID: str
+    TOPIC_ID: str

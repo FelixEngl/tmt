@@ -79,7 +79,8 @@ macro_rules! declare_variable_names {
         pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
             let submodule = PyModule::new_bound(m.py(), "variable_names")?;
             declare_py_module!(submodule, $variable_name: $name, $($tt)+);
-            m.add_submodule(&submodule)
+            m.add_submodule(&submodule)?;
+            Ok(())
         }
     };
 
@@ -96,7 +97,8 @@ macro_rules! declare_variable_names {
         pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
             let submodule = PyModule::new_bound(m.py(), "variable_names")?;
             declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
-            m.add_submodule(&submodule)
+            m.add_submodule(&submodule)?;
+            Ok(())
         }
     };
 }
@@ -144,5 +146,4 @@ declare_variable_names! {
     doc = "The topic id."
     TOPIC_ID: "topic_id"
 }
-
 
