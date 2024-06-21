@@ -10,11 +10,12 @@ use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
 use crate::py::vocabulary::PyVocabulary;
 use crate::py::voting::{PyVoting, PyVotingRegistry};
-use crate::translate::{KeepOriginalWord, TranslateConfig};
+use crate::translate::{KeepOriginalWord, register_py_translate, TranslateConfig};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
 use crate::topicmodel::topic_model::MappableTopicModel;
+use crate::variable_names::{register_py_variable_names_module};
 use crate::voting::{BuildInVoting, VotingMethod, VotingResult};
 use crate::voting::py::PyVotingModel;
 use crate::voting::traits::VotingMethodMarker;
@@ -154,7 +155,8 @@ pub fn translate_topic_model<'a>(
 
 pub(crate) fn translate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTranslationConfig>()?;
-    m.add_class::<KeepOriginalWord>()?;
     m.add_function(wrap_pyfunction!(translate_topic_model, m)?)?;
+    register_py_translate(m)?;
+    register_py_variable_names_module(m)?;
     Ok(())
 }

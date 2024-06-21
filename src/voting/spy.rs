@@ -14,7 +14,7 @@ impl<V> Spy<V> where V: VotingMethodMarker {
         Self { inner, spy_history: Default::default() }
     }
 
-
+    #[allow(dead_code)]
     pub fn spy_history(&self) -> &Mutex<Vec<(usize, (usize, f64, Value), Vec<(usize, f64)>)>> {
         &self.spy_history
     }

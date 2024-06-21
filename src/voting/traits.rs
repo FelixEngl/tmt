@@ -12,6 +12,7 @@ pub trait VotingMethodMarker: VotingMethod + Sync + Send {}
 
 /// Allows to limit the voting to the top n elements
 pub trait IntoVotingWithLimit: LimitableVotingMethodMarker {
+    #[allow(dead_code)]
     fn with_limit(self, limit: NonZeroUsize) -> VotingWithLimit<Self>;
 }
 

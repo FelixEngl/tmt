@@ -13,13 +13,13 @@ use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::types::PyFunction;
 use serde::{Deserialize, Serialize};
 use crate::py::vocabulary::{LanguageHintValue, PyVocabulary};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary};
-use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, register_py_directions, DirectionKind, DirectionTuple, Invariant, Language, Translation};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter};
-use crate::topicmodel::dictionary::metadata::SolvedMetadata;
+use crate::topicmodel::dictionary::metadata::{register_py_metadata, SolvedMetadata};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{VocabularyImpl, VocabularyMut};
+use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
 
 #[derive(FromPyObject, Clone, Debug, Serialize, Deserialize)]
 pub enum SingleOrVec<T> {
@@ -581,7 +581,7 @@ impl BasicDictionary for PyDictionary {
     }
 }
 
-impl BasicDictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
+impl BasicDictionaryWithVocabulary<PyVocabulary> for PyDictionary {
     delegate::delegate! {
         to self.inner {
             fn voc_a(&self) -> &PyVocabulary;
@@ -592,10 +592,6 @@ impl BasicDictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
 }
 
 impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
-    #[inline(always)]
-    fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
-        self.inner.set_language::<L>(value)
-    }
 
     #[inline(always)]
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
@@ -626,6 +622,31 @@ impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
     fn translate_id_to_values<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<&'a HashRef<String>>> where PyVocabulary: 'a {
         self.inner.translate_id_to_values::<D>(word_id)
     }
+
+    #[inline(always)]
+    fn translate_value<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a HashRef<String>)>> where String: Borrow<Q>, Q: Hash + Eq, PyVocabulary: 'a {
+        self.inner.translate_value::<D, _>(word)
+    }
+
+    #[inline(always)]
+    fn translate_value_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>> where String: Borrow<Q>, Q: Hash + Eq {
+        self.inner.translate_value_to_ids::<D, _>(word)
+    }
+
+    #[inline(always)]
+    fn word_to_id<D: Translation, Q: ?Sized>(&self, id: &Q) -> Option<usize> where String: Borrow<Q>, Q: Hash + Eq {
+        self.inner.word_to_id::<D, _>(id)
+    }
+
+    #[inline(always)]
+    fn can_translate_word<D: Translation, Q: ?Sized>(&self, word: &Q) -> bool where String: Borrow<Q>, Q: Hash + Eq {
+        self.inner.can_translate_word::<D, _>(word)
+    }
+
+    #[inline(always)]
+    fn translate_value_to_values<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a HashRef<String>>> where String: Borrow<Q>, Q: Hash + Eq, PyVocabulary: 'a {
+        self.inner.translate_value_to_values::<D, _>(word)
+    }
 }
 
 impl DictionaryFilterable<String, PyVocabulary> for PyDictionary {
@@ -643,41 +664,29 @@ impl DictionaryFilterable<String, PyVocabulary> for PyDictionary {
 }
 
 impl DictionaryMut<String, PyVocabulary> for PyDictionary {
+    #[inline(always)]
+    fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
+        self.inner.set_language::<L>(value)
+    }
+
+    #[inline(always)]
     fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<String>, word_b: HashRef<String>) -> DirectionTuple<usize, usize> {
         self.inner.insert_hash_ref::<D>(word_a, word_b)
     }
 
+    #[inline(always)]
     fn insert_value<D: Direction>(&mut self, word_a: String, word_b: String) -> DirectionTuple<usize, usize> {
         self.inner.insert_value::<D>(word_a, word_b)
     }
 
+    #[inline(always)]
     fn insert<D: Direction>(&mut self, word_a: impl Into<String>, word_b: impl Into<String>) -> DirectionTuple<usize, usize> {
         self.inner.insert::<D>(word_a, word_b)
     }
-
-    fn translate_value<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a HashRef<String>)>> where String: Borrow<Q>, Q: Hash + Eq, PyVocabulary: 'a {
-        self.inner.translate_value::<D, _>(word)
-    }
-
-    fn translate_value_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>> where String: Borrow<Q>, Q: Hash + Eq {
-        self.inner.translate_value_to_ids::<D, _>(word)
-    }
-
-    fn word_to_id<D: Translation, Q: ?Sized>(&self, id: &Q) -> Option<usize> where String: Borrow<Q>, Q: Hash + Eq {
-        self.inner.word_to_id::<D, _>(id)
-    }
-
-    fn can_translate_word<D: Translation, Q: ?Sized>(&self, word: &Q) -> bool where String: Borrow<Q>, Q: Hash + Eq {
-        self.inner.can_translate_word::<D, _>(word)
-    }
-
-    fn translate_value_to_values<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a HashRef<String>>> where String: Borrow<Q>, Q: Hash + Eq, PyVocabulary: 'a {
-        self.inner.translate_value_to_values::<D, _>(word)
-    }
 }
 
-impl From<Dictionary<String, VocabularyImpl<String>>> for PyDictionary {
-    fn from(value: Dictionary<String, VocabularyImpl<String>>) -> Self {
+impl From<Dictionary<String, Vocabulary<String>>> for PyDictionary {
+    fn from(value: Dictionary<String, Vocabulary<String>>) -> Self {
         Self { inner: value.map(|value| value.clone()).into() }
     }
 }
@@ -689,10 +698,23 @@ impl From<Dictionary<String, PyVocabulary>> for PyDictionary {
     }
 }
 
+impl FromVoc<String, PyVocabulary> for PyDictionary {
+    fn from_voc(voc_a: PyVocabulary, voc_b: PyVocabulary) -> Self {
+        Self {
+            inner: DictionaryWithMeta::from_voc(voc_a, voc_b)
+        }
+    }
+
+    fn from_voc_lang<L: Language>(voc: PyVocabulary, other_lang: Option<LanguageHint>) -> Self {
+        Self {
+            inner: DictionaryWithMeta::from_voc_lang::<L>(voc, other_lang)
+        }
+    }
+}
+
 pub(crate) fn dictionary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<DirectionKind>()?;
-    m.add_class::<LanguageKind>()?;
-    m.add_class::<SolvedMetadata>()?;
+    register_py_directions(m)?;
+    register_py_metadata(m)?;
     m.add_class::<PyDictionaryEntry>()?;
     m.add_class::<PyDictionary>()?;
     m.add_class::<PyDictIter>()?;

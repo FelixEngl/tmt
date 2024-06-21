@@ -13,14 +13,14 @@ use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::dictionary::{PyDictionary};
 use crate::topicmodel::create_topic_model_specific_dictionary;
-use crate::topicmodel::language_hint::LanguageHint;
+use crate::topicmodel::language_hint::{LanguageHint, register_py_language_hint};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
+use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyVocabulary {
-    inner: VocabularyImpl<String>
+    inner: Vocabulary<String>
 }
 
 #[derive(FromPyObject)]
@@ -57,16 +57,16 @@ impl PyVocabulary {
         match size {
             None => {
                 Self {
-                    inner: VocabularyImpl::new(language)
+                    inner: Vocabulary::new(language)
                 }
             }
             Some(value) => {
                 match value {
                     ListOrInt::List(values) => Self {
-                            inner: VocabularyImpl::create_from(language, values)
+                            inner: Vocabulary::create_from(language, values)
                     },
                     ListOrInt::Int(value) => Self {
-                        inner: VocabularyImpl::with_capacity(language, value)
+                        inner: Vocabulary::with_capacity(language, value)
                     }
                 }
             }
@@ -127,7 +127,7 @@ impl PyVocabulary {
 
     #[staticmethod]
     pub fn load(path: PathBuf) -> PyResult<PyVocabulary> {
-        match VocabularyImpl::<String>::load_from_file(path) {
+        match Vocabulary::<String>::load_from_file(path) {
             Ok(inner) => {
                 Ok(Self{ inner })
             }
@@ -138,7 +138,7 @@ impl PyVocabulary {
     }
 }
 
-impl Vocabulary<String> for PyVocabulary {
+impl BasicVocabulary<String> for PyVocabulary {
     delegate::delegate! {
         to self.inner {
             fn language(&self) -> Option<&LanguageHint>;
@@ -166,25 +166,36 @@ impl Vocabulary<String> for PyVocabulary {
             fn contains_id(&self, id: usize) -> bool;
         }
     }
+
+    fn create(language: Option<LanguageHint>) -> Self where Self: Sized {
+        Self {
+            inner: Vocabulary::create(language)
+        }
+    }
+
+    fn create_from(language: Option<LanguageHint>, voc: Vec<String>) -> Self where Self: Sized, String: Eq + Hash {
+        Self {
+            inner: Vocabulary::create_from(language, voc)
+        }
+    }
 }
 
 impl MappableVocabulary<String> for PyVocabulary {
-    fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&String) -> Q, V: From<Vec<Q>> {
+    fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&String) -> Q, V: BasicVocabulary<Q> {
         self.inner.map(mapping)
     }
 }
 
-impl VocabularyMut<String> for PyVocabulary {
+impl AsRef<Vec<HashRef<String>>> for PyVocabulary {
+    fn as_ref(&self) -> &Vec<HashRef<String>> {
+        self.inner.as_ref()
+    }
+}
+
+impl SearchableVocabulary<String> for PyVocabulary {
+
     delegate::delegate! {
         to self.inner {
-            /// Adds the `value` to the vocabulary and returns the associated id
-            fn add_hash_ref(&mut self, value: HashRef<String>) -> usize;
-
-            fn add_value(&mut self, value: String) -> usize;
-
-            /// Adds any `value` that can be converted into `T`
-            fn add<V: Into<String>>(&mut self, value: V) -> usize;
-
             /// Retrieves the id for `value`
             fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
                 where
@@ -218,6 +229,20 @@ impl VocabularyMut<String> for PyVocabulary {
         self.inner.filter_by_value(filter).into()
     }
 }
+
+impl VocabularyMut<String> for PyVocabulary {
+    delegate::delegate! {
+        to self.inner {
+            /// Adds the `value` to the vocabulary and returns the associated id
+            fn add_hash_ref(&mut self, value: HashRef<String>) -> usize;
+
+            fn add_value(&mut self, value: String) -> usize;
+
+            /// Adds any `value` that can be converted into `T`
+            fn add<V: Into<String>>(&mut self, value: V) -> usize;
+        }
+    }
+}
 impl StoreableVocabulary<String> for PyVocabulary {
     fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {
         self.inner.save_to_output(writer)
@@ -234,13 +259,19 @@ impl Display for PyVocabulary {
 
 impl<T> From<Vec<T>> for PyVocabulary where T: Into<String> {
     fn from(value: Vec<T>) -> Self {
-        Self { inner: VocabularyImpl::from(value.into_iter().map(|value| value.into()).collect::<Vec<_>>()) }
+        Self { inner: Vocabulary::from(value.into_iter().map(|value| value.into()).collect::<Vec<_>>()) }
     }
 }
 
-impl From<VocabularyImpl<String>> for PyVocabulary {
+impl<T> From<(Option<LanguageHint>, Vec<T>)> for PyVocabulary where T: Into<String> {
+    fn from((hint, value): (Option<LanguageHint>, Vec<T>)) -> Self {
+        Self { inner: Vocabulary::from((hint, value.into_iter().map(|value| value.into()).collect::<Vec<_>>())) }
+    }
+}
+
+impl From<Vocabulary<String>> for PyVocabulary {
     #[inline(always)]
-    fn from(inner: VocabularyImpl<String>) -> Self {
+    fn from(inner: Vocabulary<String>) -> Self {
         Self { inner }
     }
 }
@@ -279,13 +310,13 @@ impl PyVocIter {
 
 #[pyfunction]
 pub fn topic_specific_vocabulary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
-    create_topic_model_specific_dictionary(dictionary, vocabulary).into()
+    create_topic_model_specific_dictionary(dictionary, vocabulary)
 }
 
 pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVocabulary>()?;
     m.add_class::<PyVocIter>()?;
-    m.add_class::<LanguageHint>()?;
+    register_py_language_hint(m)?;
     m.add_function(wrap_pyfunction!(topic_specific_vocabulary, m)?)?;
     Ok(())
 }

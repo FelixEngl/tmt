@@ -9,10 +9,11 @@ use crate::voting::{VotingMethod, VotingMethodMarker, VotingResult, VotingWithLi
 use crate::voting::aggregations::{Aggregation, AggregationError};
 use crate::voting::aggregations::AggregationType::{AvgOf, GAvgOf, SumOf};
 use crate::voting::display::{DisplayTree, IndentWriter};
-use crate::voting::traits::LimitableVotingMethodMarker;
+use crate::voting::traits::{LimitableVotingMethodMarker, RootVotingMethodMarker};
 use crate::voting::VotingExpressionError::{Eval, NoValue};
-use pyo3::{pyclass, pymethods, PyResult};
+use pyo3::{Bound, pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::voting::PyVoting;
 use crate::voting::parser::InterpretedVoting::Limited;
@@ -71,8 +72,19 @@ impl BuildInVoting {
             Err(PyValueError::new_err("Limit has to be greater than 0!".to_string()))
         }
     }
+
+    pub fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[staticmethod]
+    #[pyo3(name="from_string")]
+    pub fn from_string_py(s: &str) -> PyResult<Self> {
+        s.try_into().map_err(|value: strum::ParseError| PyValueError::new_err(value.to_string()))
+    }
 }
 
+impl RootVotingMethodMarker for BuildInVoting {}
 impl LimitableVotingMethodMarker for BuildInVoting {}
 impl VotingMethodMarker for BuildInVoting {}
 impl VotingMethod for BuildInVoting {
@@ -219,7 +231,7 @@ impl VotingMethod for BuildInVoting {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
                 let trans = SumOf.calculate(calculated.iter().copied())?;
-                let trans_avg = SumOf.calculate(calculated.into_iter())?;
+                let trans_avg = AvgOf.calculate(calculated.into_iter())?;
                 let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
                 Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
             }
@@ -243,7 +255,7 @@ impl VotingMethod for BuildInVoting {
                 let trans = SumOf.calculate(calculated.iter().map(|value| value.ln()))?;
                 let trans_avg = AvgOf.calculate(calculated.into_iter())?;
                 let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
-                Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
+                Ok(((trans + trans_avg.ln()) / (n_voters + 1) as f64).exp().into())
             }
             BuildInVoting::PCombSum => {
                 if voters.is_empty() {
@@ -272,4 +284,9 @@ impl DisplayTree for BuildInVoting {
         let s: &str = self.into();
         write!(f, "{s}")
     }
+}
+
+pub(crate) fn register_py_voting_buildin(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<BuildInVoting>()?;
+    Ok(())
 }

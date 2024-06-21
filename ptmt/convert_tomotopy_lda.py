@@ -1,4 +1,4 @@
-from .ldatranslate import PyTopicModel, PyVocabulary, LanguageHint
+from .ptmt import PyTopicModel, PyVocabulary, LanguageHint
 from typing import Protocol, Iterable, Any
 
 

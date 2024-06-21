@@ -35,7 +35,7 @@ use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite};
 use crate::topicmodel::io::TopicModelIOError::PathNotFound;
 use crate::topicmodel::math::{dirichlet_expectation_1d, dirichlet_expectation_2d, dot, transpose};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, Vocabulary, VocabularyImpl, VocabularyMut};
+use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut};
 
 
 pub(crate) type TopicTo<T> = Vec<T>;
@@ -368,7 +368,7 @@ pub trait TopicModelWithDocumentStats {
 }
 
 /// A basic topic model with a vocabulary
-pub trait BasicTopicModelWithVocabulary<T, Voc>: BasicTopicModel where Voc: Vocabulary<T> {
+pub trait BasicTopicModelWithVocabulary<T, Voc>: BasicTopicModel where Voc: BasicVocabulary<T> {
     /// The vocabulary
     fn vocabulary(&self) -> &Voc;
 
@@ -404,7 +404,7 @@ pub trait BasicTopicModelWithVocabulary<T, Voc>: BasicTopicModel where Voc: Voca
 }
 
 /// A topic model with an explicit vocabulary
-pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where Voc: Vocabulary<T> {
+pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where Voc: BasicVocabulary<T> {
     fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<WordId> where T: Borrow<Q>, Q: Hash + Eq;
     fn contains<Q: ?Sized>(&self, word: &Q) -> bool where T: Borrow<Q>, Q: Hash + Eq;
 
@@ -444,12 +444,12 @@ pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc
         where
             T: Borrow<Q>,
             Q: Hash + Eq + Borrow<T>,
-            VOther: Vocabulary<Q>
+            VOther: BasicVocabulary<Q>
     ;
 }
 
 /// A topic model that allows basic show methods
-pub trait DisplayableTopicModel<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where T: Display, Voc: Vocabulary<T> + Display {
+pub trait DisplayableTopicModel<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where T: Display, Voc: BasicVocabulary<T> + Display {
     fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
         for (topic_id, topic_entries) in self.get_n_best_for_topics(n).ok_or(io::Error::from(ErrorKind::Other))?.iter().enumerate() {
             if topic_id != 0 {
@@ -478,7 +478,7 @@ pub trait DisplayableTopicModel<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> w
 
 impl<TopicModel, T, Voc> DisplayableTopicModel<T, Voc> for TopicModel
     where TopicModel: BasicTopicModelWithVocabulary<T, Voc>,
-          T:Display, Voc: Vocabulary<T> + Display
+          T:Display, Voc: BasicVocabulary<T> + Display
 {}
 
 /// A topic model
@@ -539,29 +539,29 @@ impl<T, V> TopicModel<T, V> where
         }
     }
 
-    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &impl Vocabulary<T>) -> TopicTo<TopicMeta> {
-        struct SortHelper<'a, Q, V> where V: Vocabulary<Q> {
+    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &impl BasicVocabulary<T>) -> TopicTo<TopicMeta> {
+        struct SortHelper<'a, Q, V> where V: BasicVocabulary<Q> {
             word_id: WordId,
             probability: Probability,
             vocabulary: &'a V,
             _word_type: PhantomData<Q>,
         }
 
-        impl<'a, Q, V> SortHelper<'a, Q, V> where Q: Hash + Eq, V: Vocabulary<Q> {
+        impl<'a, Q, V> SortHelper<'a, Q, V> where Q: Hash + Eq, V: BasicVocabulary<Q> {
             fn word(&self) -> &HashRef<Q> {
                 self.vocabulary.get_value(self.word_id).expect("There should be no problem with enpacking it here!")
             }
         }
 
-        impl<Q, V> Eq for SortHelper<'_, Q, V> where V: Vocabulary<Q> {}
+        impl<Q, V> Eq for SortHelper<'_, Q, V> where V: BasicVocabulary<Q> {}
 
-        impl<Q, V> PartialEq<Self> for SortHelper<'_, Q, V> where V: Vocabulary<Q> {
+        impl<Q, V> PartialEq<Self> for SortHelper<'_, Q, V> where V: BasicVocabulary<Q> {
             fn eq(&self, other: &Self) -> bool {
                 self.probability.eq(&other.probability)
             }
         }
 
-        impl<Q, V> PartialOrd for SortHelper<'_, Q, V> where Q: Hash + Eq + Ord, V: Vocabulary<Q> {
+        impl<Q, V> PartialOrd for SortHelper<'_, Q, V> where Q: Hash + Eq + Ord, V: BasicVocabulary<Q> {
             fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
                 match self.probability.partial_cmp(&other.probability) {
                     None => {
@@ -589,7 +589,7 @@ impl<T, V> TopicModel<T, V> where
             }
         }
 
-        impl<Q, V> Ord for SortHelper<'_, Q, V> where Q: Hash + Eq + Ord, V: Vocabulary<Q> {
+        impl<Q, V> Ord for SortHelper<'_, Q, V> where Q: Hash + Eq + Ord, V: BasicVocabulary<Q> {
             fn cmp(&self, other: &Self) -> Ordering {
                 self.partial_cmp(other).unwrap()
             }
@@ -759,7 +759,7 @@ impl<T, V> TopicModel<T, V> {
     }
 }
 
-impl<T, V> BasicTopicModel for TopicModel<T, V> where V: Vocabulary<T> {
+impl<T, V> BasicTopicModel for TopicModel<T, V> where V: BasicVocabulary<T> {
     fn topic_count(&self) -> usize {
         self.topics.len()
     }
@@ -850,7 +850,7 @@ impl<T, V> BasicTopicModel for TopicModel<T, V> where V: Vocabulary<T> {
     }
 }
 
-impl<T, V> BasicTopicModelWithVocabulary<T, V> for TopicModel<T, V> where V: Vocabulary<T> {
+impl<T, V> BasicTopicModelWithVocabulary<T, V> for TopicModel<T, V> where V: BasicVocabulary<T> {
     fn vocabulary(&self) -> &V {
         &self.vocabulary
     }
@@ -883,7 +883,7 @@ impl<T, V> TopicModelWithVocabulary<T, V> for TopicModel<T, V> where T: Hash + E
     fn seems_equal_to<Q, Voc>(&self, other: &impl TopicModelWithVocabulary<Q, Voc>) -> bool
         where T: Borrow<Q>,
               Q: Hash + Eq + Borrow<T>,
-              Voc: Vocabulary<Q>
+              Voc: BasicVocabulary<Q>
     {
         self.topic_count() == other.topic_count()
             && self.vocabulary_size() == other.vocabulary_size()
@@ -932,7 +932,7 @@ impl<T, V> TopicModelWithDocumentStats for TopicModel<T, V> {
     }
 }
 
-impl<T: Display, V> TopicModel<T, V> where V: Vocabulary<T> {
+impl<T: Display, V> TopicModel<T, V> where V: BasicVocabulary<T> {
 
     pub fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
         for (topic_id, topic_entries) in self.get_n_best_for_topics(n).ok_or(io::Error::from(ErrorKind::Other))?.iter().enumerate() {
@@ -960,7 +960,7 @@ impl<T: Display, V> TopicModel<T, V> where V: Vocabulary<T> {
     }
 }
 
-impl<T: Display, V> Display for TopicModel<T, V> where V: Display + Vocabulary<T> {
+impl<T: Display, V> Display for TopicModel<T, V> where V: Display + BasicVocabulary<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("Topic Model:")?;
         for (topic_id, topic) in self.topics.iter().enumerate() {
@@ -973,7 +973,7 @@ impl<T: Display, V> Display for TopicModel<T, V> where V: Display + Vocabulary<T
     }
 }
 
-impl TopicModel<String, VocabularyImpl<String>> {
+impl TopicModel<String, Vocabulary<String>> {
     pub fn load_string_model(path: impl AsRef<Path>, allow_unfinished: bool) -> Result<(Self, TopicModelVersion), ReadError<Infallible>> {
         Self::load(path, allow_unfinished)
     }
@@ -1166,12 +1166,12 @@ impl<T: ToParseableString, V> TopicModel<T, V> where V: StoreableVocabulary<T> {
     }
 }
 
-pub trait MappableTopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> + From<Vec<T>> {
-    fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: From<Vec<T>>;
+pub trait MappableTopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> {
+    fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: BasicVocabulary<T>;
 }
 
-impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> + From<Vec<T>>  {
-    fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: From<Vec<T>> {
+impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T>  {
+    fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: BasicVocabulary<T> {
         TopicModel {
             vocabulary: self.vocabulary.map(|value| value.clone()),
             document_lengths: self.document_lengths,
@@ -1192,14 +1192,14 @@ pub enum WordIdOrUnknown<T> {
 }
 
 
-pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: Vocabulary<T> {
+pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
     topic_model: &'a Model,
     alpha: f64,
     gamma_threshold: f64,
     _word_type: PhantomData<(T, V)>
 }
 
-impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: Vocabulary<T> {
+impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
     pub fn new(topic_model: &'a Model, alpha: f64, gamma_threshold: f64) -> Self {
         Self { topic_model, alpha, gamma_threshold, _word_type: PhantomData }
     }
@@ -1395,11 +1395,11 @@ mod test {
     use itertools::{assert_equal, Itertools};
     use crate::topicmodel::enums::TopicModelVersion;
     use crate::topicmodel::topic_model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
-    use crate::topicmodel::vocabulary::{StringVocabulary, VocabularyImpl, VocabularyMut};
+    use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary, VocabularyMut};
 
 
-    pub fn create_test_data() -> TopicModel<String, VocabularyImpl<String>> {
-        let mut voc: StringVocabulary = VocabularyImpl::default();
+    pub fn create_test_data() -> TopicModel<String, Vocabulary<String>> {
+        let mut voc: StringVocabulary = Vocabulary::default();
         voc.add("plane");
         voc.add("aircraft");
         voc.add("airplane");
@@ -1436,7 +1436,7 @@ mod test {
 
         let ser = serde_json::to_string_pretty(&topic_model).unwrap();
         println!("{}", ser);
-        let topic: TopicModel<String, VocabularyImpl<String>> = serde_json::from_str(&ser).unwrap();
+        let topic: TopicModel<String, Vocabulary<String>> = serde_json::from_str(&ser).unwrap();
 
         for (a, b) in topic_model.topic_metas.iter().zip_eq(topic.topic_metas.iter()) {
             assert_equal(a.by_words.clone(), b.by_words.clone());
@@ -1452,7 +1452,7 @@ mod test {
         let topic_model = create_test_data();
 
         let ser = bincode::serialize(&topic_model).unwrap();
-        let topic: TopicModel<String, VocabularyImpl<String>> = bincode::deserialize(&ser).unwrap();
+        let topic: TopicModel<String, Vocabulary<String>> = bincode::deserialize(&ser).unwrap();
 
         for (a, b) in topic_model.topic_metas.iter().zip_eq(topic.topic_metas.iter()) {
             assert_equal(a.by_words.clone(), b.by_words.clone());

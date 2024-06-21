@@ -18,7 +18,7 @@ use crate::topicmodel;
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, TopicId, TopicMeta, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId, WordMeta, WordMetaWithWord};
-use crate::topicmodel::vocabulary::{Vocabulary};
+use crate::topicmodel::vocabulary::{BasicVocabulary};
 
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -258,7 +258,7 @@ impl TopicModelWithVocabulary<String, PyVocabulary> for PyTopicModel {
             fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Arc<WordMeta>> where String: Borrow<Q>, Q: Hash + Eq;
             fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, HashRef<String>>>> where String: Borrow<Q>, Q: Hash + Eq, PyVocabulary: 'a;
             fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Vec<Arc<WordMeta>>> where String: Borrow<Q>, Q: Hash + Eq;
-            fn seems_equal_to<Q, VOther>(&self, other: &impl TopicModelWithVocabulary<Q, VOther>) -> bool where String: Borrow<Q>,Q: Hash + Eq + Borrow<String>, VOther: Vocabulary<Q>;
+            fn seems_equal_to<Q, VOther>(&self, other: &impl TopicModelWithVocabulary<Q, VOther>) -> bool where String: Borrow<Q>,Q: Hash + Eq + Borrow<String>, VOther: BasicVocabulary<Q>;
         }
     }
 }

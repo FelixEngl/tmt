@@ -5,15 +5,16 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use once_cell::sync::OnceCell;
-use pyo3::{pyclass, pymethods};
+use pyo3::{Bound, pyclass, pymethods, PyResult};
 use serde::{Deserialize, Deserializer, Serialize};
 use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
-use crate::topicmodel::vocabulary::{Vocabulary, VocabularyImpl, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 use string_interner::{DefaultStringInterner, DefaultSymbol as InternedString, DefaultSymbol, Symbol};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Language};
 #[allow(unused_imports)]
 use crate::toolkit::once_cell_serializer;
 use itertools::Itertools;
+use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::de::{Error, Unexpected, Visitor};
 use string_interner::symbol::SymbolU32;
 
@@ -24,7 +25,7 @@ pub struct MetadataContainer {
     pub(in crate::topicmodel::dictionary) meta_b: Vec<Metadata>,
     pub(in crate::topicmodel::dictionary) dictionary_interner: DefaultStringInterner,
     pub(in crate::topicmodel::dictionary) tag_interner: DefaultStringInterner,
-    pub(in crate::topicmodel::dictionary) unstemmed_voc: VocabularyImpl<String>,
+    pub(in crate::topicmodel::dictionary) unstemmed_voc: Vocabulary<String>,
 }
 
 impl MetadataContainer {
@@ -65,11 +66,11 @@ impl MetadataContainer {
         &mut self.tag_interner
     }
 
-    pub fn get_unstemmed_voc(&self) -> &VocabularyImpl<String> {
+    pub fn get_unstemmed_voc(&self) -> &Vocabulary<String> {
         &self.unstemmed_voc
     }
 
-    pub fn get_unstemmed_voc_mut(&mut self) -> &mut VocabularyImpl<String> {
+    pub fn get_unstemmed_voc_mut(&mut self) -> &mut Vocabulary<String> {
         &mut self.unstemmed_voc
     }
 
@@ -238,7 +239,7 @@ impl<'a, D, T, V> MetadataContainerWithDict<'a, D, T, V> {
     }
 }
 
-impl<'a, D, T, V> MetadataContainerWithDict<'a, D, T, V> where D: BasicDictionaryWithMeta + BasicDictionaryWithVocabulary<T, V> {
+impl<'a, D, T, V> MetadataContainerWithDict<'a, D, T, V> where D: BasicDictionaryWithMeta + BasicDictionaryWithVocabulary<V> {
     pub fn wrap(target: &'a D) -> Self {
         let ptr = target as *const D;
         Self::new(
@@ -256,7 +257,7 @@ impl<D, T, V> Deref for MetadataContainerWithDict<'_, D, T, V> {
     }
 }
 
-impl<D, T, V> Display for MetadataContainerWithDict<'_, D, T, V> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T>, T: Display {
+impl<D, T, V> Display for MetadataContainerWithDict<'_, D, T, V> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T>, T: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Metadata A:\n")?;
         if self.meta_a.is_empty() {
@@ -314,7 +315,7 @@ impl<'a, D, T, V> MetadataContainerWithDictMut<'a, D, T, V> {
     }
 }
 
-impl<'a, D, T, V> MetadataContainerWithDictMut<'a, D, T, V> where D: BasicDictionaryWithMeta + BasicDictionaryWithVocabulary<T, V> {
+impl<'a, D, T, V> MetadataContainerWithDictMut<'a, D, T, V> where D: BasicDictionaryWithMeta + BasicDictionaryWithVocabulary<V> {
     pub fn wrap(target: &'a mut D) -> Self {
         let ptr = target as *mut D;
         Self::new(
@@ -339,7 +340,7 @@ impl<D, T, V> DerefMut for MetadataContainerWithDictMut<'_, D, T, V> {
 }
 
 
-impl<D, T, V> Display for MetadataContainerWithDictMut<'_, D, T, V> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T>, T: Display {
+impl<D, T, V> Display for MetadataContainerWithDictMut<'_, D, T, V> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T>, T: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Metadata A:\n")?;
         if self.meta_a.is_empty() {
@@ -940,6 +941,11 @@ impl Display for MetadataRef<'_> {
         };
         write!(f, "MetadataRef{{[{a}], [{b}], [{c}]}}")
     }
+}
+
+pub(crate) fn register_py_metadata(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<SolvedMetadata>()?;
+    Ok(())
 }
 
 #[cfg(test)]

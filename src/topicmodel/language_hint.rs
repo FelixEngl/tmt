@@ -3,7 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{Deref};
 use std::str::FromStr;
-use pyo3::{pyclass, pymethods};
+use pyo3::{Bound, pyclass, pymethods, PyResult};
+use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 
 #[pyclass(frozen)]
@@ -67,6 +68,11 @@ impl Deref for LanguageHint {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+pub(crate) fn register_py_language_hint(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<LanguageHint>()?;
+    Ok(())
 }
 
 #[cfg(test)]

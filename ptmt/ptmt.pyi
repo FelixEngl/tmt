@@ -6,17 +6,17 @@ from typing import Optional, Iterator, Callable, Protocol
 
 
 class DirectionKind(Enum):
-    pass
+    AToB: DirectionKind
+    BToA: DirectionKind
+    Invariant: DirectionKind
 
 class LanguageKind(Enum):
-    pass
+    A: LanguageKind
+    B: LanguageKind
 
 
 class LanguageHint:
-    def __init__(self, language: None | str):...
-    @property
-    def is_set(self) -> bool:...
-    def __bool__(self) -> bool:...
+    def __init__(self, language: str):...
     def __eq__(self, other) -> bool:...
     def __hash__(self) -> int:...
     def __repr__(self) -> str:...
@@ -31,6 +31,7 @@ class SolvedMetadata:
     @property
     def unstemmed(self) -> None | list[tuple[str, list[str]]]:...
     def __str__(self):...
+    def __repr__(self):...
 
 
 class PyVocabulary:
@@ -235,6 +236,11 @@ class BuildInVoting(Enum):
     PCombSum: BuildInVoting
 
     def limit(self, limit: int) -> PyVoting:...
+
+    def __str__(self) -> str:...
+
+    @staticmethod
+    def from_string(value: str) -> KeepOriginalWord:...
 
 
 class PyTranslationConfig:

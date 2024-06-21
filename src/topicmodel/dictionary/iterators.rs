@@ -6,11 +6,11 @@ use std::slice::Iter;
 use itertools::{Itertools, Unique};
 use strum::EnumIs;
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryWithVocabulary};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
 use crate::topicmodel::dictionary::metadata::{MetadataRef, SolvedMetadata};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::Vocabulary;
+use crate::topicmodel::vocabulary::BasicVocabulary;
 
 
 
@@ -20,7 +20,7 @@ pub struct DictLangIter<'a, T, L, D: ?Sized, V> where L: Language {
     _language: PhantomData<(L, V)>
 }
 
-impl<'a, T, L, D: ?Sized, V> DictLangIter<'a, T, L, D, V> where L: Language, V: Vocabulary<T> + 'a, D: BasicDictionaryWithVocabulary<T, V> {
+impl<'a, T, L, D: ?Sized, V> DictLangIter<'a, T, L, D, V> where L: Language, V: BasicVocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
     pub(in crate::topicmodel::dictionary) fn new(dict: &'a D) -> Self {
         Self {
             iter: if L::DIRECTION.is_a_to_b() {
@@ -34,7 +34,7 @@ impl<'a, T, L, D: ?Sized, V> DictLangIter<'a, T, L, D, V> where L: Language, V: 
     }
 }
 
-impl<'a, T, L, D, V> Iterator for DictLangIter<'a, T, L, D, V> where L: Language, V: Vocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
+impl<'a, T, L, D, V> Iterator for DictLangIter<'a, T, L, D, V> where L: Language, V: BasicVocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
     type Item = (usize, &'a HashRef<T>, Option<Vec<(usize, &'a HashRef<T>)>>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -116,7 +116,7 @@ impl DictionaryIteratorPointerState {
 }
 
 /// Iterates over all mappings (a to b and b to a).
-pub struct DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+pub struct DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
     pos: usize,
     index: usize,
     state: DictionaryIteratorPointerState,
@@ -125,7 +125,7 @@ pub struct DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, 
     _types: PhantomData<fn(T, V)->()>
 }
 
-impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
     pub(in crate::topicmodel::dictionary) fn new(inner: D) -> Self {
         let mut new = Self {
             pos: 0,
@@ -207,7 +207,7 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
     }
 }
 
-impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
     type Item = DirectionTuple<(usize, HashRef<T>), (usize, HashRef<T>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -235,7 +235,7 @@ impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWi
 
 pub type DictionaryIterator<T, V> = Unique<DictionaryIteratorImpl<T, V, Dictionary<T, V>>>;
 
-impl<T, V> IntoIterator for Dictionary<T, V> where V: Vocabulary<T>, T: Eq + Hash {
+impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq + Hash {
     type Item = DirectionTuple<(usize, HashRef<T>), (usize, HashRef<T>)>;
     type IntoIter = DictionaryIterator<T, V>;
 
@@ -245,11 +245,11 @@ impl<T, V> IntoIterator for Dictionary<T, V> where V: Vocabulary<T>, T: Eq + Has
 }
 
 
-pub struct DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+pub struct DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
     inner: DictionaryIteratorImpl<T, V, D>
 }
 
-impl<D, T, V> DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: Vocabulary<T>  {
+impl<D, T, V> DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T>  {
     pub fn new(inner: D) -> Self {
         Self {
             inner: DictionaryIteratorImpl::new(inner)
@@ -261,7 +261,7 @@ impl<D, T, V> DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMe
     }
 }
 
-impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: Vocabulary<T> {
+impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
     type Item = DirectionTuple<(usize, HashRef<T>, Option<SolvedMetadata>), (usize, HashRef<T>, Option<SolvedMetadata>)>;
 
     fn next(&mut self) -> Option<Self::Item> {

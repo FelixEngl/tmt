@@ -177,7 +177,7 @@ impl PyContextWithMutableVariables {
     }
 }
 
-pub(crate) fn voting_filter_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub(crate) fn register_py_voting_filters(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyContextWithMutableVariables>()?;
     Ok(())
 }

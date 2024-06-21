@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash};
-use pyo3::pyclass;
+use pyo3::prelude::{PyModule, PyModuleMethods};
+use pyo3::{Bound, pyclass, PyResult};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs, EnumString, IntoStaticStr};
 
@@ -167,4 +168,11 @@ pub struct Invariant;
 impl private::Sealed for Invariant {}
 impl Direction for Invariant {
     const DIRECTION: DirectionKind = DirectionKind::Invariant;
+}
+
+
+pub(crate) fn register_py_directions(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<DirectionKind>()?;
+    m.add_class::<LanguageKind>()?;
+    Ok(())
 }

@@ -1,3 +1,6 @@
+use pyo3::{PyResult};
+use pyo3::prelude::*;
+
 macro_rules! declare_variable_names_internal {
     ($variable_name: ident: $name: literal) => {
         pub const $variable_name: &str = $name;
@@ -42,6 +45,26 @@ macro_rules! declare_alts {
 
 }
 
+macro_rules! declare_py_module {
+    ($module: ident, $variable_name: ident: $name: literal) => {
+        $module.add(stringify!($variable_name), $name)?;
+    };
+
+    ($module: ident, doc = $doc: literal $variable_name: ident: $name: literal) => {
+        $module.add(stringify!($variable_name), $name)?;
+    };
+
+    ($module: ident, $variable_name: ident: $name: literal, $($tt:tt)+) => {
+        declare_py_module!($module, $variable_name: $name);
+        declare_py_module!($module, $($tt)+);
+    };
+
+    ($module: ident, doc = $doc: literal $variable_name: ident: $name: literal, $($tt:tt)+) => {
+        declare_py_module!($module, $variable_name: $name, $($tt)+);
+    };
+}
+
+
 macro_rules! declare_variable_names {
     ($variable_name: ident: $name: literal, $($tt:tt)*) => {
         declare_variable_names_internal!($variable_name: $name, $($tt)+);
@@ -51,6 +74,12 @@ macro_rules! declare_variable_names {
                 nom::character::complete::multispace0,
                 declare_alts!($variable_name: $name, $($tt)+)
             )(input)
+        }
+
+        pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+            let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+            declare_py_module!(submodule, $variable_name: $name, $($tt)+);
+            m.add_submodule(&submodule)
         }
     };
 
@@ -62,6 +91,12 @@ macro_rules! declare_variable_names {
                 nom::character::complete::multispace0,
                 declare_alts!($variable_name: $name, $($tt)+)
             )(input)
+        }
+
+        pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+            let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+            declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
+            m.add_submodule(&submodule)
         }
     };
 }
@@ -94,6 +129,8 @@ declare_variable_names! {
     SCORE_CANDIDATE: "score_candidate",
     doc = "The reciprocal rank of the word."
     RECIPROCAL_RANK: "rr",
+    doc = "The real reciprocal rank of the word."
+    REAL_RECIPROCAL_RANK: "rr_real",
     doc = "The rank of the word."
     RANK: "rank",
     doc = "The importance rank of the word."
@@ -107,3 +144,5 @@ declare_variable_names! {
     doc = "The topic id."
     TOPIC_ID: "topic_id"
 }
+
+

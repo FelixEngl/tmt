@@ -5,10 +5,10 @@ use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut, VariableProviderResult};
 use crate::py::dictionary::PyDictionary;
 use crate::py::topic_model::PyTopicModel;
-use crate::topicmodel::dictionary::{DictionaryMut};
+use crate::topicmodel::dictionary::DictionaryWithVocabulary;
 use crate::topicmodel::dictionary::direction::AToB;
 use crate::topicmodel::topic_model::{BasicTopicModel};
-use crate::topicmodel::vocabulary::Vocabulary;
+use crate::topicmodel::vocabulary::BasicVocabulary;
 
 
 #[derive(FromPyObject)]
