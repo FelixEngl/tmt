@@ -675,7 +675,7 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
 
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use std::num::NonZeroUsize;
     use crate::topicmodel::dictionary::{Dictionary, DictionaryMut};
     use crate::topicmodel::dictionary::direction::Invariant;
@@ -687,9 +687,7 @@ mod test {
     use Extend;
     use crate::voting::BuildInVoting;
 
-    #[test]
-    fn test_complete_translation(){
-
+    pub fn create_test_data() -> (Vocabulary<String>, Vocabulary<String>, Dictionary<String, Vocabulary<String>>){
         let mut voc_a = Vocabulary::<String>::default();
         voc_a.extend(vec![
             "plane".to_string(),
@@ -750,6 +748,13 @@ mod test {
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+
+        (voc_a, voc_b, dict)
+    }
+
+    #[test]
+    fn test_complete_translation(){
+        let (voc_a, _, dict) = create_test_data();
 
         let model_a = TopicModel::new(
             vec![

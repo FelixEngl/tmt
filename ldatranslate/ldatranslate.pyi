@@ -156,7 +156,13 @@ class PyTopicModel:
     def get_doc_probability(self, doc: list[str], alpha: float, gamma_threshold: float,
                             minimum_probability: None | float = None,
                             minimum_phi_value: None | float = None,
-                            per_word_topics: None | bool = None) -> tuple[list[tuple[int, float]], None | list[tuple[int, list[int]]], None | list[tuple[int, list[tuple[int, float]]]]]: ...
+                            per_word_topics: None | bool = None) -> tuple[list[tuple[int, float]], None | list[tuple[int, list[int]]], None | list[tuple[int, list[tuple[int, float]]]]]:
+        """
+        Returns a tuple containing:
+            0: A list of TopicId to Probability tuples,
+            1:
+        """
+        ...
 
     def vocabulary(self) -> PyVocabulary: ...
 
@@ -272,7 +278,9 @@ class VotingFunction(Protocol):
     """Defines the format of the voting function"""
     def __call__(self, global_context: PyContextWithMutableVariables, voters: list[PyContextWithMutableVariables]) -> PyExprValue:
         ...
-def topic_specific_vocabulary(dictionary: PyDictionary, vocabulary: PyVocabulary) -> PyDictionary: ...
+def topic_specific_vocabulary(dictionary: PyDictionary, vocabulary: PyVocabulary) -> PyDictionary:
+    """Not needed for translation"""
+    ...
 
 def translate_topic_model(
         topic_model: PyTopicModel,

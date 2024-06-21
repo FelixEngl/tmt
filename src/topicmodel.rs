@@ -68,37 +68,43 @@ pub fn create_topic_model_specific_dictionary<D2, D1, T, V1, V2>(
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::{create_topic_model_specific_dictionary};
-    use crate::{dict, voc};
-    use crate::topicmodel::dictionary::Dictionary;
-    use crate::topicmodel::vocabulary::Vocabulary;
+    use crate::topicmodel::create_topic_model_specific_dictionary;
+    use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable};
+    use crate::topicmodel::reference::HashRef;
+    use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary};
 
     #[test]
     fn can_transfer(){
 
-        let voc_a = voc![
-            for "de":
-            "hallo", "welt", "bier"
-        ];
+        let (voc_a, _, dict) = crate::translate::test::create_test_data();
 
-        let dictionary = dict! {
-            for "de", "en":
-            "hallo" : "hello"
-            "hallo" : "hi"
-            "welt" : "world"
-            "erde" : "world"
-            "katze" : "cat"
-            "kadse" : "cat"
-        };
+        for (a, b) in voc_a.iter().zip(dict.voc_a().iter()) {
+            assert_eq!(a.clone(), b.clone())
+        }
 
-
-        let dict = create_topic_model_specific_dictionary::<Dictionary<_, Vocabulary<_>>, _,_,_,_>(
-            &dictionary,
-            &voc_a,
+        let voc = voc_a.filter_by_value(
+            |a| {
+                a.eq(&HashRef::new("plane".to_string())) || a.eq(&HashRef::new("aircraft".to_string()))
+            }
+        );
+        println!("{dict}\n------\n");
+        let dict = dict.filter_by_values(
+            |_| true,
+            |b| !b.eq(&HashRef::new("Ebene".to_string()))
         );
 
-        println!("{:?}", dictionary);
-        println!("{:?}", dict);
+        let d: Dictionary<_, Vocabulary<_>> = create_topic_model_specific_dictionary(
+            &dict,
+            &voc
+        );
+
+        println!("{voc}\n------\n");
+        println!("{dict}\n------\n");
+        println!("{d}");
+
+        for (a, b) in voc.iter().zip(d.voc_a().iter()) {
+            assert_eq!(a.clone(), b.clone())
+        }
 
         // println!("{}", dict);
     }

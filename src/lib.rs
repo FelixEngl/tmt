@@ -14,6 +14,6 @@ mod external_variable_provider;
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
 #[pymodule]
-pub fn ptmt(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn ldatranslate(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_modules(m)
 }
