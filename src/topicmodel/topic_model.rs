@@ -1335,7 +1335,7 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
                 for _ in 0..iterations {
                     let last_gamma = std::mem::replace(
                         &mut gamma_d,
-                        calculate_gamma_d(self.alpha, &exp_e_log_theta_d, &exp_e_log_beta_d, &cts, &phinorm)
+                        calculate_gamma_d(&self.alpha, &exp_e_log_theta_d, &exp_e_log_beta_d, &cts, &phinorm)
                     );
                     exp_e_log_theta_d = dirichlet_expectation_1d(&gamma_d).map(|value| value.exp()).collect();
                     phinorm = dot(&exp_e_log_theta_d, &exp_e_log_beta_d).map(|value| value + f64::EPSILON).collect();
