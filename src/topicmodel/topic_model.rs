@@ -20,6 +20,7 @@ use approx::relative_eq;
 
 use flate2::Compression;
 use itertools::{Itertools, multiunzip, multizip};
+use pyo3::FromPyObject;
 use rand::thread_rng;
 use rand_distr::Distribution;
 use rayon::prelude::*;
@@ -1191,16 +1192,22 @@ pub enum WordIdOrUnknown<T> {
     Unknown(T)
 }
 
+#[derive(FromPyObject)]
+pub enum SingleOrList {
+    Single(f64),
+    List(Vec<f64>)
+}
+
 
 pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
     topic_model: &'a Model,
-    alpha: f64,
+    alpha: SingleOrList,
     gamma_threshold: f64,
     _word_type: PhantomData<(T, V)>
 }
 
 impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
-    pub fn new(topic_model: &'a Model, alpha: f64, gamma_threshold: f64) -> Self {
+    pub fn new(topic_model: &'a Model, alpha: SingleOrList, gamma_threshold: f64) -> Self {
         Self { topic_model, alpha, gamma_threshold, _word_type: PhantomData }
     }
 }
@@ -1268,10 +1275,20 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
             dot(exp_e_log_theta_d, exp_e_log_beta_d).map(|value| value + f64::EPSILON).collect_vec()
         }
 
-        fn calculate_gamma_d(alpha: f64, exp_e_log_theta_d: &Vec<f64>, exp_e_log_beta_d: &Vec<Vec<f64>>, counts: &Vec<usize>, phinorm: &Vec<f64>) -> Vec<f64> {
+        fn calculate_gamma_d(alpha: &SingleOrList, exp_e_log_theta_d: &Vec<f64>, exp_e_log_beta_d: &Vec<Vec<f64>>, counts: &Vec<usize>, phinorm: &Vec<f64>) -> Vec<f64> {
             let a = counts.iter().zip_eq(phinorm.iter()).map(|(ct, phi)| *ct as f64 / phi).collect_vec();
             let b = transpose(exp_e_log_beta_d).collect_vec();
-            dot(&a, &b).zip_eq(exp_e_log_theta_d.iter()).map(|(dot, theta)| dot * theta + alpha).collect()
+
+            match alpha {
+                SingleOrList::Single(alpha) => {
+                    dot(&a, &b).zip_eq(exp_e_log_theta_d.iter()).map(|(dot, theta)| dot * theta + alpha).collect()
+                }
+                SingleOrList::List(value) => {
+                    dot(&a, &b).zip_eq(exp_e_log_theta_d.iter()).zip(value.iter()).map(|((dot, theta), alpha)| dot * theta + alpha).collect()
+                }
+            }
+
+
         }
 
         fn calculate_stats<'a>(exp_e_log_theta_d: &'a Vec<f64>, counts: &Vec<usize>, phinorm: &Vec<f64>) -> Map<Iter<'a, f64>, impl FnMut(&'a f64) -> Vec<f64> + 'a> {

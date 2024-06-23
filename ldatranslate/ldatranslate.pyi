@@ -153,7 +153,7 @@ class PyTopicModel:
 
     def show_top(self, n: int | None = None):...
 
-    def get_doc_probability(self, doc: list[str], alpha: float, gamma_threshold: float,
+    def get_doc_probability(self, doc: list[str], alpha: float | list[float], gamma_threshold: float,
                             minimum_probability: None | float = None,
                             minimum_phi_value: None | float = None,
                             per_word_topics: None | bool = None) -> tuple[list[tuple[int, float]], None | list[tuple[int, list[int]]], None | list[tuple[int, list[tuple[int, float]]]]]:

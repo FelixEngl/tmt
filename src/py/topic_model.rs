@@ -17,7 +17,7 @@ use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel;
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, TopicId, TopicMeta, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId, WordMeta, WordMetaWithWord};
+use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicMeta, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId, WordMeta, WordMetaWithWord};
 use crate::topicmodel::vocabulary::{BasicVocabulary};
 
 #[pyclass]
@@ -31,6 +31,8 @@ impl PyTopicModel {
         Self{inner}
     }
 }
+
+
 
 #[pymethods]
 impl PyTopicModel {
@@ -94,7 +96,7 @@ impl PyTopicModel {
     pub fn get_doc_probability(
         &self,
         doc: Vec<String>,
-        alpha: f64,
+        alpha: SingleOrList,
         gamma_threshold: f64,
         minimum_probability: Option<f64>,
         minimum_phi_value: Option<f64>,
