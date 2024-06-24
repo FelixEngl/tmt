@@ -4,7 +4,7 @@ use std::sync::Arc;
 use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, TupleType, Value};
 use itertools::{FoldWhile, Itertools, Position};
 use crate::toolkit::evalexpr::CombineableContext;
-use crate::voting::{BuildInVoting, VotingExpressionError, VotingMethod, VotingMethodMarker, VotingResult, VotingWithLimit};
+use crate::voting::{BuildInVoting, VotingExpressionError, VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::Aggregation;
 use crate::voting::display::{DisplayTree, IndentWriter};
 use crate::voting::parser::traits::VotingExecutable;
@@ -67,8 +67,8 @@ impl VotingMethodMarker for VotingFunction {}
 impl VotingMethod for VotingFunction {
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
         where
-            A : ContextWithMutableVariables,
-            B : ContextWithMutableVariables
+            A : VotingMethodContext,
+            B : VotingMethodContext
     {
         match self {
             VotingFunction::Single(value, _) => {
@@ -149,8 +149,8 @@ pub enum VotingOperation {
 impl VotingMethod for VotingOperation {
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
         where
-            A : ContextWithMutableVariables,
-            B : ContextWithMutableVariables
+            A : VotingMethodContext,
+            B : VotingMethodContext
     {
         match self {
             VotingOperation::IterScope {
@@ -227,7 +227,7 @@ pub enum VotingExecution {
 impl VotingMethodMarker for VotingExecution {}
 
 impl VotingMethod for VotingExecution {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         match self {
             VotingExecution::BuildIn(value) => {
                 value.execute(global_context, voters)

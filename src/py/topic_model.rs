@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -13,11 +14,13 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use topic_model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
 use topicmodel::topic_model;
+use crate::py::helpers::{HasPickleSupport, PyTopicModelStateValue};
 use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel;
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicMeta, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId, WordMeta, WordMetaWithWord};
+use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
+use crate::topicmodel::topic_model::meta::*;
 use crate::topicmodel::vocabulary::{BasicVocabulary};
 
 #[pyclass]
@@ -150,6 +153,21 @@ impl PyTopicModel {
 
     pub fn normalize(&self) -> Self {
         self.inner.normalize().into()
+    }
+
+    pub fn __getnewargs__(&self) -> (Vec<Vec<f64>>, PyVocabulary, Vec<u64>, Vec<Vec<f64>>, Vec<u64>) {
+        Default::default()
+    }
+
+    pub fn __getstate__(&self) -> HashMap<String, PyTopicModelStateValue> {
+        let result = self.inner.get_py_state();
+        return result.into_iter().map(|(k, value)| (k, value.into())).collect()
+    }
+
+    pub fn __setstate__(&mut self, state: HashMap<String, PyTopicModelStateValue>) -> PyResult<()> {
+        let to_set = state.into_iter().map(|(k, v)| (k, v.into())).collect();
+        self.inner = TopicModel::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
+        Ok(())
     }
 }
 

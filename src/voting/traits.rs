@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::num::NonZeroUsize;
-use evalexpr::{ContextWithMutableVariables, Value};
-use crate::voting::{VotingMethod, VotingResult, VotingWithLimit};
+use evalexpr::{Value};
+use crate::voting::{VotingMethod, VotingMethodContext, VotingResult, VotingWithLimit};
 use crate::voting::display::{DisplayTree, IndentWriter};
 
 pub trait RootVotingMethodMarker: VotingMethodMarker {}
@@ -24,7 +24,7 @@ impl<T> IntoVotingWithLimit for T where T: Sized + LimitableVotingMethodMarker {
 
 
 impl<T> VotingMethod for Box<T> where T: VotingMethodMarker {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         self.as_ref().execute(global_context, voters)
     }
 }

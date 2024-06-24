@@ -5,10 +5,10 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use once_cell::sync::OnceCell;
-use pyo3::{Bound, pyclass, pymethods, PyResult};
+use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pymethods, PyObject, PyResult, Python};
 use serde::{Deserialize, Deserializer, Serialize};
 use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
-use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyFromPyStateError, VocabularyMut};
 use string_interner::{DefaultStringInterner, DefaultSymbol as InternedString, DefaultSymbol, Symbol};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Language};
 #[allow(unused_imports)]
@@ -17,6 +17,44 @@ use itertools::Itertools;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::de::{Error, Unexpected, Visitor};
 use string_interner::symbol::SymbolU32;
+use thiserror::Error;
+use crate::py::helpers::{HasPickleSupport, PyVocabularyStateValue};
+use crate::topicmodel::dictionary::metadata::MetadataContainerPyStateValues::{InternerEntries, Meta, Voc};
+use crate::topicmodel::dictionary::metadata::MetadataFromPyStateError::{InvalidValueEncountered, UnableToDecodeDefaultSymbol};
+use crate::topicmodel::dictionary::metadata::MetadataPyStateValues::{InternedVec, UnstemmedMapping};
+
+#[derive(Debug, FromPyObject, Clone)]
+pub enum MetadataContainerPyStateValues {
+    Voc(HashMap<String, PyVocabularyStateValue>),
+    InternerEntries(Vec<(usize, String)>),
+    Meta(Vec<HashMap<String, MetadataPyStateValues>>)
+}
+
+impl IntoPy<PyObject> for MetadataContainerPyStateValues {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self {
+            Voc(value) => {
+                value.into_py(py)
+            }
+            InternerEntries(value) => {
+                value.into_py(py)
+            }
+            Meta(value) => {
+                value.into_py(py)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum MetadataContainerFromPyStateError {
+    #[error(transparent)]
+    MetadataError(#[from] MetadataFromPyStateError),
+    #[error("Invalid value at {0} for {1:?}!")]
+    InvalidValueEncountered(&'static str, MetadataContainerPyStateValues),
+    #[error(transparent)]
+    VocabularyError(#[from] VocabularyFromPyStateError<String>)
+}
 
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -172,6 +210,100 @@ impl MetadataContainer {
     }
 
 
+}
+
+impl HasPickleSupport for MetadataContainer {
+    type FieldValue = MetadataContainerPyStateValues;
+    type Error = MetadataContainerFromPyStateError;
+
+    fn get_py_state(&self) -> HashMap<String, MetadataContainerPyStateValues> {
+        let mut result = HashMap::with_capacity(5);
+        result.insert("dictionary_interner".to_string(), InternerEntries(self.dictionary_interner.iter().map(|(k, v)| (k.to_usize(), v.to_string())).collect_vec()));
+        result.insert("tag_interner".to_string(), InternerEntries(self.tag_interner.iter().map(|(k, v)| (k.to_usize(), v.to_string())).collect_vec()));
+        result.insert("unstemmed_voc".to_string(), Voc(self.unstemmed_voc.get_py_state().into_iter().map(|(k, v)| (k, v.into())).collect()));
+        result.insert("meta_a".to_string(), Meta(self.meta_a.iter().map(|value| value.get_py_state()).collect_vec()));
+        result.insert("meta_b".to_string(), Meta(self.meta_b.iter().map(|value| value.get_py_state()).collect_vec()));
+        return result
+    }
+
+    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
+        let dictionary_interner = match values.get("dictionary_interner") {
+            None => {None}
+            Some(InternerEntries(value)) => {
+                let interner: DefaultStringInterner = value.iter().map(|value| &value.1).collect();
+                for (a, b) in value {
+                    assert_eq!(
+                        interner.get(b),
+                        DefaultSymbol::try_from_usize(*a)
+                    );
+                }
+                Some(interner)
+            }
+            Some(illegal_value) => {
+                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("dictionary_interner", illegal_value.clone()))
+            }
+        };
+
+        let tag_interner = match values.get("tag_interner") {
+            None => {None}
+            Some(InternerEntries(value)) => {
+                let interner: DefaultStringInterner = value.iter().map(|value| &value.1).collect();
+                for (a, b) in value {
+                    assert_eq!(
+                        interner.get(b),
+                        DefaultSymbol::try_from_usize(*a)
+                    );
+                }
+                Some(interner)
+            }
+            Some(illegal_value) => {
+                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("tag_interner", illegal_value.clone()))
+            }
+        };
+
+        let unstemmed_voc = match values.get("unstemmed_voc") {
+            None => {None}
+            Some(Voc(value)) => {
+                let converted = value.iter().map(|(k,v)| (k.clone(), v.clone().into())).collect();
+                Some(Vocabulary::from_py_state(&converted)?)
+            }
+            Some(illegal_value) => {
+                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("unstemmed_voc", illegal_value.clone()))
+            }
+        };
+
+        let meta_a = match values.get("meta_a") {
+            None => {None}
+            Some(Meta(value)) => {
+                let found = value.iter().map(|value| Metadata::from_py_state(value)).collect::<Result<Vec<_>, _>>()?;
+                Some(found)
+            }
+            Some(illegal_value) => {
+                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("meta_a", illegal_value.clone()))
+            }
+        };
+
+        let meta_b = match values.get("meta_b") {
+            None => {None}
+            Some(Meta(value)) => {
+                let found = value.iter().map(|value| Metadata::from_py_state(value)).collect::<Result<Vec<_>, _>>()?;
+                Some(found)
+            }
+            Some(illegal_value) => {
+                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("meta_b", illegal_value.clone()))
+            }
+        };
+
+        Ok(
+            Self {
+                dictionary_interner: dictionary_interner.unwrap_or_default(),
+                tag_interner: tag_interner.unwrap_or_default(),
+                unstemmed_voc: unstemmed_voc.unwrap_or_default(),
+                meta_a: meta_a.unwrap_or_default(),
+                meta_b: meta_b.unwrap_or_default(),
+            }
+        )
+    }
 }
 
 
@@ -369,6 +501,24 @@ impl<D, T, V> Display for MetadataContainerWithDictMut<'_, D, T, V> where D: Dic
     }
 }
 
+#[derive(Debug, FromPyObject, Clone)]
+pub enum MetadataPyStateValues {
+    InternedVec(Vec<usize>),
+    UnstemmedMapping(HashMap<usize, Vec<usize>>)
+}
+
+impl IntoPy<PyObject> for MetadataPyStateValues {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self {
+            InternedVec(value) => {
+                value.into_py(py)
+            }
+            UnstemmedMapping(value) => {
+                value.into_py(py)
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Metadata {
@@ -379,6 +529,88 @@ pub struct Metadata {
     #[serde(with = "metadata_unstemmed_serializer")]
     pub unstemmed: OnceCell<HashMap<usize, Vec<InternedString>>>,
 }
+
+#[derive(Debug, Error)]
+pub enum MetadataFromPyStateError {
+    #[error("Was not able to decode {0} to a symbol!")]
+    UnableToDecodeDefaultSymbol(usize),
+    #[error("Invalid value at {0} for {1:?}!")]
+    InvalidValueEncountered(&'static str, MetadataPyStateValues)
+}
+
+impl HasPickleSupport for Metadata {
+    type FieldValue = MetadataPyStateValues;
+    type Error = MetadataFromPyStateError;
+
+    fn get_py_state(&self) -> HashMap<String, MetadataPyStateValues> {
+        let mut result = HashMap::with_capacity(3);
+        if let Some(associated_dictionaries) = self.associated_dictionaries.get() {
+            result.insert("associated_dictionaries".to_string(), InternedVec(associated_dictionaries.iter().map(|value| value.to_usize()).collect_vec()));
+        }
+        if let Some(meta_tags) = self.meta_tags.get() {
+            result.insert("meta_tags".to_string(), InternedVec(meta_tags.iter().map(|value| value.to_usize()).collect_vec()));
+        }
+
+        if let Some(unstemmed) = self.unstemmed.get() {
+            result.insert(
+                "unstemmed".to_string(),
+                UnstemmedMapping(
+                    unstemmed
+                        .iter()
+                        .map(|(k, v)| (*k, v.iter().map(|value| value.to_usize()).collect_vec()))
+                        .collect()
+                )
+            );
+        }
+
+        result
+    }
+
+    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
+        let meta = Metadata::default();
+        match values.get("associated_dictionaries") {
+            None => {}
+            Some(InternedVec(value)) => {
+                let symbols = value.iter().map(|value| DefaultSymbol::try_from_usize(*value).ok_or_else(|| UnableToDecodeDefaultSymbol(*value))).collect::<Result<Vec<DefaultSymbol>, _>>()?;
+                meta.associated_dictionaries.set(symbols).expect("The associated dictionary was already set!");
+            }
+            Some(illegal) => {
+                return Err(InvalidValueEncountered("associated_dictionaries", illegal.clone()))
+            }
+        }
+
+        match values.get("meta_tags") {
+            None => {}
+            Some(InternedVec(value)) => {
+                let symbols = value.iter().map(|value| DefaultSymbol::try_from_usize(*value).ok_or_else(|| UnableToDecodeDefaultSymbol(*value))).collect::<Result<Vec<DefaultSymbol>, _>>()?;
+                meta.meta_tags.set(symbols).expect("The meta tags was already set!");
+            }
+            Some(illegal) => {
+                return Err(InvalidValueEncountered("meta_tags", illegal.clone()))
+            }
+        }
+
+        match values.get("unstemmed") {
+            None => {}
+            Some(UnstemmedMapping(value)) => {
+                let symbols = value.iter().map(
+                    |(k, v)| {
+                        let inner = v.iter().map(|value| DefaultSymbol::try_from_usize(*value).ok_or_else(|| UnableToDecodeDefaultSymbol(*value))).collect::<Result<Vec<_>, _>>();
+                        inner.map(|value| (*k, value))
+                    }
+                ).collect::<Result<HashMap<_, Vec<_>>, _>>()?;
+                meta.unstemmed.set(symbols).expect("The unstemmed was already set!");
+            }
+            Some(illegal) => {
+                return Err(InvalidValueEncountered("unstemmed", illegal.clone()))
+            }
+        }
+
+        Ok(meta)
+    }
+}
+
+
 
 macro_rules! create_methods {
     ($($self: ident.$target:ident($_type: ty) || $single_target: ident),+) => {

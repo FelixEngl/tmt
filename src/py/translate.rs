@@ -1,11 +1,11 @@
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use derive_more::From;
-use evalexpr::{ContextWithMutableVariables, Value};
-use pyo3::{Bound, FromPyObject, pyclass, pyfunction, pymethods, PyResult, wrap_pyfunction};
+use evalexpr::{Value};
+use pyo3::{Bound, pyclass, pyfunction, pymethods, PyResult, wrap_pyfunction};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::py::dictionary::PyDictionary;
+use crate::py::helpers::{KeepOriginalWordArg, VotingArg};
 use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
 use crate::py::vocabulary::PyVocabulary;
@@ -16,17 +16,10 @@ use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
 use crate::topicmodel::topic_model::MappableTopicModel;
 use crate::variable_names::{register_py_variable_names_module};
-use crate::voting::{BuildInVoting, VotingMethod, VotingResult};
+use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
 use crate::voting::py::PyVotingModel;
 use crate::voting::traits::VotingMethodMarker;
 
-#[derive(FromPyObject)]
-pub enum VotingArg<'a> {
-    Voting(PyVoting),
-    BuildIn(BuildInVoting),
-    Parseable(String),
-    PyCallable(PyVotingModel<'a>),
-}
 
 #[pyclass]
 #[derive(Debug, Clone)]
@@ -37,22 +30,6 @@ pub struct PyTranslationConfig {
     top_candidate_limit: Option<NonZeroUsize>,
 }
 
-#[derive(FromPyObject)]
-pub enum KeepOriginalWordArg {
-    String(String),
-    Value(KeepOriginalWord)
-}
-
-impl TryInto<KeepOriginalWord> for KeepOriginalWordArg {
-    type Error = <KeepOriginalWord as FromStr>::Err;
-
-    fn try_into(self) -> Result<KeepOriginalWord, Self::Error> {
-        match self {
-            KeepOriginalWordArg::String(value) => {value.parse()}
-            KeepOriginalWordArg::Value(value) => {Ok(value)}
-        }
-    }
-}
 
 #[pymethods]
 impl PyTranslationConfig {
@@ -82,7 +59,7 @@ enum Wrapper<'a> {
 }
 
 impl VotingMethod for Wrapper<'_> {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         match self {
             Wrapper::External(value) => {
                 value.execute(global_context, voters)

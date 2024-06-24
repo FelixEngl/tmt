@@ -10,10 +10,11 @@ use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pymethods, PyObject, PyRef, PyResult, Python};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
-use pyo3::types::PyFunction;
+use pyo3::types::{PyFunction};
 use serde::{Deserialize, Serialize};
-use crate::py::vocabulary::{LanguageHintValue, PyVocabulary};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
+use crate::py::helpers::{HasPickleSupport, LanguageHintValue, PyDictionaryStateValue};
+use crate::py::vocabulary::PyVocabulary;
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryPyStateValue, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, register_py_directions, DirectionKind, DirectionTuple, Invariant, Language, Translation};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter};
 use crate::topicmodel::dictionary::metadata::{register_py_metadata, SolvedMetadata};
@@ -320,6 +321,23 @@ pub struct PyDictionary {
     inner: DictionaryWithMeta<String, PyVocabulary>,
 }
 
+
+impl From<DictionaryPyStateValue<PyVocabulary>> for PyDictionaryStateValue {
+    fn from(value: DictionaryPyStateValue<PyVocabulary>) -> Self {
+        match value {
+            DictionaryPyStateValue::Voc(value) => {
+                PyDictionaryStateValue::Voc(value)
+            }
+            DictionaryPyStateValue::Mapping(value) => {
+                PyDictionaryStateValue::Mapping(value)
+            }
+            DictionaryPyStateValue::Meta(value) => {
+                PyDictionaryStateValue::Meta(value)
+            }
+        }
+    }
+}
+
 #[pymethods]
 impl PyDictionary {
     #[new]
@@ -514,6 +532,22 @@ impl PyDictionary {
         );
 
         Ok(PyDictionary { inner: created })
+    }
+
+    pub fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
+        // We only tarn the output in the python API, is always none.
+        (None, None)
+    }
+
+    pub fn __getstate__(&self) -> HashMap<String, PyDictionaryStateValue> {
+        let result = self.inner.get_py_state();
+        return result.into_iter().map(|(k, value)| (k, value.into())).collect()
+    }
+
+    pub fn __setstate__(&mut self, state: HashMap<String, PyDictionaryStateValue>) -> PyResult<()> {
+        let to_set = state.into_iter().map(|(k, v)| (k, v.into())).collect();
+        self.inner = DictionaryWithMeta::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
+        Ok(())
     }
 }
 

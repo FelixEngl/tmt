@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod meta;
+
 use std::borrow::{Borrow};
 use std::cmp::{min, Ordering, Reverse};
 use std::collections::hash_map::Entry;
@@ -11,7 +13,7 @@ use std::io;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
 use std::iter::Map;
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut, Range};
+use std::ops::{DerefMut, Range};
 use std::path::Path;
 use std::slice::Iter;
 use std::str::FromStr;
@@ -20,13 +22,14 @@ use approx::relative_eq;
 
 use flate2::Compression;
 use itertools::{Itertools, multiunzip, multizip};
-use pyo3::FromPyObject;
+use pyo3::{FromPyObject};
 use rand::thread_rng;
 use rand_distr::Distribution;
 use rayon::prelude::*;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::{MapAccess, SeqAccess, Visitor};
-use serde::ser::{SerializeSeq, SerializeStruct};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use crate::py::helpers::{HasPickleSupport, PyTopicModelStateValue};
+use crate::py::vocabulary::PyVocabulary;
 use crate::toolkit::normal_number::IsNormalNumber;
 
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
@@ -36,6 +39,7 @@ use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite};
 use crate::topicmodel::io::TopicModelIOError::PathNotFound;
 use crate::topicmodel::math::{dirichlet_expectation_1d, dirichlet_expectation_2d, dot, transpose};
 use crate::topicmodel::reference::HashRef;
+use crate::topicmodel::topic_model::meta::*;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut};
 
 
@@ -59,232 +63,6 @@ pub(crate) type DocumentId = usize;
 pub(crate) type WordFrequency = u64;
 pub(crate) type DocumentLength = u64;
 
-
-/// The meta for a topic.
-#[derive(Debug, Clone)]
-pub struct TopicMeta {
-    pub stats: TopicStats,
-    pub by_words: WordTo<Arc<WordMeta>>,
-    pub by_position: PositionTo<Arc<WordMeta>>,
-    pub by_importance: ImportanceRankTo<Vec<Arc<WordMeta>>>
-}
-
-impl TopicMeta {
-    pub fn new(
-        stats: TopicStats,
-        mut by_words: WordTo<Arc<WordMeta>>,
-        mut by_position: PositionTo<Arc<WordMeta>>,
-        mut by_importance: ImportanceRankTo<Vec<Arc<WordMeta>>>
-    ) -> Self {
-        by_words.shrink_to_fit();
-        by_position.shrink_to_fit();
-        by_importance.shrink_to_fit();
-
-        Self {
-            stats,
-            by_words,
-            by_position,
-            by_importance
-        }
-    }
-}
-
-impl Serialize for TopicMeta {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        if serializer.is_human_readable() {
-            let mut ser = serializer.serialize_struct("TopicMeta", 2)?;
-            ser.serialize_field("stats", &self.stats)?;
-            ser.serialize_field("bywords", &self.by_words)?;
-            ser.end()
-        } else {
-            let mut ser = serializer.serialize_seq(Some(2))?;
-            ser.serialize_element(&self.stats)?;
-            ser.serialize_element(&self.by_words)?;
-            ser.end()
-        }
-    }
-}
-
-
-impl<'de> Deserialize<'de> for TopicMeta {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-        struct TopicMetaVisitor;
-
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "lowercase")]
-        enum Field { Stats, ByWords }
-
-        impl<'de> Visitor<'de> for TopicMetaVisitor {
-            type Value = TopicMeta;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("a TopicMeta")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error> where A: SeqAccess<'de> {
-                let stats_field = seq.next_element()?.ok_or_else(|| de::Error::missing_field("stats"))?;
-                let by_words_field: Vec<Arc<WordMeta>> = seq.next_element()?.ok_or_else(|| de::Error::missing_field("bywords"))?;
-                let mut position_to_meta: PositionTo<Arc<WordMeta>> = by_words_field.clone();
-                position_to_meta.sort_by_key(|value| value.position);
-
-                let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
-
-                for value in position_to_meta.iter() {
-                    while importance_to_meta.len() <= value.importance {
-                        importance_to_meta.push(Vec::new())
-                    }
-                    unsafe{importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());}
-                }
-
-                Ok(
-                    TopicMeta::new(
-                        stats_field,
-                        by_words_field,
-                        position_to_meta,
-                        importance_to_meta
-                    )
-                )
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
-                let mut stats_field = None;
-                let mut by_words_field = None;
-                while let Some(key) = map.next_key::<Field>()? {
-                    match key {
-                        Field::Stats => {
-                            if stats_field.is_some() {
-                                return Err(de::Error::duplicate_field("stats"));
-                            }
-                            stats_field = Some(map.next_value::<TopicStats>()?);
-                        }
-                        Field::ByWords => {
-                            if by_words_field.is_some() {
-                                return Err(de::Error::duplicate_field("bywords"));
-                            }
-                            by_words_field = Some(map.next_value::<WordTo<Arc<WordMeta>>>()?)
-                        }
-                    }
-                }
-                let stats_field = stats_field.ok_or_else(|| de::Error::missing_field("stats"))?;
-                let by_words_field = by_words_field.ok_or_else(|| de::Error::missing_field("bywords"))?;
-                let mut position_to_meta: PositionTo<Arc<WordMeta>> = by_words_field.clone();
-                position_to_meta.sort_by_key(|value| value.position);
-
-                let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
-
-                for value in position_to_meta.iter() {
-                    while importance_to_meta.len() <= value.importance {
-                        importance_to_meta.push(Vec::new())
-                    }
-                    unsafe{importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());}
-                }
-
-                Ok(
-                    TopicMeta::new(
-                        stats_field,
-                        by_words_field,
-                        position_to_meta,
-                        importance_to_meta
-                    )
-                )
-            }
-        }
-
-        if deserializer.is_human_readable() {
-            deserializer.deserialize_struct(
-                "TopicMeta",
-                &["stats", "bywords"],
-                TopicMetaVisitor
-            )
-        } else {
-            deserializer.deserialize_seq(TopicMetaVisitor)
-        }
-
-
-    }
-}
-
-/// The meta for a word.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct WordMeta {
-    pub topic_id: TopicId,
-    pub word_id: WordId,
-    pub probability: Probability,
-    /// The position in the topic model, starting from 0
-    pub position: Position,
-    /// The importance in the topic model, starting from 0
-    pub importance: Importance,
-}
-
-impl WordMeta {
-    /// Returns the [self.probability] + 1
-    #[inline]
-    pub fn rank(&self) -> Rank {
-        self.position + 1
-    }
-
-    /// Returns the [self.importance] + 1
-    #[inline]
-    pub fn importance_rank(&self) -> ImportanceRank {
-        self.importance + 1
-    }
-}
-
-impl Display for WordMeta {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.5}({})", self.probability, self.rank())
-    }
-}
-
-
-/// Contains a reference to the associated word and the associated [WordMeta]
-#[derive(Debug)]
-pub struct WordMetaWithWord<'a, T> {
-    pub word: &'a T,
-    inner: &'a Arc<WordMeta>
-}
-
-impl<'a, T> WordMetaWithWord<'a, T> {
-    pub fn new(word: &'a T, inner: &'a Arc<WordMeta>) -> Self {
-        Self {
-            word,
-            inner
-        }
-    }
-}
-
-impl<'a, T> WordMetaWithWord<'a, T> {
-    pub fn into_inner(self) -> &'a Arc<WordMeta> {
-        self.inner
-    }
-}
-
-impl<'a, T> Clone for WordMetaWithWord<'a, T> {
-    fn clone(&self) -> Self {
-        Self {
-            word: self.word,
-            inner: self.inner
-        }
-    }
-}
-
-impl<T> Deref for WordMetaWithWord<'_, T> {
-    type Target = Arc<WordMeta>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner
-    }
-}
-
-/// The precalculated stats of a topic
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TopicStats {
-    pub topic_id: usize,
-    pub max_value: f64,
-    pub min_value: f64,
-    pub average_value: f64,
-    pub sum_value: f64,
-}
 
 
 /// A basic topic model fulfilling the bare minimum of
@@ -1169,6 +947,128 @@ impl<T: ToParseableString, V> TopicModel<T, V> where V: StoreableVocabulary<T> {
 
 pub trait MappableTopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> {
     fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: BasicVocabulary<T>;
+}
+
+
+#[derive(Debug, Clone)]
+pub enum TopicModelPyStateValue<V> where V: HasPickleSupport {
+    Voc(HashMap<String, V::FieldValue>),
+    VecVecProbability(Vec<Vec<f64>>),
+    VecCount(Vec<u64>),
+    VecMeta(Vec<HashMap<String, TopicMetaPyStateValue>>)
+}
+
+impl From<PyTopicModelStateValue> for TopicModelPyStateValue<PyVocabulary> {
+    fn from(value: PyTopicModelStateValue) -> Self {
+        match value {
+            PyTopicModelStateValue::Voc(value) => {
+                TopicModelPyStateValue::Voc(value)
+            }
+            PyTopicModelStateValue::VecVecProbability(value) => {
+                TopicModelPyStateValue::VecVecProbability(value)
+            }
+            PyTopicModelStateValue::VecCount(value) => {
+                TopicModelPyStateValue::VecCount(value)
+            }
+            PyTopicModelStateValue::VecMeta(value) => {
+                TopicModelPyStateValue::VecMeta(value)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum TopicModelPyStateValueError<V> where V: HasPickleSupport + Clone {
+    #[error("The value for the field {0} is missing!")]
+    FieldMissing(&'static str),
+    #[error(transparent)]
+    VocabularyError(V::Error),
+    #[error(transparent)]
+    MetaError(#[from] TopicMetaPyStateError),
+    #[error("Invalid value at {0} for {1:?}!")]
+    InvalidValueEncountered(&'static str, TopicModelPyStateValue<V>),
+}
+
+impl<T, V> HasPickleSupport for TopicModel<T, V>
+    where V: HasPickleSupport + Clone + Debug + VocabularyMut<T>,
+          T: Clone + Hash + Eq + Ord + Debug
+{
+    type FieldValue = TopicModelPyStateValue<V>;
+    type Error = TopicModelPyStateValueError<V>;
+
+    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
+        let mut map = HashMap::with_capacity(6);
+        map.insert("topics".to_string(), TopicModelPyStateValue::VecVecProbability(self.topics.clone()));
+        map.insert("vocabulary".to_string(), TopicModelPyStateValue::Voc(self.vocabulary.get_py_state()));
+        map.insert("used_vocab_frequency".to_string(), TopicModelPyStateValue::VecCount(self.used_vocab_frequency.clone()));
+        map.insert("doc_topic_distributions".to_string(), TopicModelPyStateValue::VecVecProbability(self.doc_topic_distributions.clone()));
+        map.insert("document_lengths".to_string(), TopicModelPyStateValue::VecCount(self.document_lengths.clone()));
+        map.insert("topic_metas".to_string(), TopicModelPyStateValue::VecMeta(self.topic_metas.iter().map(|value| value.get_py_state()).collect()));
+        return map
+    }
+
+    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> where Self: Sized {
+        let topics = values.get("topics").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("topics"))?;
+        let vocabulary = values.get("vocabulary").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("vocabulary"))?;
+        let used_vocab_frequency = values.get("used_vocab_frequency").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("used_vocab_frequency"))?;
+        let doc_topic_distributions = values.get("doc_topic_distributions").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("doc_topic_distributions"))?;
+        let document_lengths = values.get("document_lengths").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("document_lengths"))?;
+        let topic_metas = values.get("topic_metas");
+
+        let topics = match topics {
+            TopicModelPyStateValue::VecVecProbability(value) => {value.clone()}
+            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("topics", illegal_value.clone()))
+        };
+
+        let vocabulary = match vocabulary {
+            TopicModelPyStateValue::Voc(value) => {V::from_py_state(value).map_err(TopicModelPyStateValueError::VocabularyError)?}
+            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("vocabulary", illegal_value.clone()))
+        };
+
+        let used_vocab_frequency = match used_vocab_frequency {
+            TopicModelPyStateValue::VecCount(value) => {value.clone()}
+            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("used_vocab_frequency", illegal_value.clone()))
+        };
+        let doc_topic_distributions = match doc_topic_distributions {
+            TopicModelPyStateValue::VecVecProbability(value) => {value.clone()}
+            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("doc_topic_distributions", illegal_value.clone()))
+        };
+
+        let document_lengths = match document_lengths {
+            TopicModelPyStateValue::VecCount(value) => {value.clone()}
+            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("document_lengths", illegal_value.clone()))
+        };
+
+        if let Some(topic_metas) = topic_metas {
+            let topic_metas = match topic_metas {
+                TopicModelPyStateValue::VecMeta(value) => {
+                    value.iter().map(|value| TopicMeta::from_py_state(value)).collect::<Result<Vec<_>, _>>()?
+                }
+                illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("topic_metas", illegal_value.clone()))
+            };
+            Ok(
+                Self {
+                    topics,
+                    vocabulary,
+                    used_vocab_frequency,
+                    doc_topic_distributions,
+                    document_lengths,
+                    topic_metas,
+                    _word_type: PhantomData
+                }
+            )
+        } else {
+            Ok(
+                TopicModel::new(
+                    topics,
+                    vocabulary,
+                    used_vocab_frequency,
+                    doc_topic_distributions,
+                    document_lengths
+                )
+            )
+        }
+    }
 }
 
 impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T>  {

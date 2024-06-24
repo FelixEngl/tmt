@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
@@ -7,45 +8,22 @@ use std::ops::{Range};
 use std::path::{PathBuf};
 use std::slice::Iter;
 use std::vec::IntoIter;
-use pyo3::{Bound, FromPyObject, pyclass, pyfunction, pymethods, PyRef, PyResult, wrap_pyfunction};
+use pyo3::{Bound, pyclass, pyfunction, pymethods, PyRef, PyResult, wrap_pyfunction};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::dictionary::{PyDictionary};
-use crate::topicmodel::create_topic_model_specific_dictionary;
+use crate::py::helpers::{HasPickleSupport, LanguageHintValue, ListOrInt, PyVocabularyStateValue};
+use crate::topicmodel::create_topic_model_specific_dictionary as create_topic_model_specific_dictionary_impl;
 use crate::topicmodel::language_hint::{LanguageHint, register_py_language_hint};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
+
 
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyVocabulary {
     inner: Vocabulary<String>
-}
-
-#[derive(FromPyObject)]
-pub enum ListOrInt {
-    List(Vec<String>),
-    Int(usize)
-}
-
-#[derive(FromPyObject)]
-pub enum LanguageHintValue {
-    Hint(LanguageHint),
-    Value(String)
-}
-
-impl Into<LanguageHint> for LanguageHintValue {
-    fn into(self) -> LanguageHint {
-        match self {
-            LanguageHintValue::Hint(value) => {
-                value
-            }
-            LanguageHintValue::Value(value) => {
-                value.into()
-            }
-        }
-    }
 }
 
 #[pymethods]
@@ -136,7 +114,42 @@ impl PyVocabulary {
             }
         }
     }
+
+    pub fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
+        // We only tarn the output in the python API, is always none.
+        (None, None)
+    }
+
+    pub fn __getstate__(&self) -> HashMap<String, PyVocabularyStateValue> {
+        self.get_py_state()
+    }
+
+    pub fn __setstate__(&mut self, state: HashMap<String, PyVocabularyStateValue>) -> PyResult<()> {
+        let converted = state.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
+        self.inner = Vocabulary::from_py_state(&converted).map_err(|value| PyValueError::new_err(value.to_string()))?;
+        Ok(())
+    }
 }
+
+impl HasPickleSupport for PyVocabulary {
+    type FieldValue = PyVocabularyStateValue;
+    type Error = <Vocabulary::<String> as HasPickleSupport>::Error;
+
+    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
+        self.inner.get_py_state().into_iter().map(|(k, v)| (k, v.into())).collect()
+    }
+
+    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
+        let value = values.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
+        Ok(
+            Self {
+                inner: Vocabulary::from_py_state(&value)?
+            }
+        )
+    }
+}
+
+
 
 impl BasicVocabulary<String> for PyVocabulary {
     delegate::delegate! {
@@ -309,14 +322,14 @@ impl PyVocIter {
 }
 
 #[pyfunction]
-pub fn topic_specific_vocabulary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
-    create_topic_model_specific_dictionary(dictionary, vocabulary)
+pub fn create_topic_model_specific_dictionary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
+    create_topic_model_specific_dictionary_impl(dictionary, vocabulary)
 }
 
 pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVocabulary>()?;
     m.add_class::<PyVocIter>()?;
     register_py_language_hint(m)?;
-    m.add_function(wrap_pyfunction!(topic_specific_vocabulary, m)?)?;
+    m.add_function(wrap_pyfunction!(create_topic_model_specific_dictionary, m)?)?;
     Ok(())
 }

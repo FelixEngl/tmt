@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[pyclass(frozen)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
 #[repr(transparent)]
+#[serde(transparent)]
 pub struct LanguageHint {
     inner: String
 }
@@ -25,7 +26,7 @@ impl LanguageHint {
 impl LanguageHint {
 
     #[new]
-    pub fn new_py(language: String) -> Self {
+    pub fn py_new(language: String) -> Self {
         Self::new(language)
     }
 
@@ -48,6 +49,12 @@ impl LanguageHint {
     }
 }
 
+impl<T: AsRef<str>> From<T> for LanguageHint {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 impl Display for LanguageHint {
     delegate::delegate! {
         to self.deref() {
@@ -61,12 +68,6 @@ impl FromStr for LanguageHint {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self::new(s.to_string()))
-    }
-}
-
-impl<T: AsRef<str>> From<T> for LanguageHint {
-    fn from(value: T) -> Self {
-        Self::new(value.as_ref().to_string())
     }
 }
 

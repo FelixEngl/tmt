@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::{Value};
 use nom::branch::alt;
 use nom::combinator::{map, map_res};
 use nom::IResult;
 use strum::EnumIs;
-use crate::voting::{BuildInVoting, VotingFunction, VotingMethod, VotingResult, VotingWithLimit};
+use crate::voting::{BuildInVoting, VotingFunction, VotingMethod, VotingMethodContext, VotingResult, VotingWithLimit};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::logic::{build_in_voting, ErrorType, global_voting_function, parse_limited, variable_name, voting};
 use crate::voting::parser::logic::VotingParseError::{NoRegistryProvided, NoVotingInRegistryFound};
@@ -52,7 +52,7 @@ pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>
 impl VotingMethodMarker for InterpretedVoting {}
 
 impl VotingMethod for InterpretedVoting {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         match self {
             InterpretedVoting::BuildIn(value) => {
                 value.execute(global_context, voters)

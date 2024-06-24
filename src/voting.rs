@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
 use std::num::NonZeroUsize;
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::{ContextWithMutableVariables, IterateVariablesContext, Value};
 use crate::variable_names::{NUMBER_OF_VOTERS, RANK};
 pub use crate::voting::buildin::*;
 use crate::voting::display::{DisplayTree, IndentWriter};
@@ -22,21 +23,31 @@ pub mod py;
 /// The result of a voting
 pub type VotingResult<T> = Result<T, VotingExpressionError>;
 
+/// A voting method context allows to create a variable map to something that can me handled by python.
+pub trait VotingMethodContext : ContextWithMutableVariables {
+    fn variable_map(&self) -> HashMap<String, Value>;
+}
+impl<T> VotingMethodContext for T where T: ContextWithMutableVariables + IterateVariablesContext {
+    fn variable_map(&self) -> HashMap<String, Value> {
+        self.iter_variables().collect()
+    }
+}
+
 /// Marks a struct as voting method.
 pub trait VotingMethod {
     #[inline]
     fn execute_to_f64<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<f64>
         where
-            A : ContextWithMutableVariables,
-            B : ContextWithMutableVariables
+            A : VotingMethodContext,
+            B : VotingMethodContext
     {
         Ok(self.execute(global_context, voters)?.as_number()?)
     }
 
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
         where
-            A : ContextWithMutableVariables,
-            B : ContextWithMutableVariables;
+            A : VotingMethodContext,
+            B : VotingMethodContext;
 
     // #[inline]
     // fn execute_to_f64_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(f64, &'a [B])>
@@ -50,8 +61,8 @@ pub trait VotingMethod {
 
     fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])>
         where
-            A : ContextWithMutableVariables,
-            B : ContextWithMutableVariables {
+            A : VotingMethodContext,
+            B : VotingMethodContext {
         Ok((self.execute(global_context, voters)?, voters))
     }
 }
@@ -87,14 +98,14 @@ impl<T> RootVotingMethodMarker for VotingWithLimit<T> where T: VotingMethodMarke
 impl<T> VotingMethodMarker for VotingWithLimit<T> where T: VotingMethodMarker {}
 impl<T> VotingMethod for VotingWithLimit<T> where T: VotingMethodMarker {
 
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         let voters = self.slice_voters(voters, |value| value.get_value(RANK).unwrap().as_int().expect("Rank has to be an int!"));
         assert!(voters.len() <= self.limit.get());
         global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;
         self.expr.execute(global_context, voters)
     }
 
-    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: VotingMethodContext, B: VotingMethodContext {
         let voters = self.slice_voters(voters, |value| value.get_value(RANK).unwrap().as_int().expect("Rank has to be an int!"));
         assert!(voters.len() <= self.limit.get());
         global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;

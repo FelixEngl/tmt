@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::{Value};
 use nom::error::Error;
 use nom::Finish;
 use pyo3::{Bound, pyclass,  pymethods, PyResult};
@@ -8,8 +8,8 @@ use pyo3::prelude::*;
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse, InterpretedVoting};
 use crate::voting::registry::VotingRegistry;
-use crate::voting::{register_py_voting_buildin, VotingMethod, VotingResult};
-use crate::voting::py::register_py_voting_filters;
+use crate::voting::{register_py_voting_buildin, VotingMethod, VotingMethodContext, VotingResult};
+use crate::voting::py::{PyContextWithMutableVariables, PyExprValue, register_py_voting_filters};
 use crate::voting::traits::VotingMethodMarker;
 
 #[pyclass]
@@ -119,10 +119,23 @@ impl PyVoting {
             }
         }
     }
+
+    //noinspection DuplicatedCode
+    pub fn __call__(&self, mut global_context: PyContextWithMutableVariables, mut voters: Vec<PyContextWithMutableVariables>) -> PyResult<(PyExprValue, Vec<PyContextWithMutableVariables>)>{
+        let used_voters= voters.as_mut_slice();
+        match self.execute(&mut global_context, used_voters) {
+            Ok(value) => {
+                Ok((value.into(), used_voters.iter().cloned().collect()))
+            }
+            Err(err) => {
+                Err(PyValueError::new_err(err.to_string()))
+            }
+        }
+    }
 }
 
 impl VotingMethod for PyVoting {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         self.0.execute(global_context, voters)
     }
 }
@@ -134,8 +147,6 @@ impl<T> From<T> for PyVoting where T: Into<InterpretedVoting> {
         Self(value.into())
     }
 }
-
-
 
 
 

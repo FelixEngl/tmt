@@ -1,11 +1,11 @@
 use std::fmt::Write;
 use std::num::NonZeroUsize;
-use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, Value};
+use evalexpr::{Context, EvalexprError, EvalexprResult, Value};
 use itertools::Itertools;
 use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::variable_names::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
-use crate::voting::{VotingMethod, VotingMethodMarker, VotingResult, VotingWithLimit};
+use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::{Aggregation, AggregationError};
 use crate::voting::aggregations::AggregationType::{AvgOf, GAvgOf, SumOf};
 use crate::voting::display::{DisplayTree, IndentWriter};
@@ -17,6 +17,7 @@ use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::voting::PyVoting;
 use crate::voting::parser::InterpretedVoting::Limited;
+use crate::voting::py::{PyContextWithMutableVariables, PyExprValue};
 
 /// An empty voting method if nothing works
 pub struct EmptyVotingMethod;
@@ -25,7 +26,7 @@ impl LimitableVotingMethodMarker for EmptyVotingMethod {}
 impl VotingMethodMarker for EmptyVotingMethod {}
 
 impl VotingMethod for EmptyVotingMethod {
-    fn execute<A, B>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         return Err(NoValue)
     }
 }
@@ -82,6 +83,23 @@ impl BuildInVoting {
     pub fn from_string_py(s: &str) -> PyResult<Self> {
         s.try_into().map_err(|value: strum::ParseError| PyValueError::new_err(value.to_string()))
     }
+
+    //noinspection DuplicatedCode
+    pub fn __call__(&self, mut global_context: PyContextWithMutableVariables, mut voters: Vec<PyContextWithMutableVariables>) -> PyResult<(PyExprValue, Vec<PyContextWithMutableVariables>)>{
+        let used_voters= voters.as_mut_slice();
+        match self.execute(&mut global_context, used_voters) {
+            Ok(value) => {
+                Ok((value.into(), used_voters.iter().cloned().collect()))
+            }
+            Err(err) => {
+                Err(PyValueError::new_err(err.to_string()))
+            }
+        }
+    }
+
+    pub fn __reduce__(&self) -> String {
+        format!("BuildInVoting.{self}")
+    }
 }
 
 impl RootVotingMethodMarker for BuildInVoting {}
@@ -89,7 +107,7 @@ impl LimitableVotingMethodMarker for BuildInVoting {}
 impl VotingMethodMarker for BuildInVoting {}
 impl VotingMethod for BuildInVoting {
 
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         fn get_value_or_fail<A: Context>(context: &A, name: &str) -> VotingResult<Value> {
             if let Some(found) = context.get_value(name) {
                 Ok(found.clone())

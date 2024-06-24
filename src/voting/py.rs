@@ -1,11 +1,12 @@
-use evalexpr::{ContextWithMutableVariables, EvalexprError, FloatType, IntType, Value};
+use std::collections::HashMap;
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, FloatType, IntType, Value};
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use pyo3::types::PyFunction;
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
-use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
+use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodContext, VotingResult};
 
 #[derive(Debug, Clone, FromPyObject)]
 #[repr(transparent)]
@@ -24,7 +25,7 @@ unsafe impl Sync for PyVotingModel<'_> {}
 impl RootVotingMethodMarker for PyVotingModel<'_> {}
 impl VotingMethodMarker for PyVotingModel<'_> {}
 impl<'a> VotingMethod for PyVotingModel<'a> {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         unsafe {
             let global_context = PyContextWithMutableVariables::new(global_context);
             let voters = voters.iter_mut().map(|value| PyContextWithMutableVariables::new(value)).collect_vec();
@@ -128,10 +129,12 @@ impl IntoPy<PyObject> for PyExprValue {
 }
 
 
+
+/// This is an unsafe reference to a VotingMethodContext
 #[pyclass]
 #[derive(Copy, Clone, Debug)]
-struct PyContextWithMutableVariables {
-    inner: *mut dyn ContextWithMutableVariables
+pub struct PyContextWithMutableVariables {
+    inner: *mut dyn VotingMethodContext
 }
 
 unsafe impl Send for PyContextWithMutableVariables {}
@@ -164,16 +167,54 @@ impl PyContextWithMutableVariables {
     pub fn __contains__(&self, item: &str) -> bool {
         unsafe{&*self.inner}.get_value(item).is_some()
     }
+
+    pub fn get_all_values(&self) -> HashMap<String, PyExprValue> {
+        unsafe{&*self.inner}
+            .variable_map()
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect()
+    }
 }
 
 
 impl PyContextWithMutableVariables {
-    unsafe fn new<'a>(value: &'a mut dyn ContextWithMutableVariables) -> Self {
+    unsafe fn new<'a>(value: &'a mut dyn VotingMethodContext) -> Self {
         // Transmute does not change the real lifeline!
-        let value: &'static mut dyn ContextWithMutableVariables = std::mem::transmute::<&'a mut dyn ContextWithMutableVariables, &'static mut dyn ContextWithMutableVariables>(value);
+        let value: &'static mut dyn VotingMethodContext = std::mem::transmute::<&'a mut dyn VotingMethodContext, &'static mut dyn VotingMethodContext>(value);
         Self {
             inner: value
         }
+    }
+}
+
+impl Context for PyContextWithMutableVariables {
+    delegate::delegate! {
+        to unsafe{&*self.inner} {
+            fn get_value(&self, identifier: &str) -> Option<&Value>;
+            fn call_function(&self, identifier: &str, argument: &Value) -> EvalexprResult<Value>;
+            fn are_builtin_functions_disabled(&self) -> bool;
+        }
+    }
+
+    delegate::delegate! {
+        to unsafe{&mut *self.inner} {
+            fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<()>;
+        }
+    }
+}
+
+impl ContextWithMutableVariables for PyContextWithMutableVariables {
+    delegate::delegate! {
+        to unsafe{&mut *self.inner} {
+            fn set_value(&mut self, _identifier: String, _value: Value) -> EvalexprResult<()>;
+        }
+    }
+}
+
+impl VotingMethodContext for PyContextWithMutableVariables {
+    fn variable_map(&self) -> HashMap<String, Value> {
+        unsafe{&*self.inner}.variable_map()
     }
 }
 

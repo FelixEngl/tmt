@@ -5,7 +5,7 @@ use std::error::Error;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use evalexpr::{Context, context_map, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext};
+use evalexpr::{Context, context_map, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext};
 use itertools::{Itertools};
 use rayon::prelude::*;
 use strum::{AsRefStr, Display, EnumString, ParseError};
@@ -22,6 +22,7 @@ use crate::voting::traits::VotingMethodMarker;
 use pyo3::{Bound, pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
+use pyo3::types::PyType;
 use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut};
 use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::language_hint::LanguageHint;
@@ -61,11 +62,8 @@ impl<'a, V> Clone for TranslateConfig<V> where V: VotingMethodMarker + Clone {
 #[derive(AsRefStr, Display, EnumString)]
 #[pyclass]
 pub enum KeepOriginalWord {
-    #[strum(serialize = "ALWAYS")]
     Always,
-    #[strum(serialize = "IF_NO_TRANSLATION")]
     IfNoTranslation,
-    #[strum(serialize = "NEVER")]
     #[default]
     Never
 }
@@ -76,10 +74,22 @@ impl KeepOriginalWord {
         self.to_string()
     }
 
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+
     #[staticmethod]
     #[pyo3(name="from_string")]
     pub fn from_string_py(value: &str) -> PyResult<Self> {
         value.parse().map_err(|value: ParseError | PyValueError::new_err(value.to_string()))
+    }
+
+    pub fn __reduce__(&self) -> String {
+        format!("KeepOriginalWord.{self}")
+    }
+
+    pub fn __reduce_ex__(&self, _version: usize) -> String {
+        format!("KeepOriginalWord.{self}")
     }
 }
 
@@ -402,12 +412,13 @@ impl Ord for Candidate {
     }
 }
 
+
 fn translate_topic<Model, T, V, Voc, P>(
     topic_model: &Model,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
     topic: &Vec<f64>,
-    topic_context: (impl Context + Send + Sync),
+    topic_context: impl Context + Send + Sync + IterateVariablesContext,
     config: &TranslateConfig<V>,
     provider: Option<&P>
 ) -> Result<Vec<Candidate>, TranslateErrorWithOrigin>
@@ -474,7 +485,7 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
     topic_model: &Model,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
-    topic_context: &(impl Context + Send + Sync),
+    topic_context: &(impl Context + Send + Sync + IterateVariablesContext),
     config: &TranslateConfig<V>,
     original_word_id: usize,
     probability: f64,
@@ -576,7 +587,8 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
         None
     };
 
-    fn vote_for_origin<'a>(topic_model: &'a impl BasicTopicModel, topic_context: &(impl Context + Send + Sync), has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &(impl VotingMethod + Sync + Send)) -> Result<Candidate, TranslateErrorWithOrigin> {
+
+    fn vote_for_origin<'a>(topic_model: &'a impl BasicTopicModel, topic_context: &(impl Context + Send + Sync + IterateVariablesContext), has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &(impl VotingMethod + Sync + Send)) -> Result<Candidate, TranslateErrorWithOrigin> {
         let mut context = context_map! {
             COUNT_OF_VOTERS => 1,
             HAS_TRANSLATION => has_translation,

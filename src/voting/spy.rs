@@ -1,7 +1,7 @@
 use std::sync::Mutex;
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::{Value};
 use crate::variable_names::{CANDIDATE_ID, SCORE, SCORE_CANDIDATE, TOPIC_ID, VOTER_ID};
-use crate::voting::{VotingMethod, VotingMethodMarker, VotingResult};
+use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult};
 use crate::voting::traits::RootVotingMethodMarker;
 
 pub struct Spy<V: VotingMethodMarker + ?Sized> {
@@ -21,11 +21,11 @@ impl<V> Spy<V> where V: VotingMethodMarker {
 }
 
 impl<V> VotingMethod for Spy<V> where V: VotingMethodMarker {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         Ok(self.execute_with_voters(global_context, voters)?.0)
     }
 
-    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: ContextWithMutableVariables, B: ContextWithMutableVariables {
+    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: VotingMethodContext, B: VotingMethodContext {
         let (result, voters) = self.inner.execute_with_voters(global_context, voters)?;
 
         let entry = (

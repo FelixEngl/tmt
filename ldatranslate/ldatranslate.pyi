@@ -1,16 +1,15 @@
 import os
-from enum import Enum
 from os import PathLike
 from pathlib import Path
 from typing import Optional, Iterator, Callable, Protocol
 
 
-class DirectionKind(Enum):
+class DirectionKind(object):
     AToB: DirectionKind
     BToA: DirectionKind
     Invariant: DirectionKind
 
-class LanguageKind(Enum):
+class LanguageKind(object):
     A: LanguageKind
     B: LanguageKind
 
@@ -34,6 +33,8 @@ class SolvedMetadata:
     def __repr__(self):...
 
 
+PyVocabularyStateValue = str | list[str]
+
 class PyVocabulary:
     language: None | LanguageHint | str
     def __init__(self, language: None | str | LanguageHint = None, size: None | int | list[str] = None) -> None: ...
@@ -48,6 +49,17 @@ class PyVocabulary:
     def save(self, path: str | Path | PathLike) -> int: ...
     @staticmethod
     def load(path: str | Path | PathLike) -> 'PyVocabulary': ...
+
+    def __getnewargs__(self) -> tuple[None, None]:
+        """Placeholder values"""
+        ...
+
+    def __getstate__(self) -> dict[str, PyVocabularyStateValue]:
+        ...
+
+    def __setstate__(self, state: dict[str, PyVocabularyStateValue]):
+        """May raise a value error when something illegal is found."""
+        ...
 
 
 class PyDictionaryEntry:
@@ -86,6 +98,9 @@ class PyDictionaryEntry:
     def __repr__(self):...
     def __str__(self):...
 
+MetadataPyStateValues = list[int] | dict[int, list[int]]
+MetadataContainerPyStateValues = dict[str, PyVocabularyStateValue] | list[tuple[int, str]] | list[dict[str, MetadataPyStateValues]]
+PyDictionaryStateValue = list[list[int]] | dict[str, MetadataContainerPyStateValues] | dict[str, PyVocabularyStateValue]
 
 class PyDictionary:
     translation_direction: tuple[None | LanguageHint | str, None | LanguageHint | str]
@@ -133,11 +148,29 @@ class PyDictionary:
     def load(path: str | Path | PathLike) -> 'PyDictionary': ...
     def filter(self, filter_a: Callable[[str, None | SolvedMetadata], bool], filter_b: Callable[[str, None | SolvedMetadata], bool]) -> 'PyDictionary':...
 
+    def __getnewargs__(self) -> tuple[None, None]:
+        """Placeholder values"""
+        ...
+
+    def __getstate__(self) -> dict[str, PyDictionaryStateValue]:
+        ...
+
+    def __setstate__(self, state: dict[str, PyDictionaryStateValue]):
+        """May raise a value error when something illegal is found."""
+        ...
+
+TopicMetaPyStateValue = dict[str, int | float] | list[dict[str, int | float]]
+PyTopicModelStateValue = dict[str, PyVocabularyStateValue] | list[list[float]] | list[int] | list[dict[str, TopicMetaPyStateValue]]
 
 class PyTopicModel:
-    def __init__(self, topics: list[list[float]], vocabulary: PyVocabulary,
-                 used_vocab_frequency: list[int], doc_topic_distributions: list[list[float]],
-                 document_lengths: list[int]) -> None: ...
+    def __init__(
+            self,
+            topics: list[list[float]],
+            vocabulary: PyVocabulary,
+            used_vocab_frequency: list[int],
+            doc_topic_distributions: list[list[float]],
+            document_lengths: list[int]
+    ) -> None: ...
 
     @property
     def k(self) -> int:...
@@ -145,13 +178,16 @@ class PyTopicModel:
     def get_topic(self, topic_id: int) -> int:...
 
     def save(self, path: str | Path | PathLike) -> int: ...
+
     @staticmethod
     def load(path: str | Path | PathLike) -> 'PyTopicModel': ...
 
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
 
-    def show_top(self, n: int | None = None):...
+    def show_top(self, n: int | None = None):
+        """Shows the top n word, by default 10."""
+        ...
 
     def get_doc_probability(self, doc: list[str], alpha: float | list[float], gamma_threshold: float,
                             minimum_probability: None | float = None,
@@ -160,7 +196,8 @@ class PyTopicModel:
         """
         Returns a tuple containing:
             0: A list of TopicId to Probability tuples,
-            1:
+            1: The word to topic mapping. Only set when per_word_topics is true, similar to the gensim pendant for inference.
+            2: The phi values of the words. Only set when per_word_topics is true, similar to the gensim pendant for inference.
         """
         ...
 
@@ -178,40 +215,20 @@ class PyTopicModel:
 
     def normalize(self) -> 'PyTopicModel':...
 
-class PyVoting:
-    @staticmethod
-    def parse(value: str, registry: Optional['PyVotingRegistry'] = None) -> 'PyVoting': ...
+    def __getnewargs__(self) -> tuple[list[list[float]], PyVocabulary, list[int], list[list[float]], list[int]]:
+        """Placeholder values"""
+        ...
 
-class PyVotingRegistry:
-    def __init__(self) -> None: ...
-    def get_registered(self, name: str) -> PyVoting | None: ...
-    def register_at(self, name: str, voting: str): ...
-    def register(self, voting: str): ...
+    def __getstate__(self) -> dict[str, PyDictionaryStateValue]:
+        ...
+
+    def __setstate__(self, state: dict[str, PyDictionaryStateValue]):
+        """May raise a value error when something illegal is found."""
+        ...
 
 
-class PyVariableProviderBuilder:
-    def build(self) -> 'PyVariableProvider': ...
-    def add_global(self, key: str, value: str | bool | int | float): ...
-    def add_for_topic(self, topic_id: int, key: str, value: str | bool | int | float): ...
-    def add_for_word_a(self, word_id: int | str, key: str, value: str | bool | int | float): ...
-    def add_for_word_b(self, word_id: int | str, key: str, value: str | bool | int | float): ...
-    def add_for_word_in_topic_a(self, topic_id: int, word_id: int | str, key: str, value: str | bool | int | float): ...
-    def add_for_word_in_topic_b(self, topic_id: int, word_id: int | str, key: str, value: str | bool | int | float): ...
 
-class PyVariableProvider:
-    def __init__(self, model: PyTopicModel, dictionary: PyDictionary) -> None: ...
-
-    @staticmethod
-    def builder(model: PyTopicModel, dictionary: PyDictionary) -> PyVariableProviderBuilder: ...
-
-    def add_global(self, key: str, value: str | bool | int | float): ...
-    def add_for_topic(self, topic_id: int, key: str, value: str | bool | int | float): ...
-    def add_for_word_a(self, word_id: int, key: str, value: str | bool | int | float): ...
-    def add_for_word_b(self, word_id: int, key: str, value: str | bool | int | float): ...
-    def add_for_word_in_topic_a(self, topic_id: int, word_id: int, key: str, value: str | bool | int | float): ...
-    def add_for_word_in_topic_b(self, topic_id: int, word_id: int, key: str, value: str | bool | int | float): ...
-
-class KeepOriginalWord(Enum):
+class KeepOriginalWord(object):
     Always: KeepOriginalWord
     IfNoTranslation: KeepOriginalWord
     Never: KeepOriginalWord
@@ -221,7 +238,98 @@ class KeepOriginalWord(Enum):
     def from_string_py(value: str) -> KeepOriginalWord:...
 
 
-class BuildInVoting(Enum):
+
+PyExprValue = str | float | int | bool | None | list[PyExprValue]
+
+
+class PyContextWithMutableVariables:
+    """
+    Be careful, you can NOT store this outside of the call.
+    The keys are defined in variable_names
+    """
+    def __getitem__(self, item: str) -> PyExprValue:
+        """Raises a KeyError if item not contained."""
+        ...
+
+    def __setitem__(self, key: str, value: PyExprValue):
+        """Raises a ValueError if something goes wrong."""
+        ...
+
+    def __contains__(self, item: str) -> bool:
+        ...
+
+    def get_all_values(self) -> dict[str, PyExprValue]:
+        """Returns the values as something storeable"""
+        ...
+
+class PyVoting:
+    @staticmethod
+    def parse(value: str, registry: Optional['PyVotingRegistry'] = None) -> 'PyVoting': ...
+
+    def __call__(self, global_context: PyContextWithMutableVariables, voters: list[PyContextWithMutableVariables]) -> tuple[PyExprValue, list[PyContextWithMutableVariables]]:
+        """
+        Executes the voting with the provided variables.
+        Returns the result and the used voters.
+        """
+    ...
+
+class PyVotingRegistry:
+    def __init__(self) -> None: ...
+    def get_registered(self, name: str) -> PyVoting | None: ...
+    def register_at(self, name: str, voting: str): ...
+    def register(self, voting: str): ...
+
+
+class PyVariableProviderBuilder:
+    def build(self) -> 'PyVariableProvider':
+        """Creates the PyVariableProvider"""
+        ...
+    def add_global(self, key: str, value: PyExprValue):
+        """Adds the value to a global context under the key."""
+        ...
+    def add_for_topic(self, topic_id: int, key: str, value: PyExprValue):
+        """Adds the value to a topic bound context under the key."""
+        ...
+    def add_for_word_a(self, word_id: int | str, key: str, value: PyExprValue):
+        """Adds the value to a word_a bound context under the key."""
+        ...
+    def add_for_word_b(self, word_id: int | str, key: str, value: PyExprValue):
+        """Adds the value to a word_b bound context under the key."""
+        ...
+    def add_for_word_in_topic_a(self, topic_id: int, word_id: int | str, key: str, value: PyExprValue):
+        """Adds the value to a word_a and topic bound context under the key."""
+        ...
+    def add_for_word_in_topic_b(self, topic_id: int, word_id: int | str, key: str, value: PyExprValue):
+        """Adds the value to a word_b and topic bound context under the key."""
+        ...
+
+class PyVariableProvider:
+    def __init__(self, model: PyTopicModel, dictionary: PyDictionary) -> None: ...
+
+    @staticmethod
+    def builder(model: PyTopicModel, dictionary: PyDictionary) -> PyVariableProviderBuilder: ...
+
+    def add_global(self, key: str, value: PyExprValue):
+        """Adds the value to a global context under the key. (You better use the builder for this.)"""
+        ...
+    def add_for_topic(self, topic_id: int, key: str, value: PyExprValue):
+        """Adds the value to a topic bound context under the key. (You better use the builder for this.)"""
+        ...
+    def add_for_word_a(self, word_id: int, key: str, value: PyExprValue):
+        """Adds the value to a word_b bound context under the key. (You better use the builder for this.)"""
+        ...
+    def add_for_word_b(self, word_id: int, key: str, value: PyExprValue):
+        """Adds the value to a word_b bound context under the key. (You better use the builder for this.)"""
+        ...
+    def add_for_word_in_topic_a(self, topic_id: int, word_id: int, key: str, value: PyExprValue):
+        """Adds the value to a word_a and topic bound context under the key. (You better use the builder for this.)"""
+        ...
+    def add_for_word_in_topic_b(self, topic_id: int, word_id: int, key: str, value: PyExprValue):
+        """Adds the value to a word_b and topic bound context under the key. (You better use the builder for this.)"""
+        ...
+
+
+class BuildInVoting(object):
     OriginalScore: BuildInVoting
     Voters: BuildInVoting
     CombSum: BuildInVoting
@@ -248,68 +356,89 @@ class BuildInVoting(Enum):
     @staticmethod
     def from_string(value: str) -> KeepOriginalWord:...
 
+    def __call__(self, global_context: PyContextWithMutableVariables, voters: list[PyContextWithMutableVariables]) -> tuple[PyExprValue, list[PyContextWithMutableVariables]]:
+        """
+        Executes the voting with the provided variables.
+        Returns the result and the used voters.
+        """
+        ...
+
 
 class PyTranslationConfig:
-    def __init__(self,
-                 epsilon: float | None = None,
-                 threshold: float | None = None,
-                 keep_original_word: KeepOriginalWord | str | None = None,
-                 top_candidate_limit: int | None = None) -> None: ...
+    def __init__(
+            self,
+            epsilon: float | None = None,
+            threshold: float | None = None,
+            keep_original_word: KeepOriginalWord | str | None = None,
+            top_candidate_limit: int | None = None
+    ) -> None: ...
 
-
-
-PyExprValue = str | float | int | bool | None | list[PyExprValue]
-
-
-class PyContextWithMutableVariables:
-    """Be careful, you can NOT store this outside of the call."""
-    def __getitem__(self, item: str) -> PyExprValue:
-        """Raises a KeyError if item not contained."""
-        ...
-
-    def __setitem__(self, key: str, value: PyExprValue):
-        """Raises a ValueError if something goes wrong."""
-        ...
-
-    def __contains__(self, item: str) -> bool:
-        ...
 
 class VotingFunction(Protocol):
     """Defines the format of the voting function"""
     def __call__(self, global_context: PyContextWithMutableVariables, voters: list[PyContextWithMutableVariables]) -> PyExprValue:
         ...
-def topic_specific_vocabulary(dictionary: PyDictionary, vocabulary: PyVocabulary) -> PyDictionary:
-    """Not needed for translation"""
+
+def create_topic_model_specific_dictionary(dictionary: PyDictionary, vocabulary: PyVocabulary) -> PyDictionary:
+    """
+    Creates the specific dictionary used by the translation.
+    Can be used for debugging.
+    """
     ...
 
 def translate_topic_model(
         topic_model: PyTopicModel,
         dictionary: PyDictionary,
-        voting: PyVoting | str | VotingFunction,
+        voting: BuildInVoting | PyVoting | str | VotingFunction,
         config: PyTranslationConfig,
         provider: PyVariableProvider | None = None,
         registry: PyVotingRegistry | None = None
-) -> PyTopicModel: ...
+) -> PyTopicModel:
+    """
+    Translates a topic model and returns the normalized translation.
+    Throws an exception is something goes wrong.
+    """
+    ...
 
 
 class variable_names:
     EPSILON: str
+    "The epsilon of the calculation."
     VOCABULARY_SIZE_A: str
+    "The size of the vocabulary in language a."
     VOCABULARY_SIZE_B: str
+    "The size of the vocabulary in language b."
     TOPIC_MAX_PROBABILITY: str
+    "The max probability of the topic."
     TOPIC_MIN_PROBABILITY: str
+    "The min probability of the topic."
     TOPIC_AVG_PROBABILITY: str
+    "The avg probability of the topic."
     TOPIC_SUM_PROBABILITY: str
+    "The sum of all probabilities of the topic."
     COUNT_OF_VOTERS: str
+    "The number of available voters"
     NUMBER_OF_VOTERS: str
+    "The number of used voters."
     HAS_TRANSLATION: str
+    "True if the word in language A has translations to language B."
     IS_ORIGIN_WORD: str
+    "True if this is the original word in language A"
     SCORE_CANDIDATE: str
+    "The original score of the candidate."
     RECIPROCAL_RANK: str
+    "The reciprocal rank of the word."
     REAL_RECIPROCAL_RANK: str
+    "The real reciprocal rank of the word."
     RANK: str
+    "The rank of the word."
     IMPORTANCE: str
+    "The importance rank of the word."
     SCORE: str
+    "The score of the word in the topic model."
     VOTER_ID: str
+    "The word id of a voter."
     CANDIDATE_ID: str
+    "The word id of a candidate."
     TOPIC_ID: str
+    "The topic id."
