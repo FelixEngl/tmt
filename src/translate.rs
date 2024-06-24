@@ -13,7 +13,7 @@ use thiserror::Error;
 use crate::toolkit::evalexpr::{CombineableContext};
 use crate::topicmodel::topic_model::{BasicTopicModel, TopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
-use crate::topicmodel::dictionary::direction::{AToB, BToA};
+use crate::topicmodel::dictionary::direction::{AToB, B, BToA};
 use crate::topicmodel::vocabulary::{MappableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 use crate::translate::LanguageOrigin::{Origin, Target};
 use crate::variable_names::*;
@@ -24,6 +24,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut};
 use crate::topicmodel::create_topic_model_specific_dictionary;
+use crate::topicmodel::language_hint::LanguageHint;
+use crate::translate::TranslateError::IncompatibleLanguages;
 
 #[derive(Debug)]
 pub struct TranslateConfig<V: VotingMethodMarker> {
@@ -82,13 +84,19 @@ impl KeepOriginalWord {
 }
 
 #[derive(Debug, Error)]
-pub enum TranslateError {
+pub enum TranslateError<'a> {
     #[error(transparent)]
     VotingError(#[from] VotingExpressionError),
     #[error(transparent)]
     WithOrigin(#[from] TranslateErrorWithOrigin),
     #[error(transparent)]
-    ProviderError(#[from] VariableProviderError)
+    ProviderError(#[from] VariableProviderError),
+    #[error("The dictionary has a translation direction from {lang_a} to {lang_b}, but the topic is in {lang_b}!")]
+    IncompatibleLanguages {
+        lang_a: &'a LanguageHint,
+        lang_b: LanguageHint,
+        lang_model: &'a LanguageHint,
+    }
 }
 
 #[derive(Debug, Error)]
@@ -162,10 +170,10 @@ pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
     topic_model: &'a Model,
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
-) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError> where
+) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError<'a>> where
     T: Hash + Eq + Ord + Clone,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
     D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
 {
@@ -183,14 +191,30 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
     provider: Option<&P>
-) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError> where
+) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError<'a>> where
     T: Hash + Eq + Ord + Clone,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
     D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
     P: VariableProviderOut
 {
+
+    if let Some(lang_model) = topic_model.vocabulary().language() {
+        if let (Some(lang_a), lang_b) = dictionary.language_direction() {
+            if lang_model != lang_a {
+                let lang_b = lang_b.cloned().unwrap_or_else(|| LanguageHint::new("###"));
+                return Err(
+                    IncompatibleLanguages {
+                        lang_a,
+                        lang_b,
+                        lang_model
+                    }
+                )
+            }
+        }
+    }
+
     let dictionary: D = create_topic_model_specific_dictionary::<D, D, T, Voc, Voc>(
         dictionary,
         topic_model.vocabulary()
@@ -287,7 +311,8 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
     }).collect_vec_list();
 
 
-    let voc_b = voc_b_col.iter().flatten().cloned().collect::<Vocabulary<_>>();
+    let mut voc_b = voc_b_col.iter().flatten().cloned().collect::<Vocabulary<_>>();
+    voc_b.set_language(dictionary.language::<B>().cloned());
 
     let mut counts = vec![0u64; voc_b.len()];
 

@@ -10,19 +10,27 @@ use serde::{Deserialize, Serialize};
 #[pyclass(frozen)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct LanguageHint(String);
+pub struct LanguageHint {
+    inner: String
+}
 
+impl LanguageHint {
+
+    pub fn new(language: impl AsRef<str>) -> Self {
+        unsafe {std::mem::transmute(language.as_ref().to_lowercase())}
+    }
+}
 
 #[pymethods]
 impl LanguageHint {
 
     #[new]
-    pub fn new(language: String) -> Self {
-        unsafe {std::mem::transmute(language)}
+    pub fn new_py(language: String) -> Self {
+        Self::new(language)
     }
 
     pub fn __eq__(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.inner == other.inner
     }
 
     pub fn __hash__(&self) -> isize {
@@ -66,7 +74,7 @@ impl Deref for LanguageHint {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 

@@ -96,6 +96,10 @@ pub trait BasicDictionaryWithVocabulary<V>: BasicDictionary {
 
 pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where V: BasicVocabulary<T> {
 
+    fn language_direction<'a>(&'a self) -> (Option<&'a LanguageHint>, Option<&'a LanguageHint>) where V: 'a {
+        (self.language::<A>(), self.language::<B>())
+    }
+
     fn language<'a, L: Language>(&'a self) -> Option<&'a LanguageHint> where V: 'a {
         if L::LANG.is_a() {
             self.voc_a().language()
