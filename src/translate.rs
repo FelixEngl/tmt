@@ -322,13 +322,15 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
         topic.into_iter().sorted_unstable_by_key(|value| value.0).map(|(_, b)| b).collect_vec()
     }).collect::<Vec<_>>();
 
-    let translated = TopicModel::new(
+    let mut translated = TopicModel::new(
         inner_topic_model,
         voc_b,
         counts,
         topic_model.doc_topic_distributions().clone(),
         topic_model.document_lengths().clone()
     );
+
+    translated.normalize_in_place();
 
     return Ok(translated)
 }

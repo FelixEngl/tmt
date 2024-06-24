@@ -703,7 +703,7 @@ impl<T, V> TopicModel<T, V> where
         };
     }
 
-    pub fn normalize_in_place(mut self) -> Self {
+    pub fn normalize_in_place(&mut self) {
         for topic in self.topics.iter_mut() {
             let sum: f64 = topic.iter().sum();
             topic.iter_mut().for_each(|value| {
@@ -719,14 +719,14 @@ impl<T, V> TopicModel<T, V> where
         }
 
         self.recalculate_statistics();
-
-        self
     }
 }
 
 impl<T, V> TopicModel<T, V> where T: Hash + Eq + Ord, V: Clone + VocabularyMut<T> {
     pub fn normalize(&self) -> Self {
-        self.clone().normalize_in_place()
+        let mut target = self.clone();
+        target.normalize_in_place();
+        target
     }
 }
 
@@ -1198,6 +1198,19 @@ pub enum SingleOrList {
     List(Vec<f64>)
 }
 
+impl From<f64> for SingleOrList {
+    fn from(value: f64) -> Self {
+        SingleOrList::Single(value)
+    }
+}
+
+
+impl From<Vec<f64>> for SingleOrList {
+    fn from(value: Vec<f64>) -> Self {
+        SingleOrList::List(value)
+    }
+}
+
 
 pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
     topic_model: &'a Model,
@@ -1412,6 +1425,7 @@ mod test {
     use itertools::{assert_equal, Itertools};
     use crate::topicmodel::enums::TopicModelVersion;
     use crate::topicmodel::topic_model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
+    use crate::topicmodel::topic_model::SingleOrList::Single;
     use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary, VocabularyMut};
 
 
@@ -1511,7 +1525,7 @@ mod test {
         ).unwrap().0;
         println!("{}", (std::time::Instant::now() - before).as_secs());
         // model.show_10().unwrap();
-        let infer = TopicModelInferencer::new(&model, 0.001, 0.1);
+        let infer = TopicModelInferencer::new(&model, Single(0.001), 0.1);
         let inferred = infer.get_doc_probability_for_default(vec!["hello".to_string(), "religion".to_string()], true);
         println!("{:?}", inferred.0);
     }
