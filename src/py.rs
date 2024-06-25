@@ -14,6 +14,7 @@ pub mod translate;
 pub mod voting;
 mod variable_provider;
 pub mod helpers;
+mod topic_model_builder;
 
 
 pub(crate) fn register_modules(m: &Bound<'_, PyModule>) -> PyResult<()>{

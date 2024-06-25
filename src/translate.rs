@@ -22,7 +22,6 @@ use crate::voting::traits::VotingMethodMarker;
 use pyo3::{Bound, pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
-use pyo3::types::PyType;
 use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut};
 use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::language_hint::LanguageHint;

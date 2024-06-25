@@ -401,6 +401,25 @@ def translate_topic_model(
     ...
 
 
+class PyTopicModelBuilder:
+    def __init__(self, language_a: None | str | LanguageHint):
+        ...
+
+    def set_frequency(self, word: str, frequency: int):
+        ...
+
+    def add_word(self, topic_id: int, word: str, probability: float, frequency: int | None = None):
+        ...
+
+    def set_doc_topic_distributions(self, doc_topic_distributions: None | list[list[float]]):
+        ...
+
+    def set_document_lengths(self, doc_topic_distributions: None | list[int]):
+        ...
+
+    def build(self) -> PyTopicModel:
+        ...
+
 class variable_names:
     EPSILON: str
     "The epsilon of the calculation."

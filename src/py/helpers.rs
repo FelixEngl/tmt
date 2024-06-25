@@ -51,6 +51,7 @@ impl Into<LanguageHint> for LanguageHintValue {
 }
 
 
+
 #[derive(FromPyObject, Debug, Clone)]
 pub enum PyVocabularyStateValue {
     Hint(String),
