@@ -226,6 +226,9 @@ class PyTopicModel:
         """May raise a value error when something illegal is found."""
         ...
 
+    @staticmethod
+    def builder(language_a: None | str | LanguageHint = None) -> PyTopicModelBuilder:
+        ...
 
 
 class KeepOriginalWord(object):
@@ -402,7 +405,7 @@ def translate_topic_model(
 
 
 class PyTopicModelBuilder:
-    def __init__(self, language_a: None | str | LanguageHint):
+    def __init__(self, language_a: None | str | LanguageHint = None):
         ...
 
     def set_frequency(self, word: str, frequency: int):

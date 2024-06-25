@@ -14,7 +14,8 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use topic_model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
 use topicmodel::topic_model;
-use crate::py::helpers::{HasPickleSupport, PyTopicModelStateValue};
+use crate::py::helpers::{HasPickleSupport, LanguageHintValue, PyTopicModelStateValue};
+use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel;
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
@@ -168,6 +169,11 @@ impl PyTopicModel {
         let to_set = state.into_iter().map(|(k, v)| (k, v.into())).collect();
         self.inner = TopicModel::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
         Ok(())
+    }
+
+    #[staticmethod]
+    pub fn builder(language: Option<LanguageHintValue>) -> PyTopicModelBuilder {
+        PyTopicModelBuilder::new(language)
     }
 }
 
