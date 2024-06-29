@@ -21,9 +21,6 @@ use crate::topicmodel::vocabulary::VocabularyMut;
 
 
 
-fn test2(){
-    let x = TokenizerBuilder::new();
-}
 
 #[derive(Debug, Clone, Error)]
 pub enum ProcessingError {

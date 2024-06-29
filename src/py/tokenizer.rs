@@ -1,11 +1,15 @@
 use std::collections::HashMap;
+use std::mem::transmute;
+use std::sync::Arc;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, BuildError, dfa, MatchKind, StartKind};
 use aho_corasick::nfa::{contiguous, noncontiguous};
 use aho_corasick::nfa::noncontiguous::{Builder, NFA};
 use charabia::Script;
 use charabia::Language;
 use charabia::normalizer::{ClassifierOption, NormalizerOption};
+use charabia::segmenter::SegmenterOption;
 use fst::Set;
+use itertools::Itertools;
 use nom::combinator::value;
 use pyo3::{Bound, FromPyObject, pyclass, pymethods, PyRefMut, PyResult};
 use pyo3::exceptions::PyValueError;
@@ -73,12 +77,64 @@ impl PyNormalizerOption {
     }
 }
 
-#[pyclass(set_all, get_all)]
+#[pyclass]
 #[derive(Debug, Clone, Default)]
 pub struct PyClassifierOption {
+    #[pyo3(get, set)]
     stop_words: Option<PyStopWords>,
-    separators: Option<Vec<String>>
+    separators: Option<SpecialVec>,
 }
+
+#[derive(Debug, Clone)]
+struct SpecialVec {
+    inner: Arc<Vec<String>>,
+    references: Arc<Vec<*const str>>
+}
+
+unsafe impl Send for SpecialVec{}
+unsafe impl Sync for SpecialVec{}
+
+impl SpecialVec {
+    pub fn new(inner: Vec<String>) -> Self {
+        let references = inner.iter().map(|value| value.as_str() as *const str).collect_vec();
+        Self {
+            inner: Arc::new(inner),
+            references: Arc::new(references)
+        }
+    }
+
+    pub fn as_slice(&self) -> &[&str] {
+        unsafe {transmute(self.references.as_slice())}
+    }
+
+    pub fn copy_string_vec(&self) -> Vec<String> {
+        (*self.inner).clone()
+    }
+}
+
+#[cfg(test)]
+mod special_vec_test {
+    use crate::py::tokenizer::SpecialVec;
+
+    #[test]
+    fn can_be_used_safely(){
+        let v = SpecialVec::new(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+
+        let r = v.as_slice();
+
+        println!("{:?}", v.as_ref());
+        println!("{:?}", r);
+    }
+}
+
+
+impl AsRef<[String]> for SpecialVec {
+    fn as_ref(&self) -> &[String] {
+        self.inner.as_slice()
+    }
+}
+
+
 
 #[pymethods]
 impl PyClassifierOption {
@@ -86,7 +142,31 @@ impl PyClassifierOption {
     pub fn new() -> Self {
         Default::default()
     }
+
+    #[getter]
+    pub fn get_separators(&self) -> PyResult<Option<Vec<String>>> {
+        match &self.separators {
+            None => {Ok(None)}
+            Some(value) => {
+                Ok(Some(value.copy_string_vec()))
+            }
+        }
+    }
+
+    #[setter]
+    pub fn set_separators(&mut self, value: Option<Vec<String>>) -> PyResult<()> {
+        match value {
+            None => {
+                self.separators = None;
+            }
+            Some(value) => {
+                self.separators = Some(SpecialVec::new(value));
+            }
+        }
+        Ok(())
+    }
 }
+
 
 impl PyClassifierOption {
     pub fn as_classifier_option<'a>(&'a self) -> ClassifierOption<'a> {
@@ -96,23 +176,58 @@ impl PyClassifierOption {
         };
         let separators = match &self.separators {
             None => {None}
-            Some(value) => {Some(value.)}
+            Some(value) => {Some(value.as_slice())}
         };
         ClassifierOption {
             stop_words,
-
+            separators
         }
     }
 }
 
 
-#[pyclass(set_all, get_all)]
+#[pyclass]
 #[derive(Debug, Clone, Default)]
 pub struct PySegmenterOption {
+    #[pyo3(get, set)]
     aho: Option<PyAhoCorasick>,
-    allow_list: Option<HashMap<PyScript, Vec<PyLanguage>>>
+    allow_list: Option<HashMap<Script, Vec<Language>>>
 }
 
+#[pymethods]
+impl PySegmenterOption {
+    #[new]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[setter]
+    pub fn set_allow_list(&mut self, allow_list: Option<HashMap<PyScript, Vec<PyLanguage>>>) {
+        self.allow_list = allow_list.map(
+            |value| {
+                value.into_iter().map(|(k, v)| (k.into(), v.into_iter().map(|lang| lang.into()).collect())).collect()
+            }
+        )
+    }
+
+    #[getter]
+    pub fn get_allow_list(&self) -> Option<HashMap<PyScript, Vec<PyLanguage>>> {
+        self.allow_list.as_ref().map(|value| {
+            value.iter().map(|(k, v)| {
+                (k.clone().into(), v.iter().map(|lang| lang.clone().into()).collect())
+            }).collect()
+        })
+    }
+}
+
+impl PySegmenterOption {
+    pub fn as_segmenter_option(&self) -> SegmenterOption {
+        SegmenterOption {
+            aho: self.aho.clone().map(|value| value.into()),
+            allow_list: self.allow_list.as_ref()
+        }
+    }
+}
 
 
 #[pyclass]
