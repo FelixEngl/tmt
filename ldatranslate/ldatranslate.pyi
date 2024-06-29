@@ -374,7 +374,15 @@ class PyTranslationConfig:
             threshold: float | None = None,
             keep_original_word: KeepOriginalWord | str | None = None,
             top_candidate_limit: int | None = None
-    ) -> None: ...
+    ) -> None:
+        """
+
+        :param epsilon: Smallest value in the translated topic model, by default min value of translated topic model minus f64::delta
+        :param threshold:
+        :param keep_original_word:
+        :param top_candidate_limit:
+        """
+        ...
 
 
 class VotingFunction(Protocol):

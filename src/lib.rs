@@ -1,5 +1,5 @@
 use pyo3::{Bound, pymodule, PyResult};
-use pyo3::prelude::{PyModule};
+use pyo3::prelude::PyModule;
 use crate::py::register_modules;
 
 mod topicmodel;
@@ -9,6 +9,7 @@ mod toolkit;
 mod variable_names;
 pub mod py;
 mod external_variable_provider;
+pub mod aligned_data;
 
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
