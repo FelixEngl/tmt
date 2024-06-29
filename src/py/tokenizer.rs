@@ -4,17 +4,17 @@ use std::sync::Arc;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, BuildError, dfa, MatchKind, StartKind};
 use aho_corasick::nfa::{contiguous, noncontiguous};
 use aho_corasick::nfa::noncontiguous::{Builder, NFA};
-use charabia::Script;
+use charabia::{Script, TokenizerBuilder};
 use charabia::Language;
 use charabia::normalizer::{ClassifierOption, NormalizerOption};
 use charabia::segmenter::SegmenterOption;
 use fst::Set;
 use itertools::Itertools;
-use nom::combinator::value;
-use pyo3::{Bound, FromPyObject, pyclass, pymethods, PyRefMut, PyResult};
+use pyo3::{Bound, FromPyObject, pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use crate::py::enum_mapping::map_enum;
 
+#[pyclass]
 #[derive(Clone, Debug, Default)]
 pub struct PyTokenizerBuilder {
     stop_words: Option<PyStopWords>,
@@ -22,6 +22,51 @@ pub struct PyTokenizerBuilder {
     normalizer_option: PyNormalizerOption,
     segmenter_option: PySegmenterOption,
 }
+
+#[pymethods]
+impl PyTokenizerBuilder {
+    #[new]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn stop_words<'py>(mut slf: Bound<'py, Self>, stop_words: PyStopWords) -> Bound<'py, Self> {
+        slf.borrow_mut().stop_words = Some(stop_words);
+        slf
+    }
+
+    pub fn separators<'py>(mut slf: Bound<'py, Self>, separators: Vec<String>) -> PyResult<Bound<'py, Self>> {
+        slf.borrow_mut().normalizer_option.classifier.set_separators(Some(separators))?;
+        Ok(slf)
+    }
+
+    pub fn words_dict<'py>(mut slf: Bound<'py, Self>, words: Vec<String>) -> Bound<'py, Self> {
+        slf.borrow_mut().words_dict = Some(words);
+        slf
+    }
+
+    pub fn create_char_map<'py>(mut slf: Bound<'py, Self>, create_char_map: bool) -> Bound<'py, Self> {
+        slf.borrow_mut().normalizer_option.create_char_map = create_char_map;
+        slf
+    }
+
+    pub fn lossy_normalization<'py>(mut slf: Bound<'py, Self>, lossy: bool) -> Bound<'py, Self> {
+        slf.borrow_mut().normalizer_option.lossy = lossy;
+        slf
+    }
+
+    pub fn allow_list<'py>(mut slf: Bound<'py, Self>, allow_list:  HashMap<PyScript, Vec<PyLanguage>>) -> Bound<'py, Self> {
+        slf.borrow_mut().segmenter_option.set_allow_list(Some(allow_list));
+        slf
+    }
+}
+
+impl PyTokenizerBuilder {
+    pub fn as_tokenizer_builder(&self) -> TokenizerBuilder<> {
+        TokenizerBuilder::new()
+    }
+}
+
 
 #[pyclass]
 #[derive(Clone, Debug, Default)]
@@ -104,6 +149,7 @@ impl SpecialVec {
     }
 
     pub fn as_slice(&self) -> &[&str] {
+        // A &str is basically a *const str but with a safe livetime.
         unsafe {transmute(self.references.as_slice())}
     }
 
