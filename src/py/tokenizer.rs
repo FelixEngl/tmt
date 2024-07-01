@@ -745,8 +745,8 @@ impl PyTokenizerBuilder {
         Self::default()
     }
 
-    fn stemmer<'py>(slf: Bound<'py, Self>, stemmer: Option<PyStemmingAlgorithm>) -> Bound<'py, Self> {
-        slf.borrow_mut().stemmer = stemmer;
+    fn stemmer<'py>(slf: Bound<'py, Self>, stemmer: PyStemmingAlgorithm) -> Bound<'py, Self> {
+        slf.borrow_mut().stemmer = Some(stemmer);
         slf
     }
 
@@ -789,6 +789,10 @@ impl PyTokenizerBuilder {
     #[staticmethod]
     fn from_json(s: &str) -> PyResult<Self> {
         Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
+
+    fn __repr__(self) -> String {
+        format!("{:?}", self)
     }
 }
 
