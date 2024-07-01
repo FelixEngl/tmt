@@ -152,18 +152,19 @@ impl PyTopicModel {
         let mut voc = PyVocabulary::new(Some(language_hint.into()), None);
 
         let mut new_probability = Vec::new();
-        for _ in 0..self.inner.topic_count() {
-            new_probability.push(vec![min_value; voc.len()]);
-        }
+
 
         let mut vocab_frequency: Vec<u64>;
 
         match word_lists {
             PlainTranslateArgs::List(value) => {
-                vocab_frequency = vec![0u64; voc.len()];
                 let word_ids = value.into_iter().map(|value| {
                     voc.add(value)
                 }).collect_vec();
+                vocab_frequency = vec![0u64; voc.len()];
+                for _ in 0..self.inner.topic_count() {
+                    new_probability.push(vec![min_value; voc.len()]);
+                }
                 for topic_id in self.inner.topic_ids() {
                     let topic_old = self.inner.topics().get(topic_id).unwrap();
                     let topic_new = new_probability.get_mut(topic_id).unwrap();
@@ -174,14 +175,16 @@ impl PyTopicModel {
                 }
             }
             PlainTranslateArgs::ListList(word_lists) => {
-                vocab_frequency = vec![0u64; voc.len()];
 
                 let word_lists = word_lists.into_iter().map(|values| {
                     values.into_iter().map(|value| {
                         voc.add(value)
                     }).collect_vec()
                 }).collect_vec();
-
+                vocab_frequency = vec![0u64; voc.len()];
+                for _ in 0..self.inner.topic_count() {
+                    new_probability.push(vec![min_value; voc.len()]);
+                }
                 for (topic_id, word_ids) in word_lists.into_iter().enumerate() {
                     let topic_old = self.inner.topics().get(topic_id).unwrap();
                     let topic_new = new_probability.get_mut(topic_id).unwrap();
@@ -193,17 +196,17 @@ impl PyTopicModel {
             }
         };
 
-        Ok(
-            Self {
-                inner: TopicModel::new(
-                    new_probability,
-                    voc,
-                    vocab_frequency,
-                    self.doc_topic_distributions().clone(),
-                    self.document_lengths().clone()
-                )
-            }
-        )
+        let mut inner = TopicModel::new(
+            new_probability,
+            voc,
+            vocab_frequency,
+            self.doc_topic_distributions().clone(),
+            self.document_lengths().clone()
+        );
+
+        inner.normalize_in_place();
+
+        Ok(Self { inner })
     }
 
 
@@ -401,4 +404,70 @@ impl From<ReadError<Infallible>> for PyErr {
 pub(crate) fn topic_model_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTopicModel>()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::py::helpers::LanguageHintValue;
+    use crate::py::topic_model::{PlainTranslateArgs, PyTopicModel};
+    use crate::py::vocabulary::PyVocabulary;
+    use crate::topicmodel::topic_model::TopicModel;
+    use crate::translate::test::create_test_data;
+
+    #[test]
+    fn special_translate_works(){
+        let (voc_a, _, _) = create_test_data();
+        let model_a = TopicModel::new(
+            vec![
+                vec![0.019, 0.018, 0.012, 0.009, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008],
+                vec![0.02, 0.002, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001],
+            ],
+            PyVocabulary::from(voc_a),
+            vec![10, 5, 8, 1, 2, 3, 1, 1, 1, 1, 2],
+            vec![
+                vec![0.7, 0.2],
+                vec![0.8, 0.3]
+            ],
+            vec![
+                200,
+                300
+            ]
+        );
+        let model = PyTopicModel::wrap(model_a);
+        let tranlation = model.translate_by_provided_word_lists(
+            LanguageHintValue::Value("LA".to_string()),
+            PlainTranslateArgs::ListList(
+                vec![
+                    vec![
+                        "a".to_string(),
+                        "b".to_string(),
+                        "c".to_string(),
+                        "d".to_string(),
+                        "e".to_string(),
+                        "f".to_string(),
+                        "g".to_string(),
+                        "h".to_string(),
+                        "i".to_string(),
+                        "j".to_string(),
+                        "k".to_string(),
+                    ],
+                    vec![
+                        "xxx".to_string(),
+                        "b".to_string(),
+                        "yyy".to_string(),
+                        "d".to_string(),
+                        "e".to_string(),
+                        "f".to_string(),
+                        "zzz".to_string(),
+                        "h".to_string(),
+                        "i".to_string(),
+                        "j".to_string(),
+                        "k".to_string(),
+                    ]
+                ]
+            )
+        );
+
+        tranlation.unwrap().show_top(Some(20)).unwrap()
+    }
 }
