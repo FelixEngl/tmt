@@ -147,8 +147,6 @@ impl PyTopicModel {
             }
         }
 
-
-
         let min_value = self.inner.topics().iter().flatten().min_partial_filtered().unwrap().clone();
 
         let mut voc = PyVocabulary::new(Some(language_hint.into()), None);
