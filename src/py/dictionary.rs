@@ -1,10 +1,11 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, BufWriter, Write};
+use std::ops::{Deref};
 use std::path::{PathBuf};
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pymethods, PyObject, PyRef, PyResult, Python};
@@ -351,54 +352,54 @@ impl PyDictionary {
     }
 
     #[getter]
-    pub fn known_dictionaries(&self) -> Vec<String> {
+    fn known_dictionaries(&self) -> Vec<String> {
         self.inner.known_dictionaries().into_iter().map(|value| value.to_string()).collect_vec()
     }
 
     #[getter]
-    pub fn tags(&self) -> Vec<String> {
+    fn tags(&self) -> Vec<String> {
         self.inner.tags().into_iter().map(|value| value.to_string()).collect_vec()
     }
 
     #[getter]
-    pub fn unstemmed(&self) -> PyVocabulary {
+    fn unstemmed(&self) -> PyVocabulary {
         self.inner.unstemmed().clone().into()
     }
 
     #[getter]
-    pub fn translation_direction(&self) -> (Option<LanguageHint>, Option<LanguageHint>) {
-        (self.voc_a().language_hint(), self.voc_b().language_hint())
+    fn translation_direction(&self) -> (Option<LanguageHint>, Option<LanguageHint>) {
+        (self.deref().language::<A>().cloned(), self.deref().language::<B>().cloned())
     }
 
     #[setter]
-    pub fn set_translation_direction(&mut self, option: (Option<LanguageHintValue>, Option<LanguageHintValue>)) {
+    fn set_translation_direction(&mut self, option: (Option<LanguageHintValue>, Option<LanguageHintValue>)) {
         self.inner.set_language::<A>(option.0.map(|value| value.into()));
         self.inner.set_language::<B>(option.1.map(|value| value.into()));
     }
 
     #[getter]
-    pub fn voc_a(&self) -> PyVocabulary {
+    fn voc_a(&self) -> PyVocabulary {
         self.inner.voc_a().clone()
     }
 
     #[getter]
-    pub fn voc_b(&self) -> PyVocabulary {
+    fn voc_b(&self) -> PyVocabulary {
         self.inner.voc_b().clone()
     }
 
-    pub fn voc_a_contains(&self, value: &str) -> bool {
+    fn voc_a_contains(&self, value: &str) -> bool {
         self.inner.voc_a().contains(value)
     }
 
-    pub fn voc_b_contains(&self, value: &str) -> bool {
+    fn voc_b_contains(&self, value: &str) -> bool {
         self.inner.voc_b().contains(value)
     }
 
-    pub fn __contains__(&self, value: &str) -> bool {
+    fn __contains__(&self, value: &str) -> bool {
         return self.voc_a_contains(value) || self.voc_b_contains(value)
     }
 
-    pub fn switch_a_to_b(&self) -> Self {
+    fn switch_a_to_b(&self) -> Self {
         self.clone().switch_languages()
     }
 
@@ -457,7 +458,7 @@ impl PyDictionary {
         return result.to_tuple();
     }
 
-    pub fn get_translation_a_to_b(&self, word: &str) -> Option<Vec<String>> {
+    fn get_translation_a_to_b(&self, word: &str) -> Option<Vec<String>> {
         self.inner
             .translate_value_to_values::<AToB, _>(word)
             .map(|value|
@@ -468,7 +469,7 @@ impl PyDictionary {
             )
     }
 
-    pub fn get_translation_b_to_a(&self, word: &str) -> Option<Vec<String>> {
+    fn get_translation_b_to_a(&self, word: &str) -> Option<Vec<String>> {
         self.inner
             .translate_value_to_values::<BToA, _>(word)
             .map(|value|
@@ -479,11 +480,11 @@ impl PyDictionary {
             )
     }
 
-    pub fn __repr__(&self) -> String {
+    fn __repr__(&self) -> String {
         format!("PyDictionary({:?})", self.inner)
     }
 
-    pub fn __str__(&self) -> String {
+    fn __str__(&self) -> String {
         self.inner.to_string()
     }
 
@@ -517,7 +518,7 @@ impl PyDictionary {
         PyDictIter::new(self.clone())
     }
 
-    pub fn filter<'py>(&self, filter_a: Bound<'py, PyFunction>, filter_b: Bound<'py, PyFunction>) -> PyResult<Self> {
+    fn filter<'py>(&self, filter_a: Bound<'py, PyFunction>, filter_b: Bound<'py, PyFunction>) -> PyResult<Self> {
         let created = self.inner.create_subset_with_filters(
             |dict, word, meta|{
                 let value = dict.id_to_word::<A>(word).unwrap().to_string();
@@ -534,20 +535,28 @@ impl PyDictionary {
         Ok(PyDictionary { inner: created })
     }
 
-    pub fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
+    fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
         // We only tarn the output in the python API, is always none.
         (None, None)
     }
 
-    pub fn __getstate__(&self) -> HashMap<String, PyDictionaryStateValue> {
+    fn __getstate__(&self) -> HashMap<String, PyDictionaryStateValue> {
         let result = self.inner.get_py_state();
         return result.into_iter().map(|(k, value)| (k, value.into())).collect()
     }
 
-    pub fn __setstate__(&mut self, state: HashMap<String, PyDictionaryStateValue>) -> PyResult<()> {
+    fn __setstate__(&mut self, state: HashMap<String, PyDictionaryStateValue>) -> PyResult<()> {
         let to_set = state.into_iter().map(|(k, v)| (k, v.into())).collect();
         self.inner = DictionaryWithMeta::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
         Ok(())
+    }
+}
+
+impl Deref for PyDictionary {
+    type Target = DictionaryWithMeta<String, PyVocabulary>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 

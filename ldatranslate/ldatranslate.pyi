@@ -230,6 +230,9 @@ class PyTopicModel:
     def builder(language_a: None | str | LanguageHint = None) -> PyTopicModelBuilder:
         ...
 
+    def translate_by_provided_word_lists(self, language_a: str | LanguageHint, word_lists: list[list[str]]) -> 'PyTopicModel':
+        """Translates a topic model by the provided list of translated words with the format k x word_count"""
+        ...
 
 class KeepOriginalWord(object):
     Always: KeepOriginalWord
@@ -472,3 +475,213 @@ class variable_names:
     "The word id of a candidate."
     TOPIC_ID: str
     "The topic id."
+
+
+class PyArticle:
+    def __init__(self, language_hint: LanguageHint | str, content: str, categories: None | list[int] = None):...
+
+    @property
+    def lang(self) -> LanguageHint:...
+
+    @property
+    def categories(self) -> None | list[int]:...
+
+    @property
+    def content(self) -> str:...
+
+    def __str__(self):...
+
+    def to_json(self) -> str:...
+
+class PyTokenKind:
+    Word: PyTokenKind
+    StopWord: PyTokenKind
+    SeparatorHard: PyTokenKind
+    SeparatorSoft: PyTokenKind
+    Unknown: PyTokenKind
+
+class PyScript:
+    Arabic: PyScript
+    Armenian: PyScript
+    Bengali: PyScript
+    Cyrillic: PyScript
+    Devanagari: PyScript
+    Ethiopic: PyScript
+    Georgian: PyScript
+    Greek: PyScript
+    Gujarati: PyScript
+    Gurmukhi: PyScript
+    Hangul: PyScript
+    Hebrew: PyScript
+    Kannada: PyScript
+    Khmer: PyScript
+    Latin: PyScript
+    Malayalam: PyScript
+    Myanmar: PyScript
+    Oriya: PyScript
+    Sinhala: PyScript
+    Tamil: PyScript
+    Telugu: PyScript
+    Thai: PyScript
+    Cj: PyScript
+    Other: PyScript
+
+class PyLanguage:
+    Epo: PyLanguage
+    Eng: PyLanguage
+    Rus: PyLanguage
+    Cmn: PyLanguage
+    Spa: PyLanguage
+    Por: PyLanguage
+    Ita: PyLanguage
+    Ben: PyLanguage
+    Fra: PyLanguage
+    Deu: PyLanguage
+    Ukr: PyLanguage
+    Kat: PyLanguage
+    Ara: PyLanguage
+    Hin: PyLanguage
+    Jpn: PyLanguage
+    Heb: PyLanguage
+    Yid: PyLanguage
+    Pol: PyLanguage
+    Amh: PyLanguage
+    Jav: PyLanguage
+    Kor: PyLanguage
+    Nob: PyLanguage
+    Dan: PyLanguage
+    Swe: PyLanguage
+    Fin: PyLanguage
+    Tur: PyLanguage
+    Nld: PyLanguage
+    Hun: PyLanguage
+    Ces: PyLanguage
+    Ell: PyLanguage
+    Bul: PyLanguage
+    Bel: PyLanguage
+    Mar: PyLanguage
+    Kan: PyLanguage
+    Ron: PyLanguage
+    Slv: PyLanguage
+    Hrv: PyLanguage
+    Srp: PyLanguage
+    Mkd: PyLanguage
+    Lit: PyLanguage
+    Lav: PyLanguage
+    Est: PyLanguage
+    Tam: PyLanguage
+    Vie: PyLanguage
+    Urd: PyLanguage
+    Tha: PyLanguage
+    Guj: PyLanguage
+    Uzb: PyLanguage
+    Pan: PyLanguage
+    Aze: PyLanguage
+    Ind: PyLanguage
+    Tel: PyLanguage
+    Pes: PyLanguage
+    Mal: PyLanguage
+    Ori: PyLanguage
+    Mya: PyLanguage
+    Nep: PyLanguage
+    Sin: PyLanguage
+    Khm: PyLanguage
+    Tuk: PyLanguage
+    Aka: PyLanguage
+    Zul: PyLanguage
+    Sna: PyLanguage
+    Afr: PyLanguage
+    Lat: PyLanguage
+    Slk: PyLanguage
+    Cat: PyLanguage
+    Tgl: PyLanguage
+    Hye: PyLanguage
+    Other: PyLanguage
+
+class PyToken:
+    @property
+    def kind(self) -> PyTokenKind:...
+    @property
+    def lemma(self) -> str:...
+
+    @property
+    def char_start(self) -> int:...
+    @property
+    def char_end(self) -> int:...
+    @property
+    def byte_start(self) -> int:...
+    @property
+    def byte_end(self) -> int:...
+    @property
+    def char_map(self) -> None | list[tuple[int, int]]:...
+    @property
+    def script(self) -> PyScript:...
+    @property
+    def language(self) -> None | PyLanguage:...
+
+    def byte_len(self) -> int:...
+    def __len__(self) -> int:...
+    def __str__(self) -> str:...
+    def __repr__(self) -> str:...
+
+
+PyTokenizedArticleUnion = PyArticle | tuple[PyArticle, list[tuple[str, PyToken]]]
+
+class PyAlignedArticle:
+    def __init__(self, article_id: int, articles: dict[LanguageHint, PyArticle] | dict[str, PyArticle]):...
+    @staticmethod
+    def create(article_id: int, articles: dict[LanguageHint, PyArticle] | dict[str, PyArticle] | list[PyArticle]) -> 'PyAlignedArticle':
+        ...
+
+    def __str__(self):...
+    def __repr__(self):...
+    def __getitem__(self, item: LanguageHint | str) -> PyArticle | None:...
+    def __contains__(self, item: LanguageHint | str) -> bool:...
+    def to_json(self) -> str:...
+
+class PyTokenizedAlignedArticle:
+    def __init__(self, article_id: int, articles: dict[LanguageHint, PyTokenizedArticleUnion] | dict[str, PyTokenizedArticleUnion]):...
+    @staticmethod
+    def create(article_id: int, articles: dict[LanguageHint, PyTokenizedArticleUnion] | dict[str, PyTokenizedArticleUnion] | list[PyTokenizedArticleUnion]) -> 'PyTokenizedAlignedArticle':
+        ...
+
+    def __str__(self):...
+    def __repr__(self):...
+    def __getitem__(self, item: LanguageHint | str) -> PyTokenizedArticleUnion | None:...
+    def __contains__(self, item: LanguageHint | str) -> bool:...
+    def to_json(self) -> str:...
+
+
+class PyStopWords:
+    def __init__(self, words: list[str]):...
+
+class PyTokenizerBuilder:
+    def __init__(self):...
+
+    def stop_words(self, stop_words: PyStopWords) -> 'PyTokenizerBuilder':...
+    def separators(self, separators: list[str]) -> 'PyTokenizerBuilder':...
+    def words_dict(self, words: list[str]) -> 'PyTokenizerBuilder':...
+    def create_char_map(self, create_char_map: bool) -> 'PyTokenizerBuilder':...
+    def lossy_normalization(self, lossy: bool) -> 'PyTokenizerBuilder':...
+    def allow_list(self, allow_list: dict[PyScript, list[PyLanguage]]) -> 'PyTokenizerBuilder':...
+
+class PyAlignedArticleProcessor:
+    def __init__(self, processors: dict[LanguageHint, PyTokenizedArticleUnion] | dict[str, PyTokenizedArticleUnion]):...
+    def __contains__(self, item: LanguageHint | str) -> bool:...
+    def process(self, value: PyAlignedArticle) -> PyTokenizedAlignedArticle:...
+    def process_string(self, language_hint: LanguageHint | str, value: str) -> None | list[tuple[str, PyToken]]:...
+
+class PyAlignedArticleIter:
+    def __iter__(self):...
+    def __next__(self) -> PyAlignedArticle:...
+
+class PyParsedAlignedArticleIter:
+    def __iter__(self):...
+    def __next__(self) -> PyTokenizedAlignedArticle:...
+
+def read_aligned_articles(path: Path | PathLike | str, with_pickle: bool) -> PyAlignedArticleIter:...
+def read_and_parse_aligned_articles(path: Path | PathLike | str, with_pickle: bool, processor: PyAlignedArticleProcessor) -> PyParsedAlignedArticleIter:...
+def read_and_parse_aligned_articles_into(path_in: Path | PathLike | str, with_pickle: bool, path_out: Path | PathLike | str, processor: PyAlignedArticleProcessor) -> int:
+    """May throw a Runtime or IO error."""
+    ...
+

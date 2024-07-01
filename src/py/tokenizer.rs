@@ -1,24 +1,700 @@
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::{env, io};
+use std::io::{BufReader, BufWriter};
+use std::iter::Map;
 use std::mem::transmute;
-use std::sync::Arc;
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, BuildError, dfa, MatchKind, StartKind};
-use aho_corasick::nfa::{contiguous, noncontiguous};
-use aho_corasick::nfa::noncontiguous::{Builder, NFA};
-use charabia::{Script, TokenizerBuilder};
+use std::ops::Deref;
+use std::path::{Path};
+use std::sync::{Arc, Mutex};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind, StartKind};
+use charabia::{Script, SeparatorKind, Token, Tokenizer, TokenizerBuilder, TokenKind};
 use charabia::Language;
 use charabia::normalizer::{ClassifierOption, NormalizerOption};
 use charabia::segmenter::SegmenterOption;
+use thiserror::Error;
 use fst::Set;
 use itertools::Itertools;
-use pyo3::{Bound, FromPyObject, pyclass, pymethods, PyResult};
-use pyo3::exceptions::PyValueError;
+use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pyfunction, pymethods, PyObject, PyRef, PyResult, Python, wrap_pyfunction};
+use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
+use pyo3::prelude::{PyModule, PyModuleMethods};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde_json::de::IoRead;
+use serde_json::{Deserializer, Error, StreamDeserializer, Value};
+use crate::aligned_data::{AlignedArticle, Article, IntoJsonPickleDeserializerIterator, JsonPickleDeserializerIterator};
 use crate::py::enum_mapping::map_enum;
+use crate::py::helpers::{LanguageHintValue, SpecialVec};
+use crate::toolkit::with_ref_of::{SupportsWithRef, WithValue};
+use crate::topicmodel::language_hint::LanguageHint;
+
+
+
+enum JsonPickleIterWrapper<'a, T> {
+    Pickle(JsonPickleDeserializerIterator<StreamDeserializer<'a, IoRead<BufReader<File>>, Value>, T>),
+    Unpickle(StreamDeserializer<'a, IoRead<BufReader<File>>, T>)
+}
+
+impl<'a, T> Iterator for JsonPickleIterWrapper<'a, T> where T: DeserializeOwned {
+    type Item = serde_json::Result<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            JsonPickleIterWrapper::Pickle(ref mut value) => {
+                value.next()
+            }
+            JsonPickleIterWrapper::Unpickle(ref mut value) => {
+                value.next()
+            }
+        }
+    }
+}
+
+type DeserializeIter<'a> = JsonPickleIterWrapper<'a, PyAlignedArticle>;
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyAlignedArticleIter {
+    iter: Arc<Mutex<DeserializeIter<'static>>>
+}
+
+impl PyAlignedArticleIter {
+    fn new(iterator: DeserializeIter) -> Self {
+        Self {
+            iter: Arc::new(Mutex::new(unsafe{transmute(iterator)}))
+        }
+    }
+}
+
+#[pymethods]
+impl PyAlignedArticleIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> PyResult<Option<PyAlignedArticle>> {
+        match self.iter.lock() {
+            Ok(mut lock) => {
+                match lock.next().transpose() {
+                    Ok(value) => {
+                        Ok(value)
+                    }
+                    Err(err) => {
+                        Err(PyRuntimeError::new_err(err.to_string()))
+                    }
+                }
+            }
+            Err(err) => {
+                Err(PyRuntimeError::new_err(err.to_string()))
+            }
+        }
+    }
+}
+
+impl Iterator for PyAlignedArticleIter {
+    type Item = Result<PyAlignedArticle, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.lock().unwrap().next()
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyParsedAlignedArticleIter {
+    iter: Arc<Mutex<TokenizingDeserializeIter<'static>>>
+}
+
+impl PyParsedAlignedArticleIter {
+    fn new(iterator: TokenizingDeserializeIter) -> Self {
+        Self {
+            iter: Arc::new(Mutex::new(unsafe{transmute(iterator)}))
+        }
+    }
+}
+
+#[pymethods]
+impl PyParsedAlignedArticleIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> PyResult<Option<PyTokenizedAlignedArticle>> {
+        match self.iter.lock() {
+            Ok(mut lock) => {
+                match lock.next().transpose() {
+                    Ok(value) => {
+                        Ok(value)
+                    }
+                    Err(err) => {
+                        Err(PyRuntimeError::new_err(err.to_string()))
+                    }
+                }
+            }
+            Err(err) => {
+                Err(PyRuntimeError::new_err(err.to_string()))
+            }
+        }
+    }
+}
+
+impl Iterator for PyParsedAlignedArticleIter {
+    type Item = Result<PyTokenizedAlignedArticle, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.lock().unwrap().next()
+    }
+}
+
+
+fn read_aligned_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: bool) -> io::Result<DeserializeIter<'a>> {
+    let iter = Deserializer::from_reader(BufReader::new(File::open(path)?));
+    Ok(if with_pickle {
+        DeserializeIter::Pickle(iter.into_iter().into_json_pickle_iter::<PyAlignedArticle>())
+    } else {
+        DeserializeIter::Unpickle(iter.into_iter())
+    })
+}
+
+#[pyfunction]
+pub fn read_aligned_articles(path: &str, with_pickle: bool) -> PyResult<PyAlignedArticleIter> {
+    Ok(
+        PyAlignedArticleIter::new(
+            read_aligned_articles_impl(path, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?
+        )
+    )
+}
+
+type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
+
+#[pyfunction]
+pub fn read_and_parse_aligned_articles(path: &str, with_pickle: bool, processor: PyAlignedArticleProcessor) -> PyResult<PyParsedAlignedArticleIter>{
+    let reader = read_aligned_articles_impl(path, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?;
+    let tokenizers = unsafe{processor.create_tokenizer_map()};
+
+    let iter: TokenizingDeserializeIter = reader.with_value(Arc::new(tokenizers)).map(|(tokenizers, value)| {
+        match value {
+            Ok(value) => {
+                let (id, articles) = value.0.into_inner();
+                let articles = articles.into_par_iter().map(|(lang, art)| {
+                    if let Some(tokenizer) = tokenizers.get(&lang) {
+                        let tokens = tokenizer
+                            .reconstruct(art.0.content())
+                            .map(|(original, value)| (original.to_string(), value.into()))
+                            .collect_vec();
+                        (lang, PyTokenizedArticleUnion::Tokenized(
+                            art,
+                            tokens
+                        ))
+                    } else {
+                        (lang, PyTokenizedArticleUnion::NotTokenized(art))
+                    }
+                }).collect::<HashMap<_, _>>();
+                Ok(
+                    PyTokenizedAlignedArticle(
+                        AlignedArticle::new(
+                            id,
+                            articles
+                        )
+                    )
+                )
+            }
+            Err(value) => {
+                Err(value)
+            }
+        }
+    });
+
+    Ok(PyParsedAlignedArticleIter::new(iter))
+}
+
+#[derive(Debug, Error)]
+enum WriteIntoError {
+    #[error(transparent)]
+    SerdeError(#[from] serde_json::Error),
+    #[error(transparent)]
+    IO(#[from] io::Error)
+}
+
+#[pyfunction]
+pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, path_out: &str, processor: PyAlignedArticleProcessor) -> PyResult<usize> {
+    let reader = read_aligned_articles_impl(path_in, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?;
+    let tokenizers = Arc::new(unsafe{processor.create_tokenizer_map()});
+
+    let temp_folder = env::temp_dir();
+
+    let mut files = reader.enumerate().par_bridge().map(|(idx, value)| {
+        let result = match value {
+            Ok(value) => {
+                let (id, articles) = value.0.into_inner();
+                let articles = articles.into_par_iter().map(|(lang, art)| {
+                    if let Some(tokenizer) = tokenizers.get(&lang) {
+                        let tokens = tokenizer
+                            .reconstruct(art.0.content())
+                            .map(|(original, value)| (original.to_string(), value.into()))
+                            .collect_vec();
+                        (lang, PyTokenizedArticleUnion::Tokenized(
+                            art,
+                            tokens
+                        ))
+                    } else {
+                        (lang, PyTokenizedArticleUnion::NotTokenized(art))
+                    }
+                }).collect::<HashMap<_, _>>();
+                Ok(
+                    PyTokenizedAlignedArticle(
+                        AlignedArticle::new(
+                            id,
+                            articles
+                        )
+                    )
+                )
+            }
+            Err(value) => {
+                Err(value)
+            }
+        };
+        (idx, result)
+    }).map(|(idx, value)| {
+        match value {
+            Ok(value) => {
+                let temp_file = temp_folder.join(format!("tmp_{idx}.json"));
+                match File::create_new(&temp_file) {
+                    Ok(file) => {
+                        match serde_json::to_writer(file, &value) {
+                            Ok(_) => {
+                                Ok((idx, temp_file))
+                            }
+                            Err(err) => Err((idx, err.into()))
+                        }
+                    }
+                    Err(err) => Err((idx, err.into()))
+                }
+
+            }
+            Err(err) => Err((idx, err.into()))
+        }
+    }).collect::<Vec<Result<_, (usize, WriteIntoError)>>>();
+
+    let mut writer = BufWriter::new(File::options().append(true).create(true).open(path_out).map_err(|value| PyIOError::new_err(value.to_string()))?);
+
+    let number_of_results = files.len();
+
+    files.sort_by_key(|value| {
+        match value {
+            Ok((idx, _)) => *idx,
+            Err((idx, _)) => *idx
+        }
+    });
+
+    let mut error = Vec::new();
+    for value in files {
+        match value {
+            Ok((_, value)) => {
+                let mut reader = File::open(value).map_err(|value| PyIOError::new_err(value.to_string()))?;
+                std::io::copy(&mut reader, &mut writer).map_err(|value| PyIOError::new_err(value.to_string()))?;
+            }
+            Err(err) => {
+                error.push(err);
+            }
+        }
+    }
+
+    if let Some((idx, err)) = error.first() {
+        Err(PyRuntimeError::new_err(format!("Failed with {} errors.\nFirst Error at {idx}:\n{}", error.len(), err.to_string())))
+    } else {
+        Ok(number_of_results)
+    }
+}
+
+
+#[derive(Debug, FromPyObject)]
+pub enum PyAlignedArticleArgUnion<TArticle> {
+    Map(HashMap<LanguageHintValue, TArticle>),
+    List(Vec<TArticle>)
+}
+
+#[derive(Debug, Clone)]
+pub enum PyAlignedArticleResultUnion<TAlignedArticle, TArticle> {
+    Normal(TAlignedArticle),
+    WithDoublets(TAlignedArticle, Vec<TArticle>)
+}
+
+impl<'py, TAlignedArticle, TArticle> IntoPy<PyObject> for PyAlignedArticleResultUnion<TAlignedArticle, TArticle>
+    where TAlignedArticle: IntoPy<PyObject>, TArticle: IntoPy<PyObject> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self {
+            PyAlignedArticleResultUnion::Normal(value) => {
+                value.into_py(py)
+            }
+            PyAlignedArticleResultUnion::WithDoublets(value, dubletes) => {
+                (value, dubletes).into_py(py)
+            }
+        }
+    }
+}
+
+
+macro_rules! impl_aligned_article_wrapper {
+    ($($name: ident<$typ: ty>),+) => {
+        $(
+            #[pyclass]
+            #[repr(transparent)]
+            #[derive(Clone, Debug, Serialize, Deserialize)]
+            #[serde(transparent)]
+            pub struct $name(AlignedArticle<$typ>);
+
+            #[pymethods]
+            impl $name {
+                #[new]
+                fn new(article_id: u64, articles: HashMap<LanguageHintValue, $typ>) -> Self {
+                    Self(
+                        AlignedArticle::new(
+                            article_id,
+                            articles.into_iter().map(|(k, v)| (k.into(), v)).collect()
+                        )
+                    )
+                }
+
+                #[staticmethod]
+                fn create(article_id: u64, articles: PyAlignedArticleArgUnion<$typ>) -> PyAlignedArticleResultUnion<$name, $typ> {
+                    match articles {
+                        PyAlignedArticleArgUnion::Map(value) => {
+                            PyAlignedArticleResultUnion::Normal(
+                                Self::new(article_id, value)
+                            )
+                        }
+                        PyAlignedArticleArgUnion::List(value) => {
+                            match AlignedArticle::from(article_id, value) {
+                                Ok(value) => {
+                                    PyAlignedArticleResultUnion::Normal(Self(value))
+                                }
+                                Err((value, doublets)) => {
+                                    PyAlignedArticleResultUnion::WithDoublets(Self(value), doublets)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                fn __str__(&self) -> String {
+                    self.to_string()
+                }
+
+                fn __repr__(&self) -> String {
+                    format!("{:?}", self)
+                }
+
+                pub fn to_json(&self) -> String {
+                    serde_json::to_string(self).unwrap()
+                }
+
+                pub fn __getitem__(&self, item: LanguageHintValue) -> Option<$typ> {
+                    let lh: LanguageHint = item.into();
+                    self.0.articles().get(&lh).cloned()
+                }
+
+                pub fn __contains__(&self, item: LanguageHintValue) -> bool {
+                    let lh: LanguageHint = item.into();
+                    self.0.articles().contains_key(&lh)
+                }
+
+            }
+
+            impl Deref for $name {
+                type Target = AlignedArticle<$typ>;
+
+                fn deref(&self) -> &Self::Target {
+                    &self.0
+                }
+            }
+        )+
+    };
+}
+
+#[derive(Clone, Debug, FromPyObject, Serialize, Deserialize)]
+pub enum PyTokenizedArticleUnion {
+    Tokenized(PyArticle, Vec<(String, PyToken)>),
+    #[serde(untagged)]
+    NotTokenized(PyArticle)
+}
+
+
+impl IntoPy<PyObject> for PyTokenizedArticleUnion {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self {
+            PyTokenizedArticleUnion::Tokenized(article, values) => {
+                (article, values).into_py(py)
+            }
+            PyTokenizedArticleUnion::NotTokenized(article) => {
+                article.into_py(py)
+            }
+        }
+    }
+}
+
+impl Display for PyTokenizedArticleUnion {
+
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PyTokenizedArticleUnion::NotTokenized(article) => {
+                Display::fmt(article, f)
+            }
+            PyTokenizedArticleUnion::Tokenized(article, values) => {
+                write!(f, "Tokenized({article}, [{}])", values.iter().map(|(origin, token)| format!("(\"{origin}\" => {token})")).join(", "))
+            }
+        }
+    }
+}
+
+impl Borrow<Article> for PyTokenizedArticleUnion {
+    fn borrow(&self) -> &Article {
+        match self {
+            PyTokenizedArticleUnion::Tokenized(article, _) => {article.as_ref()}
+            PyTokenizedArticleUnion::NotTokenized(article) => {article.as_ref()}
+        }
+    }
+}
+
+impl_aligned_article_wrapper!(
+    PyAlignedArticle<PyArticle>,
+    PyTokenizedAlignedArticle<PyTokenizedArticleUnion>
+);
+
+
+
+impl Display for PyAlignedArticle {
+    delegate::delegate! {
+        to self.0 {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
+        }
+    }
+}
+
+#[pyclass]
+#[repr(transparent)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PyArticle(Article);
+
+#[pymethods]
+impl PyArticle {
+    #[new]
+    fn new(language_hint: LanguageHintValue, content: String, categories: Option<Vec<usize>>) -> Self {
+        Self(Article::new(language_hint.into(), categories, content))
+    }
+
+    #[getter]
+    #[pyo3(name="lang")]
+    fn py_lang(&self) -> LanguageHint {
+        self.lang().clone()
+    }
+    #[getter]
+    #[pyo3(name="categories")]
+    fn py_categories(&self) -> Option<Vec<usize>> {
+        self.categories().clone()
+    }
+    #[getter]
+    #[pyo3(name="content")]
+    fn py_content(&self) -> String {
+        self.content().to_string()
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
+}
+
+impl PyArticle {
+    pub fn lang(&self) -> &LanguageHint {
+        self.0.lang()
+    }
+    pub fn categories(&self) -> &Option<Vec<usize>> {
+        self.0.categories()
+    }
+    pub fn content(&self) -> &str {
+        self.0.content()
+    }
+}
+
+impl AsRef<Article> for PyArticle {
+    fn as_ref(&self) -> &Article {
+        &self.0
+    }
+}
+
+impl Borrow<Article> for PyArticle  {
+    fn borrow(&self) -> &Article {
+        &self.0
+    }
+}
+
+impl Display for PyArticle {
+    delegate::delegate! {
+        to self.0 {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
+        }
+    }
+}
+
+#[pyclass(get_all)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PyToken {
+    /// kind of the Token assigned by the classifier
+    kind: PyTokenKind,
+    lemma: String,
+    /// index of the first and the last character of the original lemma
+    char_start: usize,
+    char_end: usize,
+    /// index of the first and the last byte of the original lemma
+    byte_start: usize,
+    byte_end: usize,
+    /// number of bytes used in the original string mapped to the number of bytes used in the normalized string by each char in the original string.
+    /// The char_map must be the same length as the number of chars in the original lemma.
+    char_map: Option<Vec<(u8, u8)>>,
+    /// script of the Token
+    script: PyScript,
+    /// language of the Token
+    language: Option<PyLanguage>
+}
+
+#[pymethods]
+impl PyToken {
+    pub fn byte_len(&self) -> usize {
+        self.lemma.len()
+    }
+
+    fn __len__(&self) -> usize {
+        self.lemma.len()
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+impl<'a> From<Token<'a>> for PyToken {
+    fn from(value: Token<'a>) -> Self {
+        Self {
+            kind: value.kind.into(),
+            lemma: value.lemma.to_string(),
+            char_start: value.char_start,
+            char_end: value.char_end,
+            byte_start: value.byte_start,
+            byte_end: value.byte_end,
+            char_map: value.char_map,
+            script: value.script.into(),
+            language: value.language.map(Into::into)
+        }
+    }
+}
+
+impl<'a> Into<Token<'a>> for PyToken {
+    fn into(self) -> Token<'a> {
+        Token {
+            kind: self.kind.into(),
+            lemma: Cow::Owned(self.lemma),
+            char_start: self.char_start,
+            char_end: self.char_end,
+            byte_start: self.byte_start,
+            byte_end: self.byte_end,
+            char_map: self.char_map,
+            script: self.script.into(),
+            language: self.language.map(Into::into)
+        }
+    }
+}
+
+
+impl Display for PyToken {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}\"({}, {})", self.lemma, self.kind, self.kind)
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyAlignedArticleProcessor {
+    builders: Arc<HashMap<LanguageHint, PyTokenizerBuilder>>
+}
+
+#[pymethods]
+impl PyAlignedArticleProcessor {
+    #[new]
+    fn new(processors: HashMap<LanguageHintValue, PyTokenizerBuilder>) -> Self {
+        let provessors = processors.into_iter().map(|(k, v)| (k.into(), v)).collect();
+        Self {
+            builders: Arc::new(provessors)
+        }
+    }
+
+    fn process(&self, value: PyAlignedArticle) -> PyResult<PyTokenizedAlignedArticle> {
+        let tokenizers = unsafe{self.create_tokenizer_map()};
+        let (id, articles) = value.0.into_inner();
+
+        let articles = articles.into_iter().map(|(lang, art)| {
+            if let Some(tokenizer) = tokenizers.get(&lang) {
+                let tokens = tokenizer
+                    .reconstruct(art.0.content())
+                    .map(|(original, value)| (original.to_string(), value.into()))
+                    .collect_vec();
+                (lang, PyTokenizedArticleUnion::Tokenized(
+                    art,
+                    tokens
+                ))
+            } else {
+                (lang, PyTokenizedArticleUnion::NotTokenized(art))
+            }
+        }).collect();
+
+        Ok(
+            PyTokenizedAlignedArticle(
+                AlignedArticle::new(
+                    id,
+                    articles
+                )
+            )
+        )
+    }
+
+    fn __contains__(&self, language_hint: LanguageHintValue) -> bool {
+        let lh: LanguageHint = language_hint.into();
+        self.builders.contains_key(&lh)
+    }
+
+    fn process_string(&self, language_hint: LanguageHintValue, value: &str) -> Option<Vec<(String, PyToken)>> {
+        let lh: LanguageHint = language_hint.into();
+        let token = self.builders.get(&lh)?.build_tokenizer();
+        Some(token.reconstruct(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
+    }
+}
+
+impl PyAlignedArticleProcessor {
+    pub unsafe fn create_tokenizer_map(&self) -> HashMap<LanguageHint, Tokenizer<'static>> {
+        self.builders
+            .iter()
+            .map(|(hint, builder)| (hint.clone(), transmute(builder.build_tokenizer())))
+            .collect()
+    }
+}
+
 
 #[pyclass]
 #[derive(Clone, Debug, Default)]
 pub struct PyTokenizerBuilder {
     stop_words: Option<PyStopWords>,
-    words_dict: Option<Vec<String>>,
+    words_dict: Option<SpecialVec>,
     normalizer_option: PyNormalizerOption,
     segmenter_option: PySegmenterOption,
 }
@@ -30,40 +706,65 @@ impl PyTokenizerBuilder {
         Self::default()
     }
 
-    pub fn stop_words<'py>(mut slf: Bound<'py, Self>, stop_words: PyStopWords) -> Bound<'py, Self> {
+    fn stop_words<'py>(slf: Bound<'py, Self>, stop_words: PyStopWords) -> Bound<'py, Self> {
         slf.borrow_mut().stop_words = Some(stop_words);
         slf
     }
 
-    pub fn separators<'py>(mut slf: Bound<'py, Self>, separators: Vec<String>) -> PyResult<Bound<'py, Self>> {
+    fn separators<'py>(slf: Bound<'py, Self>, separators: Vec<String>) -> PyResult<Bound<'py, Self>> {
         slf.borrow_mut().normalizer_option.classifier.set_separators(Some(separators))?;
         Ok(slf)
     }
 
-    pub fn words_dict<'py>(mut slf: Bound<'py, Self>, words: Vec<String>) -> Bound<'py, Self> {
-        slf.borrow_mut().words_dict = Some(words);
+    fn words_dict<'py>(slf: Bound<'py, Self>, words: Vec<String>) -> Bound<'py, Self> {
+        slf.borrow_mut().words_dict = Some(SpecialVec::new(words));
         slf
     }
 
-    pub fn create_char_map<'py>(mut slf: Bound<'py, Self>, create_char_map: bool) -> Bound<'py, Self> {
+    fn create_char_map<'py>(slf: Bound<'py, Self>, create_char_map: bool) -> Bound<'py, Self> {
         slf.borrow_mut().normalizer_option.create_char_map = create_char_map;
         slf
     }
 
-    pub fn lossy_normalization<'py>(mut slf: Bound<'py, Self>, lossy: bool) -> Bound<'py, Self> {
+    fn lossy_normalization<'py>(slf: Bound<'py, Self>, lossy: bool) -> Bound<'py, Self> {
         slf.borrow_mut().normalizer_option.lossy = lossy;
         slf
     }
 
-    pub fn allow_list<'py>(mut slf: Bound<'py, Self>, allow_list:  HashMap<PyScript, Vec<PyLanguage>>) -> Bound<'py, Self> {
+    fn allow_list<'py>(slf: Bound<'py, Self>, allow_list:  HashMap<PyScript, Vec<PyLanguage>>) -> Bound<'py, Self> {
         slf.borrow_mut().segmenter_option.set_allow_list(Some(allow_list));
         slf
     }
 }
 
 impl PyTokenizerBuilder {
-    pub fn as_tokenizer_builder(&self) -> TokenizerBuilder<> {
-        TokenizerBuilder::new()
+    pub fn as_tokenizer_builder(&self) -> TokenizerBuilder<impl AsRef<[u8]>> {
+        let mut builder = TokenizerBuilder::new();
+        if let Some(ref stopwords) = self.normalizer_option.classifier.stop_words {
+            builder.stop_words(&stopwords.0);
+        }
+
+
+        if let Some(ref separators) = self.normalizer_option.classifier.separators {
+            builder.separators(separators.as_slice());
+        }
+
+        if let Some(ref words_dict) = self.words_dict {
+            builder.words_dict(words_dict.as_slice());
+        }
+
+        builder.create_char_map(self.normalizer_option.create_char_map);
+        builder.lossy_normalization(self.normalizer_option.lossy);
+
+        if let Some(ref allow_list) = self.segmenter_option.allow_list {
+            builder.allow_list(allow_list);
+        }
+
+        builder
+    }
+
+    pub fn build_tokenizer(&self) -> Tokenizer {
+        self.as_tokenizer_builder().into_tokenizer()
     }
 }
 
@@ -76,9 +777,9 @@ pub struct PyStopWords(Set<Vec<u8>>);
 #[pymethods]
 impl PyStopWords {
     #[new]
-    pub fn new(value: Vec<String>) -> PyResult<Self> {
-        match Set::from_iter(value) {
-            Ok(value) => {Ok(Self(value))}
+    fn new(words: Vec<String>) -> PyResult<Self> {
+        match Set::from_iter(words) {
+            Ok(words) => {Ok(Self(words))}
             Err(value) => {Err(PyValueError::new_err(value.to_string()))}
         }
     }
@@ -97,11 +798,21 @@ impl AsRef<Set<Vec<u8>>> for PyStopWords {
 }
 
 #[pyclass(set_all, get_all)]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PyNormalizerOption {
     create_char_map: bool,
     classifier: PyClassifierOption,
     lossy: bool,
+}
+
+impl Default for PyNormalizerOption {
+    fn default() -> Self {
+        PyNormalizerOption {
+            create_char_map: false,
+            classifier: Default::default(),
+            lossy: true,
+        }
+    }
 }
 
 #[pymethods]
@@ -130,58 +841,6 @@ pub struct PyClassifierOption {
     separators: Option<SpecialVec>,
 }
 
-#[derive(Debug, Clone)]
-struct SpecialVec {
-    inner: Arc<Vec<String>>,
-    references: Arc<Vec<*const str>>
-}
-
-unsafe impl Send for SpecialVec{}
-unsafe impl Sync for SpecialVec{}
-
-impl SpecialVec {
-    pub fn new(inner: Vec<String>) -> Self {
-        let references = inner.iter().map(|value| value.as_str() as *const str).collect_vec();
-        Self {
-            inner: Arc::new(inner),
-            references: Arc::new(references)
-        }
-    }
-
-    pub fn as_slice(&self) -> &[&str] {
-        // A &str is basically a *const str but with a safe livetime.
-        unsafe {transmute(self.references.as_slice())}
-    }
-
-    pub fn copy_string_vec(&self) -> Vec<String> {
-        (*self.inner).clone()
-    }
-}
-
-#[cfg(test)]
-mod special_vec_test {
-    use crate::py::tokenizer::SpecialVec;
-
-    #[test]
-    fn can_be_used_safely(){
-        let v = SpecialVec::new(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
-
-        let r = v.as_slice();
-
-        println!("{:?}", v.as_ref());
-        println!("{:?}", r);
-    }
-}
-
-
-impl AsRef<[String]> for SpecialVec {
-    fn as_ref(&self) -> &[String] {
-        self.inner.as_slice()
-    }
-}
-
-
-
 #[pymethods]
 impl PyClassifierOption {
     #[new]
@@ -194,7 +853,7 @@ impl PyClassifierOption {
         match &self.separators {
             None => {Ok(None)}
             Some(value) => {
-                Ok(Some(value.copy_string_vec()))
+                Ok(Some(value.inner().deref().clone()))
             }
         }
     }
@@ -212,7 +871,6 @@ impl PyClassifierOption {
         Ok(())
     }
 }
-
 
 impl PyClassifierOption {
     pub fn as_classifier_option<'a>(&'a self) -> ClassifierOption<'a> {
@@ -415,7 +1073,7 @@ impl PyAhoCorasickBuilder {
     /// let mat = ac.find(haystack).expect("should have a match");
     /// assert_eq!("abcd", &haystack[mat.start()..mat.end()]);
     /// ```
-    pub fn match_kind<'py>(mut slf: Bound<'py, Self>, kind: PyMatchKind) -> Bound<'py, Self> {
+    pub fn match_kind<'py>(slf: Bound<'py, Self>, kind: PyMatchKind) -> Bound<'py, Self> {
         slf.borrow_mut().0.match_kind(kind.into());
         slf
     }
@@ -508,7 +1166,7 @@ impl PyAhoCorasickBuilder {
     ///
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn start_kind<'py>(mut slf: Bound<'py, Self>, kind: PyStartKind) -> Bound<'py, Self> {
+    pub fn start_kind<'py>(slf: Bound<'py, Self>, kind: PyStartKind) -> Bound<'py, Self> {
         slf.borrow_mut().0.start_kind(kind.into());
         slf
     }
@@ -544,7 +1202,7 @@ impl PyAhoCorasickBuilder {
     ///     .unwrap();
     /// assert_eq!(3, ac.find_iter(haystack).count());
     /// ```
-    pub fn ascii_case_insensitive<'py>(mut slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
+    pub fn ascii_case_insensitive<'py>(slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
         slf.borrow_mut().0.ascii_case_insensitive(yes);
         slf
     }
@@ -592,7 +1250,7 @@ impl PyAhoCorasickBuilder {
     ///
     /// Note that the heuristics used for choosing which `PyAhoCorasickKind`
     /// may be changed in a semver compatible release.
-    pub fn kind<'py>(mut slf: Bound<'py, Self>, kind: Option<PyAhoCorasickKind>) -> Bound<'py, Self> {
+    pub fn kind<'py>(slf: Bound<'py, Self>, kind: Option<PyAhoCorasickKind>) -> Bound<'py, Self> {
         slf.borrow_mut().0.kind(kind.map(Into::into));
         slf
     }
@@ -609,7 +1267,7 @@ impl PyAhoCorasickBuilder {
     /// with a small (less than 100) number of patterns.
     ///
     /// This is enabled by default.
-    pub fn prefilter<'py>(mut slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
+    pub fn prefilter<'py>(slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
         slf.borrow_mut().0.prefilter(yes);
         slf
     }
@@ -641,7 +1299,7 @@ impl PyAhoCorasickBuilder {
     /// will help things much, since the most active states have a small depth.
     /// More to the point, the memory usage increases superlinearly as this
     /// number increases.
-    pub fn dense_depth<'py>(mut slf: Bound<'py, Self>, depth: usize) -> Bound<'py, Self> {
+    pub fn dense_depth<'py>(slf: Bound<'py, Self>, depth: usize) -> Bound<'py, Self> {
         slf.borrow_mut().0.dense_depth(depth);
         slf
     }
@@ -671,12 +1329,10 @@ impl PyAhoCorasickBuilder {
     /// equivalence class. This is useful for debugging the actual generated
     /// transitions because it lets one see the transitions defined on actual
     /// bytes instead of the equivalence classes.
-    pub fn byte_classes<'py>(mut slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
+    pub fn byte_classes<'py>(slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
         slf.borrow_mut().0.byte_classes(yes);
         slf
     }
-
-
 }
 
 map_enum!(
@@ -784,6 +1440,42 @@ map_enum!(
 );
 
 
+#[pyo3::pyclass]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::Display)]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum PyTokenKind {
+    Word,
+    StopWord,
+    SeparatorHard,
+    SeparatorSoft,
+    Unknown
+}
+
+impl Into<TokenKind> for PyTokenKind {
+    fn into(self) -> TokenKind {
+        match self {
+            PyTokenKind::Word => TokenKind::Word,
+            PyTokenKind::StopWord => TokenKind::StopWord,
+            PyTokenKind::SeparatorHard => TokenKind::Separator(SeparatorKind::Hard),
+            PyTokenKind::SeparatorSoft => TokenKind::Separator(SeparatorKind::Soft),
+            PyTokenKind::Unknown => TokenKind::Unknown
+        }
+    }
+}
+
+impl From<TokenKind> for PyTokenKind {
+    fn from(value: TokenKind) -> Self {
+        match value {
+            TokenKind::Word => PyTokenKind::Word,
+            TokenKind::StopWord => PyTokenKind::StopWord,
+            TokenKind::Separator(SeparatorKind::Hard) => PyTokenKind::SeparatorHard,
+            TokenKind::Separator(SeparatorKind::Soft) => PyTokenKind::SeparatorSoft,
+            TokenKind::Unknown => PyTokenKind::Unknown
+        }
+    }
+}
+
 
 map_enum!(
     impl PyMatchKind for non_exhaustive MatchKind {
@@ -808,3 +1500,46 @@ map_enum!(
         Anchored
     }
 );
+
+pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyAhoCorasick>()?;
+    m.add_class::<PyAhoCorasickBuilder>()?;
+    m.add_class::<PyAhoCorasickKind>()?;
+    m.add_class::<PyAlignedArticle>()?;
+    m.add_class::<PyAlignedArticleProcessor>()?;
+    m.add_class::<PyAlignedArticleIter>()?;
+    m.add_class::<PyArticle>()?;
+    m.add_class::<PyClassifierOption>()?;
+    m.add_class::<PyLanguage>()?;
+    m.add_class::<PyMatchKind>()?;
+    m.add_class::<PyNormalizerOption>()?;
+    m.add_class::<PyParsedAlignedArticleIter>()?;
+    m.add_class::<PyScript>()?;
+    m.add_class::<PySegmenterOption>()?;
+    m.add_class::<PyStartKind>()?;
+    m.add_class::<PyStopWords>()?;
+    m.add_class::<PyToken>()?;
+    m.add_class::<PyTokenizedAlignedArticle>()?;
+    m.add_class::<PyTokenizerBuilder>()?;
+    m.add_class::<PyTokenKind>()?;
+    m.add_function(wrap_pyfunction!(read_aligned_articles, m)?)?;
+    m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles, m)?)?;
+    m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles_into, m)?)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use serde_json::Deserializer;
+    use crate::aligned_data::IntoJsonPickleDeserializerIterator;
+    use crate::aligned_data::test::MY_TEST_DATA;
+    use crate::py::tokenizer::PyAlignedArticle;
+
+    #[test]
+    fn can_deserialize() {
+        let stream = Deserializer::from_str(MY_TEST_DATA).into_iter().into_json_pickle_iter::<PyAlignedArticle>();
+        for value in stream {
+            println!("{:}", value.unwrap());
+        }
+    }
+}

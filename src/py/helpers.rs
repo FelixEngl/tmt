@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
+use std::intrinsics::transmute;
 use std::str::FromStr;
+use std::sync::Arc;
 use derive_more::{From, TryInto};
+use itertools::Itertools;
 use pyo3::{FromPyObject, IntoPy, PyAny, PyObject, Python};
 use thiserror::Error;
 use crate::py::vocabulary::PyVocabulary;
@@ -31,10 +34,33 @@ pub enum ListOrInt {
     Int(usize)
 }
 
-#[derive(FromPyObject, Debug)]
+#[derive(FromPyObject, Debug, Eq, Hash)]
 pub enum LanguageHintValue {
     Hint(LanguageHint),
     Value(String)
+}
+
+impl PartialEq for LanguageHintValue {
+    fn eq(&self, other: &Self) -> bool {
+        let a = match self {
+            LanguageHintValue::Hint(value_a) => {
+                value_a.as_str()
+            }
+            LanguageHintValue::Value(value_a) => {
+                value_a.as_str()
+            }
+        };
+
+        let b = match other {
+            LanguageHintValue::Hint(value_a) => {
+                value_a.as_str()
+            }
+            LanguageHintValue::Value(value_a) => {
+                value_a.as_str()
+            }
+        };
+        a == b
+    }
 }
 
 impl Into<LanguageHint> for LanguageHintValue {
@@ -222,5 +248,57 @@ impl From<TopicModelPyStateValue<PyVocabulary>> for PyTopicModelStateValue {
                 PyTopicModelStateValue::VecMeta(value)
             }
         }
+    }
+}
+
+
+
+#[derive(Debug, Clone)]
+pub(crate) struct SpecialVec {
+    inner: Arc<Vec<String>>,
+    references: Arc<Vec<*const str>>
+}
+
+unsafe impl Send for SpecialVec{}
+unsafe impl Sync for SpecialVec{}
+
+impl SpecialVec {
+    pub fn new(inner: Vec<String>) -> Self {
+        let references = inner.iter().map(|value| value.as_str() as *const str).collect_vec();
+        Self {
+            inner: Arc::new(inner),
+            references: Arc::new(references)
+        }
+    }
+
+    pub fn as_slice(&self) -> &[&str] {
+        // A &str is basically a *const str but with a safe livetime.
+        unsafe {transmute(self.references.as_slice())}
+    }
+
+    pub fn inner(&self) -> &Arc<Vec<String>> {
+        &self.inner
+    }
+}
+
+impl AsRef<[String]> for SpecialVec {
+    fn as_ref(&self) -> &[String] {
+        self.inner.as_slice()
+    }
+}
+
+
+#[cfg(test)]
+mod special_vec_test {
+    use super::SpecialVec;
+
+    #[test]
+    fn can_be_used_safely(){
+        let v = SpecialVec::new(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+
+        let r = v.as_slice();
+
+        println!("{:?}", v.as_ref());
+        println!("{:?}", r);
     }
 }

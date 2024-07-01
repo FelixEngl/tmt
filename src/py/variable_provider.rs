@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use evalexpr::{ContextWithMutableVariables, Value};
 use pyo3::{Bound, pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
@@ -6,7 +7,7 @@ use crate::external_variable_provider::{VariableProvider, VariableProviderError,
 use crate::py::dictionary::PyDictionary;
 use crate::py::helpers::StrOrIntCatching;
 use crate::py::topic_model::PyTopicModel;
-use crate::topicmodel::dictionary::DictionaryWithVocabulary;
+use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::AToB;
 use crate::topicmodel::topic_model::{BasicTopicModel};
 use crate::topicmodel::vocabulary::BasicVocabulary;
@@ -37,37 +38,37 @@ impl PyVariableProvider {
 impl PyVariableProvider {
 
     #[new]
-    pub fn new_with(model: &PyTopicModel, dictionary: &PyDictionary) -> Self {
+    fn new_with(model: &PyTopicModel, dictionary: &PyDictionary) -> Self {
         Self::new(
             model.topic_count(),
-            dictionary.voc_a().len(),
-            dictionary.voc_b().len()
+            dictionary.deref().voc_a().len(),
+            dictionary.deref().voc_b().len()
         )
     }
 
     #[staticmethod]
-    pub fn builder(model: &PyTopicModel, dictionary: PyDictionary) -> PyVariableProviderBuilder {
+    fn builder(model: &PyTopicModel, dictionary: PyDictionary) -> PyVariableProviderBuilder {
         let new = Self::new_with(model, &dictionary);
         PyVariableProviderBuilder::new(dictionary, new)
     }
 
-    pub fn add_global<'a>(&self, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_global<'a>(&self, key: &str, value: PyExprValue) -> PyResult<()> {
         Ok(self.inner.add_global(key, Value::try_from(value)?)?)
     }
-    pub fn add_for_topic<'a>(&self, topic_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_topic<'a>(&self, topic_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
         Ok(self.inner.add_for_topic(topic_id, key, Value::try_from(value)?)?)
     }
-    pub fn add_for_word_a<'a>(&self, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_a<'a>(&self, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
         Ok(self.inner.add_for_word_a(word_id, key, Value::try_from(value)?)?)
     }
-    pub fn add_for_word_b<'a>(&self, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_b<'a>(&self, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
         Ok(self.inner.add_for_word_b(word_id, key, Value::try_from(value)?)?)
     }
-    pub fn add_for_word_in_topic_a<'a>(&self, topic_id: usize, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_in_topic_a<'a>(&self, topic_id: usize, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
         Ok(self.inner.add_for_word_in_topic_a(topic_id, word_id, key, Value::try_from(value)?)?)
     }
 
-    pub fn add_for_word_in_topic_b<'a>(&self, topic_id: usize, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_in_topic_b<'a>(&self, topic_id: usize, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
         Ok(self.inner.add_for_word_in_topic_b(topic_id, word_id, key, Value::try_from(value)?)?)
     }
 }
@@ -106,15 +107,15 @@ impl PyVariableProviderBuilder {
 #[pymethods]
 impl PyVariableProviderBuilder {
 
-    pub fn add_global<'a>(&self, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_global<'a>(&self, key: &str, value: PyExprValue) -> PyResult<()> {
         self.inner.add_global(key, value)
     }
 
-    pub fn add_for_topic<'a>(&self, topic_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_topic<'a>(&self, topic_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
         self.inner.add_for_topic(topic_id, key, value)
     }
 
-    pub fn add_for_word_a<'a>(&self, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_a<'a>(&self, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
         match word_id {
             StrOrIntCatching::String(s) => {
                 if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
@@ -131,7 +132,7 @@ impl PyVariableProviderBuilder {
             }
         }
     }
-    pub fn add_for_word_b<'a>(&self, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_b<'a>(&self, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
         match word_id {
             StrOrIntCatching::String(s) => {
                 if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
@@ -148,7 +149,7 @@ impl PyVariableProviderBuilder {
             }
         }
     }
-    pub fn add_for_word_in_topic_a<'a>(&self, topic_id: usize, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_in_topic_a<'a>(&self, topic_id: usize, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
         match word_id {
             StrOrIntCatching::String(s) => {
                 if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
@@ -165,7 +166,7 @@ impl PyVariableProviderBuilder {
             }
         }
     }
-    pub fn add_for_word_in_topic_b<'a>(&self, topic_id: usize, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
+    fn add_for_word_in_topic_b<'a>(&self, topic_id: usize, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
         match word_id {
             StrOrIntCatching::String(s) => {
                 if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
@@ -184,7 +185,7 @@ impl PyVariableProviderBuilder {
     }
 
 
-    pub fn build(&self) -> PyVariableProvider {
+    fn build(&self) -> PyVariableProvider {
         self.inner.clone()
     }
 }

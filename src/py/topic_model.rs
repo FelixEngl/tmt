@@ -17,12 +17,14 @@ use topicmodel::topic_model;
 use crate::py::helpers::{HasPickleSupport, LanguageHintValue, PyTopicModelStateValue};
 use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel;
+use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
+use crate::{topicmodel, voc};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
+use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use crate::topicmodel::topic_model::meta::*;
-use crate::topicmodel::vocabulary::{BasicVocabulary};
+use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,26 +63,26 @@ impl PyTopicModel {
 
     #[getter]
     #[pyo3(name="k")]
-    pub fn py_k(&self) -> usize {
+    fn py_k(&self) -> usize {
         self.inner.k()
     }
 
     #[pyo3(name="get_topic")]
-    pub fn py_topic(&self, topic_id: usize) -> Option<Vec<f64>> {
+    fn py_topic(&self, topic_id: usize) -> Option<Vec<f64>> {
         self.inner.get_topic(topic_id).cloned()
     }
 
 
-    pub fn save(&self, path: PathBuf) -> PyResult<usize> {
+    fn save(&self, path: PathBuf) -> PyResult<usize> {
         Ok(self.inner.save(path, TopicModelVersion::V1, true, true)?)
     }
 
     #[staticmethod]
-    pub fn load(path: PathBuf) -> PyResult<PyTopicModel> {
+    fn load(path: PathBuf) -> PyResult<PyTopicModel> {
         Ok(Self { inner: TopicModel::<_,PyVocabulary>::load(path, true)?.0 })
     }
 
-    pub fn show_top(&self, n: Option<usize>) -> PyResult<()> {
+    fn show_top(&self, n: Option<usize>) -> PyResult<()> {
         if let Some(n) = n {
             self.inner.show(n)?
         } else {
@@ -89,15 +91,15 @@ impl PyTopicModel {
         Ok(())
     }
 
-    pub fn __repr__(&self) -> String {
+    fn __repr__(&self) -> String {
         format!("PyTopicModel({:?})", self.inner)
     }
 
-    pub fn __str__(&self) -> String {
+    fn __str__(&self) -> String {
         self.inner.to_string()
     }
 
-    pub fn get_doc_probability(
+    fn get_doc_probability(
         &self,
         doc: Vec<String>,
         alpha: SingleOrList,
@@ -118,61 +120,105 @@ impl PyTopicModel {
         )
     }
 
-    pub fn vocabulary(&self) -> PyVocabulary {
+    fn vocabulary(&self) -> PyVocabulary {
         self.inner.vocabulary().clone()
     }
 
-    pub fn get_words_of_topic_sorted(&self, topic_id: usize) -> Option<Vec<(String, f64)>> {
+    fn get_words_of_topic_sorted(&self, topic_id: usize) -> Option<Vec<(String, f64)>> {
         self.get_words_for_topic_sorted(topic_id)
             .map(|value|
                 value
                     .iter()
-                    .map(|v| (self.inner.vocabulary().id_wo_word(v.word_id).unwrap().to_string(), v.probability))
+                    .map(|v| (self.inner.vocabulary().id_to_word(v.word_id).unwrap().to_string(), v.probability))
                     .collect_vec()
             )
 
     }
 
+    fn translate_by_provided_word_lists(&self, language_hint: LanguageHintValue, word_lists: Vec<Vec<String>>) -> PyResult<PyTopicModel> {
+        if word_lists.len() != self.inner.topic_count() {
+            return Err(PyValueError::new_err(format!("Expected {} lists, but got {}", self.inner.topic_count(), word_lists.len())))
+        }
 
-    pub fn save_json(&self, path: PathBuf) -> PyResult<()> {
+        let min_value = self.inner.topics().iter().flatten().min_partial_filtered().unwrap().clone();
+
+        let mut voc = PyVocabulary::new(Some(language_hint.into()), None);
+
+        let word_lists = word_lists.into_iter().map(|values| {
+            values.into_iter().map(|value| {
+                voc.add(value)
+            }).collect_vec()
+        }).collect_vec();
+
+        let mut new_probability = Vec::new();
+        for _ in 0..self.inner.topic_count() {
+            new_probability.push(vec![min_value; voc.len()]);
+        }
+
+        let mut vocab_frequency = vec![0u64; voc.len()];
+
+        for (topic_id, word_ids) in word_lists.into_iter().enumerate() {
+            let topic_old = self.inner.topics().get(topic_id).unwrap();
+            let topic_new = new_probability.get_mut(topic_id).unwrap();
+            for (word_id_old, word_id_new) in word_ids.into_iter().enumerate() {
+                topic_new[word_id_new] = topic_old[word_id_old].clone();
+                vocab_frequency[word_id_new] = self.inner.used_vocab_frequency()[word_id_old];
+            }
+        }
+
+        Ok(
+            Self {
+                inner: TopicModel::new(
+                    new_probability,
+                    voc,
+                    vocab_frequency,
+                    self.doc_topic_distributions().clone(),
+                    self.document_lengths().clone()
+                )
+            }
+        )
+    }
+
+
+    fn save_json(&self, path: PathBuf) -> PyResult<()> {
         serde_json::to_writer(BufWriter::new(File::options().write(true).create_new(true).open(path)?), &self.inner).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
-    pub fn save_binary(&self, path: PathBuf) -> PyResult<()> {
+    fn save_binary(&self, path: PathBuf) -> PyResult<()> {
         bincode::serialize_into(BufWriter::new(File::options().write(true).create_new(true).open(path)?), &self.inner).map_err(|value| PyValueError::new_err(value.to_string()))
     }
     #[staticmethod]
-    pub fn load_json(path: PathBuf) -> PyResult<Self> {
+    fn load_json(path: PathBuf) -> PyResult<Self> {
         serde_json::from_reader(BufReader::new(File::options().read(true).open(path)?)).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
     #[staticmethod]
-    pub fn load_binary(path: PathBuf) -> PyResult<Self> {
+    fn load_binary(path: PathBuf) -> PyResult<Self> {
         bincode::deserialize_from(BufReader::new(File::options().read(true).open(path)?)).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
 
-    pub fn normalize(&self) -> Self {
+    fn normalize(&self) -> Self {
         self.inner.normalize().into()
     }
 
-    pub fn __getnewargs__(&self) -> (Vec<Vec<f64>>, PyVocabulary, Vec<u64>, Vec<Vec<f64>>, Vec<u64>) {
+    fn __getnewargs__(&self) -> (Vec<Vec<f64>>, PyVocabulary, Vec<u64>, Vec<Vec<f64>>, Vec<u64>) {
         Default::default()
     }
 
-    pub fn __getstate__(&self) -> HashMap<String, PyTopicModelStateValue> {
+    fn __getstate__(&self) -> HashMap<String, PyTopicModelStateValue> {
         let result = self.inner.get_py_state();
         return result.into_iter().map(|(k, value)| (k, value.into())).collect()
     }
 
-    pub fn __setstate__(&mut self, state: HashMap<String, PyTopicModelStateValue>) -> PyResult<()> {
+    fn __setstate__(&mut self, state: HashMap<String, PyTopicModelStateValue>) -> PyResult<()> {
         let to_set = state.into_iter().map(|(k, v)| (k, v.into())).collect();
         self.inner = TopicModel::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
         Ok(())
     }
 
     #[staticmethod]
-    pub fn builder(language: Option<LanguageHintValue>) -> PyTopicModelBuilder {
+    fn builder(language: Option<LanguageHintValue>) -> PyTopicModelBuilder {
         PyTopicModelBuilder::new(language)
     }
 }

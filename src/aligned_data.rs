@@ -1,14 +1,13 @@
+use std::borrow::Borrow;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-
-mod fast_processing;
-mod offset;
-mod stopwords;
-mod tokenizer;
+use crate::topicmodel::language_hint::LanguageHint;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlignedArticle<A> {
@@ -16,20 +15,98 @@ pub struct AlignedArticle<A> {
     article_id: u64,
     #[serde(alias = "art")]
     #[serde(bound(serialize = "A: Serialize", deserialize = "A: Deserialize<'de>"))]
-    articles: HashMap<String, A>
+    articles: HashMap<LanguageHint, A>
+}
+
+impl<A> AlignedArticle<A> {
+    pub fn new(article_id: u64, articles: HashMap<LanguageHint, A>) -> Self {
+        Self { article_id, articles }
+    }
+
+    pub fn article_id(&self) -> u64 {
+        self.article_id
+    }
+    pub fn articles(&self) -> &HashMap<LanguageHint, A> {
+        &self.articles
+    }
+
+    pub fn into_inner(self) -> (u64, HashMap<LanguageHint, A>) {
+        (self.article_id, self.articles)
+    }
+}
+
+
+impl<A> AlignedArticle<A> where A: Borrow<Article> {
+    pub fn from<I: IntoIterator<Item=A>>(article_id: u64, articles: I) -> Result<Self, (Self, Vec<A>)> {
+        let iter = articles.into_iter();
+        let (lower_bound, upper_bound) = iter.size_hint();
+        let mut articles = HashMap::with_capacity(upper_bound.unwrap_or(lower_bound));
+        let mut doubletes = Vec::new();
+        for article in iter {
+            match articles.entry(article.borrow().lang.clone()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(article);
+                }
+                Entry::Occupied(_) => {
+                    doubletes.push(article);
+                }
+            }
+        }
+        let articles = AlignedArticle::new(article_id, articles);
+        if doubletes.is_empty() {
+            Ok(articles)
+        } else {
+            Err((articles, doubletes))
+        }
+    }
 }
 
 unsafe impl<A> Send for AlignedArticle<A>{}
 unsafe impl<A> Sync for AlignedArticle<A>{}
 
+impl<A: Display> Display for AlignedArticle<A> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let articles = self.articles.iter().map(|(k, v)| format!("{k}: ({v})")).collect_vec();
+        write!(f, "AlignedArticle{{{}, {}}}", self.article_id, articles.join(", "))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Article {
     #[serde(alias = "ln")]
-    lang: String,
+    lang: LanguageHint,
     #[serde(alias = "cat")]
     categories: Option<Vec<usize>>,
     #[serde(alias = "con")]
     content: String,
+}
+
+impl Article {
+    pub fn new(lang: LanguageHint, categories: Option<Vec<usize>>, content: String) -> Self {
+        Self { lang, categories, content }
+    }
+
+    pub fn lang(&self) -> &LanguageHint {
+        &self.lang
+    }
+    pub fn categories(&self) -> &Option<Vec<usize>> {
+        &self.categories
+    }
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+}
+
+impl Display for Article {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let cat = match &self.categories {
+            None => {"#".to_string()}
+            Some(value) => {
+                format!("[{}]", value.iter().join(", "))
+            }
+        };
+        write!(f, "Article({}, {}, '{}')", self.lang, cat, self.content)
+    }
 }
 
 
@@ -90,22 +167,20 @@ impl<I, T> Iterator for JsonPickleDeserializerIterator<I, T> where I: Iterator<I
 
 
 
-// fn process_bulk_data(input: impl AsRef<Path>) {
-//     Deserializer::from_reader(BufReader::new(File::open(r"E:\git\ldatranslation\bambergdictionary\lda_translate\data\preprocessed\wikicomp-2014_deen.bulkjson").unwrap()))
-//         .into_iter()
-//         .into_json_pickle_iter::<AlignedArticle<Article>>()
-//         .par_bridge()
-//         .map(|value| {
-//             match value {
-//                 Ok(value) => {
-//
-//                 }
-//                 Err(value) => {
-//                     Err(value)
-//                 }
-//             }
-//         })
-// }
-//
-//
 
+
+#[cfg(test)]
+pub(crate) mod test {
+    use serde_json::{Deserializer};
+    use crate::aligned_data::{AlignedArticle, Article, IntoJsonPickleDeserializerIterator};
+
+    pub(crate) const MY_TEST_DATA: &str = include_str!("data.bulkjson");
+
+    #[test]
+    fn test(){
+        let stream = Deserializer::from_str(MY_TEST_DATA).into_iter().into_json_pickle_iter::<AlignedArticle<Article>>();
+        for value in stream {
+            println!("{:?}", value.unwrap());
+        }
+    }
+}

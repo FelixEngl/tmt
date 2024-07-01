@@ -1,6 +1,7 @@
 use pyo3::{Bound, PyResult};
 use pyo3::prelude::PyModule;
 use crate::py::dictionary::dictionary_module;
+use crate::py::tokenizer::tokenizer_module;
 use crate::py::topic_model::topic_model_module;
 use crate::py::translate::translate_module;
 use crate::py::variable_provider::variable_provider_module;
@@ -27,6 +28,6 @@ pub(crate) fn register_modules(m: &Bound<'_, PyModule>) -> PyResult<()>{
     translate_module(m)?;
     voting_module(m)?;
     variable_provider_module(m)?;
-
+    tokenizer_module(m)?;
     Ok(())
 }

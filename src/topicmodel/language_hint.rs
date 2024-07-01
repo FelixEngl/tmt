@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -8,7 +9,7 @@ use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 
 #[pyclass(frozen)]
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct LanguageHint {
@@ -19,6 +20,16 @@ impl LanguageHint {
 
     pub fn new(language: impl AsRef<str>) -> Self {
         unsafe {std::mem::transmute(language.as_ref().to_lowercase())}
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.inner.as_str()
+    }
+}
+
+impl Hash for LanguageHint {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.hash(state)
     }
 }
 
@@ -57,7 +68,7 @@ impl<T: AsRef<str>> From<T> for LanguageHint {
 
 impl Display for LanguageHint {
     delegate::delegate! {
-        to self.deref() {
+        to self.inner {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
         }
     }
@@ -71,9 +82,17 @@ impl FromStr for LanguageHint {
     }
 }
 
+impl Borrow<str> for LanguageHint {
+    #[inline(always)]
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl Deref for LanguageHint {
     type Target = str;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }

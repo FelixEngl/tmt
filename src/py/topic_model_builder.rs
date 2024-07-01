@@ -69,12 +69,12 @@ impl PyTopicModelBuilder {
         }
     }
 
-    pub fn set_frequency(&mut self, word: String, frequency: u64) {
+    fn set_frequency(&mut self, word: String, frequency: u64) {
         let word_id = self.voc.add_value(word);
         self.set_frequency_impl(word_id, frequency);
     }
 
-    pub fn add_word(&mut self, topic_id: usize, word: String, probability: f64, frequency: Option<u64>) -> PyResult<()> {
+    fn add_word(&mut self, topic_id: usize, word: String, probability: f64, frequency: Option<u64>) -> PyResult<()> {
         if !probability.is_normal() {
             return Err(PyValueError::new_err("The probability has to be a normal number!"))
         }
@@ -87,14 +87,14 @@ impl PyTopicModelBuilder {
     }
 
 
-    pub fn set_doc_topic_distributions(&mut self, doc_topic_distributions: Option<DocumentTo<TopicTo<Probability>>>) {
+    fn set_doc_topic_distributions(&mut self, doc_topic_distributions: Option<DocumentTo<TopicTo<Probability>>>) {
         self.doc_topic_distributions = doc_topic_distributions;
     }
-    pub fn set_document_lengths(&mut self, document_lengths: Option<DocumentTo<DocumentLength>>) {
+    fn set_document_lengths(&mut self, document_lengths: Option<DocumentTo<DocumentLength>>) {
         self.document_lengths = document_lengths;
     }
 
-    pub fn build(
+    fn build(
         &self,
         unset_words_become_smallest: Option<bool>,
         normalize: Option<bool>

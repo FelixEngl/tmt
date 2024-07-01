@@ -1,10 +1,10 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::io::Write;
-use std::ops::{Range};
+use std::ops::{Deref, DerefMut, Range};
 use std::path::{PathBuf};
 use std::slice::Iter;
 use std::vec::IntoIter;
@@ -53,13 +53,13 @@ impl PyVocabulary {
 
     #[getter]
     #[pyo3(name="language")]
-    pub fn language_hint(&self) -> Option<LanguageHint> {
+    fn language_hint(&self) -> Option<LanguageHint> {
         self.language().cloned()
     }
 
     #[setter]
     #[pyo3(name="set_language")]
-    pub fn set_language_hint(&mut self, value: Option<LanguageHintValue>) -> PyResult<()>{
+    fn set_language_hint(&mut self, value: Option<LanguageHintValue>) -> PyResult<()>{
         self.set_language(value.map(|value| {
             let x: LanguageHint = value.into();
             x
@@ -67,44 +67,44 @@ impl PyVocabulary {
         Ok(())
     }
 
-    pub fn __repr__(&self) -> String {
+    fn __repr__(&self) -> String {
         format!("PyVocabulary({:?})", self.inner)
     }
 
-    pub fn __str__(&self) -> String {
+    fn __str__(&self) -> String {
         self.inner.to_string()
     }
 
-    pub fn __len__(&self) -> usize {
+    fn __len__(&self) -> usize {
         self.inner.len()
     }
 
-    pub fn __contains__(&self, value: &str) -> bool {
+    fn __contains__(&self, value: &str) -> bool {
         self.inner.contains(value)
     }
 
-    pub fn __iter__(&self) -> PyVocIter {
+    fn __iter__(&self) -> PyVocIter {
         PyVocIter::new(self.clone())
     }
 
-    pub fn add(&mut self, word: String) -> usize {
+    fn add(&mut self, word: String) -> usize {
         self.inner.add_value(word)
     }
 
-    pub fn word_to_id(&mut self, word: String) -> Option<usize> {
+    fn word_to_id(&mut self, word: String) -> Option<usize> {
         self.inner.get_id(word.as_str())
     }
 
-    pub fn id_wo_word(&self, id: usize) -> Option<&String> {
+    pub fn id_to_word(&self, id: usize) -> Option<&String> {
         self.inner.get_value(id).map(|value| value.as_ref())
     }
 
-    pub fn save(&self, path: PathBuf) -> PyResult<usize> {
+    fn save(&self, path: PathBuf) -> PyResult<usize> {
         Ok(self.inner.save_to_file(path)?)
     }
 
     #[staticmethod]
-    pub fn load(path: PathBuf) -> PyResult<PyVocabulary> {
+    fn load(path: PathBuf) -> PyResult<PyVocabulary> {
         match Vocabulary::<String>::load_from_file(path) {
             Ok(inner) => {
                 Ok(Self{ inner })
@@ -115,19 +115,33 @@ impl PyVocabulary {
         }
     }
 
-    pub fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
+    fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
         // We only tarn the output in the python API, is always none.
         (None, None)
     }
 
-    pub fn __getstate__(&self) -> HashMap<String, PyVocabularyStateValue> {
+    fn __getstate__(&self) -> HashMap<String, PyVocabularyStateValue> {
         self.get_py_state()
     }
 
-    pub fn __setstate__(&mut self, state: HashMap<String, PyVocabularyStateValue>) -> PyResult<()> {
+    fn __setstate__(&mut self, state: HashMap<String, PyVocabularyStateValue>) -> PyResult<()> {
         let converted = state.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
         self.inner = Vocabulary::from_py_state(&converted).map_err(|value| PyValueError::new_err(value.to_string()))?;
         Ok(())
+    }
+}
+
+impl Deref for PyVocabulary {
+    type Target = Vocabulary<String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for PyVocabulary {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 
