@@ -38,6 +38,12 @@ impl PyTopicModel {
 }
 
 
+#[derive(Debug, Clone, FromPyObject)]
+enum PlainTranslateArgs {
+    List(Vec<String>),
+    ListList(Vec<Vec<String>>),
+}
+
 
 #[pymethods]
 impl PyTopicModel {
@@ -134,36 +140,60 @@ impl PyTopicModel {
 
     }
 
-    fn translate_by_provided_word_lists(&self, language_hint: LanguageHintValue, word_lists: Vec<Vec<String>>) -> PyResult<PyTopicModel> {
-        if word_lists.len() != self.inner.topic_count() {
-            return Err(PyValueError::new_err(format!("Expected {} lists, but got {}", self.inner.topic_count(), word_lists.len())))
+    fn translate_by_provided_word_lists(&self, language_hint: LanguageHintValue, word_lists: PlainTranslateArgs) -> PyResult<PyTopicModel> {
+        if let PlainTranslateArgs::ListList(ref word_lists) = word_lists {
+            if word_lists.len() != self.inner.topic_count() {
+                return Err(PyValueError::new_err(format!("Expected {} lists, but got {}", self.inner.topic_count(), word_lists.len())))
+            }
         }
+
+
 
         let min_value = self.inner.topics().iter().flatten().min_partial_filtered().unwrap().clone();
 
         let mut voc = PyVocabulary::new(Some(language_hint.into()), None);
-
-        let word_lists = word_lists.into_iter().map(|values| {
-            values.into_iter().map(|value| {
-                voc.add(value)
-            }).collect_vec()
-        }).collect_vec();
 
         let mut new_probability = Vec::new();
         for _ in 0..self.inner.topic_count() {
             new_probability.push(vec![min_value; voc.len()]);
         }
 
-        let mut vocab_frequency = vec![0u64; voc.len()];
+        let mut vocab_frequency: Vec<u64>;
 
-        for (topic_id, word_ids) in word_lists.into_iter().enumerate() {
-            let topic_old = self.inner.topics().get(topic_id).unwrap();
-            let topic_new = new_probability.get_mut(topic_id).unwrap();
-            for (word_id_old, word_id_new) in word_ids.into_iter().enumerate() {
-                topic_new[word_id_new] = topic_old[word_id_old].clone();
-                vocab_frequency[word_id_new] = self.inner.used_vocab_frequency()[word_id_old];
+        match word_lists {
+            PlainTranslateArgs::List(value) => {
+                vocab_frequency = vec![0u64; voc.len()];
+                let word_ids = value.into_iter().map(|value| {
+                    voc.add(value)
+                }).collect_vec();
+                for topic_id in self.inner.topic_ids() {
+                    let topic_old = self.inner.topics().get(topic_id).unwrap();
+                    let topic_new = new_probability.get_mut(topic_id).unwrap();
+                    for (word_id_old, word_id_new) in word_ids.iter().cloned().enumerate() {
+                        topic_new[word_id_new] = topic_old[word_id_old].clone();
+                        vocab_frequency[word_id_new] = self.inner.used_vocab_frequency()[word_id_old];
+                    }
+                }
             }
-        }
+            PlainTranslateArgs::ListList(word_lists) => {
+                vocab_frequency = vec![0u64; voc.len()];
+
+                let word_lists = word_lists.into_iter().map(|values| {
+                    values.into_iter().map(|value| {
+                        voc.add(value)
+                    }).collect_vec()
+                }).collect_vec();
+
+                for (topic_id, word_ids) in word_lists.into_iter().enumerate() {
+                    let topic_old = self.inner.topics().get(topic_id).unwrap();
+                    let topic_new = new_probability.get_mut(topic_id).unwrap();
+                    for (word_id_old, word_id_new) in word_ids.into_iter().enumerate() {
+                        topic_new[word_id_new] = topic_old[word_id_old].clone();
+                        vocab_frequency[word_id_new] = self.inner.used_vocab_frequency()[word_id_old];
+                    }
+                }
+            }
+        };
 
         Ok(
             Self {

@@ -247,7 +247,7 @@ class PyTopicModel:
     def builder(language_a: None | str | LanguageHint = None) -> PyTopicModelBuilder:
         ...
 
-    def translate_by_provided_word_lists(self, language_a: str | LanguageHint, word_lists: list[list[str]]) -> 'PyTopicModel':
+    def translate_by_provided_word_lists(self, language_a: str | LanguageHint, word_lists: list[list[str]] | list[str]) -> 'PyTopicModel':
         """Translates a topic model by the provided list of translated words with the format k x word_count"""
         ...
 

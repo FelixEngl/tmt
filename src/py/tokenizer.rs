@@ -791,7 +791,7 @@ impl PyTokenizerBuilder {
         Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
     }
 
-    fn __repr__(self) -> String {
+    fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
 }
