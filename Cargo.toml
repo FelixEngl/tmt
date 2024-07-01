@@ -44,8 +44,6 @@ paste = "1.0"
 tap = "1"
 compact_str = "0.7"
 
-unicode-normalization = { version = "0.1" }
-unicode-segmentation = { version = "1.11" }
 rust-stemmers = { version = "1" }
 charabia = "0.8"
 trie-rs = "0.4"

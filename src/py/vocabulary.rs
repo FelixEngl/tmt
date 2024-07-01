@@ -9,7 +9,7 @@ use std::path::{PathBuf};
 use std::slice::Iter;
 use std::vec::IntoIter;
 use pyo3::{Bound, pyclass, pyfunction, pymethods, PyRef, PyResult, wrap_pyfunction};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::dictionary::{PyDictionary};
@@ -128,6 +128,17 @@ impl PyVocabulary {
         let converted = state.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
         self.inner = Vocabulary::from_py_state(&converted).map_err(|value| PyValueError::new_err(value.to_string()))?;
         Ok(())
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
     }
 }
 

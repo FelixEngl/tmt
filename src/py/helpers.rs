@@ -7,6 +7,7 @@ use std::sync::Arc;
 use derive_more::{From, TryInto};
 use itertools::Itertools;
 use pyo3::{FromPyObject, IntoPy, PyAny, PyObject, Python};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use crate::py::vocabulary::PyVocabulary;
 use crate::py::voting::PyVoting;
@@ -253,7 +254,9 @@ impl From<TopicModelPyStateValue<PyVocabulary>> for PyTopicModelStateValue {
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "SerializableSpecialVec")]
+#[serde(into = "SerializableSpecialVec")]
 pub(crate) struct SpecialVec {
     inner: Arc<Vec<String>>,
     references: Arc<Vec<*const str>>
@@ -267,6 +270,14 @@ impl SpecialVec {
         let references = inner.iter().map(|value| value.as_str() as *const str).collect_vec();
         Self {
             inner: Arc::new(inner),
+            references: Arc::new(references)
+        }
+    }
+
+    fn new_from_arc(inner: Arc<Vec<String>>) -> Self {
+        let references = inner.iter().map(|value| value.as_str() as *const str).collect_vec();
+        Self {
+            inner,
             references: Arc::new(references)
         }
     }
@@ -286,6 +297,30 @@ impl AsRef<[String]> for SpecialVec {
         self.inner.as_slice()
     }
 }
+
+impl From<SerializableSpecialVec> for SpecialVec {
+    fn from(value: SerializableSpecialVec) -> Self {
+        Self::new_from_arc(value.inner)
+    }
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+struct SerializableSpecialVec {
+    inner: Arc<Vec<String>>
+}
+
+impl From<SpecialVec> for SerializableSpecialVec {
+    fn from(value: SpecialVec) -> Self {
+        Self { inner: value.inner }
+    }
+}
+
+
+
+
 
 
 #[cfg(test)]

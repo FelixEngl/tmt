@@ -9,7 +9,7 @@ use std::ops::Range;
 use std::path::{PathBuf};
 use std::sync::Arc;
 use itertools::Itertools;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use topic_model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
@@ -18,13 +18,12 @@ use crate::py::helpers::{HasPickleSupport, LanguageHintValue, PyTopicModelStateV
 use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::PyVocabulary;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
-use crate::{topicmodel, voc};
+use crate::{topicmodel};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
-use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use crate::topicmodel::topic_model::meta::*;
-use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, VocabularyMut};
 
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -220,6 +219,17 @@ impl PyTopicModel {
     #[staticmethod]
     fn builder(language: Option<LanguageHintValue>) -> PyTopicModelBuilder {
         PyTopicModelBuilder::new(language)
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
     }
 }
 

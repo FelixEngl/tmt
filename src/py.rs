@@ -16,7 +16,6 @@ pub mod voting;
 mod variable_provider;
 pub mod helpers;
 mod topic_model_builder;
-mod method_wrapper;
 mod tokenizer;
 pub mod enum_mapping;
 

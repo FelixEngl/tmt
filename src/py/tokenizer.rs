@@ -10,10 +10,11 @@ use std::ops::Deref;
 use std::path::{Path};
 use std::sync::{Arc, Mutex};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind, StartKind};
-use charabia::{Script, SeparatorKind, Token, Tokenizer, TokenizerBuilder, TokenKind};
+use charabia::{Script, SeparatorKind, Token, TokenKind};
 use charabia::Language;
 use charabia::normalizer::{ClassifierOption, NormalizerOption};
 use charabia::segmenter::SegmenterOption;
+use fst::raw::Fst;
 use thiserror::Error;
 use fst::Set;
 use itertools::Itertools;
@@ -21,6 +22,7 @@ use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pyfunction, pymethods, PyObject
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use rayon::prelude::*;
+use rust_stemmers::{Algorithm};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use serde_json::de::IoRead;
@@ -28,6 +30,7 @@ use serde_json::{Deserializer, Error, StreamDeserializer, Value};
 use crate::aligned_data::{AlignedArticle, Article, IntoJsonPickleDeserializerIterator, JsonPickleDeserializerIterator};
 use crate::py::enum_mapping::map_enum;
 use crate::py::helpers::{LanguageHintValue, SpecialVec};
+use crate::tokenizer::{TMTTokenizer, TMTTokenizerBuilder};
 use crate::toolkit::with_ref_of::{SupportsWithRef, WithValue};
 use crate::topicmodel::language_hint::LanguageHint;
 
@@ -168,7 +171,7 @@ pub fn read_aligned_articles(path: &str, with_pickle: bool) -> PyResult<PyAligne
     )
 }
 
-type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
+type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, TMTTokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, TMTTokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
 #[pyfunction]
 pub fn read_and_parse_aligned_articles(path: &str, with_pickle: bool, processor: PyAlignedArticleProcessor) -> PyResult<PyParsedAlignedArticleIter>{
@@ -388,10 +391,6 @@ macro_rules! impl_aligned_article_wrapper {
                     format!("{:?}", self)
                 }
 
-                pub fn to_json(&self) -> String {
-                    serde_json::to_string(self).unwrap()
-                }
-
                 pub fn __getitem__(&self, item: LanguageHintValue) -> Option<$typ> {
                     let lh: LanguageHint = item.into();
                     self.0.articles().get(&lh).cloned()
@@ -402,6 +401,16 @@ macro_rules! impl_aligned_article_wrapper {
                     self.0.articles().contains_key(&lh)
                 }
 
+                fn to_json(&self) -> PyResult<String> {
+                    Ok(
+                        serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+                    )
+                }
+
+                #[staticmethod]
+                fn from_json(s: &str) -> PyResult<Self> {
+                    Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+                }
             }
 
             impl Deref for $name {
@@ -507,8 +516,15 @@ impl PyArticle {
         self.to_string()
     }
 
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
     }
 }
 
@@ -582,6 +598,17 @@ impl PyToken {
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
 }
 
 impl<'a> From<Token<'a>> for PyToken {
@@ -624,7 +651,7 @@ impl Display for PyToken {
 }
 
 #[pyclass]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PyAlignedArticleProcessor {
     builders: Arc<HashMap<LanguageHint, PyTokenizerBuilder>>
 }
@@ -678,10 +705,21 @@ impl PyAlignedArticleProcessor {
         let token = self.builders.get(&lh)?.build_tokenizer();
         Some(token.reconstruct(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
     }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
 }
 
 impl PyAlignedArticleProcessor {
-    pub unsafe fn create_tokenizer_map(&self) -> HashMap<LanguageHint, Tokenizer<'static>> {
+    pub unsafe fn create_tokenizer_map(&self) -> HashMap<LanguageHint, TMTTokenizer<'static>> {
         self.builders
             .iter()
             .map(|(hint, builder)| (hint.clone(), transmute(builder.build_tokenizer())))
@@ -691,12 +729,13 @@ impl PyAlignedArticleProcessor {
 
 
 #[pyclass]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyTokenizerBuilder {
     stop_words: Option<PyStopWords>,
     words_dict: Option<SpecialVec>,
     normalizer_option: PyNormalizerOption,
     segmenter_option: PySegmenterOption,
+    stemmer: Option<PyStemmingAlgorithm>
 }
 
 #[pymethods]
@@ -704,6 +743,11 @@ impl PyTokenizerBuilder {
     #[new]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn stemmer<'py>(slf: Bound<'py, Self>, stemmer: Option<PyStemmingAlgorithm>) -> Bound<'py, Self> {
+        slf.borrow_mut().stemmer = stemmer;
+        slf
     }
 
     fn stop_words<'py>(slf: Bound<'py, Self>, stop_words: PyStopWords) -> Bound<'py, Self> {
@@ -735,11 +779,22 @@ impl PyTokenizerBuilder {
         slf.borrow_mut().segmenter_option.set_allow_list(Some(allow_list));
         slf
     }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
 }
 
 impl PyTokenizerBuilder {
-    pub fn as_tokenizer_builder(&self) -> TokenizerBuilder<impl AsRef<[u8]>> {
-        let mut builder = TokenizerBuilder::new();
+    pub fn as_tokenizer_builder(&self) -> TMTTokenizerBuilder<impl AsRef<[u8]>> {
+        let mut builder = TMTTokenizerBuilder::new();
         if let Some(ref stopwords) = self.normalizer_option.classifier.stop_words {
             builder.stop_words(&stopwords.0);
         }
@@ -760,18 +815,22 @@ impl PyTokenizerBuilder {
             builder.allow_list(allow_list);
         }
 
+        builder.stemmer(self.stemmer.map(Into::into));
+
         builder
     }
 
-    pub fn build_tokenizer(&self) -> Tokenizer {
+    pub fn build_tokenizer(&self) -> TMTTokenizer {
         self.as_tokenizer_builder().into_tokenizer()
     }
 }
 
 
 #[pyclass]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[repr(transparent)]
+#[serde(try_from = "PyStopWordsSerializable")]
+#[serde(into = "PyStopWordsSerializable")]
 pub struct PyStopWords(Set<Vec<u8>>);
 
 #[pymethods]
@@ -782,6 +841,23 @@ impl PyStopWords {
             Ok(words) => {Ok(Self(words))}
             Err(value) => {Err(PyValueError::new_err(value.to_string()))}
         }
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
+}
+
+impl Display for PyStopWords {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
     }
 }
 
@@ -797,8 +873,33 @@ impl AsRef<Set<Vec<u8>>> for PyStopWords {
     }
 }
 
+impl TryFrom<PyStopWordsSerializable> for PyStopWords {
+    type Error = fst::Error;
+
+    fn try_from(value: PyStopWordsSerializable) -> Result<Self, Self::Error> {
+        Ok(Self(Set::from(Fst::new(value.inner)?)))
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct PyStopWordsSerializable {
+    inner: Vec<u8>
+}
+
+impl From<PyStopWords> for PyStopWordsSerializable {
+    fn from(value: PyStopWords) -> Self {
+        Self { inner: value.0.into_fst().into_inner() }
+    }
+}
+
+impl Display for PyStopWordsSerializable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PyStopWordsSerializable({:?})", self.inner)
+    }
+}
+
 #[pyclass(set_all, get_all)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyNormalizerOption {
     create_char_map: bool,
     classifier: PyClassifierOption,
@@ -821,6 +922,17 @@ impl PyNormalizerOption {
     pub fn new() -> Self {
         Default::default()
     }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
 }
 
 impl PyNormalizerOption {
@@ -834,7 +946,7 @@ impl PyNormalizerOption {
 }
 
 #[pyclass]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PyClassifierOption {
     #[pyo3(get, set)]
     stop_words: Option<PyStopWords>,
@@ -870,6 +982,17 @@ impl PyClassifierOption {
         }
         Ok(())
     }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
 }
 
 impl PyClassifierOption {
@@ -891,11 +1014,26 @@ impl PyClassifierOption {
 
 
 #[pyclass]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(from = "PySegmenterOptionSerializer")]
+#[serde(into = "PySegmenterOptionSerializer")]
 pub struct PySegmenterOption {
     #[pyo3(get, set)]
     aho: Option<PyAhoCorasick>,
     allow_list: Option<HashMap<Script, Vec<Language>>>
+}
+
+impl From<PySegmenterOptionSerializer> for PySegmenterOption {
+    fn from(value: PySegmenterOptionSerializer) -> Self {
+        Self {
+            aho: Default::default(),
+            allow_list: value.allow_list.map(
+                |value| {
+                    value.into_iter().map(|(k, v)| (k.into(), v.into_iter().map(|lang| lang.into()).collect())).collect()
+                }
+            )
+        }
+    }
 }
 
 #[pymethods]
@@ -922,6 +1060,17 @@ impl PySegmenterOption {
             }).collect()
         })
     }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
 }
 
 impl PySegmenterOption {
@@ -932,6 +1081,26 @@ impl PySegmenterOption {
         }
     }
 }
+
+
+#[derive(Serialize, Deserialize)]
+#[repr(transparent)]
+struct PySegmenterOptionSerializer {
+    allow_list: Option<HashMap<PyScript, Vec<PyLanguage>>>
+}
+
+impl From<PySegmenterOption> for PySegmenterOptionSerializer {
+    fn from(value: PySegmenterOption) -> Self {
+        Self {
+            allow_list: value.allow_list.map(|inner| {
+                inner.into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(Into::into).collect()))
+                    .collect()
+            })
+        }
+    }
+}
+
 
 
 #[pyclass]
@@ -1501,6 +1670,31 @@ map_enum!(
     }
 );
 
+
+map_enum!(
+    impl PyStemmingAlgorithm for Algorithm {
+        Arabic,
+        Danish,
+        Dutch,
+        English,
+        Finnish,
+        French,
+        German,
+        Greek,
+        Hungarian,
+        Italian,
+        Norwegian,
+        Portuguese,
+        Romanian,
+        Russian,
+        Spanish,
+        Swedish,
+        Tamil,
+        Turkish
+    }
+);
+
+
 pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyAhoCorasick>()?;
     m.add_class::<PyAhoCorasickBuilder>()?;
@@ -1522,6 +1716,7 @@ pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTokenizedAlignedArticle>()?;
     m.add_class::<PyTokenizerBuilder>()?;
     m.add_class::<PyTokenKind>()?;
+    m.add_class::<PyStemmingAlgorithm>()?;
     m.add_function(wrap_pyfunction!(read_aligned_articles, m)?)?;
     m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles, m)?)?;
     m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles_into, m)?)?;

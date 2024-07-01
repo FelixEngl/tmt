@@ -9,7 +9,7 @@ use std::ops::{Deref};
 use std::path::{PathBuf};
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pymethods, PyObject, PyRef, PyResult, Python};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::types::{PyFunction};
 use serde::{Deserialize, Serialize};
@@ -241,6 +241,17 @@ impl PyDictionaryEntry {
 
     pub fn __str___(&self) -> PyResult<String> {
         Ok(format!("{}", self))
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
     }
 }
 
@@ -512,6 +523,17 @@ impl PyDictionary {
                 return Err(PyValueError::new_err(err.to_string()))
             }
         }
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
     }
 
     fn __iter__(&self) -> PyDictIter {
