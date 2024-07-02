@@ -83,16 +83,56 @@ impl <'tb, A: AsRef<[u8]>> TMTTokenizerBuilder<'tb, A> {
 
 trait Stem {
     type Item;
-    fn stem(self, stemmer: &Stemmer) -> Self::Item where Self: Sized;
+    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized;
 }
 
 impl Stem for Token<'_> {
     type Item = Self;
 
-    fn stem(mut self, stemmer: &Stemmer) -> Self::Item where Self: Sized {
-        let lemma = self.lemma.as_ref();
-        self.lemma = Cow::Owned(stemmer.stem(lemma).to_string());
+    fn stem(mut self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
+        if let Some(stemmer) = stemmer {
+            let lemma = self.lemma.as_ref();
+            self.lemma = Cow::Owned(stemmer.stem(lemma).to_string());
+        }
         self
+    }
+}
+
+impl<'a> Stem for &'a str {
+    type Item = Cow<'a, str>;
+
+    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
+        if let Some(stemmer) = stemmer {
+            Cow::Owned(stemmer.stem(self).to_string())
+        } else {
+            Cow::Borrowed(self)
+        }
+    }
+}
+
+impl<'a> Stem for Cow<'a, str> {
+    type Item = Self;
+
+    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
+        if let Some(stemmer) = stemmer {
+            let lemma = self.as_ref();
+            Cow::Owned(stemmer.stem(lemma).to_string());
+        } else {
+            self
+        }
+    }
+}
+
+impl<'a> Stem for (&'a str, Token<'_>) {
+    type Item = Self;
+
+    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
+        if let Some(stemmer) = stemmer {
+            let lemma = self.as_ref();
+            Cow::Owned(stemmer.stem(lemma).to_string());
+        } else {
+            self
+        }
     }
 }
 
@@ -106,11 +146,7 @@ impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, NormalizedTokenIter<'o, 'tb>> {
     type Item = Token<'o>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(stem) = self.stemmer {
-            Some(self.token_iter.next()?.stem(stem))
-        } else {
-            self.token_iter.next()
-        }
+        Some(self.token_iter.next()?.stem(self.stemmer))
     }
 }
 
@@ -118,12 +154,8 @@ impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, ReconstructedTokenIter<'o, 'tb>
     type Item = (&'o str, Token<'o>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(stem) = self.stemmer {
-            let (original, token) = self.token_iter.next()?;
-            Some((original, token.stem(stem)))
-        } else {
-            self.token_iter.next()
-        }
+        let (original, token) = self.token_iter.next()?;
+        Some((original, token.stem(self.stemmer)))
     }
 }
 
@@ -131,11 +163,7 @@ impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, SegmentedTokenIter<'o, 'tb>> {
     type Item = Token<'o>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(stem) = self.stemmer {
-            Some(self.token_iter.next()?.stem(stem))
-        } else {
-            self.token_iter.next()
-        }
+        Some(self.token_iter.next()?.stem(self.stemmer))
     }
 }
 
@@ -143,11 +171,7 @@ impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, SegmentedStrIter<'o, 'tb>> {
     type Item = Cow<'o, str>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(stem) = self.stemmer {
-            Some(stem.stem(self.token_iter.next()?))
-        } else {
-            Some(Cow::Borrowed(self.token_iter.next()?))
-        }
+        Some(self.token_iter.next()?.stem(self.stemmer))
     }
 }
 
@@ -157,8 +181,6 @@ pub struct TMTTokenizer<'tb> {
 }
 
 impl<'tb> TMTTokenizer<'tb> {
-
-
 
     /// Creates an Iterator over [`Token`]s.
     ///
