@@ -19,6 +19,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};
 use thiserror::Error;
+use trie_rs::map::{Trie, TrieBuilder};
 use crate::py::helpers::{HasPickleSupport, PyVocabularyStateValue};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
@@ -87,6 +88,23 @@ pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> {
     /// Creates a new instance
     fn create_from(language: Option<LanguageHint>, voc: Vec<T>) -> Self where Self: Sized, T: Eq + Hash;
 
+    /// Creates a trie from this
+    fn create_trie(&self) -> Trie<u8, usize> where T: AsRef<[u8]> {
+        let mut builder = TrieBuilder::new();
+        for (id, entry) in self.iter().enumerate() {
+            builder.push(entry.as_ref(), id);
+        }
+        builder.build()
+    }
+
+    /// Creates a trie from this
+    fn into_trie(self) -> Trie<u8, usize> where Self: Sized, T: AsRef<[u8]> {
+        let mut builder = TrieBuilder::new();
+        for (id, entry) in self.iter().enumerate() {
+            builder.push(entry.as_ref(), id);
+        }
+        builder.build()
+    }
 }
 
 pub trait SearchableVocabulary<T>: BasicVocabulary<T> where T: Eq + Hash {

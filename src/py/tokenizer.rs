@@ -30,10 +30,11 @@ use serde_json::{Deserializer, Error, StreamDeserializer, Value};
 use crate::aligned_data::{AlignedArticle, Article, IntoJsonPickleDeserializerIterator, JsonPickleDeserializerIterator};
 use crate::py::enum_mapping::map_enum;
 use crate::py::helpers::{LanguageHintValue, SpecialVec};
-use crate::tokenizer::{TMTTokenizer, TMTTokenizerBuilder};
+use crate::py::vocabulary::PyVocabulary;
+use crate::tokenizer::{Tokenizer, TokenizerBuilder};
 use crate::toolkit::with_ref_of::{SupportsWithRef, WithValue};
 use crate::topicmodel::language_hint::LanguageHint;
-
+use crate::topicmodel::vocabulary::{BasicVocabulary};
 
 
 enum JsonPickleIterWrapper<'a, T> {
@@ -171,7 +172,7 @@ pub fn read_aligned_articles(path: &str, with_pickle: bool) -> PyResult<PyAligne
     )
 }
 
-type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, TMTTokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, TMTTokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
+type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
 #[pyfunction]
 pub fn read_and_parse_aligned_articles(path: &str, with_pickle: bool, processor: PyAlignedArticleProcessor) -> PyResult<PyParsedAlignedArticleIter>{
@@ -185,7 +186,7 @@ pub fn read_and_parse_aligned_articles(path: &str, with_pickle: bool, processor:
                 let articles = articles.into_par_iter().map(|(lang, art)| {
                     if let Some(tokenizer) = tokenizers.get(&lang) {
                         let tokens = tokenizer
-                            .reconstruct(art.0.content())
+                            .phrase_stemmed(art.0.content())
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
                         (lang, PyTokenizedArticleUnion::Tokenized(
@@ -236,7 +237,7 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, pa
                 let articles = articles.into_par_iter().map(|(lang, art)| {
                     if let Some(tokenizer) = tokenizers.get(&lang) {
                         let tokens = tokenizer
-                            .reconstruct(art.0.content())
+                            .phrase_stemmed(art.0.content())
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
                         (lang, PyTokenizedArticleUnion::Tokenized(
@@ -673,7 +674,7 @@ impl PyAlignedArticleProcessor {
         let articles = articles.into_iter().map(|(lang, art)| {
             if let Some(tokenizer) = tokenizers.get(&lang) {
                 let tokens = tokenizer
-                    .reconstruct(art.0.content())
+                    .phrase_stemmed(art.0.content())
                     .map(|(original, value)| (original.to_string(), value.into()))
                     .collect_vec();
                 (lang, PyTokenizedArticleUnion::Tokenized(
@@ -703,7 +704,7 @@ impl PyAlignedArticleProcessor {
     fn process_string(&self, language_hint: LanguageHintValue, value: &str) -> Option<Vec<(String, PyToken)>> {
         let lh: LanguageHint = language_hint.into();
         let token = self.builders.get(&lh)?.build_tokenizer();
-        Some(token.reconstruct(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
+        Some(token.phrase_stemmed(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
     }
 
     fn to_json(&self) -> PyResult<String> {
@@ -719,7 +720,7 @@ impl PyAlignedArticleProcessor {
 }
 
 impl PyAlignedArticleProcessor {
-    pub unsafe fn create_tokenizer_map(&self) -> HashMap<LanguageHint, TMTTokenizer<'static>> {
+    pub unsafe fn create_tokenizer_map(&self) -> HashMap<LanguageHint, Tokenizer<'static>> {
         self.builders
             .iter()
             .map(|(hint, builder)| (hint.clone(), transmute(builder.build_tokenizer())))
@@ -735,7 +736,8 @@ pub struct PyTokenizerBuilder {
     words_dict: Option<SpecialVec>,
     normalizer_option: PyNormalizerOption,
     segmenter_option: PySegmenterOption,
-    stemmer: Option<PyStemmingAlgorithm>
+    stemmer: Option<(PyStemmingAlgorithm, bool)>,
+    vocabulary: Option<PyVocabulary>
 }
 
 #[pymethods]
@@ -745,8 +747,13 @@ impl PyTokenizerBuilder {
         Self::default()
     }
 
-    fn stemmer<'py>(slf: Bound<'py, Self>, stemmer: PyStemmingAlgorithm) -> Bound<'py, Self> {
-        slf.borrow_mut().stemmer = Some(stemmer);
+    fn stemmer<'py>(slf: Bound<'py, Self>, stemmer: PyStemmingAlgorithm, smart: Option<bool>) -> Bound<'py, Self> {
+        slf.borrow_mut().stemmer = Some((stemmer, smart.unwrap_or_default()));
+        slf
+    }
+
+    fn phrase_vocabulary<'py>(slf: Bound<'py, Self>, vocabulary: PyVocabulary) -> Bound<'py, Self> {
+        slf.borrow_mut().vocabulary = Some(vocabulary);
         slf
     }
 
@@ -797,8 +804,8 @@ impl PyTokenizerBuilder {
 }
 
 impl PyTokenizerBuilder {
-    pub fn as_tokenizer_builder(&self) -> TMTTokenizerBuilder<impl AsRef<[u8]>> {
-        let mut builder = TMTTokenizerBuilder::new();
+    pub fn as_tokenizer_builder(&self) -> TokenizerBuilder<impl AsRef<[u8]>> {
+        let mut builder = TokenizerBuilder::new();
         if let Some(ref stopwords) = self.normalizer_option.classifier.stop_words {
             builder.stop_words(&stopwords.0);
         }
@@ -819,12 +826,14 @@ impl PyTokenizerBuilder {
             builder.allow_list(allow_list);
         }
 
-        builder.stemmer(self.stemmer.map(Into::into));
+        builder.set_phraser(self.vocabulary.as_ref().map(PyVocabulary::create_trie));
+
+        builder.stemmer(self.stemmer.map(|(k, v)| (k.into(), v)));
 
         builder
     }
 
-    pub fn build_tokenizer(&self) -> TMTTokenizer {
+    pub fn build_tokenizer(&self) -> Tokenizer {
         self.as_tokenizer_builder().into_tokenizer()
     }
 }

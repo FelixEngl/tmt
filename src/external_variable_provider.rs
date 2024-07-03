@@ -1,8 +1,12 @@
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
 use evalexpr::{ContextWithMutableVariables, EvalexprError, Value};
 use once_cell::sync::{OnceCell};
 use thiserror::Error;
+use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::topic_model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
+use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
 
 #[derive(Debug, Clone, Error)]
 pub enum VariableProviderError {
@@ -31,6 +35,19 @@ pub trait VariableProviderOut: Sync + Send {
     fn provide_for_word_b(&self, word_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
     fn provide_for_word_in_topic_a(&self, topic_id: usize, word_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
     fn provide_for_word_in_topic_b(&self, topic_id: usize, word_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
+}
+
+#[derive(Debug, Error)]
+#[error("AsVariableProviderError({0})")]
+#[repr(transparent)]
+pub struct AsVariableProviderError(pub String);
+
+pub trait AsVariableProvider<T> {
+    fn as_variable_provider_for<'a, Model, D, Voc>(&self, topic_model: &'a Model, dictionary: &'a D) -> Result<VariableProvider, AsVariableProviderError> where
+        T: Hash + Eq + Ord + Clone,
+        Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
+        D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
+        Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats;
 }
 
 #[derive(Debug, Clone)]

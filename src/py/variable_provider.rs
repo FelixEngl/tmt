@@ -1,16 +1,14 @@
-use std::ops::Deref;
-use evalexpr::{ContextWithMutableVariables, Value};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::hash::Hash;
+use evalexpr::{Value};
 use pyo3::{Bound, pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
-use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut, VariableProviderResult};
-use crate::py::dictionary::PyDictionary;
-use crate::py::helpers::StrOrIntCatching;
-use crate::py::topic_model::PyTopicModel;
-use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
-use crate::topicmodel::dictionary::direction::AToB;
-use crate::topicmodel::topic_model::{BasicTopicModel};
-use crate::topicmodel::vocabulary::BasicVocabulary;
+use crate::external_variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
+use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::topic_model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
+use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
 use crate::voting::py::PyExprValue;
 
 impl From<VariableProviderError> for PyErr {
@@ -20,17 +18,14 @@ impl From<VariableProviderError> for PyErr {
 }
 
 #[pyclass]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PyVariableProvider {
-    inner: VariableProvider
-}
-
-impl PyVariableProvider {
-    pub(crate) fn new(topic_count: usize, word_count_a: usize, word_count_b: usize) -> Self {
-        Self {
-            inner: VariableProvider::new(topic_count, word_count_a, word_count_b)
-        }
-    }
+    global: HashMap<String, Value>,
+    per_topic: HashMap<usize, Vec<(String, Value)>>,
+    per_word_a: HashMap<String, Vec<(String, Value)>>,
+    per_word_b: HashMap<String, Vec<(String, Value)>>,
+    per_topic_per_word_a: HashMap<usize, HashMap<String, Vec<(String, Value)>>>,
+    per_topic_per_word_b: HashMap<usize, HashMap<String, Vec<(String, Value)>>>,
 }
 
 
@@ -38,160 +33,144 @@ impl PyVariableProvider {
 impl PyVariableProvider {
 
     #[new]
-    fn new_with(model: &PyTopicModel, dictionary: &PyDictionary) -> Self {
-        Self::new(
-            model.topic_count(),
-            dictionary.deref().voc_a().len(),
-            dictionary.deref().voc_b().len()
-        )
+    fn new() -> Self {
+        Self::default()
+    }
+    
+    fn add_global(&mut self, key: String, value: PyExprValue) -> PyResult<Option<PyExprValue>> {
+        Ok(self.global.insert(key, Value::try_from(value)?).map(PyExprValue::from))
+    }
+    fn add_for_topic(&mut self, topic_id: usize, key: String, value: PyExprValue) -> PyResult<()> {
+        match self.per_topic.entry(topic_id) {
+            Entry::Occupied(mut v) => {
+                v.get_mut().push((key, Value::try_from(value)?))
+            }
+            Entry::Vacant(empty) => {
+                empty.insert(vec![(key, Value::try_from(value)?)]);
+            }
+        }
+        Ok(())
+    }
+    fn add_for_word_a(&mut self, word: String, key: String, value: PyExprValue) -> PyResult<()> {
+        match self.per_word_a.entry(word) {
+            Entry::Occupied(mut v) => {
+                v.get_mut().push((key, Value::try_from(value)?))
+            }
+            Entry::Vacant(empty) => {
+                empty.insert(vec![(key, Value::try_from(value)?)]);
+            }
+        }
+        Ok(())
+    }
+    fn add_for_word_b(&mut self, word: String, key: String, value: PyExprValue) -> PyResult<()> {
+        match self.per_word_b.entry(word) {
+            Entry::Occupied(mut v) => {
+                v.get_mut().push((key, Value::try_from(value)?))
+            }
+            Entry::Vacant(empty) => {
+                empty.insert(vec![(key, Value::try_from(value)?)]);
+            }
+        }
+        Ok(())
+    }
+    fn add_for_word_in_topic_a(&mut self, topic_id: usize, word: String, key: String, value: PyExprValue) -> PyResult<()> {
+        match self.per_topic_per_word_a.entry(topic_id) {
+            Entry::Occupied(mut v) => {
+                match v.get_mut().entry(word) {
+                    Entry::Occupied(mut v) => {
+                        v.get_mut().push((key, Value::try_from(value)?));
+                    }
+                    Entry::Vacant(empty) => {
+                        empty.insert(vec![(key, Value::try_from(value)?)]);
+                    }
+                }
+            }
+            Entry::Vacant(empty) => {
+                let mut inner = HashMap::new();
+                inner.insert(word, vec![(key, Value::try_from(value)?)]);
+                empty.insert(inner);
+            }
+        }
+        Ok(())
     }
 
-    #[staticmethod]
-    fn builder(model: &PyTopicModel, dictionary: PyDictionary) -> PyVariableProviderBuilder {
-        let new = Self::new_with(model, &dictionary);
-        PyVariableProviderBuilder::new(dictionary, new)
-    }
-
-    fn add_global<'a>(&self, key: &str, value: PyExprValue) -> PyResult<()> {
-        Ok(self.inner.add_global(key, Value::try_from(value)?)?)
-    }
-    fn add_for_topic<'a>(&self, topic_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
-        Ok(self.inner.add_for_topic(topic_id, key, Value::try_from(value)?)?)
-    }
-    fn add_for_word_a<'a>(&self, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
-        Ok(self.inner.add_for_word_a(word_id, key, Value::try_from(value)?)?)
-    }
-    fn add_for_word_b<'a>(&self, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
-        Ok(self.inner.add_for_word_b(word_id, key, Value::try_from(value)?)?)
-    }
-    fn add_for_word_in_topic_a<'a>(&self, topic_id: usize, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
-        Ok(self.inner.add_for_word_in_topic_a(topic_id, word_id, key, Value::try_from(value)?)?)
-    }
-
-    fn add_for_word_in_topic_b<'a>(&self, topic_id: usize, word_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
-        Ok(self.inner.add_for_word_in_topic_b(topic_id, word_id, key, Value::try_from(value)?)?)
+    fn add_for_word_in_topic_b(&mut self, topic_id: usize, word: String, key: String, value: PyExprValue) -> PyResult<()> {
+        match self.per_topic_per_word_b.entry(topic_id) {
+            Entry::Occupied(mut v) => {
+                match v.get_mut().entry(word) {
+                    Entry::Occupied(mut v) => {
+                        v.get_mut().push((key, Value::try_from(value)?));
+                    }
+                    Entry::Vacant(empty) => {
+                        empty.insert(vec![(key, Value::try_from(value)?)]);
+                    }
+                }
+            }
+            Entry::Vacant(empty) => {
+                let mut inner = HashMap::new();
+                inner.insert(word, vec![(key, Value::try_from(value)?)]);
+                empty.insert(inner);
+            }
+        }
+        Ok(())
     }
 }
 
-impl VariableProviderOut for PyVariableProvider {
-    delegate::delegate! {
-        to self.inner {
-            fn provide_global(&self, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
-            fn provide_for_topic(&self, topic_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
-            fn provide_for_word_a(&self, word_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
-            fn provide_for_word_b(&self, word_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
-            fn provide_for_word_in_topic_a(&self, topic_id: usize, word_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
-            fn provide_for_word_in_topic_b(&self, topic_id: usize, word_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
+impl AsVariableProvider<String> for PyVariableProvider {
+    fn as_variable_provider_for<'a, Model, D, Voc>(&self, topic_model: &'a Model, dictionary: &'a D) -> Result<VariableProvider, AsVariableProviderError> where String: Hash + Eq + Ord + Clone, Voc: VocabularyMut<String> + MappableVocabulary<String> + Clone + 'a, D: DictionaryWithVocabulary<String, Voc> + DictionaryMut<String, Voc> + FromVoc<String, Voc>, Model: TopicModelWithVocabulary<String, Voc> + TopicModelWithDocumentStats {
+        let variable_provider = VariableProvider::new(
+            topic_model.k(),
+            dictionary.voc_a().len(),
+            dictionary.voc_b().len()
+        );
+
+        for (k, v) in self.global.iter() {
+            variable_provider.add_global(k, v.clone()).unwrap()
         }
-    }
-}
 
-#[pyclass]
-#[derive(Clone, Debug)]
-pub struct PyVariableProviderBuilder {
-    dict: PyDictionary,
-    inner: PyVariableProvider
-}
-
-
-impl PyVariableProviderBuilder {
-    pub(crate) fn new(dict: PyDictionary, provider: PyVariableProvider) -> Self {
-        Self {
-            dict,
-            inner: provider
+        for (topic_id, values) in self.per_topic.iter() {
+            for (k, v) in values.iter() {
+                variable_provider.add_for_topic(*topic_id, k, v.clone()).unwrap()
+            }
         }
-    }
-}
 
+        for (word, values) in self.per_word_a.iter() {
+            let word_id = dictionary.voc_a().get_id(word).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+            for (k, v) in values.iter() {
+                variable_provider.add_for_word_a(word_id, k, v.clone()).unwrap()
+            }
+        }
 
-#[pymethods]
-impl PyVariableProviderBuilder {
+        for (word, values) in self.per_word_b.iter() {
+            let word_id = dictionary.voc_b().get_id(word).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+            for (k, v) in values.iter() {
+                variable_provider.add_for_word_b(word_id, k, v.clone()).unwrap()
+            }
+        }
 
-    fn add_global<'a>(&self, key: &str, value: PyExprValue) -> PyResult<()> {
-        self.inner.add_global(key, value)
-    }
-
-    fn add_for_topic<'a>(&self, topic_id: usize, key: &str, value: PyExprValue) -> PyResult<()> {
-        self.inner.add_for_topic(topic_id, key, value)
-    }
-
-    fn add_for_word_a<'a>(&self, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
-        match word_id {
-            StrOrIntCatching::String(s) => {
-                if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
-                    self.inner.add_for_word_a(trans, key, value)
-                } else {
-                    Err(PyValueError::new_err("Value was not found!".to_string()))
+        for (topic_id, words) in self.per_topic_per_word_a.iter() {
+            for (word, values) in words {
+                let word_id = dictionary.voc_a().get_id(word).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+                for (k, v) in values.iter() {
+                    variable_provider.add_for_word_in_topic_a(*topic_id, word_id, k, v.clone()).unwrap()
                 }
             }
-            StrOrIntCatching::Int(i) => {
-                self.inner.add_for_word_a(i, key, value)
-            }
-            StrOrIntCatching::CatchAll(_) => {
-                Err(PyValueError::new_err("Value not a int or str!".to_string()))
-            }
         }
-    }
-    fn add_for_word_b<'a>(&self, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
-        match word_id {
-            StrOrIntCatching::String(s) => {
-                if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
-                    self.inner.add_for_word_b(trans, key, value)
-                } else {
-                    Err(PyValueError::new_err("Value was not found!".to_string()))
-                }
-            }
-            StrOrIntCatching::Int(i) => {
-                self.inner.add_for_word_b(i, key, value)
-            }
-            StrOrIntCatching::CatchAll(_) => {
-                Err(PyValueError::new_err("Value not a int or str!".to_string()))
-            }
-        }
-    }
-    fn add_for_word_in_topic_a<'a>(&self, topic_id: usize, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
-        match word_id {
-            StrOrIntCatching::String(s) => {
-                if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
-                    self.inner.add_for_word_in_topic_a(topic_id, trans, key, value)
-                } else {
-                    Err(PyValueError::new_err("Value was not found!".to_string()))
-                }
-            }
-            StrOrIntCatching::Int(i) => {
-                self.inner.add_for_word_in_topic_a(topic_id, i, key, value)
-            }
-            StrOrIntCatching::CatchAll(_) => {
-                Err(PyValueError::new_err("Value not a int or str!".to_string()))
-            }
-        }
-    }
-    fn add_for_word_in_topic_b<'a>(&self, topic_id: usize, word_id: StrOrIntCatching<'a>, key: &str, value: PyExprValue) -> PyResult<()> {
-        match word_id {
-            StrOrIntCatching::String(s) => {
-                if let Some(trans) = self.dict.word_to_id::<AToB, _>(&s) {
-                    self.inner.add_for_word_in_topic_b(topic_id, trans, key, value)
-                } else {
-                    Err(PyValueError::new_err("Value was not found!".to_string()))
-                }
-            }
-            StrOrIntCatching::Int(i) => {
-                self.inner.add_for_word_in_topic_b(topic_id, i, key, value)
-            }
-            StrOrIntCatching::CatchAll(_) => {
-                Err(PyValueError::new_err("Value not a int or str!".to_string()))
-            }
-        }
-    }
 
+        for (topic_id, words) in self.per_topic_per_word_b.iter() {
+            for (word, values) in words {
+                let word_id = dictionary.voc_b().get_id(word).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+                for (k, v) in values.iter() {
+                    variable_provider.add_for_word_in_topic_b(*topic_id, word_id, k, v.clone()).unwrap()
+                }
+            }
+        }
 
-    fn build(&self) -> PyVariableProvider {
-        self.inner.clone()
+        return Ok(variable_provider);
     }
 }
 
 pub(crate) fn variable_provider_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVariableProvider>()?;
-    m.add_class::<PyVariableProviderBuilder>()?;
     Ok(())
 }

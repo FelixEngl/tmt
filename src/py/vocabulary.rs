@@ -26,6 +26,12 @@ pub struct PyVocabulary {
     inner: Vocabulary<String>
 }
 
+impl PyVocabulary {
+    pub fn into_inner(self) -> Vocabulary<String> {
+        self.inner
+    }
+}
+
 #[pymethods]
 impl PyVocabulary {
     #[new]

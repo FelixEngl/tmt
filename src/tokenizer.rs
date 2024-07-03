@@ -1,35 +1,51 @@
+mod phrase_recognizer;
+mod stemming;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::marker::PhantomData;
-use charabia::{Language, ReconstructedTokenIter, Script, Token, Tokenizer, TokenizerBuilder};
+use charabia::{Language, ReconstructedTokenIter, Script, Tokenizer as CTokenizer, TokenizerBuilder as CTokenizerBuilder};
 use charabia::normalizer::NormalizedTokenIter;
 use charabia::segmenter::{SegmentedStrIter, SegmentedTokenIter};
 use fst::Set;
-use rust_stemmers::{Algorithm, Stemmer};
+use rust_stemmers::{Algorithm};
+use trie_rs::map::Trie;
+use crate::tokenizer::phrase_recognizer::{PhraseableIters, PhraseRecognizerIter};
+use crate::tokenizer::stemming::{SmartStemmer, StemmedTokenIter};
 
-pub struct TMTTokenizerBuilder<'tb, A> {
-    tokenizer_builder: TokenizerBuilder<'tb, A>,
-    stemmer: Option<Algorithm>
+pub struct TokenizerBuilder<'tb, A> {
+    tokenizer_builder: CTokenizerBuilder<'tb, A>,
+    stemmer: Option<(Algorithm, bool)>,
+    phrase_trie: Option<Trie<u8, usize>>
 }
 
-impl Default for TMTTokenizerBuilder<'_, Vec<u8>> {
+impl Default for TokenizerBuilder<'_, Vec<u8>> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'tb, A> TMTTokenizerBuilder<'tb, A> {
+impl<'tb, A> TokenizerBuilder<'tb, A> {
     pub fn new() -> Self {
         Self {
-            tokenizer_builder: TokenizerBuilder::new(),
-            stemmer: None
+            tokenizer_builder: CTokenizerBuilder::new(),
+            stemmer: None,
+            phrase_trie: None
         }
+    }
+
+    pub fn set_phraser(&mut self, voc: Option<Trie<u8, usize>>) -> &mut Self {
+        self.phrase_trie = voc;
+        self
+    }
+
+    pub fn stemmer(&mut self, stemmer: Option<(Algorithm, bool)>) -> &mut Self {
+        self.stemmer = stemmer;
+        self
     }
 }
 
-impl <'tb, A: AsRef<[u8]>> TMTTokenizerBuilder<'tb, A> {
 
-
+impl <'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A> {
     pub fn stop_words(&mut self, stop_words: &'tb Set<A>) -> &mut Self {
         self.tokenizer_builder.stop_words(stop_words);
         self
@@ -60,167 +76,87 @@ impl <'tb, A: AsRef<[u8]>> TMTTokenizerBuilder<'tb, A> {
         self
     }
 
-    pub fn stemmer(&mut self, stemmer: Option<Algorithm>) -> &mut Self {
-        self.stemmer = stemmer;
-        self
-    }
+}
 
-    pub fn build(&mut self) -> TMTTokenizer {
-        TMTTokenizer::new(
+impl<'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A>  {
+    pub fn build(&mut self) -> Tokenizer {
+        Tokenizer::new(
             self.tokenizer_builder.build(),
-            self.stemmer.map(Stemmer::create)
+            self.stemmer.map(SmartStemmer::from),
+            self.phrase_trie.as_ref().map(Cow::Borrowed)
         )
     }
 
-    pub fn into_tokenizer(self) -> TMTTokenizer<'tb> {
-        TMTTokenizer::new(
+    pub fn into_tokenizer(self) -> Tokenizer<'tb> {
+        Tokenizer::new(
             self.tokenizer_builder.into_tokenizer(),
-            self.stemmer.map(Stemmer::create)
+            self.stemmer.map(SmartStemmer::from),
+            self.phrase_trie.map(Cow::Owned)
         )
     }
 }
 
 
-trait Stem {
-    type Item;
-    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized;
+
+pub struct Tokenizer<'tb> {
+    tokenizer: CTokenizer<'tb>,
+    stemmer: Option<SmartStemmer>,
+    trie: Option<Cow<'tb, Trie<u8, usize>>>
 }
 
-impl Stem for Token<'_> {
-    type Item = Self;
-
-    fn stem(mut self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
-        if let Some(stemmer) = stemmer {
-            let lemma = self.lemma.as_ref();
-            self.lemma = Cow::Owned(stemmer.stem(lemma).to_string());
-        }
-        self
+impl<'tb> Tokenizer<'tb> {
+    pub fn new(tokenizer: CTokenizer<'tb>, stemmer: Option<SmartStemmer>, trie: Option<Cow<'tb, Trie<u8, usize>>>) -> Self {
+        Self { tokenizer, stemmer, trie }
     }
-}
 
-impl<'a> Stem for &'a str {
-    type Item = Cow<'a, str>;
 
-    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
-        if let Some(stemmer) = stemmer {
-            Cow::Owned(stemmer.stem(self).to_string())
-        } else {
-            Cow::Borrowed(self)
-        }
+    /// Allows to wrap a tokenizer for phrase recognition
+    pub fn phrase_stemmed<'t, 'o>(&'t self, original: &'o str) -> PhraseRecognizerIter<'o, 't> {
+        PhraseRecognizerIter::new(
+            self.trie.as_ref().map(|value| value.as_ref()),
+            PhraseableIters::Stemmer(self.stem(original)),
+            original
+        )
     }
-}
 
-impl<'a> Stem for Cow<'a, str> {
-    type Item = Self;
-
-    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
-        if let Some(stemmer) = stemmer {
-            let lemma = self.as_ref();
-            Cow::Owned(stemmer.stem(lemma).to_string());
-        } else {
-            self
-        }
+    /// Allows to wrap a tokenizer for phrase recognition
+    pub fn phrase<'t, 'o>(&'t self, original: &'o str) -> PhraseRecognizerIter<'o, 't> {
+        PhraseRecognizerIter::new(
+            self.trie.as_ref().map(|value| value.as_ref()),
+            PhraseableIters::Reconstruct(self.reconstruct(original)),
+            original
+        )
     }
-}
 
-impl<'a> Stem for (&'a str, Token<'_>) {
-    type Item = Self;
-
-    fn stem(self, stemmer: Option<&Stemmer>) -> Self::Item where Self: Sized {
-        if let Some(stemmer) = stemmer {
-            let lemma = self.as_ref();
-            Cow::Owned(stemmer.stem(lemma).to_string());
-        } else {
-            self
-        }
+    pub fn stem<'t, 'o>(&'t self, original: &'o str) -> StemmedTokenIter<'o, 't> {
+        StemmedTokenIter::new(self.reconstruct(original), self.stemmer.as_ref())
     }
-}
-
-pub struct TMTTokenIter<'o, 'tb, I> {
-    token_iter: I,
-    stemmer: Option<&'tb Stemmer>,
-    _phantom: PhantomData<&'o ()>
-}
-
-impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, NormalizedTokenIter<'o, 'tb>> {
-    type Item = Token<'o>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.token_iter.next()?.stem(self.stemmer))
-    }
-}
-
-impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, ReconstructedTokenIter<'o, 'tb>> {
-    type Item = (&'o str, Token<'o>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (original, token) = self.token_iter.next()?;
-        Some((original, token.stem(self.stemmer)))
-    }
-}
-
-impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, SegmentedTokenIter<'o, 'tb>> {
-    type Item = Token<'o>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.token_iter.next()?.stem(self.stemmer))
-    }
-}
-
-impl<'o, 'tb> Iterator for TMTTokenIter<'o, 'tb, SegmentedStrIter<'o, 'tb>> {
-    type Item = Cow<'o, str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.token_iter.next()?.stem(self.stemmer))
-    }
-}
-
-pub struct TMTTokenizer<'tb> {
-    tokenizer: Tokenizer<'tb>,
-    stemmer: Option<Stemmer>
-}
-
-impl<'tb> TMTTokenizer<'tb> {
 
     /// Creates an Iterator over [`Token`]s.
     ///
     /// The provided text is segmented creating tokens,
     /// then tokens are normalized and classified depending on the list of normalizers and classifiers in [`normalizer::NORMALIZERS`].
-    pub fn tokenize<'t, 'o>(&'t self, original: &'o str) -> TMTTokenIter<'o, 't, NormalizedTokenIter<'o, 't>> {
-        TMTTokenIter {
-            stemmer: self.stemmer.as_ref(),
-            token_iter: self.tokenizer.tokenize(original),
-            _phantom: PhantomData
-        }
+    #[inline(always)]
+    pub fn tokenize<'t, 'o>(&'t self, original: &'o str) -> NormalizedTokenIter<'o, 't> {
+        self.tokenizer.tokenize(original)
     }
 
     /// Same as [`tokenize`] but attaches each [`Token`] to its corresponding portion of the original text.
-    pub fn reconstruct<'t, 'o>(&'t self, original: &'o str) -> TMTTokenIter<'o, 't, ReconstructedTokenIter<'o, 't>> {
-        TMTTokenIter {
-            stemmer: self.stemmer.as_ref(),
-            token_iter: self.tokenizer.reconstruct(original),
-            _phantom: PhantomData
-        }
+    #[inline(always)]
+    pub fn reconstruct<'t, 'o>(&'t self, original: &'o str) -> ReconstructedTokenIter<'o, 't> {
+        self.tokenizer.reconstruct(original)
     }
 
     /// Segments the provided text creating an Iterator over [`Token`].
-    pub fn segment<'t, 'o>(&'t self, original: &'o str) -> TMTTokenIter<'o, 't, SegmentedTokenIter<'o, 't>> {
-        TMTTokenIter {
-            stemmer: self.stemmer.as_ref(),
-            token_iter: self.tokenizer.segment(original),
-            _phantom: PhantomData
-        }
+    #[inline(always)]
+    pub fn segment<'t, 'o>(&'t self, original: &'o str) -> SegmentedTokenIter<'o, 't> {
+        self.tokenizer.segment(original)
     }
 
     /// Segments the provided text creating an Iterator over `&str`.
-    pub fn segment_str<'t, 'o>(&'t self, original: &'o str) -> TMTTokenIter<'o, 't, SegmentedStrIter<'o, 't>> {
-        TMTTokenIter {
-            stemmer: self.stemmer.as_ref(),
-            token_iter: self.tokenizer.segment_str(original),
-            _phantom: PhantomData
-        }
+    #[inline(always)]
+    pub fn segment_str<'t, 'o>(&'t self, original: &'o str) -> SegmentedStrIter<'o, 't> {
+        self.tokenizer.segment_str(original)
     }
-    pub fn new(tokenizer: Tokenizer<'tb>, stemmer: Option<Stemmer>) -> Self {
-        Self { tokenizer, stemmer }
-    }
+
 }

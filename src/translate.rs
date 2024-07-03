@@ -3,6 +3,7 @@ use std::collections::{HashMap};
 use std::collections::hash_map::Entry;
 use std::error::Error;
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use evalexpr::{Context, context_map, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext};
@@ -22,17 +23,23 @@ use crate::voting::traits::VotingMethodMarker;
 use pyo3::{Bound, pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{PyModule, PyModuleMethods};
-use crate::external_variable_provider::{VariableProvider, VariableProviderError, VariableProviderOut};
+use crate::external_variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError, VariableProviderOut};
 use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::translate::TranslateError::IncompatibleLanguages;
 
+/// The config for a translation
 #[derive(Debug)]
 pub struct TranslateConfig<V: VotingMethodMarker> {
+    /// The voting to be used
     voting: V,
+    /// The epsilon to be used, if it is none it is determined heuristically.
     epsilon: Option<f64>,
+    /// The threshold of the probabilities allowed to be used as voters
     threshold: Option<f64>,
+    /// Set what to do with the original word
     keep_original_word: KeepOriginalWord,
+    /// Limits the number of accepted candidates to N. If not set keep all.
     top_candidate_limit: Option<NonZeroUsize>,
 }
 
@@ -56,7 +63,7 @@ impl<'a, V> Clone for TranslateConfig<V> where V: VotingMethodMarker + Clone {
 
 
 
-
+/// Setting if to keep the original word from language A
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
 #[derive(AsRefStr, Display, EnumString)]
 #[pyclass]
@@ -92,6 +99,7 @@ impl KeepOriginalWord {
     }
 }
 
+/// An error that happened while translating
 #[derive(Debug, Error)]
 pub enum TranslateError<'a> {
     #[error(transparent)]
@@ -105,7 +113,9 @@ pub enum TranslateError<'a> {
         lang_a: &'a LanguageHint,
         lang_b: LanguageHint,
         lang_model: &'a LanguageHint,
-    }
+    },
+    #[error(transparent)]
+    AsVariableProviderFailed(#[from] AsVariableProviderError)
 }
 
 #[derive(Debug, Error)]
@@ -116,6 +126,7 @@ pub struct TranslateErrorWithOrigin {
     source: Box<dyn Error + Send + Sync>
 }
 
+/// Trait for mapping to map something to something that supports a context for topic_id and word_id
 trait MapsToTranslateErrorWithOrigin {
     type Return;
     fn originates_at(self, topic_id: usize, word_id: usize) -> Self::Return;
@@ -173,7 +184,22 @@ impl<T> Deref for LanguageOrigin<T> {
     }
 }
 
+struct DummyAsVariableProvider<T> {
+    _phantom: PhantomData<T>
+}
 
+// impl<T> DummyAsVariableProvider<T> {
+//     pub fn new() -> Self {
+//         Self { _phantom: PhantomData }
+//     }
+// }
+
+
+impl<T> AsVariableProvider<T> for DummyAsVariableProvider<T> {
+    fn as_variable_provider_for<'a, Model, D, Voc>(&self, _: &'a Model, _: &'a D) -> Result<VariableProvider, AsVariableProviderError> where T: Hash + Eq + Ord + Clone, Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a, D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>, Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats {
+        Err(AsVariableProviderError("Never callable!".to_string()))
+    }
+}
 
 pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
     topic_model: &'a Model,
@@ -190,7 +216,7 @@ pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
         topic_model,
         dictionary,
         translate_config,
-        None::<&VariableProvider>
+        None::<&DummyAsVariableProvider<T>>
     )
 }
 
@@ -206,7 +232,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
     Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
     D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-    P: VariableProviderOut
+    P: AsVariableProvider<T>
 {
 
     if let Some(lang_model) = topic_model.vocabulary().language() {
@@ -229,6 +255,13 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
         topic_model.vocabulary()
     );
 
+    // TODO: make clean for rust.
+    let provider = if let Some(provider) = provider {
+        Some(provider.as_variable_provider_for(topic_model, &dictionary))
+    } else {
+        None
+    }.transpose()?;
+
     let epsilon = if let Some(value) = translate_config.epsilon {
         value
     } else {
@@ -246,7 +279,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
         VOCABULARY_SIZE_B => dictionary.voc_b().len() as i64,
     }.unwrap();
 
-    if let Some(provider) = provider {
+    if let Some(ref provider) = provider {
         provider.provide_global(&mut topic_context)?;
     }
 
@@ -269,7 +302,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
                 TOPIC_ID => topic_id as i64
             }.unwrap();
 
-            if let Some(provider) = provider {
+            if let Some(provider) = provider.as_ref() {
                 match provider.provide_for_topic(topic_id, &mut topic_context_2) {
                     Ok(_) => {
                         let topic_context_2 = topic_context_2
@@ -300,7 +333,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
                     topic,
                     topic_context_2,
                     &translate_config,
-                    None::<&P>
+                    None::<&VariableProvider>
                 ).map_err(TranslateError::WithOrigin)
             }
 
