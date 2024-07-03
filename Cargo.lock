@@ -876,6 +876,8 @@ dependencies = [
  "strum",
  "thiserror",
  "trie-rs",
+ "unicode-normalization",
+ "unicode-segmentation",
  "zip",
 ]
 
