@@ -1,14 +1,16 @@
 use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::{env, io};
+use std::hash::Hash;
 use std::io::{BufReader, BufWriter};
 use std::iter::Map;
 use std::mem::transmute;
 use std::ops::Deref;
-use std::path::{Path};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::UNIX_EPOCH;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind, StartKind};
 use charabia::{Script, SeparatorKind, Token, TokenKind};
 use charabia::Language;
@@ -29,7 +31,7 @@ use serde_json::de::IoRead;
 use serde_json::{Deserializer, Error, StreamDeserializer, Value};
 use crate::aligned_data::{AlignedArticle, Article, IntoJsonPickleDeserializerIterator, JsonPickleDeserializerIterator};
 use crate::py::enum_mapping::map_enum;
-use crate::py::helpers::{LanguageHintValue, SpecialVec};
+use crate::py::helpers::{LanguageHintValue, StringSetOrList, SpecialVec};
 use crate::py::vocabulary::PyVocabulary;
 use crate::tokenizer::{Tokenizer, TokenizerBuilder};
 use crate::toolkit::with_ref_of::{SupportsWithRef, WithValue};
@@ -224,11 +226,14 @@ enum WriteIntoError {
 }
 
 #[pyfunction]
-pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, path_out: &str, processor: PyAlignedArticleProcessor) -> PyResult<usize> {
+pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, path_out: &str, processor: PyAlignedArticleProcessor, temp_folder: Option<PathBuf>) -> PyResult<usize> {
     let reader = read_aligned_articles_impl(path_in, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?;
     let tokenizers = Arc::new(unsafe{processor.create_tokenizer_map()});
 
-    let temp_folder = env::temp_dir();
+    let mut temp_folder = temp_folder.unwrap_or_else(|| env::temp_dir());
+    let now = std::time::SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards!");
+    temp_folder = temp_folder.join(format!("processing_{}", now.as_millis()));
+    std::fs::create_dir_all(&temp_folder)?;
 
     let mut files = reader.enumerate().par_bridge().map(|(idx, value)| {
         let result = match value {
@@ -306,6 +311,8 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, pa
             }
         }
     }
+
+    std::fs::remove_dir_all(temp_folder)?;
 
     if let Some((idx, err)) = error.first() {
         Err(PyRuntimeError::new_err(format!("Failed with {} errors.\nFirst Error at {idx}:\n{}", error.len(), err.to_string())))
@@ -729,6 +736,7 @@ impl PyAlignedArticleProcessor {
 }
 
 
+
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyTokenizerBuilder {
@@ -757,18 +765,18 @@ impl PyTokenizerBuilder {
         slf
     }
 
-    fn stop_words<'py>(slf: Bound<'py, Self>, stop_words: PyStopWords) -> Bound<'py, Self> {
-        slf.borrow_mut().stop_words = Some(stop_words);
-        slf
-    }
-
-    fn separators<'py>(slf: Bound<'py, Self>, separators: Vec<String>) -> PyResult<Bound<'py, Self>> {
-        slf.borrow_mut().normalizer_option.classifier.set_separators(Some(separators))?;
+    fn stop_words<'py>(slf: Bound<'py, Self>, stop_words: PyStopWordsArg) -> PyResult<Bound<'py, Self>> {
+        slf.borrow_mut().stop_words = Some(stop_words.to_stop_words()?);
         Ok(slf)
     }
 
-    fn words_dict<'py>(slf: Bound<'py, Self>, words: Vec<String>) -> Bound<'py, Self> {
-        slf.borrow_mut().words_dict = Some(SpecialVec::new(words));
+    fn separators<'py>(slf: Bound<'py, Self>, separators: StringSetOrList) -> PyResult<Bound<'py, Self>> {
+        slf.borrow_mut().normalizer_option.classifier.set_separators(Some(separators.to_vec()))?;
+        Ok(slf)
+    }
+
+    fn words_dict<'py>(slf: Bound<'py, Self>, words: StringSetOrList) -> Bound<'py, Self> {
+        slf.borrow_mut().words_dict = Some(SpecialVec::new(words.to_vec()));
         slf
     }
 
@@ -846,10 +854,18 @@ impl PyTokenizerBuilder {
 #[serde(into = "PyStopWordsSerializable")]
 pub struct PyStopWords(Set<Vec<u8>>);
 
+impl PyStopWords {
+    pub fn new(field0: Set<Vec<u8>>) -> Self {
+        Self(field0)
+    }
+}
+
 #[pymethods]
 impl PyStopWords {
     #[new]
-    fn new(words: Vec<String>) -> PyResult<Self> {
+    fn py_new(words: StringSetOrList) -> PyResult<Self> {
+        let mut words = words.to_vec();
+        words.sort();
         match Set::from_iter(words) {
             Ok(words) => {Ok(Self(words))}
             Err(value) => {Err(PyValueError::new_err(value.to_string()))}
@@ -891,6 +907,30 @@ impl TryFrom<PyStopWordsSerializable> for PyStopWords {
 
     fn try_from(value: PyStopWordsSerializable) -> Result<Self, Self::Error> {
         Ok(Self(Set::from(Fst::new(value.inner)?)))
+    }
+}
+
+
+#[derive(Clone, Debug, FromPyObject)]
+pub enum PyStopWordsArg {
+    List(Vec<String>),
+    Set(HashSet<String>),
+    StopWords(PyStopWords)
+}
+
+impl PyStopWordsArg {
+    pub fn to_stop_words(self) -> PyResult<PyStopWords> {
+        match self {
+            PyStopWordsArg::List(value) => {
+                PyStopWords::py_new(StringSetOrList::List(value))
+            }
+            PyStopWordsArg::Set(value) => {
+                PyStopWords::py_new(StringSetOrList::Set(value))
+            }
+            PyStopWordsArg::StopWords(value) => {
+                Ok(value)
+            }
+        }
     }
 }
 

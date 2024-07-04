@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::intrinsics::transmute;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -320,9 +321,6 @@ impl From<SpecialVec> for SerializableSpecialVec {
 
 
 
-
-
-
 #[cfg(test)]
 mod special_vec_test {
     use super::SpecialVec;
@@ -335,5 +333,30 @@ mod special_vec_test {
 
         println!("{:?}", v.as_ref());
         println!("{:?}", r);
+    }
+}
+
+
+
+
+#[derive(Debug, Clone, FromPyObject)]
+pub enum StringSetOrList {
+    List(Vec<String>),
+    Set(HashSet<String>),
+}
+
+impl StringSetOrList {
+    pub fn to_vec(self) -> Vec<String> {
+        match self {
+            StringSetOrList::List(value) => {value}
+            StringSetOrList::Set(value) => {value.into_iter().collect_vec()}
+        }
+    }
+
+    pub fn to_hash_set(self) -> HashSet<String> {
+        match self {
+            StringSetOrList::List(value) => {value.into_iter().collect()}
+            StringSetOrList::Set(value) => {value}
+        }
     }
 }
