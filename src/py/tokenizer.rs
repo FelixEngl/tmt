@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::{env, io};
 use std::hash::Hash;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
 use std::iter::Map;
 use std::mem::transmute;
 use std::ops::Deref;
@@ -108,6 +108,57 @@ impl Iterator for PyAlignedArticleIter {
     }
 }
 
+
+type ParsedDeserializeIter<'a> = JsonPickleIterWrapper<'a, PyTokenizedAlignedArticle>;
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyAlignedArticleParsedIter {
+    iter: Arc<Mutex<ParsedDeserializeIter<'static>>>
+}
+
+impl PyAlignedArticleParsedIter {
+    fn new(iterator: ParsedDeserializeIter) -> Self {
+        Self {
+            iter: Arc::new(Mutex::new(unsafe{transmute(iterator)}))
+        }
+    }
+}
+
+#[pymethods]
+impl PyAlignedArticleParsedIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> PyResult<Option<PyTokenizedAlignedArticle>> {
+        match self.iter.lock() {
+            Ok(mut lock) => {
+                match lock.next().transpose() {
+                    Ok(value) => {
+                        Ok(value)
+                    }
+                    Err(err) => {
+                        Err(PyRuntimeError::new_err(err.to_string()))
+                    }
+                }
+            }
+            Err(err) => {
+                Err(PyRuntimeError::new_err(err.to_string()))
+            }
+        }
+    }
+}
+
+impl Iterator for PyAlignedArticleParsedIter {
+    type Item = Result<PyTokenizedAlignedArticle, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.lock().unwrap().next()
+    }
+}
+
+
 #[pyclass]
 #[derive(Clone)]
 pub struct PyParsedAlignedArticleIter {
@@ -166,10 +217,31 @@ fn read_aligned_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: bool) -> 
 }
 
 #[pyfunction]
-pub fn read_aligned_articles(path: &str, with_pickle: bool) -> PyResult<PyAlignedArticleIter> {
+pub fn read_aligned_articles(path: &str, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleIter> {
     Ok(
         PyAlignedArticleIter::new(
-            read_aligned_articles_impl(path, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?
+            read_aligned_articles_impl(path, with_pickle.unwrap_or_default()).map_err(|value| PyValueError::new_err(value.to_string()))?
+        )
+    )
+}
+
+
+
+fn read_aligned_parsed_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: Option<bool>) -> io::Result<ParsedDeserializeIter<'a>> {
+    let iter = Deserializer::from_reader(BufReader::new(File::open(path)?));
+    Ok(if with_pickle.unwrap_or_default() {
+        ParsedDeserializeIter::Pickle(iter.into_iter().into_json_pickle_iter::<PyTokenizedAlignedArticle>())
+    } else {
+        ParsedDeserializeIter::Unpickle(iter.into_iter())
+    })
+}
+
+
+#[pyfunction]
+pub fn read_aligned_parsed_articles(path: &str, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleParsedIter> {
+    Ok(
+        PyAlignedArticleParsedIter::new(
+            read_aligned_parsed_articles_impl(path, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?
         )
     )
 }
@@ -177,8 +249,8 @@ pub fn read_aligned_articles(path: &str, with_pickle: bool) -> PyResult<PyAligne
 type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
 #[pyfunction]
-pub fn read_and_parse_aligned_articles(path: &str, with_pickle: bool, processor: PyAlignedArticleProcessor) -> PyResult<PyParsedAlignedArticleIter>{
-    let reader = read_aligned_articles_impl(path, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?;
+pub fn read_and_parse_aligned_articles(path: &str, processor: PyAlignedArticleProcessor, with_pickle: Option<bool>) -> PyResult<PyParsedAlignedArticleIter>{
+    let reader = read_aligned_articles_impl(path, with_pickle.unwrap_or_default()).map_err(|value| PyValueError::new_err(value.to_string()))?;
     let tokenizers = unsafe{processor.create_tokenizer_map()};
 
     let iter: TokenizingDeserializeIter = reader.with_value(Arc::new(tokenizers)).map(|(tokenizers, value)| {
@@ -226,8 +298,8 @@ enum WriteIntoError {
 }
 
 #[pyfunction]
-pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, path_out: &str, processor: PyAlignedArticleProcessor, temp_folder: Option<PathBuf>) -> PyResult<usize> {
-    let reader = read_aligned_articles_impl(path_in, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?;
+pub fn read_and_parse_aligned_articles_into(path_in: &str, path_out: &str, processor: PyAlignedArticleProcessor, with_pickle: Option<bool>, temp_folder: Option<PathBuf>, min_length: Option<usize>) -> PyResult<usize> {
+    let reader = read_aligned_articles_impl(path_in, with_pickle.unwrap_or_default()).map_err(|value| PyValueError::new_err(value.to_string()))?;
     let tokenizers = Arc::new(unsafe{processor.create_tokenizer_map()});
 
     let mut temp_folder = temp_folder.unwrap_or_else(|| env::temp_dir());
@@ -235,38 +307,60 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, pa
     temp_folder = temp_folder.join(format!("processing_{}", now.as_millis()));
     std::fs::create_dir_all(&temp_folder)?;
 
-    let mut files = reader.enumerate().par_bridge().map(|(idx, value)| {
+    let mut files = reader.enumerate().par_bridge().filter_map(|(idx, value)| {
         let result = match value {
             Ok(value) => {
                 let (id, articles) = value.0.into_inner();
-                let articles = articles.into_par_iter().map(|(lang, art)| {
+                let original_length = articles.len();
+                let articles = articles.into_par_iter().filter_map(|(lang, art)| {
                     if let Some(tokenizer) = tokenizers.get(&lang) {
                         let tokens = tokenizer
                             .phrase_stemmed(art.0.content())
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
-                        (lang, PyTokenizedArticleUnion::Tokenized(
-                            art,
-                            tokens
-                        ))
+
+                        if let Some(filter) = min_length {
+                            if tokens.len() < filter {
+                                None
+                            } else {
+                                Some((lang, PyTokenizedArticleUnion::Tokenized(
+                                    art,
+                                    tokens
+                                )))
+                            }
+                        } else {
+                            Some((lang, PyTokenizedArticleUnion::Tokenized(
+                                art,
+                                tokens
+                            )))
+                        }
                     } else {
-                        (lang, PyTokenizedArticleUnion::NotTokenized(art))
+                        Some((lang, PyTokenizedArticleUnion::NotTokenized(art)))
                     }
                 }).collect::<HashMap<_, _>>();
-                Ok(
-                    PyTokenizedAlignedArticle(
-                        AlignedArticle::new(
-                            id,
-                            articles
+                if original_length != articles.len() {
+                    None
+                } else {
+                    Some(Ok(
+                        PyTokenizedAlignedArticle(
+                            AlignedArticle::new(
+                                id,
+                                articles
+                            )
                         )
-                    )
-                )
+                    ))
+                }
             }
             Err(value) => {
-                Err(value)
+                Some(Err(value))
             }
         };
-        (idx, result)
+
+        if let Some(result) = result {
+            Some((idx, result))
+        } else {
+            None
+        }
     }).map(|(idx, value)| {
         match value {
             Ok(value) => {
@@ -305,6 +399,7 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, with_pickle: bool, pa
             Ok((_, value)) => {
                 let mut reader = File::open(value).map_err(|value| PyIOError::new_err(value.to_string()))?;
                 std::io::copy(&mut reader, &mut writer).map_err(|value| PyIOError::new_err(value.to_string()))?;
+                write!(writer, "\n")?;
             }
             Err(err) => {
                 error.push(err);
@@ -397,6 +492,16 @@ macro_rules! impl_aligned_article_wrapper {
 
                 fn __repr__(&self) -> String {
                     format!("{:?}", self)
+                }
+
+                #[getter]
+                fn article_id(&self) -> u64 {
+                    self.0.article_id()
+                }
+
+                #[getter]
+                fn language_hints(&self) -> Vec<LanguageHint> {
+                    self.0.get_language_hints().into_iter().cloned().collect()
                 }
 
                 pub fn __getitem__(&self, item: LanguageHintValue) -> Option<$typ> {
@@ -500,10 +605,15 @@ pub struct PyArticle(Article);
 #[pymethods]
 impl PyArticle {
     #[new]
-    fn new(language_hint: LanguageHintValue, content: String, categories: Option<Vec<usize>>) -> Self {
-        Self(Article::new(language_hint.into(), categories, content))
+    fn new(language_hint: LanguageHintValue, content: String, categories: Option<Vec<usize>>, is_list: Option<bool>) -> Self {
+        Self(Article::new(language_hint.into(), categories, content, is_list.unwrap_or_default()))
     }
 
+    #[getter]
+    #[pyo3(name="is_list")]
+    fn py_is_list(&self) -> bool {
+        self.0.is_list()
+    }
     #[getter]
     #[pyo3(name="lang")]
     fn py_lang(&self) -> LanguageHint {
@@ -537,12 +647,19 @@ impl PyArticle {
 }
 
 impl PyArticle {
+    #[inline(always)]
     pub fn lang(&self) -> &LanguageHint {
         self.0.lang()
     }
+    #[inline(always)]
+    pub fn is_list(&self) -> bool {
+        self.0.is_list()
+    }
+    #[inline(always)]
     pub fn categories(&self) -> &Option<Vec<usize>> {
         self.0.categories()
     }
+    #[inline(always)]
     pub fn content(&self) -> &str {
         self.0.content()
     }
@@ -1771,6 +1888,7 @@ pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTokenKind>()?;
     m.add_class::<PyStemmingAlgorithm>()?;
     m.add_function(wrap_pyfunction!(read_aligned_articles, m)?)?;
+    m.add_function(wrap_pyfunction!(read_aligned_parsed_articles, m)?)?;
     m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles, m)?)?;
     m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles_into, m)?)?;
     Ok(())

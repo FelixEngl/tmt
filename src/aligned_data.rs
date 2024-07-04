@@ -33,6 +33,10 @@ impl<A> AlignedArticle<A> {
     pub fn into_inner(self) -> (u64, HashMap<LanguageHint, A>) {
         (self.article_id, self.articles)
     }
+
+    pub fn get_language_hints(&self) -> Vec<&LanguageHint> {
+        self.articles.keys().collect_vec()
+    }
 }
 
 
@@ -79,11 +83,17 @@ pub struct Article {
     categories: Option<Vec<usize>>,
     #[serde(alias = "con")]
     content: String,
+    #[serde(default, alias = "ilst")]
+    is_list: bool
 }
 
 impl Article {
-    pub fn new(lang: LanguageHint, categories: Option<Vec<usize>>, content: String) -> Self {
-        Self { lang, categories, content }
+    pub fn new(lang: LanguageHint, categories: Option<Vec<usize>>, content: String, is_list: bool) -> Self {
+        Self { lang, categories, content, is_list }
+    }
+
+    pub fn is_list(&self) -> bool {
+        self.is_list
     }
 
     pub fn lang(&self) -> &LanguageHint {
@@ -105,7 +115,7 @@ impl Display for Article {
                 format!("[{}]", value.iter().join(", "))
             }
         };
-        write!(f, "Article({}, {}, '{}')", self.lang, cat, self.content)
+        write!(f, "Article({}, {}, '{}', {})", self.lang, cat, self.content, self.is_list)
     }
 }
 
