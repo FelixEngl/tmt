@@ -397,9 +397,12 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, path_out: &str, proce
     for value in files {
         match value {
             Ok((_, value)) => {
-                let mut reader = File::open(value).map_err(|value| PyIOError::new_err(value.to_string()))?;
+                let mut reader = File::open(&value).map_err(|value| PyIOError::new_err(value.to_string()))?;
                 std::io::copy(&mut reader, &mut writer).map_err(|value| PyIOError::new_err(value.to_string()))?;
                 write!(writer, "\n")?;
+                writer.flush()?;
+                drop(reader);
+                std::fs::remove_file(value)?;
             }
             Err(err) => {
                 error.push(err);
@@ -795,7 +798,7 @@ impl PyAlignedArticleProcessor {
         let tokenizers = unsafe{self.create_tokenizer_map()};
         let (id, articles) = value.0.into_inner();
 
-        let articles = articles.into_iter().map(|(lang, art)| {
+        let articles = articles.into_iter().par_bridge().map(|(lang, art)| {
             if let Some(tokenizer) = tokenizers.get(&lang) {
                 let tokens = tokenizer
                     .phrase_stemmed(art.0.content())
