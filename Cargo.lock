@@ -618,6 +618,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "file-format"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ba1b81b3c213cf1c071f8bf3b83531f310df99642e58c48247272eef006cae5"
+
+[[package]]
 name = "filetime"
 version = "0.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -846,13 +852,13 @@ dependencies = [
  "aho-corasick",
  "approx",
  "bincode",
- "byteorder",
  "charabia",
  "compact_str",
  "delegate",
  "derive_more",
  "enum_dispatch",
  "evalexpr",
+ "file-format",
  "flate2",
  "fst",
  "indenter",
@@ -876,7 +882,6 @@ dependencies = [
  "strum",
  "thiserror",
  "trie-rs",
- "unicode-normalization",
  "unicode-segmentation",
  "zip",
 ]

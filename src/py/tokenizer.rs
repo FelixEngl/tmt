@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::{env, io};
 use std::hash::Hash;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, IoSliceMut, Read, Write};
 use std::iter::Map;
 use std::mem::transmute;
 use std::ops::Deref;
@@ -16,6 +16,7 @@ use charabia::{Script, SeparatorKind, Token, TokenKind};
 use charabia::Language;
 use charabia::normalizer::{ClassifierOption, NormalizerOption};
 use charabia::segmenter::SegmenterOption;
+use file_format::{FileFormat, Kind};
 use fst::raw::Fst;
 use thiserror::Error;
 use fst::Set;
@@ -28,7 +29,12 @@ use rust_stemmers::{Algorithm};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use serde_json::de::IoRead;
-use serde_json::{Deserializer, Error, StreamDeserializer, Value};
+use serde_json::{Deserializer, Error, Serializer, StreamDeserializer, Value};
+use unicode_segmentation::UnicodeSegmentation;
+use zip::write::SimpleFileOptions;
+use zip::{ZipArchive, ZipWriter};
+use zip::read::ZipFile;
+use zip::result::ZipResult;
 use crate::aligned_data::{AlignedArticle, Article, IntoJsonPickleDeserializerIterator, JsonPickleDeserializerIterator};
 use crate::py::enum_mapping::map_enum;
 use crate::py::helpers::{LanguageHintValue, StringSetOrList, SpecialVec};
@@ -40,8 +46,8 @@ use crate::topicmodel::vocabulary::{BasicVocabulary};
 
 
 enum JsonPickleIterWrapper<'a, T> {
-    Pickle(JsonPickleDeserializerIterator<StreamDeserializer<'a, IoRead<BufReader<File>>, Value>, T>),
-    Unpickle(StreamDeserializer<'a, IoRead<BufReader<File>>, T>)
+    Pickle(JsonPickleDeserializerIterator<StreamDeserializer<'a, IoRead<BufReader<AlignedArticlesImplReader>>, Value>, T>),
+    Unpickle(StreamDeserializer<'a, IoRead<BufReader<AlignedArticlesImplReader>>, T>)
 }
 
 impl<'a, T> Iterator for JsonPickleIterWrapper<'a, T> where T: DeserializeOwned {
@@ -208,7 +214,7 @@ impl Iterator for PyParsedAlignedArticleIter {
 
 
 fn read_aligned_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: bool) -> io::Result<DeserializeIter<'a>> {
-    let iter = Deserializer::from_reader(BufReader::new(File::open(path)?));
+    let iter = Deserializer::from_reader(BufReader::new(AlignedArticlesImplReader::Plain(File::open(path)?)));
     Ok(if with_pickle {
         DeserializeIter::Pickle(iter.into_iter().into_json_pickle_iter::<PyAlignedArticle>())
     } else {
@@ -226,9 +232,85 @@ pub fn read_aligned_articles(path: &str, with_pickle: Option<bool>) -> PyResult<
 }
 
 
+enum AlignedArticlesImplReader {
+    Plain(File),
+    Compressed {
+        archive: ZipArchive<File>,
+        reader: ZipFile<'static>,
+    }
+}
 
-fn read_aligned_parsed_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: Option<bool>) -> io::Result<ParsedDeserializeIter<'a>> {
-    let iter = Deserializer::from_reader(BufReader::new(File::open(path)?));
+unsafe impl Sync for AlignedArticlesImplReader{}
+unsafe impl Send for AlignedArticlesImplReader{}
+
+impl AlignedArticlesImplReader {
+    pub fn new_compressed<'a>(mut archive: ZipArchive<File>, file_number: Option<usize>) -> ZipResult<Self> {
+        let reader = archive.by_index(file_number.unwrap_or_default())?;
+        let reader: ZipFile<'static> = unsafe{transmute(reader)};
+        Ok(
+            AlignedArticlesImplReader::Compressed {
+                archive,
+                reader
+            }
+        )
+    }
+}
+
+impl Read for AlignedArticlesImplReader {
+    delegate::delegate! {
+        to match self {
+            AlignedArticlesImplReader::Plain(ref mut value) => value,
+            AlignedArticlesImplReader::Compressed{ref mut reader, ..} => reader
+        } {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+
+            fn read_vectored(&mut self, bufs: &mut [IoSliceMut<'_>]) -> io::Result<usize>;
+
+            fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
+
+            fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize>;
+
+            fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()>;
+        }
+    }
+}
+
+
+#[derive(Debug, Error)]
+pub enum ReaderError {
+    #[error(transparent)]
+    IO(#[from] io::Error),
+    #[error(transparent)]
+    ZIP(#[from] zip::result::ZipError)
+}
+
+fn read_aligned_parsed_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: Option<bool>) -> Result<ParsedDeserializeIter<'a>, ReaderError> {
+    let compressed = match FileFormat::from_file(path.as_ref())? {
+        FileFormat::Zip | FileFormat::Gzip => {
+            true
+        }
+        FileFormat::JsonFeed => {
+            false
+        }
+        other => {
+            match other.kind() {
+                Kind::Compressed | Kind::Archive => true,
+                _ => false
+            }
+        }
+    };
+
+    let reader = if compressed {
+        let zipped = ZipArchive::new(File::open(path)?)?;
+        let idx_default = zipped.index_for_name("data.bulkjson");
+        AlignedArticlesImplReader::new_compressed(zipped, idx_default).expect("This should not fail! Why can't we open the file?")
+    } else {
+        AlignedArticlesImplReader::Plain(File::open(path)?)
+    };
+
+    let reader = BufReader::with_capacity(32 * 1024, reader);
+
+    let iter = Deserializer::from_reader(reader);
     Ok(if with_pickle.unwrap_or_default() {
         ParsedDeserializeIter::Pickle(iter.into_iter().into_json_pickle_iter::<PyTokenizedAlignedArticle>())
     } else {
@@ -246,6 +328,18 @@ pub fn read_aligned_parsed_articles(path: &str, with_pickle: Option<bool>) -> Py
     )
 }
 
+#[cfg(test)]
+mod test_reader {
+    use crate::py::tokenizer::read_aligned_parsed_articles;
+
+    #[test]
+    fn can_read(){
+        let mut reader = read_aligned_parsed_articles("C:\\Data\\OneDrive - Otto-Friedrich-Universität Bamberg\\Desktop\\processed_data.bulkjson", None).unwrap();
+
+
+    }
+}
+
 type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
 #[pyfunction]
@@ -259,8 +353,9 @@ pub fn read_and_parse_aligned_articles(path: &str, processor: PyAlignedArticlePr
                 let (id, articles) = value.0.into_inner();
                 let articles = articles.into_par_iter().map(|(lang, art)| {
                     if let Some(tokenizer) = tokenizers.get(&lang) {
+                        let pre_split = art.0.content().split_word_bounds().join(" ");
                         let tokens = tokenizer
-                            .phrase_stemmed(art.0.content())
+                            .phrase_stemmed(&pre_split)
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
                         (lang, PyTokenizedArticleUnion::Tokenized(
@@ -294,17 +389,254 @@ enum WriteIntoError {
     #[error(transparent)]
     SerdeError(#[from] serde_json::Error),
     #[error(transparent)]
-    IO(#[from] io::Error)
+    IO(#[from] io::Error),
+    #[error(transparent)]
+    ZipError(#[from] zip::result::ZipError)
+}
+
+
+
+#[derive(Debug, Copy, Clone, Error)]
+#[error("The max value {1} is smaller than the min value (0)!")]
+pub struct TokenCountFilterError(usize, usize);
+
+#[pyclass(get_all)]
+#[derive(Copy, Clone, Default, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+pub struct TokenCountFilter {
+    min: Option<usize>,
+    max: Option<usize>,
+}
+
+impl TokenCountFilter {
+    pub fn new(
+        min: Option<usize>,
+        max: Option<usize>,
+    ) -> Result<Self, TokenCountFilterError> {
+        if let (Some(min), Some(max)) = (min, max) {
+            if min < max {
+                return Err(TokenCountFilterError(min, max))
+            }
+        }
+        Ok(
+            Self {
+                min,
+                max,
+            }
+        )
+    }
+
+
+    pub fn is_valid(&self, token_len: usize) -> bool {
+        if let Some(min) = self.min {
+            if min > token_len {
+                return false;
+            }
+        }
+
+        if let Some(max) = self.max  {
+            if max < token_len {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    pub fn set_min(&mut self, min: Option<usize>) -> Result<(), TokenCountFilterError>{
+        if let Some(min_value) = min {
+            if let Some(max) = self.max {
+                if min_value > max {
+                    return Err(TokenCountFilterError(min_value, max));
+                }
+            }
+            self.min = min;
+        } else {
+            self.min = None;
+        }
+        Ok(())
+    }
+
+    pub fn set_max(&mut self, max: Option<usize>) -> Result<(), TokenCountFilterError>{
+        if let Some(max_value) = max {
+            if let Some(min) = self.min {
+                if max_value < min {
+                    return Err(TokenCountFilterError(min, max_value));
+                }
+            }
+            self.max = max;
+        } else {
+            self.max = None;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test_filter {
+    use crate::py::tokenizer::TokenCountFilter;
+
+    #[test]
+    fn sets_correctly() {
+        let mut filter = TokenCountFilter::new(4.into(), 9.into()).unwrap();
+        assert!(filter.set_min(None).is_ok());
+        assert!(filter.set_min(9.into()).is_ok());
+        assert!(filter.set_min(5.into()).is_ok());
+        assert!(filter.set_min(10.into()).is_err());
+
+        assert!(filter.set_max(None).is_ok());
+        assert!(filter.set_max(5.into()).is_ok());
+        assert!(filter.set_max(4.into()).is_err());
+        assert!(filter.set_min(100.into()).is_ok());
+
+        assert_eq!(
+            TokenCountFilter::new(10.into(), 100.into()).unwrap(),
+            filter
+        )
+    }
+
+    #[test]
+    fn filters_correctly() {
+        let filter = TokenCountFilter::new(4.into(), 9.into()).unwrap();
+        assert!(!filter.is_valid(3));
+        assert!(filter.is_valid(4));
+        assert!(filter.is_valid(5));
+        assert!(filter.is_valid(9));
+        assert!(!filter.is_valid(10));
+
+        let filter = TokenCountFilter::new(4.into(), None).unwrap();
+        assert!(!filter.is_valid(3));
+        assert!(filter.is_valid(4));
+        assert!(filter.is_valid(5));
+        assert!(filter.is_valid(9));
+        assert!(filter.is_valid(10));
+
+        let filter = TokenCountFilter::new(None, 9.into()).unwrap();
+        assert!(filter.is_valid(3));
+        assert!(filter.is_valid(4));
+        assert!(filter.is_valid(5));
+        assert!(filter.is_valid(9));
+        assert!(!filter.is_valid(10));
+
+        let filter = TokenCountFilter::new(None, None).unwrap();
+        assert!(filter.is_valid(3));
+        assert!(filter.is_valid(4));
+        assert!(filter.is_valid(5));
+        assert!(filter.is_valid(9));
+        assert!(filter.is_valid(10));
+
+        assert!(TokenCountFilter::new(9.into(), 1.into()).is_err())
+    }
+}
+
+#[pymethods]
+impl TokenCountFilter {
+    #[new]
+    fn py_new(
+        min: Option<usize>,
+        max: Option<usize>,
+    ) -> PyResult<Self> {
+        Ok(Self::new(min, max).map_err(|value| PyValueError::new_err(value.to_string()))?)
+    }
+
+    #[setter]
+    #[pyo3(name="set_min")]
+    pub fn py_set_min(&mut self, min: Option<usize>) -> PyResult<()>{
+        Ok(self.set_min(min).map_err(|value| PyValueError::new_err(value.to_string()))?)
+    }
+
+    #[setter]
+    #[pyo3(name="set_max")]
+    pub fn py_set_max(&mut self, max: Option<usize>) -> PyResult<()>{
+        Ok(self.set_max(max).map_err(|value| PyValueError::new_err(value.to_string()))?)
+    }
+
+    pub fn to_json(&self) -> PyResult<String> {
+        Ok(
+            serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        )
+    }
+
+    #[staticmethod]
+    fn from_json(s: &str) -> PyResult<Self> {
+        Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
+}
+
+#[pyclass]
+#[derive(Clone, Default, Debug)]
+pub struct StoreOptions {
+    #[pyo3(get, set)]
+    deflate_temp_files: bool,
+    #[pyo3(get, set)]
+    delete_temp_files_immediately: bool,
+    #[pyo3(get, set)]
+    compress_result: bool,
+    temp_folder: Option<PathBuf>,
+}
+
+#[pymethods]
+impl StoreOptions {
+    #[new]
+    pub fn new(
+        deflate_temp_files: Option<bool>,
+        delete_temp_files_immediately: Option<bool>,
+        compress_result: Option<bool>,
+        temp_folder: Option<PathBuf>
+    ) -> Self {
+        Self {
+            deflate_temp_files: deflate_temp_files.unwrap_or_default(),
+            delete_temp_files_immediately: delete_temp_files_immediately.unwrap_or_default(),
+            compress_result: compress_result.unwrap_or_default(),
+            temp_folder
+        }
+    }
+
+    #[setter]
+    fn temp_folder(&mut self, temp_folder: Option<PathBuf>) {
+        self.temp_folder = temp_folder
+    }
+
+    #[getter]
+    fn get_temp_folder(&self) -> Option<String> {
+        Some(self.temp_folder.as_ref()?.to_str().unwrap().to_string())
+    }
 }
 
 #[pyfunction]
-pub fn read_and_parse_aligned_articles_into(path_in: &str, path_out: &str, processor: PyAlignedArticleProcessor, with_pickle: Option<bool>, temp_folder: Option<PathBuf>, min_length: Option<usize>) -> PyResult<usize> {
+pub fn read_and_parse_aligned_articles_into(
+    path_in: &str,
+    path_out: &str,
+    processor: PyAlignedArticleProcessor,
+    filter: Option<TokenCountFilter>,
+    store_options: Option<StoreOptions>,
+    with_pickle: Option<bool>,
+) -> PyResult<usize> {
+    let store_options = store_options.unwrap_or_default();
+    let path_out = PathBuf::from(path_out);
+    if let Some(file_name) = path_out.file_name() {
+        if path_out.exists() {
+            return Err(PyIOError::new_err(format!("The file at {path_out:?} already exists!")));
+        }
+        if let Some(name) = file_name.to_str() {
+            if let Some((name, _)) = name.split_once('.'){
+                name.to_string()
+            } else {
+                name.to_string()
+            }
+        } else{
+            return Err(PyIOError::new_err(format!("The filename {file_name:?} should only contain unicode!")));
+        }
+    } else{
+        return Err(PyIOError::new_err(format!("The path {path_out:?} does not lead to a file!")));
+    };
+
+
     let reader = read_aligned_articles_impl(path_in, with_pickle.unwrap_or_default()).map_err(|value| PyValueError::new_err(value.to_string()))?;
     let tokenizers = Arc::new(unsafe{processor.create_tokenizer_map()});
 
-    let mut temp_folder = temp_folder.unwrap_or_else(|| env::temp_dir());
+    let temp_folder = (&store_options.temp_folder).as_ref().cloned().unwrap_or_else(|| env::temp_dir());
     let now = std::time::SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards!");
-    temp_folder = temp_folder.join(format!("processing_{}", now.as_millis()));
+    let temp_folder = temp_folder.join(format!("processing_{}", now.as_millis()));
     std::fs::create_dir_all(&temp_folder)?;
 
     let mut files = reader.enumerate().par_bridge().filter_map(|(idx, value)| {
@@ -314,19 +646,20 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, path_out: &str, proce
                 let original_length = articles.len();
                 let articles = articles.into_par_iter().filter_map(|(lang, art)| {
                     if let Some(tokenizer) = tokenizers.get(&lang) {
+                        let pre_split = art.0.content().split_word_bounds().join(" ");
                         let tokens = tokenizer
-                            .phrase_stemmed(art.0.content())
+                            .phrase_stemmed(&pre_split)
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
 
-                        if let Some(filter) = min_length {
-                            if tokens.len() < filter {
-                                None
-                            } else {
+                        if let Some(filter) = (&filter).as_ref() {
+                            if filter.is_valid(tokens.len()) {
                                 Some((lang, PyTokenizedArticleUnion::Tokenized(
                                     art,
                                     tokens
                                 )))
+                            } else {
+                                None
                             }
                         } else {
                             Some((lang, PyTokenizedArticleUnion::Tokenized(
@@ -364,17 +697,47 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, path_out: &str, proce
     }).map(|(idx, value)| {
         match value {
             Ok(value) => {
-                let temp_file = temp_folder.join(format!("tmp_{idx}.json"));
-                match File::create_new(&temp_file) {
-                    Ok(file) => {
-                        match serde_json::to_writer(file, &value) {
-                            Ok(_) => {
-                                Ok((idx, temp_file))
+
+                fn save_plain(temp_folder: &Path, idx: usize, value: PyTokenizedAlignedArticle) -> Result<(usize, PathBuf), (usize, WriteIntoError)> {
+                    let temp_file = temp_folder.join(format!("tmp_{idx}.json"));
+                    match File::create_new(&temp_file) {
+                        Ok(file) => {
+                            match serde_json::to_writer(file, &value) {
+                                Ok(_) => {
+                                    Ok((idx, temp_file))
+                                }
+                                Err(err) => Err((idx, err.into()))
                             }
-                            Err(err) => Err((idx, err.into()))
                         }
+                        Err(err) => Err((idx, err.into()))
                     }
-                    Err(err) => Err((idx, err.into()))
+                }
+
+                fn save_compressed(temp_folder: &Path, idx: usize, value: PyTokenizedAlignedArticle) -> Result<(usize, PathBuf), (usize, WriteIntoError)> {
+                    let filename = format!("tmp_{idx}.zip");
+                    let temp_file = temp_folder.join(&filename);
+                    match File::create_new(&temp_file) {
+                        Ok(file) => {
+                            let mut writer = ZipWriter::new(file);
+                            let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+                            writer.start_file("data.json", options).map_err(|err|(idx, err.into()))?;
+                            let mut writer = Serializer::new(writer);
+                            match value.serialize(&mut writer) {
+                                Ok(_) => {
+                                    writer.into_inner().finish().map_err(|err|(idx, err.into()))?;
+                                    Ok((idx, temp_file))
+                                }
+                                Err(err) => Err((idx, err.into()))
+                            }
+                        }
+                        Err(err) => Err((idx, err.into()))
+                    }
+                }
+
+                if (&store_options).deflate_temp_files {
+                    save_compressed(&temp_folder, idx, value)
+                } else {
+                    save_plain(&temp_folder, idx, value)
                 }
 
             }
@@ -382,7 +745,17 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, path_out: &str, proce
         }
     }).collect::<Vec<Result<_, (usize, WriteIntoError)>>>();
 
-    let mut writer = BufWriter::new(File::options().append(true).create(true).open(path_out).map_err(|value| PyIOError::new_err(value.to_string()))?);
+    let mut writer: Box<dyn Write> = if (&store_options).compress_result {
+        let bulk_name = format!("data.bulkjson");
+        let file = File::options().append(true).create(true).open(path_out).map_err(|value| PyIOError::new_err(value.to_string()))?;
+        let mut writer = ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Lzma);
+        writer.start_file(bulk_name, options).map_err(|value| PyIOError::new_err(value.to_string()))?;
+        Box::new(BufWriter::new(writer))
+    } else {
+        let file = File::options().append(true).create(true).open(path_out).map_err(|value| PyIOError::new_err(value.to_string()))?;
+        Box::new(BufWriter::new(file))
+    };
 
     let number_of_results = files.len();
 
@@ -398,17 +771,27 @@ pub fn read_and_parse_aligned_articles_into(path_in: &str, path_out: &str, proce
         match value {
             Ok((_, value)) => {
                 let mut reader = File::open(&value).map_err(|value| PyIOError::new_err(value.to_string()))?;
-                std::io::copy(&mut reader, &mut writer).map_err(|value| PyIOError::new_err(value.to_string()))?;
+                if (&store_options).deflate_temp_files {
+                    let mut reader = zip::ZipArchive::new(reader).map_err(|value| PyIOError::new_err(value.to_string()))?;
+                    let mut entry = reader.by_name("data.json").map_err(|value| PyIOError::new_err(value.to_string()))?;
+                    std::io::copy(&mut entry, &mut writer).map_err(|value| PyIOError::new_err(value.to_string()))?;
+                } else {
+                    std::io::copy(&mut reader, &mut writer).map_err(|value| PyIOError::new_err(value.to_string()))?;
+                }
                 write!(writer, "\n")?;
-                writer.flush()?;
-                drop(reader);
-                std::fs::remove_file(value)?;
+                if (&store_options).delete_temp_files_immediately {
+                    std::fs::remove_file(value)?;
+                }
             }
             Err(err) => {
                 error.push(err);
             }
         }
     }
+
+    writer.flush()?;
+
+    drop(writer);
 
     std::fs::remove_dir_all(temp_folder)?;
 
@@ -800,8 +1183,9 @@ impl PyAlignedArticleProcessor {
 
         let articles = articles.into_iter().par_bridge().map(|(lang, art)| {
             if let Some(tokenizer) = tokenizers.get(&lang) {
+                let pre_split = art.0.content().split_word_bounds().join(" ");
                 let tokens = tokenizer
-                    .phrase_stemmed(art.0.content())
+                    .phrase_stemmed(&pre_split)
                     .map(|(original, value)| (original.to_string(), value.into()))
                     .collect_vec();
                 (lang, PyTokenizedArticleUnion::Tokenized(
@@ -1890,6 +2274,8 @@ pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTokenizerBuilder>()?;
     m.add_class::<PyTokenKind>()?;
     m.add_class::<PyStemmingAlgorithm>()?;
+    m.add_class::<TokenCountFilter>()?;
+    m.add_class::<StoreOptions>()?;
     m.add_function(wrap_pyfunction!(read_aligned_articles, m)?)?;
     m.add_function(wrap_pyfunction!(read_aligned_parsed_articles, m)?)?;
     m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles, m)?)?;

@@ -762,17 +762,63 @@ class PyParsedAlignedArticleIter(typing.Iterator[PyTokenizedAlignedArticle]):
 def read_aligned_articles(path: Path | PathLike | str, with_pickle: bool | None = None) -> PyAlignedArticleIter:...
 def read_aligned_parsed_articles(path: Path | PathLike | str, with_pickle: bool | None = None) -> PyAlignedArticleParsedIter:...
 def read_and_parse_aligned_articles(path: Path | PathLike | str, processor: PyAlignedArticleProcessor, with_pickle: bool | None = None) -> PyParsedAlignedArticleIter:...
+
+
+class TokenCountFilter:
+    min: None | int
+    """Only accept documents where the tokens are greater than min"""
+    max: None | int
+    """Only accept documents where the tokens are smaller than max"""
+
+    def __init__(self, min: None | int = None, max: None | int = None):
+        ...
+
+    def to_json(self) -> str:...
+
+    @staticmethod
+    def from_json(s: str) -> 'Prefilter':...
+
+class StoreOptions:
+    deflate_temp_files: bool
+    """Stores the temp-files as deflated. (slower)"""
+    compress_result: bool
+    """Stores the result with LZMA. (slower)"""
+    delete_temp_files_immediately: bool
+    """Deletes the temp-files after writing them in the bulk file. (saves space, but less secure)"""
+    temp_folder: None | str | PathLike | Path
+    """Set a custom temp folder"""
+
+    def __init__(
+        self,
+            deflate_temp_files: bool = False,
+        delete_temp_files_immediately: bool = False,
+        compress_result: bool = False,
+        temp_folder: None | str | PathLike | Path = None
+    ):...
+
+
 def read_and_parse_aligned_articles_into(
         path_in: Path | PathLike | str,
         path_out: Path | PathLike | str,
         processor: PyAlignedArticleProcessor,
-        with_pickle: bool | None = None,
-        temp_folder: Path | PathLike | str | None = None,
-        min_length: None | int = None
+        filter: None | TokenCountFilter = None,
+        store_options: StoreOptions | None = None,
+        *,
+        with_pickle: bool = False,
 ) -> int:
     """
     May throw a Runtime or IO error.
     The tempfolder is created in the default temp dir except when set otherwise.
+
+    If you have performance problems on windows make an excemption for python.exe in the windows security.
+
+    :param path_in: Path to file to be read
+    :param path_out: Output path
+    :param processor: The processor used
+    :param filter: A length-filter for the aligned documents after processing.
+    :param store_options: Some options for the storing process. The default is max performance with a tradeof for used memory
+    :param with_pickle: A legacy flag for old data.
+    :return:
     """
     ...
 

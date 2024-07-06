@@ -84,9 +84,9 @@ impl<'a, 'o> SupportsPhrasing<'o> for &'a str {
 
     fn combine(self, other: &'a str, _: &'o str) -> Self::Result {
         let mut result = String::with_capacity(self.len() + other.len() + 1);
-        result.write_str(self).unwrap();
+        result.write_str(self.trim()).unwrap();
         result.push(' ');
-        result.write_str(other).unwrap();
+        result.write_str(other.trim()).unwrap();
         result
     }
 }
@@ -99,12 +99,8 @@ impl<'a, 'o, T> SupportsPhrasing<'o, T> for String where T: CanBePhrased {
         self
     }
 
-    fn combine(mut self, other: T, _: &'o str) -> Self::Result {
-        let other = other.as_str_for_phrase();
-        self.reserve(1 + other.len());
-        self.push(' ');
-        self.write_str(other).unwrap();
-        self
+    fn combine(self, other: T, _s: &'o str) -> Self::Result {
+        self.as_str().combine(other.as_str_for_phrase(), _s)
     }
 }
 
