@@ -209,7 +209,13 @@ impl<'o, 'tb> Iterator for PhraseRecognizerIter<'o, 'tb>{
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(trie) = self.trie {
-            let mut result = self.peeked.take().or_else(|| self.token_iter.next())?.to_result();
+            let mut result = loop {
+                let current = self.peeked.take().or_else(|| self.token_iter.next())?;
+                if current.1.is_word() {
+                    break current;
+                }
+            }.to_result();
+
             let mut searcher = trie.inc_search();
             match searcher.query_until(result.as_phrase_query()) {
                 Err(_) | Ok(Answer::Match)=> {
@@ -218,7 +224,7 @@ impl<'o, 'tb> Iterator for PhraseRecognizerIter<'o, 'tb>{
                 Ok(_) => {}
             }
             while let Some(next) = self.token_iter.next() {
-                if next.1.separator_kind().is_some() {
+                if next.1.is_separator() {
                     continue
                 }
                 match searcher.query(&b' ') {
