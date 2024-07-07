@@ -30,7 +30,6 @@ use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use serde_json::de::IoRead;
 use serde_json::{Deserializer, Error, Serializer, StreamDeserializer, Value};
-use unicode_segmentation::UnicodeSegmentation;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 use zip::read::ZipFile;
@@ -363,9 +362,8 @@ pub fn read_and_parse_aligned_articles(path: &str, processor: PyAlignedArticlePr
                 let (id, articles) = value.0.into_inner();
                 let articles = articles.into_par_iter().map(|(lang, art)| {
                     if let Some(tokenizer) = tokenizers.get(&lang) {
-                        let pre_split = art.0.content().split_word_bounds().join(" ");
                         let tokens = tokenizer
-                            .phrase(&pre_split)
+                            .phrase(art.0.content())
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
                         (lang, PyTokenizedArticleUnion::Tokenized(
@@ -656,9 +654,8 @@ pub fn read_and_parse_aligned_articles_into(
                 let original_length = articles.len();
                 let articles = articles.into_par_iter().filter_map(|(lang, art)| {
                     if let Some(tokenizer) = tokenizers.get(&lang) {
-                        let pre_split = art.0.content().split_word_bounds().join(" ");
                         let tokens = tokenizer
-                            .phrase(&pre_split)
+                            .phrase(art.0.content())
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
 
@@ -1193,9 +1190,8 @@ impl PyAlignedArticleProcessor {
 
         let articles = articles.into_iter().par_bridge().map(|(lang, art)| {
             if let Some(tokenizer) = tokenizers.get(&lang) {
-                let pre_split = art.0.content().split_word_bounds().join(" ");
                 let tokens = tokenizer
-                    .phrase(&pre_split)
+                    .phrase(art.0.content())
                     .map(|(original, value)| (original.to_string(), value.into()))
                     .collect_vec();
                 (lang, PyTokenizedArticleUnion::Tokenized(
@@ -1310,7 +1306,7 @@ impl PyTokenizerBuilder {
         slf
     }
 
-    fn allow_list<'py>(slf: Bound<'py, Self>, allow_list:  HashMap<PyScript, Vec<PyLanguage>>) -> Bound<'py, Self> {
+    fn allow_list<'py>(slf: Bound<'py, Self>, allow_list: HashMap<PyScript, Vec<PyLanguage>>) -> Bound<'py, Self> {
         slf.borrow_mut().segmenter_option.set_allow_list(Some(allow_list));
         slf
     }

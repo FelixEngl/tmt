@@ -694,6 +694,11 @@ class PyStopWords:
 
 class PyTokenizerBuilder:
     def __init__(self):...
+
+    def unicode_segmentation(selfself, unicode: bool) -> 'PyTokenizerBuilder':
+        """Sets the segmentation to the standard unicode separator. Deactivates the language detection feature."""
+        ...
+
     def stemmer(self, stemmer: PyStemmingAlgorithm, smart: bool = False) -> 'PyTokenizerBuilder':
         """Sets a snowball stemmer for a specific language, if smart is set to true, it will try to use the apropiate language for every language and fall back to stemmer if none fits the bill."""
         ...
