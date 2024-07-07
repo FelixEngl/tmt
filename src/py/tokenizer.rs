@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::{env, io};
 use std::hash::Hash;
-use std::io::{BufRead, BufReader, BufWriter, IoSliceMut, Read, Write};
+use std::io::{BufReader, BufWriter, IoSliceMut, Read, Write};
 use std::iter::Map;
 use std::mem::transmute;
 use std::ops::Deref;
@@ -254,6 +254,16 @@ impl AlignedArticlesImplReader {
             }
         )
     }
+
+    pub fn into_inner(self) -> File {
+        match self {
+            AlignedArticlesImplReader::Plain(value) => {value}
+            AlignedArticlesImplReader::Compressed { archive, reader } => {
+                drop(reader);
+                archive.into_inner()
+            }
+        }
+    }
 }
 
 impl Read for AlignedArticlesImplReader {
@@ -334,7 +344,7 @@ mod test_reader {
 
     #[test]
     fn can_read(){
-        let mut reader = read_aligned_parsed_articles("C:\\Data\\OneDrive - Otto-Friedrich-Universität Bamberg\\Desktop\\processed_data.bulkjson", None).unwrap();
+        let reader = read_aligned_parsed_articles("C:\\Data\\OneDrive - Otto-Friedrich-Universität Bamberg\\Desktop\\processed_data.bulkjson", None).unwrap();
 
 
     }
@@ -355,7 +365,7 @@ pub fn read_and_parse_aligned_articles(path: &str, processor: PyAlignedArticlePr
                     if let Some(tokenizer) = tokenizers.get(&lang) {
                         let pre_split = art.0.content().split_word_bounds().join(" ");
                         let tokens = tokenizer
-                            .phrase_stemmed(&pre_split)
+                            .phrase(&pre_split)
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
                         (lang, PyTokenizedArticleUnion::Tokenized(
@@ -648,7 +658,7 @@ pub fn read_and_parse_aligned_articles_into(
                     if let Some(tokenizer) = tokenizers.get(&lang) {
                         let pre_split = art.0.content().split_word_bounds().join(" ");
                         let tokens = tokenizer
-                            .phrase_stemmed(&pre_split)
+                            .phrase(&pre_split)
                             .map(|(original, value)| (original.to_string(), value.into()))
                             .collect_vec();
 
@@ -1185,7 +1195,7 @@ impl PyAlignedArticleProcessor {
             if let Some(tokenizer) = tokenizers.get(&lang) {
                 let pre_split = art.0.content().split_word_bounds().join(" ");
                 let tokens = tokenizer
-                    .phrase_stemmed(&pre_split)
+                    .phrase(&pre_split)
                     .map(|(original, value)| (original.to_string(), value.into()))
                     .collect_vec();
                 (lang, PyTokenizedArticleUnion::Tokenized(
@@ -1215,7 +1225,7 @@ impl PyAlignedArticleProcessor {
     fn process_string(&self, language_hint: LanguageHintValue, value: &str) -> Option<Vec<(String, PyToken)>> {
         let lh: LanguageHint = language_hint.into();
         let token = self.builders.get(&lh)?.build_tokenizer();
-        Some(token.phrase_stemmed(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
+        Some(token.phrase(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
     }
 
     fn to_json(&self) -> PyResult<String> {
@@ -1244,6 +1254,7 @@ impl PyAlignedArticleProcessor {
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyTokenizerBuilder {
+    unicode: bool,
     stop_words: Option<PyStopWords>,
     words_dict: Option<SpecialVec>,
     normalizer_option: PyNormalizerOption,
@@ -1294,6 +1305,11 @@ impl PyTokenizerBuilder {
         slf
     }
 
+    fn unicode_segmentation<'py>(slf: Bound<'py, Self>, unicode: bool) -> Bound<'py, Self> {
+        slf.borrow_mut().unicode = unicode;
+        slf
+    }
+
     fn allow_list<'py>(slf: Bound<'py, Self>, allow_list:  HashMap<PyScript, Vec<PyLanguage>>) -> Bound<'py, Self> {
         slf.borrow_mut().segmenter_option.set_allow_list(Some(allow_list));
         slf
@@ -1333,10 +1349,13 @@ impl PyTokenizerBuilder {
 
         builder.create_char_map(self.normalizer_option.create_char_map);
         builder.lossy_normalization(self.normalizer_option.lossy);
+        builder.unicode(self.normalizer_option.lossy);
 
         if let Some(ref allow_list) = self.segmenter_option.allow_list {
             builder.allow_list(allow_list);
         }
+
+
 
         builder.set_phraser(self.vocabulary.as_ref().map(PyVocabulary::create_trie));
 
@@ -2285,16 +2304,40 @@ pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod test {
+    use rust_stemmers::Algorithm;
     use serde_json::Deserializer;
     use crate::aligned_data::IntoJsonPickleDeserializerIterator;
     use crate::aligned_data::test::MY_TEST_DATA;
-    use crate::py::tokenizer::PyAlignedArticle;
+    use crate::py::tokenizer::{PyAlignedArticle, PyStopWordsArg};
+    use crate::tokenizer::TokenizerBuilder;
+    use crate::topicmodel::language_hint::LanguageHint;
 
     #[test]
     fn can_deserialize() {
         let stream = Deserializer::from_str(MY_TEST_DATA).into_iter().into_json_pickle_iter::<PyAlignedArticle>();
         for value in stream {
             println!("{:}", value.unwrap());
+        }
+    }
+    
+    #[test]
+    fn can_tokenize(){
+        let mut builder = TokenizerBuilder::default();
+        let args =  PyStopWordsArg::List(vec!["to".to_string(), "do".to_string(), "a".to_string()]).to_stop_words().unwrap();
+        builder.stop_words(&args.0);
+        builder.lossy_normalization(false);
+        builder.stemmer(Some((Algorithm::English, false)));
+        builder.unicode(true);
+        builder.lossy_normalization(true);
+        let tokenizer = builder.into_tokenizer();
+        let stream = Deserializer::from_str(MY_TEST_DATA).into_iter().into_json_pickle_iter::<PyAlignedArticle>();
+        for value in stream {
+            let x = value.unwrap();
+            let artivle = x.0.articles().get(&LanguageHint::new("en")).unwrap();
+            for (origin, value) in tokenizer.phrase(artivle.0.content()) {
+                println!("{origin} -- {value:?}")
+            }
+            println!("########")
         }
     }
 }

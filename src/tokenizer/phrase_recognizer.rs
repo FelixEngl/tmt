@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Write;
-use charabia::{ReconstructedTokenIter, Token, TokenKind};
-use derive_more::From;
+use charabia::{Token, TokenKind};
 use trie_rs::inc_search::{Answer};
 use trie_rs::map::{Trie};
 use crate::tokenizer::stemming::StemmedTokenIter;
@@ -189,35 +188,17 @@ impl<'o, 'b> SupportsPhrasing<'o> for (&'o str, Token<'b>) {
     }
 }
 
-#[derive(From)]
-pub enum PhraseableIters<'o, 'tb> {
-    Stemmer(StemmedTokenIter<'o, 'tb>),
-    Reconstruct(ReconstructedTokenIter<'o, 'tb>),
-}
-
-impl<'o, 'tb> Iterator for PhraseableIters<'o, 'tb> {
-    type Item = (&'o str, Token<'o>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            PhraseableIters::Stemmer(value) => {value.next()}
-            PhraseableIters::Reconstruct(value) => {value.next()}
-        }
-    }
-}
-
-
 
 pub struct PhraseRecognizerIter<'o, 'tb>
 {
     original: &'o str,
     peeked: Option<(&'o str, Token<'o>)>,
-    token_iter: PhraseableIters<'o, 'tb>,
+    token_iter: StemmedTokenIter<'o, 'tb>,
     trie: Option<&'tb Trie<u8, usize>>,
 }
 
 impl<'o, 'tb> PhraseRecognizerIter<'o, 'tb>{
-    pub fn new(trie: Option<&'tb Trie<u8, usize>>, token_iter: PhraseableIters<'o, 'tb>, original: &'o str) -> Self {
+    pub fn new(trie: Option<&'tb Trie<u8, usize>>, token_iter: StemmedTokenIter<'o, 'tb>, original: &'o str) -> Self {
         Self { original, peeked: None, token_iter: token_iter.into(), trie }
     }
 }
@@ -237,6 +218,9 @@ impl<'o, 'tb> Iterator for PhraseRecognizerIter<'o, 'tb>{
                 Ok(_) => {}
             }
             while let Some(next) = self.token_iter.next() {
+                if next.1.separator_kind().is_some() {
+                    continue
+                }
                 match searcher.query(&b' ') {
                     None | Some(Answer::Match) => {
                         self.peeked = Some(next);
@@ -287,7 +271,7 @@ mod test {
         builder.set_phraser(Some(trie));
 
         let tokenizer = builder.build();
-        for (original, value) in tokenizer.phrase_stemmed("a b c d e") {
+        for (original, value) in tokenizer.phrase("a b c d e") {
             println!("{original} {}", value.lemma());
         }
     }

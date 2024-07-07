@@ -1,19 +1,25 @@
 mod phrase_recognizer;
 mod stemming;
+mod unicode_segmenter;
+mod reconstruct_or_unicode;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use charabia::{Language, ReconstructedTokenIter, Script, Tokenizer as CTokenizer, TokenizerBuilder as CTokenizerBuilder};
-use charabia::normalizer::NormalizedTokenIter;
+use charabia::{Language, Script, Tokenizer as CTokenizer, TokenizerBuilder as CTokenizerBuilder};
+use charabia::normalizer::{ClassifierOption, NormalizedTokenIter, NormalizerOption};
 use charabia::segmenter::{SegmentedStrIter, SegmentedTokenIter};
 use fst::Set;
 use rust_stemmers::{Algorithm};
 use trie_rs::map::Trie;
-use crate::tokenizer::phrase_recognizer::{PhraseableIters, PhraseRecognizerIter};
+use crate::tokenizer::phrase_recognizer::{PhraseRecognizerIter};
+use crate::tokenizer::reconstruct_or_unicode::SegmentedIter;
 use crate::tokenizer::stemming::{SmartStemmer, StemmedTokenIter};
+use crate::tokenizer::unicode_segmenter::UnicodeSegmenterTokenIter;
 
 pub struct TokenizerBuilder<'tb, A> {
+    unicode: bool,
     tokenizer_builder: CTokenizerBuilder<'tb, A>,
+    normalizer_option: NormalizerOption<'tb>,
     stemmer: Option<(Algorithm, bool)>,
     phrase_trie: Option<Trie<u8, usize>>
 }
@@ -27,7 +33,13 @@ impl Default for TokenizerBuilder<'_, Vec<u8>> {
 impl<'tb, A> TokenizerBuilder<'tb, A> {
     pub fn new() -> Self {
         Self {
+            unicode: false,
             tokenizer_builder: CTokenizerBuilder::new(),
+            normalizer_option: NormalizerOption {
+                create_char_map: false,
+                lossy: true,
+                classifier: ClassifierOption { stop_words: None, separators: None },
+            },
             stemmer: None,
             phrase_trie: None
         }
@@ -42,6 +54,11 @@ impl<'tb, A> TokenizerBuilder<'tb, A> {
         self.stemmer = stemmer;
         self
     }
+
+    pub fn unicode(&mut self, unicode: bool) -> &mut Self {
+        self.unicode = unicode;
+        self
+    }
 }
 
 
@@ -53,6 +70,7 @@ impl <'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A> {
 
     pub fn separators(&mut self, separators: &'tb [&'tb str]) -> &mut Self {
         self.tokenizer_builder.separators(separators);
+        self.normalizer_option.classifier.separators = Some(separators);
         self
     }
 
@@ -63,11 +81,13 @@ impl <'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A> {
 
     pub fn create_char_map(&mut self, create_char_map: bool) -> &mut Self {
         self.tokenizer_builder.create_char_map(create_char_map);
+        self.normalizer_option.create_char_map = create_char_map;
         self
     }
 
     pub fn lossy_normalization(&mut self, lossy: bool) -> &mut Self {
         self.tokenizer_builder.lossy_normalization(lossy);
+        self.normalizer_option.lossy = lossy;
         self
     }
 
@@ -79,17 +99,21 @@ impl <'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A> {
 }
 
 impl<'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A>  {
-    pub fn build(&mut self) -> Tokenizer {
+    pub fn build(&'tb mut self) -> Tokenizer {
         Tokenizer::new(
+            self.unicode,
             self.tokenizer_builder.build(),
+            Cow::Borrowed(&self.normalizer_option),
             self.stemmer.map(SmartStemmer::from),
             self.phrase_trie.as_ref().map(Cow::Borrowed)
         )
     }
 
-    pub fn into_tokenizer(self) -> Tokenizer<'tb> {
+    pub fn into_tokenizer(self) -> Tokenizer<'tb>  {
         Tokenizer::new(
+            self.unicode,
             self.tokenizer_builder.into_tokenizer(),
+            Cow::Owned(self.normalizer_option),
             self.stemmer.map(SmartStemmer::from),
             self.phrase_trie.map(Cow::Owned)
         )
@@ -99,31 +123,23 @@ impl<'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A>  {
 
 
 pub struct Tokenizer<'tb> {
+    unicode: bool,
     tokenizer: CTokenizer<'tb>,
+    normalizer_option: Cow<'tb, NormalizerOption<'tb>>,
     stemmer: Option<SmartStemmer>,
     trie: Option<Cow<'tb, Trie<u8, usize>>>
 }
 
 impl<'tb> Tokenizer<'tb> {
-    pub fn new(tokenizer: CTokenizer<'tb>, stemmer: Option<SmartStemmer>, trie: Option<Cow<'tb, Trie<u8, usize>>>) -> Self {
-        Self { tokenizer, stemmer, trie }
-    }
-
-
-    /// Allows to wrap a tokenizer for phrase recognition
-    pub fn phrase_stemmed<'t, 'o>(&'t self, original: &'o str) -> PhraseRecognizerIter<'o, 't> {
-        PhraseRecognizerIter::new(
-            self.trie.as_ref().map(|value| value.as_ref()),
-            PhraseableIters::Stemmer(self.stem(original)),
-            original
-        )
+    pub fn new(unicode: bool, tokenizer: CTokenizer<'tb>, normalizer_option: Cow<'tb, NormalizerOption<'tb>>, stemmer: Option<SmartStemmer>, trie: Option<Cow<'tb, Trie<u8, usize>>>) -> Self {
+        Self { unicode, tokenizer, stemmer, trie, normalizer_option }
     }
 
     /// Allows to wrap a tokenizer for phrase recognition
     pub fn phrase<'t, 'o>(&'t self, original: &'o str) -> PhraseRecognizerIter<'o, 't> {
         PhraseRecognizerIter::new(
             self.trie.as_ref().map(|value| value.as_ref()),
-            PhraseableIters::Reconstruct(self.reconstruct(original)),
+            self.stem(original),
             original
         )
     }
@@ -142,9 +158,12 @@ impl<'tb> Tokenizer<'tb> {
     }
 
     /// Same as [`tokenize`] but attaches each [`Token`] to its corresponding portion of the original text.
-    #[inline(always)]
-    pub fn reconstruct<'t, 'o>(&'t self, original: &'o str) -> ReconstructedTokenIter<'o, 't> {
-        self.tokenizer.reconstruct(original)
+    pub fn reconstruct<'t, 'o>(&'t self, original: &'o str) -> SegmentedIter<'o, 't> {
+        if self.unicode {
+            SegmentedIter::Unicode(UnicodeSegmenterTokenIter::new(original, &self.normalizer_option))
+        } else {
+            SegmentedIter::Reconstructor(self.tokenizer.reconstruct(original))
+        }
     }
 
     /// Segments the provided text creating an Iterator over [`Token`].

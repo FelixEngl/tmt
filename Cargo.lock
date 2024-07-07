@@ -883,6 +883,7 @@ dependencies = [
  "thiserror",
  "trie-rs",
  "unicode-segmentation",
+ "whatlang",
  "zip",
 ]
 

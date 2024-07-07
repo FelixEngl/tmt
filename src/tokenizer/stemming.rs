@@ -3,8 +3,9 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
-use charabia::{Language, ReconstructedTokenIter, Token};
+use charabia::{Language, Token};
 use rust_stemmers::{Algorithm, Stemmer};
+use crate::tokenizer::reconstruct_or_unicode::SegmentedIter;
 use crate::tokenizer::stemming::SmartStemmer::Simple;
 
 trait Private{}
@@ -242,13 +243,13 @@ impl<'o> Stem for (&'o str, Token<'_>) {
 
 
 pub struct StemmedTokenIter<'o, 'tb> {
-    token_iter: ReconstructedTokenIter<'o, 'tb>,
+    token_iter: SegmentedIter<'o, 'tb>,
     stemmer: Option<&'tb SmartStemmer>,
     _phantom: PhantomData<&'o ()>
 }
 
 impl<'o, 'tb> StemmedTokenIter<'o, 'tb> {
-    pub fn new(token_iter: ReconstructedTokenIter<'o, 'tb>, stemmer: Option<&'tb SmartStemmer>) -> Self {
+    pub fn new(token_iter: SegmentedIter<'o, 'tb>, stemmer: Option<&'tb SmartStemmer>) -> Self {
         Self { token_iter, stemmer, _phantom: PhantomData }
     }
 }
