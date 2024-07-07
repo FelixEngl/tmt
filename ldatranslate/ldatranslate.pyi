@@ -795,7 +795,7 @@ class StoreOptions:
 
     def __init__(
         self,
-            deflate_temp_files: bool = False,
+        deflate_temp_files: bool = False,
         delete_temp_files_immediately: bool = False,
         compress_result: bool = False,
         temp_folder: None | str | PathLike | Path = None

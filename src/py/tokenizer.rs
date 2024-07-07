@@ -421,7 +421,7 @@ impl TokenCountFilter {
         max: Option<usize>,
     ) -> Result<Self, TokenCountFilterError> {
         if let (Some(min), Some(max)) = (min, max) {
-            if min < max {
+            if min > max {
                 return Err(TokenCountFilterError(min, max))
             }
         }
