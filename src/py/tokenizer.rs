@@ -1274,7 +1274,6 @@ impl PyAlignedArticleProcessor {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyTokenizerBuilder {
     unicode: bool,
-    stop_words: Option<PyStopWords>,
     words_dict: Option<SpecialVec>,
     normalizer_option: PyNormalizerOption,
     segmenter_option: PySegmenterOption,
@@ -1300,9 +1299,7 @@ impl PyTokenizerBuilder {
     }
 
     fn stop_words<'py>(slf: Bound<'py, Self>, stop_words: PyStopWordsArg) -> PyResult<Bound<'py, Self>> {
-        let stop = stop_words.to_stop_words()?;
-        slf.borrow_mut().stop_words = Some(stop.clone());
-        slf.borrow_mut().normalizer_option.classifier.stop_words = Some(stop);
+        slf.borrow_mut().normalizer_option.classifier.stop_words = Some(stop_words.to_stop_words()?);
         Ok(slf)
     }
 
@@ -1355,7 +1352,7 @@ impl PyTokenizerBuilder {
 impl PyTokenizerBuilder {
     pub fn as_tokenizer_builder(&self) -> TokenizerBuilder<impl AsRef<[u8]>> {
         let mut builder = TokenizerBuilder::new();
-        if let Some(ref stopwords) = self.stop_words {
+        if let Some(ref stopwords) = self.normalizer_option.classifier.stop_words {
             builder.stop_words(&stopwords.0);
         }
 
