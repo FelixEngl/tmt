@@ -7,7 +7,7 @@ use std::hash::Hash;
 use std::io::{BufReader, BufWriter, IoSliceMut, Read, Write};
 use std::iter::Map;
 use std::mem::transmute;
-use std::ops::Deref;
+use std::ops::{Deref, RangeBounds};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
@@ -433,8 +433,16 @@ impl TokenCountFilter {
         )
     }
 
+    pub fn as_range(&self) -> impl RangeBounds<usize> {
+        match (self.min, self.max) {
+            (None, None) => ..,
+            (Some(min), None) => min..,
+            (None, Some(max)) => ..max,
+            (Some(min), Some(max)) => min..max
+        }
+    }
 
-    pub fn is_valid(&self, token_len: usize) -> bool {
+    pub fn is_in_count_range(&self, token_len: usize) -> bool {
         if let Some(min) = self.min {
             if min > token_len {
                 return false;
@@ -479,62 +487,6 @@ impl TokenCountFilter {
     }
 }
 
-#[cfg(test)]
-mod test_filter {
-    use crate::py::tokenizer::TokenCountFilter;
-
-    #[test]
-    fn sets_correctly() {
-        let mut filter = TokenCountFilter::new(4.into(), 9.into()).unwrap();
-        assert!(filter.set_min(None).is_ok());
-        assert!(filter.set_min(9.into()).is_ok());
-        assert!(filter.set_min(5.into()).is_ok());
-        assert!(filter.set_min(10.into()).is_err());
-
-        assert!(filter.set_max(None).is_ok());
-        assert!(filter.set_max(5.into()).is_ok());
-        assert!(filter.set_max(4.into()).is_err());
-        assert!(filter.set_min(100.into()).is_ok());
-
-        assert_eq!(
-            TokenCountFilter::new(10.into(), 100.into()).unwrap(),
-            filter
-        )
-    }
-
-    #[test]
-    fn filters_correctly() {
-        let filter = TokenCountFilter::new(4.into(), 9.into()).unwrap();
-        assert!(!filter.is_valid(3));
-        assert!(filter.is_valid(4));
-        assert!(filter.is_valid(5));
-        assert!(filter.is_valid(9));
-        assert!(!filter.is_valid(10));
-
-        let filter = TokenCountFilter::new(4.into(), None).unwrap();
-        assert!(!filter.is_valid(3));
-        assert!(filter.is_valid(4));
-        assert!(filter.is_valid(5));
-        assert!(filter.is_valid(9));
-        assert!(filter.is_valid(10));
-
-        let filter = TokenCountFilter::new(None, 9.into()).unwrap();
-        assert!(filter.is_valid(3));
-        assert!(filter.is_valid(4));
-        assert!(filter.is_valid(5));
-        assert!(filter.is_valid(9));
-        assert!(!filter.is_valid(10));
-
-        let filter = TokenCountFilter::new(None, None).unwrap();
-        assert!(filter.is_valid(3));
-        assert!(filter.is_valid(4));
-        assert!(filter.is_valid(5));
-        assert!(filter.is_valid(9));
-        assert!(filter.is_valid(10));
-
-        assert!(TokenCountFilter::new(9.into(), 1.into()).is_err())
-    }
-}
 
 #[pymethods]
 impl TokenCountFilter {
@@ -567,6 +519,67 @@ impl TokenCountFilter {
     #[staticmethod]
     fn from_json(s: &str) -> PyResult<Self> {
         Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+    }
+
+    fn __contains__(&self, value: usize) -> bool {
+        self.is_in_count_range(value)
+    }
+}
+
+#[cfg(test)]
+mod test_filter {
+    use crate::py::tokenizer::TokenCountFilter;
+
+    #[test]
+    fn sets_correctly() {
+        let mut filter = TokenCountFilter::new(4.into(), 9.into()).unwrap();
+        assert!(filter.set_min(None).is_ok());
+        assert!(filter.set_min(9.into()).is_ok());
+        assert!(filter.set_min(5.into()).is_ok());
+        assert!(filter.set_min(10.into()).is_err());
+
+        assert!(filter.set_max(None).is_ok());
+        assert!(filter.set_max(5.into()).is_ok());
+        assert!(filter.set_max(4.into()).is_err());
+        assert!(filter.set_min(100.into()).is_ok());
+
+        assert_eq!(
+            TokenCountFilter::new(10.into(), 100.into()).unwrap(),
+            filter
+        )
+    }
+
+    #[test]
+    fn filters_correctly() {
+        let filter = TokenCountFilter::new(4.into(), 9.into()).unwrap();
+        assert!(!filter.is_in_count_range(3));
+        assert!(filter.is_in_count_range(4));
+        assert!(filter.is_in_count_range(5));
+        assert!(filter.is_in_count_range(9));
+        assert!(!filter.is_in_count_range(10));
+
+        let filter = TokenCountFilter::new(4.into(), None).unwrap();
+        assert!(!filter.is_in_count_range(3));
+        assert!(filter.is_in_count_range(4));
+        assert!(filter.is_in_count_range(5));
+        assert!(filter.is_in_count_range(9));
+        assert!(filter.is_in_count_range(10));
+
+        let filter = TokenCountFilter::new(None, 9.into()).unwrap();
+        assert!(filter.is_in_count_range(3));
+        assert!(filter.is_in_count_range(4));
+        assert!(filter.is_in_count_range(5));
+        assert!(filter.is_in_count_range(9));
+        assert!(!filter.is_in_count_range(10));
+
+        let filter = TokenCountFilter::new(None, None).unwrap();
+        assert!(filter.is_in_count_range(3));
+        assert!(filter.is_in_count_range(4));
+        assert!(filter.is_in_count_range(5));
+        assert!(filter.is_in_count_range(9));
+        assert!(filter.is_in_count_range(10));
+
+        assert!(TokenCountFilter::new(9.into(), 1.into()).is_err())
     }
 }
 
@@ -660,7 +673,7 @@ pub fn read_and_parse_aligned_articles_into(
                             .collect_vec();
 
                         if let Some(filter) = (&filter).as_ref() {
-                            if filter.is_valid(tokens.len()) {
+                            if filter.is_in_count_range(tokens.len()) {
                                 Some((lang, PyTokenizedArticleUnion::Tokenized(
                                     art,
                                     tokens
