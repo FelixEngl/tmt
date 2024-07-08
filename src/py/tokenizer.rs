@@ -230,6 +230,28 @@ pub fn read_aligned_articles(path: PathBuf, with_pickle: Option<bool>) -> PyResu
     )
 }
 
+#[cfg(test)]
+mod test_read {
+    use std::path::PathBuf;
+    use crate::py::tokenizer::{read_aligned_articles};
+
+    #[test]
+    fn test(){
+        let mut last = None;
+        for value in read_aligned_articles(PathBuf::from("E:\\git\\ldatranslation\\bambergdictionary\\lda_translate\\data\\preprocessed\\wikicomp-2014_deen.bulkjson"), Some(true)).unwrap() {
+            match value {
+                Ok(value) => {
+                    last.replace(value);
+                }
+                Err(value) => {
+                    println!("Failed with {} after {}", value, last.unwrap());
+                    break
+                }
+            }
+        }
+    }
+}
+
 
 enum AlignedArticlesImplReader {
     Plain(File),
@@ -966,7 +988,7 @@ pub struct PyArticle(Article);
 impl PyArticle {
     #[new]
     fn new(language_hint: LanguageHintValue, content: String, categories: Option<Vec<usize>>, is_list: Option<bool>) -> Self {
-        Self(Article::new(language_hint.into(), categories, content, is_list.unwrap_or_default()))
+        Self(Article::new(language_hint.into(), categories, Some(content), is_list.unwrap_or_default()))
     }
 
     #[getter]
@@ -986,8 +1008,8 @@ impl PyArticle {
     }
     #[getter]
     #[pyo3(name="content")]
-    fn py_content(&self) -> String {
-        self.content().to_string()
+    fn py_content(&self) -> Option<String> {
+        self.content().as_ref().cloned()
     }
 
     fn __str__(&self) -> String {
@@ -1020,7 +1042,7 @@ impl PyArticle {
         self.0.categories()
     }
     #[inline(always)]
-    pub fn content(&self) -> &str {
+    pub fn content(&self) -> &Option<String> {
         self.0.content()
     }
 }
@@ -1148,15 +1170,19 @@ impl PyAlignedArticleProcessor {
     ) -> PyTokenizedAlignedArticle {
         let (id, articles) = value.0.into_inner();
         let articles = articles.into_par_iter().map(|(lang, art)| {
-            if let Some(tokenizer) = tokenizers.get(&lang) {
-                let tokens = tokenizer
-                    .phrase(art.0.content())
-                    .map(|(original, value)| (original.to_string(), value.into()))
-                    .collect_vec();
-                (lang, PyTokenizedArticleUnion::Tokenized(
-                    art,
-                    tokens
-                ))
+            if let Some(content) = art.0.content() {
+                if let Some(tokenizer) = tokenizers.get(&lang) {
+                    let tokens = tokenizer
+                        .phrase(content.as_str())
+                        .map(|(original, value)| (original.to_string(), value.into()))
+                        .collect_vec();
+                    (lang, PyTokenizedArticleUnion::Tokenized(
+                        art,
+                        tokens
+                    ))
+                } else {
+                    (lang, PyTokenizedArticleUnion::NotTokenized(art))
+                }
             } else {
                 (lang, PyTokenizedArticleUnion::NotTokenized(art))
             }
@@ -1177,22 +1203,27 @@ impl PyAlignedArticleProcessor {
     ) -> PyTokenizedAlignedArticle {
         let (id, articles) = value.0.into_inner();
         let articles = articles.into_par_iter().filter_map(|(lang, art)| {
-            if let Some(tokenizer) = tokenizers.get(&lang) {
-                let tokens = tokenizer
-                    .phrase(art.0.content())
-                    .map(|(original, value)| (original.to_string(), value.into()))
-                    .collect_vec();
-                if filter.is_in_count_range(tokens.len()) {
-                    Some((lang, PyTokenizedArticleUnion::Tokenized(
-                        art,
-                        tokens
-                    )))
+            if let Some(content) = art.0.content() {
+                if let Some(tokenizer) = tokenizers.get(&lang) {
+                    let tokens = tokenizer
+                        .phrase(content.as_str())
+                        .map(|(original, value)| (original.to_string(), value.into()))
+                        .collect_vec();
+                    if filter.is_in_count_range(tokens.len()) {
+                        Some((lang, PyTokenizedArticleUnion::Tokenized(
+                            art,
+                            tokens
+                        )))
+                    } else {
+                        None
+                    }
                 } else {
-                    None
+                    Some((lang, PyTokenizedArticleUnion::NotTokenized(art)))
                 }
             } else {
                 Some((lang, PyTokenizedArticleUnion::NotTokenized(art)))
             }
+
         }).collect();
 
         PyTokenizedAlignedArticle(
@@ -2341,7 +2372,7 @@ mod test {
         for value in stream {
             let x = value.unwrap();
             let artivle = x.0.articles().get(&LanguageHint::new("en")).unwrap();
-            for (origin, value) in tokenizer.phrase(artivle.0.content()) {
+            for (origin, value) in tokenizer.phrase(artivle.0.content().as_ref().unwrap()) {
                 println!("{origin} -- {value:?}")
             }
             println!("########")

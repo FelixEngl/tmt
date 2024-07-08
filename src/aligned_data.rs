@@ -86,13 +86,13 @@ pub struct Article {
     #[serde(alias = "cat")]
     categories: Option<Vec<usize>>,
     #[serde(alias = "con")]
-    content: String,
+    content: Option<String>,
     #[serde(default, alias = "ilst")]
     is_list: bool
 }
 
 impl Article {
-    pub fn new(lang: LanguageHint, categories: Option<Vec<usize>>, content: String, is_list: bool) -> Self {
+    pub fn new(lang: LanguageHint, categories: Option<Vec<usize>>, content: Option<String>, is_list: bool) -> Self {
         Self { lang, categories, content, is_list }
     }
 
@@ -106,7 +106,7 @@ impl Article {
     pub fn categories(&self) -> &Option<Vec<usize>> {
         &self.categories
     }
-    pub fn content(&self) -> &str {
+    pub fn content(&self) -> &Option<String> {
         &self.content
     }
 }
@@ -119,7 +119,12 @@ impl Display for Article {
                 format!("[{}]", value.iter().join(", "))
             }
         };
-        write!(f, "Article({}, {}, '{}', {})", self.lang, cat, self.content, self.is_list)
+        let cont = if let Some(ref value) = self.content {
+            value.as_str()
+        } else {
+            "#"
+        };
+        write!(f, "Article({}, {}, '{}', {})", self.lang, cat, cont, self.is_list)
     }
 }
 
