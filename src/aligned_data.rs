@@ -37,6 +37,10 @@ impl<A> AlignedArticle<A> {
     pub fn get_language_hints(&self) -> Vec<&LanguageHint> {
         self.articles.keys().collect_vec()
     }
+
+    pub fn len(&self) -> usize {
+        self.articles.len()
+    }
 }
 
 

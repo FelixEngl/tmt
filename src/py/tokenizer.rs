@@ -222,7 +222,7 @@ fn read_aligned_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: bool) -> 
 }
 
 #[pyfunction]
-pub fn read_aligned_articles(path: &str, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleIter> {
+pub fn read_aligned_articles(path: PathBuf, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleIter> {
     Ok(
         PyAlignedArticleIter::new(
             read_aligned_articles_impl(path, with_pickle.unwrap_or_default()).map_err(|value| PyValueError::new_err(value.to_string()))?
@@ -329,7 +329,7 @@ fn read_aligned_parsed_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: Op
 
 
 #[pyfunction]
-pub fn read_aligned_parsed_articles(path: &str, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleParsedIter> {
+pub fn read_aligned_parsed_articles(path: PathBuf, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleParsedIter> {
     Ok(
         PyAlignedArticleParsedIter::new(
             read_aligned_parsed_articles_impl(path, with_pickle).map_err(|value| PyValueError::new_err(value.to_string()))?
@@ -339,11 +339,12 @@ pub fn read_aligned_parsed_articles(path: &str, with_pickle: Option<bool>) -> Py
 
 #[cfg(test)]
 mod test_reader {
+    use std::path::PathBuf;
     use crate::py::tokenizer::read_aligned_parsed_articles;
 
     #[test]
     fn can_read(){
-        let reader = read_aligned_parsed_articles("C:\\Data\\OneDrive - Otto-Friedrich-Universität Bamberg\\Desktop\\processed_data.bulkjson", None).unwrap();
+        let reader = read_aligned_parsed_articles(PathBuf::from("C:\\Data\\OneDrive - Otto-Friedrich-Universität Bamberg\\Desktop\\processed_data.bulkjson"), None).unwrap();
 
 
     }
@@ -352,34 +353,17 @@ mod test_reader {
 type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
 #[pyfunction]
-pub fn read_and_parse_aligned_articles(path: &str, processor: PyAlignedArticleProcessor, with_pickle: Option<bool>) -> PyResult<PyParsedAlignedArticleIter>{
+pub fn read_and_parse_aligned_articles(path: PathBuf, processor: PyAlignedArticleProcessor, with_pickle: Option<bool>) -> PyResult<PyParsedAlignedArticleIter>{
     let reader = read_aligned_articles_impl(path, with_pickle.unwrap_or_default()).map_err(|value| PyValueError::new_err(value.to_string()))?;
     let tokenizers = unsafe{processor.create_tokenizer_map()};
 
     let iter: TokenizingDeserializeIter = reader.with_value(Arc::new(tokenizers)).map(|(tokenizers, value)| {
         match value {
             Ok(value) => {
-                let (id, articles) = value.0.into_inner();
-                let articles = articles.into_par_iter().map(|(lang, art)| {
-                    if let Some(tokenizer) = tokenizers.get(&lang) {
-                        let tokens = tokenizer
-                            .phrase(art.0.content())
-                            .map(|(original, value)| (original.to_string(), value.into()))
-                            .collect_vec();
-                        (lang, PyTokenizedArticleUnion::Tokenized(
-                            art,
-                            tokens
-                        ))
-                    } else {
-                        (lang, PyTokenizedArticleUnion::NotTokenized(art))
-                    }
-                }).collect::<HashMap<_, _>>();
                 Ok(
-                    PyTokenizedAlignedArticle(
-                        AlignedArticle::new(
-                            id,
-                            articles
-                        )
+                    PyAlignedArticleProcessor::process_article_with(
+                        value,
+                        &tokenizers
                     )
                 )
             }
@@ -625,15 +609,14 @@ impl StoreOptions {
 
 #[pyfunction]
 pub fn read_and_parse_aligned_articles_into(
-    path_in: &str,
-    path_out: &str,
+    path_in: PathBuf,
+    path_out: PathBuf,
     processor: PyAlignedArticleProcessor,
     filter: Option<TokenCountFilter>,
     store_options: Option<StoreOptions>,
     with_pickle: Option<bool>,
 ) -> PyResult<usize> {
     let store_options = store_options.unwrap_or_default();
-    let path_out = PathBuf::from(path_out);
     if let Some(file_name) = path_out.file_name() {
         if path_out.exists() {
             return Err(PyIOError::new_err(format!("The file at {path_out:?} already exists!")));
@@ -663,45 +646,27 @@ pub fn read_and_parse_aligned_articles_into(
     let mut files = reader.enumerate().par_bridge().filter_map(|(idx, value)| {
         let result = match value {
             Ok(value) => {
-                let (id, articles) = value.0.into_inner();
-                let original_length = articles.len();
-                let articles = articles.into_par_iter().filter_map(|(lang, art)| {
-                    if let Some(tokenizer) = tokenizers.get(&lang) {
-                        let tokens = tokenizer
-                            .phrase(art.0.content())
-                            .map(|(original, value)| (original.to_string(), value.into()))
-                            .collect_vec();
-
-                        if let Some(filter) = (&filter).as_ref() {
-                            if filter.is_in_count_range(tokens.len()) {
-                                Some((lang, PyTokenizedArticleUnion::Tokenized(
-                                    art,
-                                    tokens
-                                )))
-                            } else {
-                                None
-                            }
-                        } else {
-                            Some((lang, PyTokenizedArticleUnion::Tokenized(
-                                art,
-                                tokens
-                            )))
-                        }
+                let original_length = value.0.len();
+                if let Some(filter) = (&filter).as_ref() {
+                    let result = PyAlignedArticleProcessor::process_article_with_filter(
+                        value,
+                        &tokenizers,
+                        filter
+                    );
+                    if result.len() != original_length {
+                        None
                     } else {
-                        Some((lang, PyTokenizedArticleUnion::NotTokenized(art)))
+                        Some(Ok(result))
                     }
-                }).collect::<HashMap<_, _>>();
-                if original_length != articles.len() {
-                    None
                 } else {
-                    Some(Ok(
-                        PyTokenizedAlignedArticle(
-                            AlignedArticle::new(
-                                id,
-                                articles
+                    Some(
+                        Ok(
+                            PyAlignedArticleProcessor::process_article_with(
+                                value,
+                                &tokenizers
                             )
                         )
-                    ))
+                    )
                 }
             }
             Err(value) => {
@@ -1187,21 +1152,13 @@ pub struct PyAlignedArticleProcessor {
     builders: Arc<HashMap<LanguageHint, PyTokenizerBuilder>>
 }
 
-#[pymethods]
 impl PyAlignedArticleProcessor {
-    #[new]
-    fn new(processors: HashMap<LanguageHintValue, PyTokenizerBuilder>) -> Self {
-        let provessors = processors.into_iter().map(|(k, v)| (k.into(), v)).collect();
-        Self {
-            builders: Arc::new(provessors)
-        }
-    }
-
-    fn process(&self, value: PyAlignedArticle) -> PyResult<PyTokenizedAlignedArticle> {
-        let tokenizers = unsafe{self.create_tokenizer_map()};
+    pub fn process_article_with(
+        value: PyAlignedArticle,
+        tokenizers: &HashMap<LanguageHint, Tokenizer>,
+    ) -> PyTokenizedAlignedArticle {
         let (id, articles) = value.0.into_inner();
-
-        let articles = articles.into_iter().par_bridge().map(|(lang, art)| {
+        let articles = articles.into_par_iter().map(|(lang, art)| {
             if let Some(tokenizer) = tokenizers.get(&lang) {
                 let tokens = tokenizer
                     .phrase(art.0.content())
@@ -1216,14 +1173,67 @@ impl PyAlignedArticleProcessor {
             }
         }).collect();
 
-        Ok(
-            PyTokenizedAlignedArticle(
-                AlignedArticle::new(
-                    id,
-                    articles
-                )
+        PyTokenizedAlignedArticle(
+            AlignedArticle::new(
+                id,
+                articles
             )
         )
+    }
+
+    pub fn process_article_with_filter(
+        value: PyAlignedArticle,
+        tokenizers: &HashMap<LanguageHint, Tokenizer>,
+        filter: &TokenCountFilter
+    ) -> PyTokenizedAlignedArticle {
+        let (id, articles) = value.0.into_inner();
+        let articles = articles.into_par_iter().filter_map(|(lang, art)| {
+            if let Some(tokenizer) = tokenizers.get(&lang) {
+                let tokens = tokenizer
+                    .phrase(art.0.content())
+                    .map(|(original, value)| (original.to_string(), value.into()))
+                    .collect_vec();
+                if filter.is_in_count_range(tokens.len()) {
+                    Some((lang, PyTokenizedArticleUnion::Tokenized(
+                        art,
+                        tokens
+                    )))
+                } else {
+                    None
+                }
+            } else {
+                Some((lang, PyTokenizedArticleUnion::NotTokenized(art)))
+            }
+        }).collect();
+
+        PyTokenizedAlignedArticle(
+            AlignedArticle::new(
+                id,
+                articles
+            )
+        )
+    }
+
+    pub fn process_article(&self, value: PyAlignedArticle, tokenizers: Option<&HashMap<LanguageHint, Tokenizer>>) -> PyTokenizedAlignedArticle {
+        if let Some(created) = tokenizers {
+            Self::process_article_with(value, created)
+        } else {
+            Self::process_article_with(value, &unsafe{self.create_tokenizer_map()})
+        }
+    }
+}
+
+#[pymethods]
+impl PyAlignedArticleProcessor {
+    #[new]
+    fn new(processors: HashMap<LanguageHintValue, PyTokenizerBuilder>) -> Self {
+        Self {
+            builders: Arc::new(processors.into_iter().map(|(k, v)| (k.into(), v)).collect())
+        }
+    }
+
+    fn process(&self, value: PyAlignedArticle) -> PyResult<PyTokenizedAlignedArticle> {
+        Ok(self.process_article(value, None))
     }
 
     fn __contains__(&self, language_hint: LanguageHintValue) -> bool {
@@ -1290,7 +1300,9 @@ impl PyTokenizerBuilder {
     }
 
     fn stop_words<'py>(slf: Bound<'py, Self>, stop_words: PyStopWordsArg) -> PyResult<Bound<'py, Self>> {
-        slf.borrow_mut().stop_words = Some(stop_words.to_stop_words()?);
+        let stop = stop_words.to_stop_words()?;
+        slf.borrow_mut().stop_words = Some(stop.clone());
+        slf.borrow_mut().normalizer_option.classifier.stop_words = Some(stop);
         Ok(slf)
     }
 
@@ -1343,7 +1355,7 @@ impl PyTokenizerBuilder {
 impl PyTokenizerBuilder {
     pub fn as_tokenizer_builder(&self) -> TokenizerBuilder<impl AsRef<[u8]>> {
         let mut builder = TokenizerBuilder::new();
-        if let Some(ref stopwords) = self.normalizer_option.classifier.stop_words {
+        if let Some(ref stopwords) = self.stop_words {
             builder.stop_words(&stopwords.0);
         }
 
