@@ -140,6 +140,14 @@ impl PyTopicModel {
 
     }
 
+    fn get_topic_as_words(&self, topic_id: usize) -> Option<Vec<(String, f64)>> {
+        Some(
+            self.inner.get_topic(topic_id)?.iter().enumerate().map(|(k, v)| {
+                (self.inner.vocabulary().get_value(k).expect("This should not fail!").to_string(), *v)
+            }).collect_vec()
+        )
+    }
+
     fn translate_by_provided_word_lists(&self, language_hint: LanguageHintValue, word_lists: PlainTranslateArgs) -> PyResult<PyTopicModel> {
         if let PlainTranslateArgs::ListList(ref word_lists) = word_lists {
             if word_lists.len() != self.inner.topic_count() {

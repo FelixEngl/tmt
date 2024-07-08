@@ -572,6 +572,19 @@ impl PyDictionary {
         self.inner = DictionaryWithMeta::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
         Ok(())
     }
+
+    pub fn get_meta_a_of(&self, word: &str) -> Option<SolvedMetadata> {
+        let word_id = self.inner.voc_a().get_id(word)?;
+        let meta = self.inner.metadata().get_meta_ref::<A>(word_id)?;
+        Some(meta.to_solved_metadata())
+    }
+
+    pub fn get_meta_b_of(&self, word: &str) -> Option<SolvedMetadata> {
+        let word_id = self.inner.voc_b().get_id(word)?;
+        let meta = self.inner.metadata().get_meta_ref::<B>(word_id)?;
+        Some(meta.to_solved_metadata())
+    }
+
 }
 
 impl Deref for PyDictionary {
