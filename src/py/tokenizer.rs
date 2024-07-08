@@ -338,18 +338,6 @@ pub fn read_aligned_parsed_articles(path: PathBuf, with_pickle: Option<bool>) ->
     )
 }
 
-#[cfg(test)]
-mod test_reader {
-    use std::path::PathBuf;
-    use crate::py::tokenizer::read_aligned_parsed_articles;
-
-    #[test]
-    fn can_read(){
-        let reader = read_aligned_parsed_articles(PathBuf::from("C:\\Data\\OneDrive - Otto-Friedrich-Universität Bamberg\\Desktop\\processed_data.bulkjson"), None).unwrap();
-
-
-    }
-}
 
 type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
