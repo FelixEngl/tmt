@@ -31,6 +31,7 @@ pub trait PartialOrderIterator : Iterator {
     /// If one of the comparisons results in a None, an error is returned with
     /// the minimum before the error as `candidate` and the value that caused the error as `cause`.
     /// If the first value causes the error, the current value may also be a non-comparable.
+    #[allow(dead_code)]
     fn min_partial(self) -> Result<Option<Self::Item>, PartialOrderIteratorError<Self::Item>>;
 
     /// Returns the maximum element of an iterator of partial comparable elements.

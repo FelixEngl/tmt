@@ -184,6 +184,7 @@ impl<T> Deref for LanguageOrigin<T> {
     }
 }
 
+#[allow(dead_code)]
 struct DummyAsVariableProvider<T> {
     _phantom: PhantomData<T>
 }
@@ -201,6 +202,7 @@ impl<T> AsVariableProvider<T> for DummyAsVariableProvider<T> {
     }
 }
 
+#[allow(dead_code)]
 pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
     topic_model: &'a Model,
     dictionary: &'a D,

@@ -7,7 +7,7 @@ use std::hash::Hash;
 use std::io::{BufReader, BufWriter, IoSliceMut, Read, Write};
 use std::iter::Map;
 use std::mem::transmute;
-use std::ops::{Deref, RangeBounds};
+use std::ops::{Deref};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
@@ -254,6 +254,7 @@ impl AlignedArticlesImplReader {
         )
     }
 
+    #[allow(dead_code)]
     pub fn into_inner(self) -> File {
         match self {
             AlignedArticlesImplReader::Plain(value) => {value}

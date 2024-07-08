@@ -55,6 +55,7 @@ impl<V> VotingMethodMarker for Spy<V> where V: VotingMethodMarker{}
 
 /// Allows to limit the voting to the top n elements
 pub trait IntoSpy: RootVotingMethodMarker {
+    #[allow(dead_code)]
     fn spy(self) -> Spy<Self>;
 }
 
