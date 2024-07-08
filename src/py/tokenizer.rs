@@ -433,14 +433,14 @@ impl TokenCountFilter {
         )
     }
 
-    pub fn as_range(&self) -> impl RangeBounds<usize> {
-        match (self.min, self.max) {
-            (None, None) => ..,
-            (Some(min), None) => min..,
-            (None, Some(max)) => ..max,
-            (Some(min), Some(max)) => min..max
-        }
-    }
+    // pub fn as_range(&self) -> impl RangeBounds<usize> {
+    //     match (self.min, self.max) {
+    //         (None, None) => ..,
+    //         (Some(min), None) => min..,
+    //         (None, Some(max)) => ..max,
+    //         (Some(min), Some(max)) => min..max
+    //     }
+    // }
 
     pub fn is_in_count_range(&self, token_len: usize) -> bool {
         if let Some(min) = self.min {

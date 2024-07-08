@@ -778,6 +778,9 @@ class TokenCountFilter:
     def __init__(self, min: None | int = None, max: None | int = None):
         ...
 
+    def __contains__(self, value: int) -> bool:
+        ...
+
     def to_json(self) -> str:...
 
     @staticmethod
