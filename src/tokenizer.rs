@@ -65,6 +65,11 @@ impl<'tb, A> TokenizerBuilder<'tb, A> {
 impl <'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A> {
     pub fn stop_words(&mut self, stop_words: &'tb Set<A>) -> &mut Self {
         self.tokenizer_builder.stop_words(stop_words);
+        let stop_words = Some(stop_words);
+        self.normalizer_option.classifier.stop_words = stop_words.map(|sw| {
+            let sw = sw.as_fst().as_bytes();
+            Set::new(sw).unwrap()
+        });
         self
     }
 

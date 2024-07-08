@@ -1252,6 +1252,11 @@ impl PyAlignedArticleProcessor {
         }
     }
 
+    fn __getitem__(&self, value: LanguageHintValue) -> Option<PyTokenizerBuilder> {
+        let lh: LanguageHint = value.into();
+        self.builders.get(&lh).cloned()
+    }
+
     fn process(&self, value: PyAlignedArticle) -> PyResult<PyTokenizedAlignedArticle> {
         Ok(self.process_article(value, None))
     }
@@ -1353,6 +1358,10 @@ impl PyTokenizerBuilder {
         slf
     }
 
+    fn create_stopword_filter(&self) -> Option<PyStopWords> {
+        self.normalizer_option.classifier.stop_words.clone()
+    }
+
     fn to_json(&self) -> PyResult<String> {
         Ok(
             serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
@@ -1431,6 +1440,10 @@ impl PyStopWords {
             Ok(words) => {Ok(Self(words))}
             Err(value) => {Err(PyValueError::new_err(value.to_string()))}
         }
+    }
+
+    fn __contains__(&self, value: &str) -> bool {
+        self.0.contains(value)
     }
 
     fn to_json(&self) -> PyResult<String> {
