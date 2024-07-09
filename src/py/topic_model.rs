@@ -44,7 +44,6 @@ enum PlainTranslateArgs {
     ListList(Vec<Vec<String>>),
 }
 
-
 #[pymethods]
 impl PyTopicModel {
     #[new]
@@ -140,10 +139,10 @@ impl PyTopicModel {
 
     }
 
-    fn get_topic_as_words(&self, topic_id: usize) -> Option<Vec<(String, f64)>> {
+    fn get_topic_as_words(&self, topic_id: usize) -> Option<Vec<(usize, String, f64)>> {
         Some(
             self.inner.get_topic(topic_id)?.iter().enumerate().map(|(k, v)| {
-                (self.inner.vocabulary().get_value(k).expect("This should not fail!").to_string(), *v)
+                (k, self.inner.vocabulary().get_value(k).expect("This should not fail!").to_string(), *v)
             }).collect_vec()
         )
     }
