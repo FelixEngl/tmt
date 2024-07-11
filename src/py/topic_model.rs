@@ -20,10 +20,11 @@ use crate::py::vocabulary::PyVocabulary;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::{topicmodel};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
+use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use crate::topicmodel::topic_model::meta::*;
-use crate::topicmodel::vocabulary::{BasicVocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -156,18 +157,15 @@ impl PyTopicModel {
 
         let min_value = self.inner.topics().iter().flatten().min_partial_filtered().unwrap().clone();
 
-        let mut voc = PyVocabulary::new(Some(language_hint.into()), None);
-
         let mut new_probability = Vec::new();
 
 
         let mut vocab_frequency: Vec<u64>;
 
-        match word_lists {
+        let voc = match word_lists {
             PlainTranslateArgs::List(value) => {
-                let word_ids = value.into_iter().map(|value| {
-                    voc.add(value)
-                }).collect_vec();
+                let language_hint: LanguageHint = language_hint.into();
+                let voc = PyVocabulary::from(Vocabulary::from((Some(language_hint), value.clone())));
                 vocab_frequency = vec![0u64; voc.len()];
                 for _ in 0..self.inner.topic_count() {
                     new_probability.push(vec![min_value; voc.len()]);
@@ -175,14 +173,15 @@ impl PyTopicModel {
                 for topic_id in self.inner.topic_ids() {
                     let topic_old = self.inner.topics().get(topic_id).unwrap();
                     let topic_new = new_probability.get_mut(topic_id).unwrap();
-                    for (word_id_old, word_id_new) in word_ids.iter().cloned().enumerate() {
-                        topic_new[word_id_new] = topic_old[word_id_old].clone();
-                        vocab_frequency[word_id_new] = self.inner.used_vocab_frequency()[word_id_old];
+                    for word_id in voc.ids() {
+                        topic_new[word_id] = topic_old[word_id].clone();
+                        vocab_frequency[word_id] = self.inner.used_vocab_frequency()[word_id];
                     }
                 }
+                voc
             }
             PlainTranslateArgs::ListList(word_lists) => {
-
+                let mut voc = PyVocabulary::new(Some(language_hint), None);
                 let word_lists = word_lists.into_iter().map(|values| {
                     values.into_iter().map(|value| {
                         voc.add(value)
@@ -200,6 +199,7 @@ impl PyTopicModel {
                         vocab_frequency[word_id_new] = self.inner.used_vocab_frequency()[word_id_old];
                     }
                 }
+                voc
             }
         };
 
