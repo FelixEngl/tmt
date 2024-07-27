@@ -423,21 +423,30 @@ impl<R: Read> DingDictionaryReader<R> {
                 Ok(entry.map(|value| value.to_string()))
             }
         }
-        let mut content = Vec::new();
-        let bytes_read = self.reader.read_until(b'\n', &mut content);
-        match bytes_read {
-            Ok(value) => {
-                if value == 0 {
-                    return None;
+        loop {
+            let mut content = Vec::new();
+            let bytes_read = self.reader.read_until(b'\n', &mut content);
+            self.line_number += 1;
+            if let Some(first) = content.first() {
+                if b'#'.eq(first) || b'\r'.eq(first) || b'\n'.eq(first) {
+                    continue
                 }
             }
-            Err(value) => {
-                return Some(Err(value.into()))
+            match bytes_read {
+                Ok(value) => {
+                    if value == 0 {
+                        break None;
+                    }
+                }
+                Err(value) => {
+                    break Some(Err(value.into()))
+                }
             }
+
+
+            break Some(parse_or_fail(content))
         }
 
-
-        Some(parse_or_fail(content))
     }
 }
 
@@ -446,7 +455,6 @@ impl<R: Read> Iterator for DingDictionaryReader<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_impl().map(|value| {
-            self.line_number += 1;
             value.map_err(|err|
                 DingDictionaryError(self.line_number, err)
             )
