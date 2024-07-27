@@ -3,6 +3,7 @@
 pub mod metadata;
 pub mod direction;
 pub mod iterators;
+mod loader;
 
 use std::borrow::Borrow;
 use std::collections::HashMap;

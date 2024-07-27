@@ -115,6 +115,7 @@ impl VotingMethod for BuildInVoting {
                 Err(Eval(EvalexprError::VariableIdentifierNotFound(name.to_string())))
             }
         }
+
         fn collect_simple<B, F>(voters: &[B], f: F) -> VotingResult<Vec<f64>> where B: Context, F: Fn(&B) -> EvalexprResult<Value> {
             Ok(voters.iter().map(f).map_ok(|value: Value| value.as_number()).collect::<EvalexprResult<EvalexprResult<Vec<_>>>>()??)
         }

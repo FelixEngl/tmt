@@ -107,46 +107,60 @@ pub enum VotingParseError {
 }
 
 macro_rules! make_expr {
-        ($vis:vis $name: ident, open=$open:literal, close=$close:literal, spacing= $space:ident, on_close_missing=$message: literal) => {
-            $vis fn $name<I, O, E: ErrorType<I>, F>(inner: F) -> impl FnMut(I) -> IResult<I, O, E>
-                where F: Parser<I, O, E>,
-                      I: InputTakeAtPosition + nom::Slice<std::ops::RangeFrom<usize>> + InputIter + Clone,
-                      <I as InputTakeAtPosition>::Item: AsChar + Clone,
-                      <I as InputIter>::Item: AsChar
-            {
-                delimited(
-                    preceded($space, char($open)),
-                    preceded($space, inner),
-                    context($message, cut(preceded($space, char($close)))),
-                )
-            }
-        };
-    }
+    ($vis:vis $name: ident, open=$open:literal, close=$close:literal, spacing= $space:ident, on_close_missing=$message: literal) => {
+        $vis fn $name<I, O, E: ErrorType<I>, F>(inner: F) -> impl FnMut(I) -> IResult<I, O, E>
+            where F: Parser<I, O, E>,
+                  I: InputTakeAtPosition + nom::Slice<std::ops::RangeFrom<usize>> + InputIter + Clone,
+                  <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                  <I as InputIter>::Item: AsChar
+        {
+            delimited(
+                preceded($space, char($open)),
+                preceded($space, inner),
+                context($message, cut(preceded($space, char($close)))),
+            )
+        }
+    };
+    ($vis:vis $name: ident, open=$open:literal, close=$close:literal, on_close_missing=$message: literal) => {
+        $vis fn $name<I, O, E: ErrorType<I>, F>(inner: F) -> impl FnMut(I) -> IResult<I, O, E>
+            where F: Parser<I, O, E>,
+                  I: InputTakeAtPosition + nom::Slice<std::ops::RangeFrom<usize>> + InputIter + Clone,
+                  <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                  <I as InputIter>::Item: AsChar
+        {
+            delimited(
+                preceded($space, char($open)),
+                inner,
+                context($message, cut(preceded($space, char($close)))),
+            )
+        }
+    };
+}
 
 
 make_expr!(
-        s_expr,
-        open='(',
-        close=')',
-        spacing= multispace0,
-        on_close_missing="closing parentheses for single expr"
-    );
+    s_expr,
+    open='(',
+    close=')',
+    spacing= multispace0,
+    on_close_missing="closing parentheses for single expr"
+);
 
 make_expr!(
-        s_expr_no_newline,
-        open='(',
-        close=')',
-        spacing= space0,
-        on_close_missing="closing parentheses for single expr (no newline)"
-    );
+    s_expr_no_newline,
+    open='(',
+    close=')',
+    spacing= space0,
+    on_close_missing="closing parentheses for single expr (no newline)"
+);
 
 make_expr!(
-        pub(crate) b_exp,
-        open='{',
-        close='}',
-        spacing= multispace0,
-        on_close_missing="closing parentheses for block expr"
-    );
+    pub(crate) b_exp,
+    open='{',
+    close='}',
+    spacing= multispace0,
+    on_close_missing="closing parentheses for block expr"
+);
 
 // make_expr!(
 //     c_exp,
