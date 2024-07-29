@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::string::FromUtf8Error;
 use itertools::Itertools;
-use nom::combinator::{map, opt, peek, value};
+use nom::combinator::{map, not, opt, peek, recognize, value};
 use nom::error::{ParseError};
 use nom::{IResult};
 use nom::branch::alt;
@@ -28,11 +28,14 @@ pub enum DingWordEntryElement<T> {
     Category(T),
     Contextualisation(T),
     Info(WordInfo<T>),
+    Abbreviation(T),
+    AlternateNotation(T),
     /// Basically a placeholder for a word
     WordPlaceholder,
     /// Example:
     /// to put forward <> sth. -> to put forward, to put sth. forward, to put forward sth.
-    InterchangeableWith
+    InterchangeableWith,
+    
 }
 impl<T> DingWordEntryElement<T> {
     pub fn is_word(&self) -> bool {
@@ -40,6 +43,7 @@ impl<T> DingWordEntryElement<T> {
             DingWordEntryElement::Word(_)
             | DingWordEntryElement::PartialWord(_, _)
             | DingWordEntryElement::AlternatingWords(_)
+            | DingWordEntryElement::AlternateNotation(_)
             | DingWordEntryElement::WordPlaceholder => true,
             _ => false
         }
@@ -54,7 +58,9 @@ impl<T> DingWordEntryElement<T> {
             DingWordEntryElement::Info(value) => DingWordEntryElement::Info(value.map(|value| mapper(value))),
             DingWordEntryElement::InterchangeableWith => DingWordEntryElement::InterchangeableWith,
             DingWordEntryElement::WordPlaceholder => DingWordEntryElement::WordPlaceholder,
-            DingWordEntryElement::AlternatingWords(value) => DingWordEntryElement::AlternatingWords(value.map(mapper))
+            DingWordEntryElement::AlternatingWords(value) => DingWordEntryElement::AlternatingWords(value.map(mapper)),
+            DingWordEntryElement::Abbreviation(value) => DingWordEntryElement::Abbreviation(mapper(value)),
+            DingWordEntryElement::AlternateNotation(value) => DingWordEntryElement::Abbreviation(mapper(value))
         }
     }
 }
@@ -63,6 +69,12 @@ impl<T> Display for DingWordEntryElement<T> where T: Display {
         match self {
             DingWordEntryElement::Word(value) => {
                 write!(f, "{value}")
+            }
+            DingWordEntryElement::Abbreviation(value) => {
+                write!(f, "/{value}/")
+            }
+            DingWordEntryElement::AlternateNotation(value) => {
+                write!(f, "<{value}>")
             }
             DingWordEntryElement::Category(value) => {
                 write!(f, "[{value}]")
@@ -211,8 +223,33 @@ impl<T> Display for DingEntry<T> where T: Display {
 }
 
 #[inline(always)]
+fn parse_word_content<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, &'a str, E> {
+    recognize(
+        alt((
+            is_not("{[(< \t:;|…/>"),
+            recognize(pair(char(':'), not(char(':'))))
+        ))
+    )(s)
+}
+
+#[inline(always)]
 fn parse_interchangeable<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
-    value(DingWordEntryElement::InterchangeableWith, tag("<>"))(s)
+    value(
+        DingWordEntryElement::InterchangeableWith,
+        tag("<>")
+    )(s)
+}
+
+#[inline(always)]
+fn parse_abbreviation<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
+    map(
+        delimited(
+            char('/'),
+            delimited(space0, parse_word_content, space0),
+            terminated(char('/'), peek(not(preceded(space0, parse_word))))
+        ),
+        DingWordEntryElement::Abbreviation
+    )(s)
 }
 
 fn parse_non_word<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
@@ -221,6 +258,8 @@ fn parse_non_word<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Di
             map(take_bracket!('[', ']'), DingWordEntryElement::Category),
             map(take_bracket!('{', '}'), |value: &str| DingWordEntryElement::Info(value.into())),
             map(take_bracket!('(', ')'), DingWordEntryElement::Contextualisation),
+            parse_abbreviation,
+            map(delimited(terminated(char('<'), peek(not(char('>')))), parse_word_content, char('>')), DingWordEntryElement::AlternateNotation),
         )
     )(s)
 }
@@ -228,10 +267,10 @@ fn parse_non_word<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Di
 fn parse_word<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
     alt(
         (
-            map(preceded(tag("…"), is_not("{[(< \t:;|…/")), |value| DingWordEntryElement::PartialWord(value, PartialWordType::Suffix)),
+            map(preceded(tag("…"), parse_word_content), |value| DingWordEntryElement::PartialWord(value, PartialWordType::Suffix)),
             value(DingWordEntryElement::WordPlaceholder, tag("…")),
-            map(terminated(is_not("{[(< \t:;|…/"), tag("…")), |value| DingWordEntryElement::PartialWord(value, PartialWordType::Prefix)),
-            map(is_not("{[(< \t:;|…/"), DingWordEntryElement::Word),
+            map(terminated(parse_word_content, tag("…")), |value| DingWordEntryElement::PartialWord(value, PartialWordType::Prefix)),
+            map(parse_word_content, DingWordEntryElement::Word),
         )
     )(s)
 }
@@ -252,7 +291,7 @@ fn parse_single_word_alternative<'a, E: ParseError<&'a str>>(s: &'a str) -> IRes
             preceded(space0, parse_word),
             opt(
                 preceded(
-                    peek(preceded(space0, is_a("{[("))),
+                    peek(preceded(space0, is_a("{[(<"))),
                     many1(
                         preceded(
                             space0,
@@ -382,14 +421,16 @@ pub struct DingDictionaryError(
 
 pub struct DingDictionaryReader<R> {
     reader: BufReader<R>,
-    line_number: usize
+    line_number: usize,
+    eof: bool
 }
 
 impl<R: Read> DingDictionaryReader<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader: BufReader::new(reader),
-            line_number: 0
+            line_number: 0,
+            eof: false
         }
     }
 }
@@ -418,35 +459,39 @@ impl<R: Read> DingDictionaryReader<R> {
                 }
             })?;
             if !left.is_empty() {
-                return Err(DingDictionaryReaderError::Lost(left.to_string()))
+                Err(DingDictionaryReaderError::Lost(left.to_string()))
             } else {
                 Ok(entry.map(|value| value.to_string()))
             }
         }
+
+        if self.eof {
+            return None
+        }
+        let mut content = Vec::new();
         loop {
-            let mut content = Vec::new();
-            let bytes_read = self.reader.read_until(b'\n', &mut content);
-            self.line_number += 1;
-            if let Some(first) = content.first() {
-                if b'#'.eq(first) || b'\r'.eq(first) || b'\n'.eq(first) {
-                    continue
-                }
-            }
-            match bytes_read {
+            match self.reader.read_until(b'\n', &mut content) {
                 Ok(value) => {
                     if value == 0 {
-                        break None;
+                        self.eof = true;
+                        break None
+                    } else {
+                        self.line_number += 1;
+                        if let Some(first) = content.first() {
+                            // Comment or empty line
+                            if b'#'.eq(first) || b'\r'.eq(first) || b'\n'.eq(first) {
+                                content.clear();
+                                continue
+                            }
+                        }
+                        break Some(parse_or_fail(content))
                     }
                 }
                 Err(value) => {
                     break Some(Err(value.into()))
                 }
             }
-
-
-            break Some(parse_or_fail(content))
         }
-
     }
 }
 
@@ -490,14 +535,18 @@ mod test {
     #[test]
     fn can_recognize_word_category() {
 
-        const TEST_LINES: [&'static str; 7] = [
+        const TEST_LINES: [&'static str; 11] = [
             "Aal {m} (auf der Speisekarte) [cook.] | Aal blau; blauer Aal | Aal grün; grüner Aal | Aal in Aspik; Aal in Gelee :: Eel (on a menu) | Eel au bleu; Eel steamed and served with Butter | Boiled Eel served with Parsley Sauce | Jellied Eel",
             "A {n}; Ais {n};As {n}; Aisis {n}; Ases {n} [mus.] | A-Dur {n} :: A; A sharp; A flat; A double sharp; A double flat | A major",
             "Abbau {m}; Zersetzung {f}; Degradierung {f} (von etw.) [chem.][biol.] | bakterieller Abbau | biologischer Abbau | chemischerAbbau | photochemischer Abbau; Abbau durch Licht | metabolischer Abbau | thermischer Abbau | Abbau durch Bakterien :: breakdown; decomposition; degradation (of sth.) | bacterialdegradation | biological breakdown/degradation; biodegradation | chemical breakdown/degradation | photochemicalbreakdown/degradation; photodegradation | metabolic breakdown | thermal degradation | bacterial decomposition",
             "Ding {n}; Sache {f} | Dinge {pl}; Sachen {pl}; Krempel {m} | Dinge für sich behalten | die Dinge laufen lassen | den Dingen auf den Grund gehen | beim augenblicklichen Stand der Dinge | das Ding an sich | über solchen Dingen stehen | Er ist der Sache nicht ganz gewachsen. :: thing | things | to keep things to oneself | to let things slide | to get to the bottom of things | as things stand now; as things are now | the thing-in-itself | to be above such things | He is not really on top of things.",
             "absolut; überhaupt {adv} (Verstärkung einer Aussage) | jegliche/r/s; absolut jeder | keinerlei; absolut kein | jeglichen Zweifel ausräumen | Ich habe absolut/überhaupt keinen Grund, dorthin zurückzukehren. :: whatsoever (postpositive) (used to emphasize an assertion) | any … whatsoever | no … whatsoever | to remove any doubt whatsoever | I have no reason whatsoever to return there.; I have no reason to return there whatsoever.",
             "absondernd; sekretorisch; Sekretions…; sezernierend {adj} [biol.] | Sekretionskanälchen {n} | Sekretionsmechanismus {m} | Sekretionsnerv {n} | Gelenkschmiere sezernierend :: secretory | secretory canaliculus | secretory mechanism | secretory nerve | synoviparous",
-            "alterungsbeständig {adj} (Werkstoff) {adj} :: resistant to ageing [Br.]/aging [Am.]; ageing-resistant [Br.]; aging-resistant [Am.]; non-ageing [Br.]; non-aging [Am.] (of a material)"
+            "alterungsbeständig {adj} (Werkstoff) {adj} :: resistant to ageing [Br.]/aging [Am.]; ageing-resistant [Br.]; aging-resistant [Am.]; non-ageing [Br.]; non-aging [Am.] (of a material)",
+            "Abfallcontainer {f}; Müllcontainer {f} | Abfallcontainer {pl}; Müllcontainer {pl} :: waste/rubbish/garbage [Am.] container | waste/rubbish/garbage containers",
+            "Arzneimittelnebenwirkung {f}; unerwünschte Arzeimittelwirkung {f} [pharm.] | Arzneimittelnebenwirkungen {pl}; unerwünschte Arzeimittelwirkungen {pl} | schwerwiegende Nebenwirkung; schwerwiegende unerwünschte Arzneimittelwirkung :: advserse drug reaction; adverse drug effect; adverse effect | advserse drug reactions; adverse drug effects; adverse effects | serious adverse drug reaction /SADR/; serious adverse reaction / SAR/",
+            "Arztpraxis {f}; Ordination {f} [Ös.]; Arztambulatorium {n} [Südtirol] [med.] | Arztpraxen {pl}; Ordinationen {pl}; Arztambulatorien {pl} | Privatpraxis {f} | eine Arztpraxis / Ordination [Ös.] / ein Arztambulatorium [Südtirol] übernehmen :: medical practice; doctor's surgery [Br.]; medical office [Am.] | medical practices; doctor's surgeries; medical offices | private practice | to take over a medical practice/doctor's surgery [Br.] / medical office [Am.]",
+            "Bereitschaftszustand {m}; Bereitschaft {f} [electr.] [techn.] | Laufzeit im Bereitschaftszustand (Mobilgeräte usw.) | Bereitschaftsverlust {m} [electr.] | im Bereitschaftsbetrieb; in Wartestellung | im Bereitschaftsmodus / in Wartestellung / einsatzbereit sein :: standby condition; standby (readiness for immediate deployment) | standby time (of mobile devices etc.) | standby loss | under standby conditions | to be on standby",
         ];
         // todo: Requires handling of alternative with ageing [Br.]/aging [Am.]
         for value in TEST_LINES {
@@ -514,7 +563,9 @@ mod test {
                     println!("######");
                 }
                 Err(value) => {
+                    println!("!!!!!!");
                     println!("{}", value.to_string());
+                    println!("!!!!!!");
                 }
             }
         }
