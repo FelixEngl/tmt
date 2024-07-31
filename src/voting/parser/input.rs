@@ -4,6 +4,7 @@ use nom::{Compare, CompareResult, InputIter, InputLength, InputTake, InputTakeAt
 use nom::error::{Error, ErrorKind, ParseError};
 use crate::voting::registry::VotingRegistry;
 
+/// The input of the parser. Allows to carry an voting registry for parsing reasons.
 #[derive(Clone, Copy, Debug)]
 pub struct ParserInput<'a,'b> {
     input: &'a str,

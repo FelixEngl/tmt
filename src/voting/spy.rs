@@ -4,6 +4,7 @@ use crate::variable_names::{CANDIDATE_ID, SCORE, SCORE_CANDIDATE, TOPIC_ID, VOTE
 use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult};
 use crate::voting::traits::RootVotingMethodMarker;
 
+/// Allows to spy on the voting method
 pub struct Spy<V: VotingMethodMarker + ?Sized> {
     spy_history: Mutex<Vec<(usize, (usize, f64, Value), Vec<(usize, f64)>)>>,
     inner: V,

@@ -12,21 +12,22 @@ use thiserror::Error;
 use crate::toolkit::normal_number::IsNormalNumber;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 
+/// An aggregation that cen be limited to 1..n
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Aggregation {
-    typ: AggregationType,
+    typ: AggregationKind,
     limit: Option<NonZeroUsize>,
 }
 
 impl Aggregation {
     pub const fn new_no_limit(
-        typ: AggregationType,
+        typ: AggregationKind,
     ) -> Self {
         Self::new(typ, None)
     }
 
     pub const fn new_with_limit(
-        typ: AggregationType,
+        typ: AggregationKind,
         limit: usize,
     ) -> Option<Self> {
         if let Some(value) = NonZeroUsize::new(limit) {
@@ -37,14 +38,14 @@ impl Aggregation {
     }
 
     pub const unsafe fn new_with_limit_unchecked(
-        typ: AggregationType,
+        typ: AggregationKind,
         limit: usize,
     ) -> Self {
         Self::new(typ, Some(NonZeroUsize::new_unchecked(limit)))
     }
 
     pub const fn new(
-        typ: AggregationType,
+        typ: AggregationKind,
         limit: Option<NonZeroUsize>
     ) -> Self {
         Self {
@@ -53,6 +54,7 @@ impl Aggregation {
         }
     }
 
+    /// Calculate in ascending order
     pub fn calculate_asc<T, I>(&self, iterator: I) -> Result<f64, AggregationError>
         where
             T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
@@ -63,13 +65,13 @@ impl Aggregation {
                 .filter(|value| value.is_normal_number())
                 .collect_vec();
             vec.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            self.typ.calculate::<T, _>(vec.into_iter().take(limit.get()))
+            self.typ.aggregate::<T, _>(vec.into_iter().take(limit.get()))
         } else {
-            self.typ.calculate(iterator)
+            self.typ.aggregate(iterator)
         }
     }
 
-
+    /// Calculate in descending order
     pub fn calculate_desc<T, I>(&self, iterator: I) -> Result<f64, AggregationError>
         where
             T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
@@ -80,9 +82,9 @@ impl Aggregation {
                 .filter(|value| value.is_normal_number())
                 .collect_vec();
             vec.sort_by(|a, b| b.partial_cmp(a).unwrap());
-            self.typ.calculate::<T, _>(vec.into_iter().take(limit.get()))
+            self.typ.aggregate::<T, _>(vec.into_iter().take(limit.get()))
         } else {
-            self.typ.calculate(iterator)
+            self.typ.aggregate(iterator)
         }
     }
 }
@@ -100,6 +102,7 @@ impl Display for Aggregation {
 }
 
 
+/// The aggregation failed somehow
 #[derive(Debug, Copy, Clone, Error, PartialEq)]
 pub enum AggregationError {
     #[error("There is no value to be used!")]
@@ -111,9 +114,10 @@ pub enum AggregationError {
 }
 
 
+/// Kind of aggregation
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 #[derive(AsRefStr, Display, EnumString)]
-pub enum AggregationType {
+pub enum AggregationKind {
     #[strum(serialize = "sumOf")]
     SumOf,
     #[strum(serialize = "maxOf")]
@@ -127,8 +131,9 @@ pub enum AggregationType {
 }
 
 
-impl AggregationType {
-    pub fn calculate<T, I>(&self, iter: I) -> Result<f64, AggregationError>
+impl AggregationKind {
+    /// Aggregate [iter] into a `f64`
+    pub fn aggregate<T, I>(&self, iter: I) -> Result<f64, AggregationError>
         where
             T: Num + PartialOrd + IsNormalNumber + ConstZero + AsPrimitive<f64> + Add + Sum,
             I: Iterator<Item=T>,
@@ -162,10 +167,10 @@ impl AggregationType {
 
 
         match self {
-            AggregationType::SumOf => {
+            AggregationKind::SumOf => {
                 Ok(iter.sum::<T>().as_())
             }
-            AggregationType::MaxOf => {
+            AggregationKind::MaxOf => {
                 match iter.max_partial_filtered() {
                     Some(value) => {
                         Ok(value.as_())
@@ -175,7 +180,7 @@ impl AggregationType {
                     }
                 }
             }
-            AggregationType::MinOf => {
+            AggregationKind::MinOf => {
                 match iter.min_partial_filtered() {
                     Some(value) => {
                         Ok(value.as_())
@@ -185,10 +190,10 @@ impl AggregationType {
                     }
                 }
             }
-            AggregationType::AvgOf => {
+            AggregationKind::AvgOf => {
                 Ok(calc_average(&mut iter))
             }
-            AggregationType::GAvgOf => {
+            AggregationKind::GAvgOf => {
                 let mut iter = iter.map(|value| value.as_().ln());
                 let avg = calc_average(&mut iter);
                 Ok(avg.exp())
@@ -197,6 +202,7 @@ impl AggregationType {
     }
 }
 
+/// Parser
 pub mod parse {
     use std::num::{NonZeroUsize, ParseIntError};
     use nom::branch::alt;
@@ -207,9 +213,10 @@ pub mod parse {
     use nom::{AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, IResult};
     use nom::sequence::{delimited, preceded, terminated, tuple};
     use thiserror::Error;
-    use crate::voting::aggregations::{Aggregation, AggregationType};
+    use crate::voting::aggregations::{Aggregation, AggregationKind};
     use crate::voting::parser::logic::ErrorType;
 
+    /// Aggregation error
     #[derive(Debug, Clone, Error)]
     pub enum AggregationParserError {
         #[error(transparent)]
@@ -222,7 +229,7 @@ pub mod parse {
     /// The syntax is `BulkOperationType`(limit)
     /// e.g. ``avgOf`` or ``sumOf(3)``
     /// Also supports legacy expressions like   ``sumOf limit(*)``
-    pub(crate) fn parse_aggregation<Input, E: ErrorType<Input>>(input: Input) -> IResult<Input, Aggregation, E> where
+    pub fn parse_aggregation<Input, E: ErrorType<Input>>(input: Input) -> IResult<Input, Aggregation, E> where
         Input: AsRef<str> + Clone + InputLength + InputIter + InputTake + InputTakeAtPosition + for<'a> Compare<&'a str>,
         <Input as InputIter>::Item: AsChar + Clone,
         <Input as InputTakeAtPosition>::Item: AsChar + Clone,
@@ -234,7 +241,7 @@ pub mod parse {
                     map_res(
                         delimited(multispace0, alpha1, multispace0),
                         |value: Input|
-                            AggregationType::try_from(value.as_ref())
+                            AggregationKind::try_from(value.as_ref())
                                 .map_err(AggregationParserError::UnknownAggregation)
                     ),
                     opt(
@@ -265,13 +272,13 @@ pub mod parse {
     #[cfg(test)]
     mod test {
         use nom::error::VerboseError;
-        use crate::voting::aggregations::{Aggregation, AggregationType};
+        use crate::voting::aggregations::{Aggregation, AggregationKind};
         use crate::voting::aggregations::parse::parse_aggregation;
 
         #[test]
         fn can_parse_a_simple_expression(){
             assert_eq!(
-                Aggregation::new_no_limit(AggregationType::SumOf),
+                Aggregation::new_no_limit(AggregationKind::SumOf),
                 parse_aggregation::<_, VerboseError<_>>("sumOf").expect("This should work!").1
             )
         }
@@ -279,7 +286,7 @@ pub mod parse {
         #[test]
         fn can_parse_a_new_expression(){
             assert_eq!(
-                Aggregation::new_with_limit(AggregationType::AvgOf, 3).unwrap(),
+                Aggregation::new_with_limit(AggregationKind::AvgOf, 3).unwrap(),
                 parse_aggregation::<_, VerboseError<_>>("avgOf (3)").expect("This should work!").1
             )
         }
@@ -287,7 +294,7 @@ pub mod parse {
         #[test]
         fn can_parse_a_legacy_expression_star(){
             assert_eq!(
-                Aggregation::new_no_limit(AggregationType::GAvgOf),
+                Aggregation::new_no_limit(AggregationKind::GAvgOf),
                 parse_aggregation::<_, VerboseError<_>>("gAvgOf (*)").expect("This should work!").1
             )
         }
@@ -295,7 +302,7 @@ pub mod parse {
         #[test]
         fn can_parse_a_legacy_expression_limit_star(){
             assert_eq!(
-                Aggregation::new_no_limit(AggregationType::GAvgOf),
+                Aggregation::new_no_limit(AggregationKind::GAvgOf),
                 parse_aggregation::<_, VerboseError<_>>("gAvgOf limit(*)").expect("This should work!").1
             )
         }
@@ -303,7 +310,7 @@ pub mod parse {
         #[test]
         fn can_parse_a_legacy_expression_limit1(){
             assert_eq!(
-                Aggregation::new_with_limit(AggregationType::GAvgOf, 99).unwrap(),
+                Aggregation::new_with_limit(AggregationKind::GAvgOf, 99).unwrap(),
                 parse_aggregation::<_, VerboseError<_>>("gAvgOf limit (99)").expect("This should work!").1
             )
         }
@@ -311,7 +318,7 @@ pub mod parse {
         #[test]
         fn can_parse_a_legacy_expression_limit2(){
             assert_eq!(
-                Aggregation::new_with_limit(AggregationType::GAvgOf, 99).unwrap(),
+                Aggregation::new_with_limit(AggregationKind::GAvgOf, 99).unwrap(),
                 parse_aggregation::<_, VerboseError<_>>("gAvgOf limit(99)").expect("This should work!").1
             )
         }
@@ -320,7 +327,7 @@ pub mod parse {
 
 #[cfg(test)]
 mod test {
-    use crate::voting::aggregations::{Aggregation, AggregationType};
+    use crate::voting::aggregations::{Aggregation, AggregationKind};
 
 
     macro_rules! define_test {
@@ -383,35 +390,35 @@ mod test {
 
     define_test! {
         can_calculate_the_sum:
-        AggregationType::SumOf,
+        AggregationKind::SumOf,
         Ok(45.),
         vec![1,2,3,4,5,6,7,8,9]
     }
 
     define_test! {
         can_calculate_the_max:
-        AggregationType::MaxOf,
+        AggregationKind::MaxOf,
         Ok(10.),
         vec![1,2,10,3,4,5,6,7,8,9]
     }
 
     define_test! {
         can_calculate_the_min:
-        AggregationType::MinOf,
+        AggregationKind::MinOf,
         Ok(-10.),
         vec![1,2,-10,3,4,5,6,7,8,9]
     }
 
     define_test! {
         can_calculate_the_avg:
-        AggregationType::AvgOf,
+        AggregationKind::AvgOf,
         Ok(5.5),
         vec![1,2,10,3,4,5,6,7,8,9]
     }
 
     define_test! {
         can_calculate_the_gavg:
-        AggregationType::GAvgOf,
+        AggregationKind::GAvgOf,
         in 4.5287286881..4.5287286882,
         vec![1,2,10,3,4,5,6,7,8,9]
     }
@@ -421,7 +428,7 @@ mod test {
 
     define_test! {
         can_calculate_the_sum_lim:
-        AggregationType::SumOf,
+        AggregationKind::SumOf,
         limit 3usize,
         asc Ok(6.0),
         desc Ok(24.0),
@@ -430,7 +437,7 @@ mod test {
 
     define_test! {
         can_calculate_the_max_lim:
-        AggregationType::MaxOf,
+        AggregationKind::MaxOf,
         limit 3usize,
         asc Ok(3.0),
         desc Ok(10.0),
@@ -439,7 +446,7 @@ mod test {
 
     define_test! {
         can_calculate_the_min_lim:
-        AggregationType::MinOf,
+        AggregationKind::MinOf,
         limit 3usize,
         asc Ok(1.0),
         desc Ok(8.0),
@@ -448,7 +455,7 @@ mod test {
 
     define_test! {
         can_calculate_the_avg_lim:
-        AggregationType::AvgOf,
+        AggregationKind::AvgOf,
         limit 3usize,
         asc Ok(2.0),
         desc Ok(9.0),
@@ -457,7 +464,7 @@ mod test {
 
     define_test! {
         can_calculate_the_gavg_lim:
-        AggregationType::GAvgOf,
+        AggregationKind::GAvgOf,
         limit 3usize,
         asc in 1.817120592..1.817120593f64,
         desc in 8.962809492..8.962809494f64,

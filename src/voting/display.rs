@@ -19,6 +19,7 @@ pub trait DisplayTree: Display {
     fn fmt(&self, f: &mut IndentWriter<'_, impl Write>) -> std::fmt::Result;
 }
 
+/// Writes something with leveled indent
 pub struct IndentWriter<'a, T: Write> {
     f: &'a mut T,
     level: usize,

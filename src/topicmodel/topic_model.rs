@@ -65,7 +65,7 @@ pub(crate) type DocumentLength = u64;
 
 
 
-/// A basic topic model fulfilling the bare minimum of
+/// A basic topic model fulfilling the bare minimum of a topic model.
 pub trait BasicTopicModel: Send + Sync {
     /// The number of topics in this model
     fn topic_count(&self) -> usize;
@@ -945,6 +945,7 @@ impl<T: ToParseableString, V> TopicModel<T, V> where V: StoreableVocabulary<T> {
     }
 }
 
+/// Allows to map a topic model to another one.
 pub trait MappableTopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> {
     fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: BasicVocabulary<T>;
 }
@@ -977,6 +978,7 @@ impl From<PyTopicModelStateValue> for TopicModelPyStateValue<PyVocabulary> {
     }
 }
 
+/// Errors when using pickle.
 #[derive(Debug, Error)]
 pub enum TopicModelPyStateValueError<V> where V: HasPickleSupport + Clone {
     #[error("The value for the field {0} is missing!")]
@@ -1112,6 +1114,7 @@ impl From<Vec<f64>> for SingleOrList {
 }
 
 
+/// Allows to inference probabilities for documents by a topic model.
 pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
     topic_model: &'a Model,
     alpha: SingleOrList,
@@ -1133,12 +1136,26 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
     pub const DEFAULT_MIN_PROBABILITY: f64 = 1E-10;
     pub const DEFAULT_MIN_PHI_VALUE: f64 = 1E-10;
 
+    /// Infer the probabilities for [doc]. Implemented like gensim, with the same default values.
     pub fn get_doc_probability_for_default(
         &self,
         doc: Vec<T>,
         per_word_topics: bool
     ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
         self.get_doc_probability_for(doc, Self::DEFAULT_MIN_PROBABILITY, Self::DEFAULT_MIN_PHI_VALUE, per_word_topics)
+    }
+
+    /// Infer the probabilities for [doc]. Implemented like gensim.
+    pub fn get_doc_probability_for(&self, doc: Vec<T>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
+        let doc = doc.into_iter().map(|value| match self.topic_model.get_id(&value) {
+            None => {
+                WordIdOrUnknown::Unknown(value)
+            }
+            Some(value) => {
+                WordIdOrUnknown::WordId(value)
+            }
+        }).collect_vec();
+        self.get_doc_probability(doc, minimum_probability,minimum_phi_value, per_word_topics)
     }
 
     fn get_doc_probability(&self, doc: Vec<WordIdOrUnknown<T>>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
@@ -1305,17 +1322,7 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
         (counts, (!fallback.is_empty()).then_some(fallback))
     }
 
-    pub fn get_doc_probability_for(&self, doc: Vec<T>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
-        let doc = doc.into_iter().map(|value| match self.topic_model.get_id(&value) {
-            None => {
-                WordIdOrUnknown::Unknown(value)
-            }
-            Some(value) => {
-                WordIdOrUnknown::WordId(value)
-            }
-        }).collect_vec();
-        self.get_doc_probability(doc, minimum_probability,minimum_phi_value, per_word_topics)
-    }
+
 }
 
 

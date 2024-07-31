@@ -9,6 +9,7 @@ use zip::read::ZipFile;
 use zip::{ZipArchive, ZipWriter};
 use zip::write::{FileOptions};
 
+/// The possible errors when reading a topic model the old fashioned way.
 #[derive(Debug, Error)]
 pub enum TopicModelIOError {
     #[error(transparent)]
@@ -25,7 +26,7 @@ pub enum TopicModelIOError {
     AlreadyExists(PathBuf),
 }
 
-
+/// The file system access for reading a topic model
 pub enum TopicModelFSRead {
     Zip {
         zip_archive: ZipArchive<BufReader<File>>
@@ -37,15 +38,6 @@ pub enum TopicModelFSRead {
 
 
 impl TopicModelFSRead {
-    // pub fn open<P: AsRef<Path>>(path: P) -> Result<TopicModelFSRead, TopicModelIOError> {
-    //     if path.as_ref().is_dir() {
-    //         Ok(TopicModelFSRead::System { path_on_disc: path.as_ref().to_path_buf()})
-    //     } else {
-    //         let zip_archive = ZipArchive::new(BufReader::new(File::options().read(true).open(path)?))?;
-    //         Ok(TopicModelFSRead::Zip {zip_archive})
-    //     }
-    // }
-
     pub fn open_zip<P: AsRef<Path>>(path: P) -> Result<TopicModelFSRead, TopicModelIOError> {
         if path.as_ref().is_dir() {
             Err(TopicModelIOError::IllegalPath(path.as_ref().to_path_buf()))
@@ -62,18 +54,6 @@ impl TopicModelFSRead {
             Err(TopicModelIOError::IllegalPath(path.as_ref().to_path_buf()))
         }
     }
-
-    // pub fn can_create_reader<P: AsRef<Path>>(&self, path: P) -> bool {
-    //     match self {
-    //         TopicModelFSRead::Zip { zip_archive } => {
-    //             return zip_archive.index_for_path(path).is_some()
-    //         }
-    //         TopicModelFSRead::System { path_on_disc } => {
-    //             path_on_disc.join(path).exists()
-    //         }
-    //     }
-    // }
-
 
     pub fn create_reader_to<P: AsRef<Path>>(&mut self, path: P) -> Result<(TopicModelReader, bool), TopicModelIOError> {
         match self {
@@ -119,7 +99,7 @@ impl TopicModelFSRead {
     }
 }
 
-
+/// The reader for a topic model.
 pub enum TopicModelReader<'a> {
     Zip(ZipFile<'a>),
     File(File)
@@ -140,7 +120,7 @@ impl Read for TopicModelReader<'_> {
     }
 }
 
-
+/// The file system access for writing a topic model
 pub enum TopicModelFSWrite {
     Zip {
         zip_archive: ZipWriter<BufWriter<File>>,
@@ -151,6 +131,7 @@ pub enum TopicModelFSWrite {
     }
 }
 
+/// The writer for a topic model.
 pub enum TopicModelWriter<'a> {
     Zip {
         outp: &'a mut ZipWriter<BufWriter<File>>
@@ -176,33 +157,6 @@ impl Write for TopicModelWriter<'_> {
 
 
 impl TopicModelFSWrite {
-    // pub fn create(path: impl AsRef<Path>) -> Result<Self, TopicModelIOError> {
-    //     let p = path.as_ref();
-    //
-    //     if let Some(ext) = p.extension() {
-    //         if ext.eq(".zip") {
-    //             if let Some(parent) = p.parent() {
-    //                 std::fs::create_dir_all(parent)?;
-    //             }
-    //             Ok(
-    //                 TopicModelFSWrite::Zip {
-    //                     zip_archive: ZipWriter::new(BufWriter::new(File::options().create(true).truncate(true).open(p)?)),
-    //                     registered_files: Default::default()
-    //                 }
-    //             )
-    //         } else {
-    //             Err(TopicModelIOError::UnsupportedFileType(p.to_path_buf()))
-    //         }
-    //     } else {
-    //         std::fs::create_dir_all(p)?;
-    //         Ok(
-    //             TopicModelFSWrite::System {
-    //                 path_on_disc: p.to_path_buf()
-    //             }
-    //         )
-    //     }
-    // }
-
     pub fn create_zip(path: impl AsRef<Path>) -> Result<Self, TopicModelIOError> {
         let p = path.as_ref();
         if let Some(parents) = p.parent() {

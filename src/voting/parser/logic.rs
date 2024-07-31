@@ -28,6 +28,7 @@ const KW_EXECUTE: &str = "execute";
 const KW_LET: &str = "let";
 const KW_DECLARE: &str = "declare";
 
+/// Keywords known to the parser
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[derive(AsRefStr, Display, EnumString)]
 pub enum Keyword {
@@ -71,7 +72,7 @@ fn keyword<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) 
     )(input)
 }
 
-
+/// The errortype used by the parser
 pub trait ErrorType<T>: ParseError<T> + ContextError<T> + FromExternalError<T, VotingParseError> + FromExternalError<T, AggregationParserError> {}
 impl<C, T> ErrorType<T> for C where
     C:
@@ -80,6 +81,7 @@ impl<C, T> ErrorType<T> for C where
     FromExternalError<T, VotingParseError> +
     FromExternalError<T, AggregationParserError>{}
 
+/// Errors when parsing a string to a voting.
 #[derive(Debug, Clone, Error)]
 pub enum VotingParseError {
     // #[error("The if block is missing an expression")]

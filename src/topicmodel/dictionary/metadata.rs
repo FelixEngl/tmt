@@ -56,7 +56,7 @@ pub enum MetadataContainerFromPyStateError {
     VocabularyError(#[from] VocabularyFromPyStateError<String>)
 }
 
-
+/// Conteins the metadata for the dictionary
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct MetadataContainer {
     pub(in crate::topicmodel::dictionary) meta_a: Vec<Metadata>,

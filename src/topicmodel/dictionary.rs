@@ -120,6 +120,7 @@ impl<V> Clone for DictionaryPyStateValue<V> where V: HasPickleSupport {
 }
 
 
+/// A basic dictionary that can translate IDs
 pub trait BasicDictionary: Send + Sync {
 
     fn map_a_to_b(&self) -> &Vec<Vec<usize>>;
@@ -144,18 +145,22 @@ pub trait BasicDictionary: Send + Sync {
     }
 }
 
+/// A basic dictionary with a vocabulary
 pub trait BasicDictionaryWithVocabulary<V>: BasicDictionary {
     fn voc_a(&self) -> &V;
 
     fn voc_b(&self) -> &V;
 }
 
+/// A dictionary with known vocabulary types.
 pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where V: BasicVocabulary<T> {
 
+    /// Returns the direction of the dictionary
     fn language_direction<'a>(&'a self) -> (Option<&'a LanguageHint>, Option<&'a LanguageHint>) where V: 'a {
         (self.language::<A>(), self.language::<B>())
     }
 
+    /// The typed access based on the language
     fn language<'a, L: Language>(&'a self) -> Option<&'a LanguageHint> where V: 'a {
         if L::LANG.is_a() {
             self.voc_a().language()
@@ -164,7 +169,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         }
     }
 
-
+    /// Check if the translation is possible
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         if D::DIRECTION.is_a_to_b() {
             self.voc_a().contains_id(id) && self.map_a_to_b().get(id).is_some_and(|value| !value.is_empty())
@@ -173,6 +178,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         }
     }
 
+    /// Convert an ID to a word
     fn id_to_word<'a, D: Translation>(&'a self, id: usize) -> Option<&'a HashRef<T>> where V: 'a {
         if D::DIRECTION.is_a_to_b() {
             self.voc_a().get_value(id)
@@ -181,6 +187,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         }
     }
 
+    /// Convert ids to ids with entries
     fn ids_to_id_entry<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<(usize, &'a HashRef<T>)> where V: 'a {
         if D::DIRECTION.is_a_to_b() {
             ids.iter().map(|value| unsafe {
@@ -193,6 +200,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         }
     }
 
+    /// Convert ids to values
     fn ids_to_values<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<&'a HashRef<T>> where V: 'a {
         if D::DIRECTION.is_a_to_b() {
             ids.iter().map(|value| unsafe {
@@ -205,18 +213,22 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         }
     }
 
+    /// Translates a single [word_id]
     fn translate_id<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<(usize, &'a HashRef<T>)>> where V: 'a {
         Some(self.ids_to_id_entry::<D>(self.translate_id_to_ids::<D>(word_id)?))
     }
 
+    /// Translates a single [word_id]
     fn translate_id_to_values<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<&'a HashRef<T>>> where V: 'a {
         Some(self.ids_to_values::<D>(self.translate_id_to_ids::<D>(word_id)?))
     }
 
+    /// Iterate language [L]
     fn iter_language<'a, L: Language>(&'a self) -> DictLangIter<'a, T, L, Self, V> where V: 'a {
         DictLangIter::<T, L, Self, V>::new(self)
     }
 
+    /// Translate a value
     fn translate_value<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a HashRef<T>)>>
         where
             T: Borrow<Q> + Eq + Hash,

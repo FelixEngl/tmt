@@ -16,6 +16,7 @@ use crate::tokenizer::reconstruct_or_unicode::SegmentedIter;
 use crate::tokenizer::stemming::{SmartStemmer, StemmedTokenIter};
 use crate::tokenizer::unicode_segmenter::UnicodeSegmenterTokenIter;
 
+/// A builder for a tokenizer
 pub struct TokenizerBuilder<'tb, A> {
     unicode: bool,
     tokenizer_builder: CTokenizerBuilder<'tb, A>,
@@ -45,6 +46,7 @@ impl<'tb, A> TokenizerBuilder<'tb, A> {
         }
     }
 
+    /// Set a trie for phrase detection
     pub fn set_phraser(&mut self, voc: Option<Trie<u8, usize>>) -> &mut Self {
         self.phrase_trie = voc;
         self

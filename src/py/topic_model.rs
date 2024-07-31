@@ -24,7 +24,7 @@ use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use crate::topicmodel::topic_model::meta::*;
-use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]

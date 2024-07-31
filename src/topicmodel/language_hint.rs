@@ -8,6 +8,7 @@ use pyo3::{Bound, pyclass, pymethods, PyResult};
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 
+/// A hint for the language used.
 #[pyclass(frozen)]
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]

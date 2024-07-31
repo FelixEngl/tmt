@@ -4,6 +4,7 @@ use thiserror::Error;
 use crate::voting::aggregations::AggregationError;
 use crate::voting::parser::voting_function::IndexOrRange;
 
+/// Errors when parsing a voting.
 #[derive(Debug, Error)]
 pub enum VotingExpressionError {
     #[error(transparent)]

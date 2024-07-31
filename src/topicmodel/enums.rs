@@ -5,13 +5,14 @@ use thiserror::Error;
 use crate::topicmodel::io::TopicModelIOError;
 use crate::topicmodel::vocabulary::LoadVocabularyError;
 
+/// The model storeing version.
 #[derive(Debug, Copy, Clone, Display, AsRefStr, EnumString)]
 pub enum TopicModelVersion {
     V1,
     V2
 }
 
-
+/// The errors while writing
 #[derive(Debug, Error)]
 pub enum WriteError {
     #[error(transparent)]
@@ -22,6 +23,7 @@ pub enum WriteError {
     AlreadyFinished
 }
 
+/// The errors while reading
 #[derive(Debug, Error)]
 pub enum ReadError<E: Debug> {
     #[error(transparent)]

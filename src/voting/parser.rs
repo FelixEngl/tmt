@@ -16,15 +16,8 @@ pub mod logic;
 mod traits;
 pub mod input;
 
-#[derive(Debug, EnumIs, Clone)]
-pub enum InterpretedVoting {
-    BuildIn(BuildInVoting),
-    FromRegistry(Arc<VotingFunction>),
-    Parsed(VotingFunction),
-    ForRegistry(VotingAndName),
-    Limited(VotingWithLimit<Box<InterpretedVoting>>),
-}
 
+/// Parse the [ParserInput] to a [InterpretedVoting]
 pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, InterpretedVoting, E> {
     fn parse_internal<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, InterpretedVoting, E> {
         alt((
@@ -47,6 +40,16 @@ pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>
         map(parse_limited(parse_internal), InterpretedVoting::Limited),
         parse_internal
     ))(input)
+}
+
+/// What kind of voting did we parse?
+#[derive(Debug, EnumIs, Clone)]
+pub enum InterpretedVoting {
+    BuildIn(BuildInVoting),
+    FromRegistry(Arc<VotingFunction>),
+    Parsed(VotingFunction),
+    ForRegistry(VotingAndName),
+    Limited(VotingWithLimit<Box<InterpretedVoting>>),
 }
 
 impl VotingMethodMarker for InterpretedVoting {}
@@ -72,7 +75,6 @@ impl VotingMethod for InterpretedVoting {
         }
     }
 }
-
 
 impl From<Arc<VotingFunction>> for InterpretedVoting {
     fn from(value: Arc<VotingFunction>) -> Self {

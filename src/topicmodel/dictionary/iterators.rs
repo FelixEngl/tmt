@@ -12,8 +12,7 @@ use crate::topicmodel::dictionary::metadata::{MetadataRef, SolvedMetadata};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::BasicVocabulary;
 
-
-
+/// Iterator for a dictionary
 pub struct DictLangIter<'a, T, L, D: ?Sized, V> where L: Language {
     iter: Enumerate<Iter<'a, HashRef<T>>>,
     dict: &'a D,
@@ -97,9 +96,9 @@ impl<'a> Iterator for DictIterImpl<'a> {
 
 
 
-
+/// The state of the dict iterator
 #[derive(Debug, Copy, Clone, EnumIs)]
-pub enum DictionaryIteratorPointerState {
+enum DictionaryIteratorPointerState {
     NextAB,
     NextBA,
     Finished
@@ -233,6 +232,7 @@ impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWi
     }
 }
 
+/// A dict iterator
 pub type DictionaryIterator<T, V> = Unique<DictionaryIteratorImpl<T, V, Dictionary<T, V>>>;
 
 impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq + Hash {
@@ -245,6 +245,7 @@ impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq 
 }
 
 
+/// A dict iterator with metadata
 pub struct DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
     inner: DictionaryIteratorImpl<T, V, D>
 }

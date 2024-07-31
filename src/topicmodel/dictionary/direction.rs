@@ -5,6 +5,7 @@ use pyo3::{Bound, pyclass, PyResult};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs, EnumString, IntoStaticStr};
 
+/// The language
 #[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
 #[pyclass]
 pub enum LanguageKind {
@@ -12,6 +13,7 @@ pub enum LanguageKind {
     B
 }
 
+/// The direction of the language
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
 #[pyclass]
 pub enum DirectionKind {
@@ -49,6 +51,7 @@ impl DirectionKind {
     }
 }
 
+/// A tuple defining two values and a direction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct  DirectionTuple<Ta, Tb> {
     pub a: Ta,
@@ -86,6 +89,7 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
         Self::new(a, b, DirectionKind::Invariant)
     }
 
+    /// Mapps the direction tuple values to new values.
     pub fn map<Ra, Rb, F1: FnOnce(Ta) -> Ra, F2: FnOnce(Tb) -> Rb>(self, map_a: F1, map_b: F2) -> DirectionTuple<Ra, Rb> {
         DirectionTuple {
             a: map_a(self.a),
@@ -94,6 +98,7 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
         }
     }
 
+    /// Converts to a real tuple
     pub fn to_tuple(self) -> (Ta, Tb, DirectionKind) {
         return (self.a, self.b, self.direction)
     }
@@ -140,30 +145,36 @@ pub trait Language: Translation + Direction + private::Sealed{
     const LANG: LanguageKind;
 }
 
+/// Language A
 pub struct A;
 impl private::Sealed for A{}
 impl Language for A{
     const LANG: LanguageKind = LanguageKind::A;
 }
 
+/// A to B
 pub type AToB = A;
 impl Direction for AToB {
     const DIRECTION: DirectionKind = DirectionKind::AToB;
 }
 impl Translation for AToB {}
 
-
+/// Language B
 pub struct B;
 impl private::Sealed for B{}
 impl Language for B {
     const LANG: LanguageKind = LanguageKind::B;
 }
+
+/// B to A
 pub type BToA = B;
 impl Direction for BToA {
     const DIRECTION: DirectionKind = DirectionKind::BToA;
 }
 impl Translation for BToA {}
 
+
+/// Both directions
 pub struct Invariant;
 impl private::Sealed for Invariant {}
 impl Direction for Invariant {

@@ -814,14 +814,16 @@ class StoreOptions:
     delete_temp_files_immediately: bool
     """Deletes the temp-files after writing them in the bulk file. (saves space, but less secure)"""
     temp_folder: None | str | PathLike | Path
-    """Set a custom temp folder"""
-
+    """Set a custom temp folder, stores the value in some processing_* folder."""
+    show_progress_after: None | int
+    """If set shows after n processed elements the progress."""
     def __init__(
         self,
         deflate_temp_files: bool = False,
         delete_temp_files_immediately: bool = False,
         compress_result: bool = False,
-        temp_folder: None | str | PathLike | Path = None
+        temp_folder: None | str | PathLike | Path = None,
+        show_progress_after: None | int = None
     ):...
 
 

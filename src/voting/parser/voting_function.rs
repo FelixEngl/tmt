@@ -217,6 +217,7 @@ impl DisplayTree for VotingOperation {
 
 impl_display_for_displaytree!(VotingOperation);
 
+/// What kind of voting is executed?
 #[derive(Debug, Clone)]
 pub enum VotingExecution {
     BuildIn(BuildInVoting),
@@ -589,7 +590,7 @@ impl Debug for VotingExpression {
     }
 }
 
-
+/// A parsed index or range.
 #[derive(Debug, Clone)]
 pub enum IndexOrRange {
     Index(usize),

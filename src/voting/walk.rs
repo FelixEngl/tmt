@@ -5,15 +5,8 @@ use evalexpr::{Node, Operator};
 use itertools::Itertools;
 use strum::EnumIs;
 
-#[derive(Debug, Clone)]
-#[derive(EnumIs)]
-pub(crate) enum NodeContainer<'a> {
-    Leaf(&'a Node, bool),
-    Single(&'a Node, Box<NodeContainer<'a>>, bool),
-    Expr(Box<NodeContainer<'a>>, &'a Node, Box<NodeContainer<'a>>, bool),
-    Special(&'a Node, Vec<NodeContainer<'a>>, bool)
-}
 
+/// Walks a node from left to right
 pub(crate) fn walk_left_to_right(node: &Node) -> NodeContainer {
     fn walk_left_to_right_(node: &Node, is_root: bool) -> NodeContainer {
         let children = node.children();
@@ -40,6 +33,16 @@ pub(crate) fn walk_left_to_right(node: &Node) -> NodeContainer {
         }
     }
     walk_left_to_right_(node, true)
+}
+
+/// A node container for walking
+#[derive(Debug, Clone)]
+#[derive(EnumIs)]
+pub(crate) enum NodeContainer<'a> {
+    Leaf(&'a Node, bool),
+    Single(&'a Node, Box<NodeContainer<'a>>, bool),
+    Expr(Box<NodeContainer<'a>>, &'a Node, Box<NodeContainer<'a>>, bool),
+    Special(&'a Node, Vec<NodeContainer<'a>>, bool)
 }
 
 impl<'a> NodeContainer<'a> {
