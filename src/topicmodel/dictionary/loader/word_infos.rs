@@ -73,7 +73,15 @@ pub enum WordType {
     #[strum(to_string = "det")]
     Determiner,
     #[strum(to_string = "int")]
-    Interjection
+    Interjection,
+    #[strum(to_string="pres-p")]
+    PresentParticiple,
+    #[strum(to_string="past-p")]
+    PastParticiple,
+    #[strum(to_string="prefix")]
+    Prefix,
+    #[strum(to_string="suffix")]
+    Suffix
 }
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
@@ -86,10 +94,9 @@ pub enum GrammaticalGender {
     Neutral
 }
 
-#[derive(Copy, Clone, Debug, Default, Display, EnumString, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
 pub enum GrammaticalNumber {
     #[strum(to_string = "sg")]
-    #[default]
     Singular,
     #[strum(to_string = "pl")]
     Plural
