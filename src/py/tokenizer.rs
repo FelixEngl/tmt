@@ -682,6 +682,11 @@ pub fn read_and_parse_aligned_articles_into(
     eprintln!("Storing data in temp folder {}", temp_folder.to_string_lossy());
 
     let mut files = reader.enumerate().par_bridge().filter_map(|(idx, value)| {
+        if let Some(after) = store_options.show_progress_after {
+            if  idx % after.get() == 0 {
+                eprintln!("Processed {idx} entries.");
+            }
+        }
         let result = match value {
             Ok(value) => {
                 let original_length = value.0.len();
@@ -718,12 +723,6 @@ pub fn read_and_parse_aligned_articles_into(
             None
         }
     }).map(|(idx, value)| {
-        if let Some(after) = store_options.show_progress_after {
-            if  idx % after.get() == 0 {
-                eprintln!("Processed {idx} entries.");
-            }
-        }
-
         match value {
             Ok(value) => {
 
