@@ -1,4 +1,4 @@
-# TMT
+# Topic Model Translation
 A tool to translate topic models between languages written in rust for python.
 
 This is experimental code and will change over the time.
