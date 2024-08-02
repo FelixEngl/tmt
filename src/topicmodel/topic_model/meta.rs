@@ -1,13 +1,11 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
-use pyo3::{FromPyObject, IntoPy, PyObject, Python};
+
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};
-use thiserror::Error;
-use crate::py::helpers::{get_or_fail, HasPickleSupport, IntOrFloat, IntOrFloatPyStatsError};
+
 use crate::topicmodel::topic_model::{Importance, ImportanceRank, ImportanceRankTo, Position, PositionTo, Probability, Rank, TopicId, WordId, WordTo};
 
 /// The precalculated stats of a topic
@@ -18,43 +16,6 @@ pub struct TopicStats {
     pub min_value: f64,
     pub average_value: f64,
     pub sum_value: f64,
-}
-
-#[derive(Debug, Clone, Error)]
-pub enum TopicStatsPyStatsError {
-    #[error("The value for the field {0} is missing!")]
-    ValueMissing(&'static str),
-    #[error("Invalid value at {0} for {1:?}!")]
-    InvalidValueEncountered(&'static str, IntOrFloat),
-    #[error(transparent)]
-    ConversionError(#[from] IntOrFloatPyStatsError)
-}
-
-impl HasPickleSupport for TopicStats {
-    type FieldValue = IntOrFloat;
-    type Error = TopicStatsPyStatsError;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut map = HashMap::with_capacity(5);
-        map.insert("topic_id".to_string(), self.topic_id.into());
-        map.insert("max_value".to_string(), self.max_value.into());
-        map.insert("min_value".to_string(), self.min_value.into());
-        map.insert("average_value".to_string(), self.average_value.into());
-        map.insert("sum_value".to_string(), self.sum_value.into());
-        return map
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> where Self: Sized {
-        Ok(
-            Self {
-                topic_id: get_or_fail("topic_id", values)?,
-                max_value: get_or_fail("max_value", values)?,
-                min_value: get_or_fail("min_value", values)?,
-                average_value: get_or_fail("average_value", values)?,
-                sum_value: get_or_fail("sum_value", values)?,
-            }
-        )
-    }
 }
 
 
@@ -105,72 +66,6 @@ impl TopicMeta {
             position_to_meta,
             importance_to_meta
         )
-    }
-}
-
-
-#[derive(Debug, Clone, FromPyObject)]
-pub enum TopicMetaPyStateValue {
-    Stats(HashMap<String, IntOrFloat>),
-    ByWords(Vec<HashMap<String, IntOrFloat>>)
-}
-
-impl IntoPy<PyObject> for TopicMetaPyStateValue {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            TopicMetaPyStateValue::Stats(value) => {
-                value.into_py(py)
-            }
-            TopicMetaPyStateValue::ByWords(value) => {
-                value.into_py(py)
-            }
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum TopicMetaPyStateError {
-    #[error("The field {0} is missing!")]
-    MissingField(&'static str),
-    #[error("Invalid value at {0} for {1:?}!")]
-    InvalidValueEncountered(&'static str, TopicMetaPyStateValue),
-    #[error(transparent)]
-    StatsConversionError(#[from] TopicStatsPyStatsError),
-    #[error(transparent)]
-    WordMetaConversionError(#[from] IntOrFloatPyStatsError)
-}
-
-impl HasPickleSupport for TopicMeta {
-    type FieldValue = TopicMetaPyStateValue;
-    type Error = TopicMetaPyStateError;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut map = HashMap::with_capacity(2);
-        map.insert("stats".to_string(), TopicMetaPyStateValue::Stats(self.stats.get_py_state()));
-        map.insert("by_words".to_string(), TopicMetaPyStateValue::ByWords(self.by_words.iter().map(|value| value.get_py_state()).collect()));
-        return map
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> where Self: Sized {
-        let stats = match values.get("stats").ok_or_else(|| TopicMetaPyStateError::MissingField("stats"))? {
-            TopicMetaPyStateValue::Stats(value) => {
-                TopicStats::from_py_state(value)?
-            }
-            error => {
-                return Err(TopicMetaPyStateError::InvalidValueEncountered("stats", error.clone()))
-            }
-        };
-
-        let by_words = match values.get("by_words").ok_or_else(|| TopicMetaPyStateError::MissingField("by_words"))? {
-            TopicMetaPyStateValue::ByWords(value) => {
-                value.iter().map(|value| WordMeta::from_py_state(value).map(Arc::new)).collect::<Result<Vec<Arc<WordMeta>>, _>>()?
-            }
-            error => {
-                return Err(TopicMetaPyStateError::InvalidValueEncountered("by_words", error.clone()))
-            }
-        };
-
-        Ok(Self::new_with(stats, by_words))
     }
 }
 
@@ -294,35 +189,6 @@ impl WordMeta {
     #[inline]
     pub fn importance_rank(&self) -> ImportanceRank {
         self.importance + 1
-    }
-}
-
-
-
-impl HasPickleSupport for WordMeta {
-    type FieldValue = IntOrFloat;
-    type Error = IntOrFloatPyStatsError;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut map = HashMap::with_capacity(5);
-        map.insert("topic_id".to_string(), self.topic_id.into());
-        map.insert("word_id".to_string(), self.word_id.into());
-        map.insert("probability".to_string(), self.probability.into());
-        map.insert("position".to_string(), self.position.into());
-        map.insert("importance".to_string(), self.importance.into());
-        return map
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> where Self: Sized {
-        Ok(
-            Self {
-                topic_id: get_or_fail("topic_id", values)?,
-                word_id: get_or_fail("word_id", values)?,
-                probability: get_or_fail("probability", values)?,
-                position: get_or_fail("position", values)?,
-                importance: get_or_fail("importance", values)?,
-            }
-        )
     }
 }
 

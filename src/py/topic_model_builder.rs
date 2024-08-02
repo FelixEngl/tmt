@@ -1,5 +1,5 @@
 use itertools::repeat_n;
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use pyo3::exceptions::PyValueError;
 use pyo3::{pyclass, pymethods, PyResult};
 use crate::py::helpers::LanguageHintValue;
@@ -14,7 +14,7 @@ use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 pub struct PyTopicModelBuilder {
     voc: Vocabulary<String>,
     topics: Vec<Vec<f64>>,
-    used_vocab_frequency: OnceCell<WordTo<WordFrequency>>,
+    used_vocab_frequency: OnceLock<WordTo<WordFrequency>>,
     doc_topic_distributions: Option<DocumentTo<TopicTo<Probability>>>,
     document_lengths: Option<DocumentTo<DocumentLength>>,
 }

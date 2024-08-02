@@ -3,66 +3,29 @@ use std::collections::hash_map::Entry;
 use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use once_cell::sync::OnceCell;
+use std::sync::{Arc, OnceLock};
 use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pymethods, PyObject, PyResult, Python};
 use serde::{Deserialize, Deserializer, Serialize};
 use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
-use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyFromPyStateError, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 use string_interner::{DefaultStringInterner, DefaultSymbol as InternedString, DefaultSymbol, Symbol};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Language};
 #[allow(unused_imports)]
-use crate::toolkit::once_cell_serializer;
+use crate::toolkit::once_lock_serializer;
 use itertools::Itertools;
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::de::{Error, Unexpected, Visitor};
 use string_interner::symbol::SymbolU32;
-use thiserror::Error;
-use crate::py::helpers::{HasPickleSupport, PyVocabularyStateValue};
-use crate::topicmodel::dictionary::metadata::MetadataContainerPyStateValues::{InternerEntries, Meta, Voc};
-use crate::topicmodel::dictionary::metadata::MetadataFromPyStateError::{InvalidValueEncountered, UnableToDecodeDefaultSymbol};
 use crate::topicmodel::dictionary::metadata::MetadataPyStateValues::{InternedVec, UnstemmedMapping};
 
-#[derive(Debug, FromPyObject, Clone)]
-pub enum MetadataContainerPyStateValues {
-    Voc(HashMap<String, PyVocabularyStateValue>),
-    InternerEntries(Vec<(usize, String)>),
-    Meta(Vec<HashMap<String, MetadataPyStateValues>>)
-}
-
-impl IntoPy<PyObject> for MetadataContainerPyStateValues {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            Voc(value) => {
-                value.into_py(py)
-            }
-            InternerEntries(value) => {
-                value.into_py(py)
-            }
-            Meta(value) => {
-                value.into_py(py)
-            }
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum MetadataContainerFromPyStateError {
-    #[error(transparent)]
-    MetadataError(#[from] MetadataFromPyStateError),
-    #[error("Invalid value at {0} for {1:?}!")]
-    InvalidValueEncountered(&'static str, MetadataContainerPyStateValues),
-    #[error(transparent)]
-    VocabularyError(#[from] VocabularyFromPyStateError<String>)
-}
-
-/// Conteins the metadata for the dictionary
-#[derive(Serialize, Deserialize, Default, Debug)]
+/// Contains the metadata for the dictionary
+#[derive(Serialize, Deserialize, Default, Debug, Eq, PartialEq)]
 pub struct MetadataContainer {
     pub(in crate::topicmodel::dictionary) meta_a: Vec<Metadata>,
     pub(in crate::topicmodel::dictionary) meta_b: Vec<Metadata>,
     pub(in crate::topicmodel::dictionary) dictionary_interner: DefaultStringInterner,
-    pub(in crate::topicmodel::dictionary) tag_interner: DefaultStringInterner,
+    #[serde(alias = "tag_interner")]
+    pub(in crate::topicmodel::dictionary) subject_interner: DefaultStringInterner,
     pub(in crate::topicmodel::dictionary) unstemmed_voc: Vocabulary<String>,
 }
 
@@ -73,7 +36,7 @@ impl MetadataContainer {
             meta_a: Default::default(),
             meta_b: Default::default(),
             dictionary_interner: Default::default(),
-            tag_interner: Default::default(),
+            subject_interner: Default::default(),
             unstemmed_voc: Default::default()
         }
     }
@@ -82,7 +45,7 @@ impl MetadataContainer {
         Self {
             meta_a: self.meta_b,
             meta_b: self.meta_a,
-            tag_interner: self.tag_interner,
+            subject_interner: self.subject_interner,
             unstemmed_voc: self.unstemmed_voc,
             dictionary_interner: self.dictionary_interner
         }
@@ -96,12 +59,12 @@ impl MetadataContainer {
         &mut self.dictionary_interner
     }
 
-    pub fn get_tag_interner(&self) -> &DefaultStringInterner {
-        &self.tag_interner
+    pub fn get_subject_interner(&self) -> &DefaultStringInterner {
+        &self.subject_interner
     }
 
     pub fn get_tag_interner_mut(&mut self) -> &mut DefaultStringInterner {
-        &mut self.tag_interner
+        &mut self.subject_interner
     }
 
     pub fn get_unstemmed_voc(&self) -> &Vocabulary<String> {
@@ -122,13 +85,13 @@ impl MetadataContainer {
         }
     }
 
-    pub fn set_meta_tag_for<L: Language>(&mut self, word_id: usize, tag: &str) {
-        self.get_or_init_meta::<L>(word_id).push_meta_tag(tag)
+    pub fn set_subject_for<L: Language>(&mut self, word_id: usize, tag: &str) {
+        self.get_or_init_meta::<L>(word_id).push_subject(tag)
     }
 
-    pub fn set_meta_tags_for<L: Language>(&mut self, word_id: usize, tags: &[impl AsRef<str>]) {
+    pub fn set_subjects_for<L: Language>(&mut self, word_id: usize, tags: &[impl AsRef<str>]) {
         for tag in tags {
-            self.set_meta_tag_for::<L>(word_id, tag.as_ref())
+            self.set_subject_for::<L>(word_id, tag.as_ref())
         }
     }
 
@@ -202,110 +165,14 @@ impl MetadataContainer {
     pub fn copy_keep_vocebulary(&self) -> Self {
         Self {
             dictionary_interner: self.dictionary_interner.clone(),
-            tag_interner: self.tag_interner.clone(),
+            subject_interner: self.subject_interner.clone(),
             unstemmed_voc: self.unstemmed_voc.clone(),
             meta_b: Default::default(),
             meta_a: Default::default(),
         }
     }
 
-
 }
-
-impl HasPickleSupport for MetadataContainer {
-    type FieldValue = MetadataContainerPyStateValues;
-    type Error = MetadataContainerFromPyStateError;
-
-    fn get_py_state(&self) -> HashMap<String, MetadataContainerPyStateValues> {
-        let mut result = HashMap::with_capacity(5);
-        result.insert("dictionary_interner".to_string(), InternerEntries(self.dictionary_interner.iter().map(|(k, v)| (k.to_usize(), v.to_string())).collect_vec()));
-        result.insert("tag_interner".to_string(), InternerEntries(self.tag_interner.iter().map(|(k, v)| (k.to_usize(), v.to_string())).collect_vec()));
-        result.insert("unstemmed_voc".to_string(), Voc(self.unstemmed_voc.get_py_state().into_iter().map(|(k, v)| (k, v.into())).collect()));
-        result.insert("meta_a".to_string(), Meta(self.meta_a.iter().map(|value| value.get_py_state()).collect_vec()));
-        result.insert("meta_b".to_string(), Meta(self.meta_b.iter().map(|value| value.get_py_state()).collect_vec()));
-        return result
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
-        let dictionary_interner = match values.get("dictionary_interner") {
-            None => {None}
-            Some(InternerEntries(value)) => {
-                let interner: DefaultStringInterner = value.iter().map(|value| &value.1).collect();
-                for (a, b) in value {
-                    assert_eq!(
-                        interner.get(b),
-                        DefaultSymbol::try_from_usize(*a)
-                    );
-                }
-                Some(interner)
-            }
-            Some(illegal_value) => {
-                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("dictionary_interner", illegal_value.clone()))
-            }
-        };
-
-        let tag_interner = match values.get("tag_interner") {
-            None => {None}
-            Some(InternerEntries(value)) => {
-                let interner: DefaultStringInterner = value.iter().map(|value| &value.1).collect();
-                for (a, b) in value {
-                    assert_eq!(
-                        interner.get(b),
-                        DefaultSymbol::try_from_usize(*a)
-                    );
-                }
-                Some(interner)
-            }
-            Some(illegal_value) => {
-                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("tag_interner", illegal_value.clone()))
-            }
-        };
-
-        let unstemmed_voc = match values.get("unstemmed_voc") {
-            None => {None}
-            Some(Voc(value)) => {
-                let converted = value.iter().map(|(k,v)| (k.clone(), v.clone().into())).collect();
-                Some(Vocabulary::from_py_state(&converted)?)
-            }
-            Some(illegal_value) => {
-                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("unstemmed_voc", illegal_value.clone()))
-            }
-        };
-
-        let meta_a = match values.get("meta_a") {
-            None => {None}
-            Some(Meta(value)) => {
-                let found = value.iter().map(|value| Metadata::from_py_state(value)).collect::<Result<Vec<_>, _>>()?;
-                Some(found)
-            }
-            Some(illegal_value) => {
-                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("meta_a", illegal_value.clone()))
-            }
-        };
-
-        let meta_b = match values.get("meta_b") {
-            None => {None}
-            Some(Meta(value)) => {
-                let found = value.iter().map(|value| Metadata::from_py_state(value)).collect::<Result<Vec<_>, _>>()?;
-                Some(found)
-            }
-            Some(illegal_value) => {
-                return Err(MetadataContainerFromPyStateError::InvalidValueEncountered("meta_b", illegal_value.clone()))
-            }
-        };
-
-        Ok(
-            Self {
-                dictionary_interner: dictionary_interner.unwrap_or_default(),
-                tag_interner: tag_interner.unwrap_or_default(),
-                unstemmed_voc: unstemmed_voc.unwrap_or_default(),
-                meta_a: meta_a.unwrap_or_default(),
-                meta_b: meta_b.unwrap_or_default(),
-            }
-        )
-    }
-}
-
 
 impl Clone for MetadataContainer {
     fn clone(&self) -> Self {
@@ -313,7 +180,7 @@ impl Clone for MetadataContainer {
             meta_a: self.meta_a.clone(),
             meta_b: self.meta_b.clone(),
             dictionary_interner: self.dictionary_interner.clone(),
-            tag_interner: self.tag_interner.clone(),
+            subject_interner: self.subject_interner.clone(),
             unstemmed_voc: self.unstemmed_voc.clone(),
         }
     }
@@ -520,97 +387,17 @@ impl IntoPy<PyObject> for MetadataPyStateValues {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+/// The container for the metadata
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Eq)]
 pub struct Metadata {
     #[serde(with = "metadata_interned_field_serializer")]
-    pub associated_dictionaries: OnceCell<Vec<InternedString>>,
+    pub associated_dictionaries: OnceLock<Vec<InternedString>>,
     #[serde(with = "metadata_interned_field_serializer")]
-    pub meta_tags: OnceCell<Vec<InternedString>>,
+    #[serde(alias = "meta_tags")]
+    pub subjects: OnceLock<Vec<InternedString>>,
     #[serde(with = "metadata_unstemmed_serializer")]
-    pub unstemmed: OnceCell<HashMap<usize, Vec<InternedString>>>,
+    pub unstemmed: OnceLock<HashMap<usize, Vec<InternedString>>>,
 }
-
-#[derive(Debug, Error)]
-pub enum MetadataFromPyStateError {
-    #[error("Was not able to decode {0} to a symbol!")]
-    UnableToDecodeDefaultSymbol(usize),
-    #[error("Invalid value at {0} for {1:?}!")]
-    InvalidValueEncountered(&'static str, MetadataPyStateValues)
-}
-
-impl HasPickleSupport for Metadata {
-    type FieldValue = MetadataPyStateValues;
-    type Error = MetadataFromPyStateError;
-
-    fn get_py_state(&self) -> HashMap<String, MetadataPyStateValues> {
-        let mut result = HashMap::with_capacity(3);
-        if let Some(associated_dictionaries) = self.associated_dictionaries.get() {
-            result.insert("associated_dictionaries".to_string(), InternedVec(associated_dictionaries.iter().map(|value| value.to_usize()).collect_vec()));
-        }
-        if let Some(meta_tags) = self.meta_tags.get() {
-            result.insert("meta_tags".to_string(), InternedVec(meta_tags.iter().map(|value| value.to_usize()).collect_vec()));
-        }
-
-        if let Some(unstemmed) = self.unstemmed.get() {
-            result.insert(
-                "unstemmed".to_string(),
-                UnstemmedMapping(
-                    unstemmed
-                        .iter()
-                        .map(|(k, v)| (*k, v.iter().map(|value| value.to_usize()).collect_vec()))
-                        .collect()
-                )
-            );
-        }
-
-        result
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
-        let meta = Metadata::default();
-        match values.get("associated_dictionaries") {
-            None => {}
-            Some(InternedVec(value)) => {
-                let symbols = value.iter().map(|value| DefaultSymbol::try_from_usize(*value).ok_or_else(|| UnableToDecodeDefaultSymbol(*value))).collect::<Result<Vec<DefaultSymbol>, _>>()?;
-                meta.associated_dictionaries.set(symbols).expect("The associated dictionary was already set!");
-            }
-            Some(illegal) => {
-                return Err(InvalidValueEncountered("associated_dictionaries", illegal.clone()))
-            }
-        }
-
-        match values.get("meta_tags") {
-            None => {}
-            Some(InternedVec(value)) => {
-                let symbols = value.iter().map(|value| DefaultSymbol::try_from_usize(*value).ok_or_else(|| UnableToDecodeDefaultSymbol(*value))).collect::<Result<Vec<DefaultSymbol>, _>>()?;
-                meta.meta_tags.set(symbols).expect("The meta tags was already set!");
-            }
-            Some(illegal) => {
-                return Err(InvalidValueEncountered("meta_tags", illegal.clone()))
-            }
-        }
-
-        match values.get("unstemmed") {
-            None => {}
-            Some(UnstemmedMapping(value)) => {
-                let symbols = value.iter().map(
-                    |(k, v)| {
-                        let inner = v.iter().map(|value| DefaultSymbol::try_from_usize(*value).ok_or_else(|| UnableToDecodeDefaultSymbol(*value))).collect::<Result<Vec<_>, _>>();
-                        inner.map(|value| (*k, value))
-                    }
-                ).collect::<Result<HashMap<_, Vec<_>>, _>>()?;
-                meta.unstemmed.set(symbols).expect("The unstemmed was already set!");
-            }
-            Some(illegal) => {
-                return Err(InvalidValueEncountered("unstemmed", illegal.clone()))
-            }
-        }
-
-        Ok(meta)
-    }
-}
-
-
 
 macro_rules! create_methods {
     ($($self: ident.$target:ident($_type: ty) || $single_target: ident),+) => {
@@ -653,7 +440,7 @@ macro_rules! create_methods {
 impl Metadata {
     create_methods! {
         self.associated_dictionaries(InternedString) || associated_dictionary,
-        self.meta_tags(InternedString) || meta_tag
+        self.subjects(InternedString) || subject
     }
 
 
@@ -774,7 +561,49 @@ impl Metadata {
     }
 }
 
+impl PartialEq for Metadata {
+    fn eq(&self, other: &Self) -> bool {
+        if let Some(associated_dictionaries) = self.associated_dictionaries.get() {
+            if let Some(other_associated_dictionaries) = other.associated_dictionaries.get() {
+                if associated_dictionaries != other_associated_dictionaries {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else if other.associated_dictionaries.get().is_some() {
+            return false;
+        }
 
+        if let Some(subjectsgs) = self.subjects.get() {
+            if let Some(other_subjects) = other.subjects.get() {
+                if subjectsgs != other_subjects {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else if other.subjects.get().is_some() {
+            return false;
+        }
+
+        if let Some(unstemmed) = self.unstemmed.get() {
+            if let Some(other_unstemmed) = other.unstemmed.get() {
+                if unstemmed != other_unstemmed {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else if other.unstemmed.get().is_some() {
+            return false;
+        }
+
+        return true;
+    }
+}
+
+/// Helper for SymbolU32 serialisation
 struct SymbolU32Visitor;
 
 impl<'de> Visitor<'de> for SymbolU32Visitor {
@@ -799,10 +628,12 @@ impl<'de> Visitor<'de> for SymbolU32Visitor {
     }
 }
 
+/// Converter for a vec filled with [DefaultSymbol]
 fn convert_vec_defaultsymbol(value: &Vec<DefaultSymbol>) -> Vec<usize> {
     value.iter().map(|value| value.to_usize()).collect_vec()
 }
 
+/// The inverse of [convert_vec_defaultsymbol]
 fn convert_vec_usize<'de, D>(value: Vec<usize>) -> Result<Vec<DefaultSymbol>, D::Error> where D: Deserializer<'de>  {
     value.into_iter().map(|value|
         DefaultSymbol::try_from_usize(value)
@@ -816,23 +647,23 @@ fn convert_vec_usize<'de, D>(value: Vec<usize>) -> Result<Vec<DefaultSymbol>, D:
 }
 
 mod metadata_interned_field_serializer {
-    use once_cell::sync::OnceCell;
+    use std::sync::OnceLock;
     use serde::{Deserializer, Serialize, Serializer};
     use string_interner::{DefaultSymbol};
-    use crate::toolkit::once_cell_serializer::{DeserializeOnceCell, SerializeOnceCell};
+    use crate::toolkit::once_lock_serializer::{DeserializeOnceLock, SerializeOnceLock};
     use crate::topicmodel::dictionary::metadata::{convert_vec_defaultsymbol, convert_vec_usize};
 
-    pub(crate) fn serialize<S>(target: &OnceCell<Vec<DefaultSymbol>>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    pub(crate) fn serialize<S>(target: &OnceLock<Vec<DefaultSymbol>>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         let to_ser = if let Some(value) = target.get() {
-            SerializeOnceCell::InitializedOwned(convert_vec_defaultsymbol(value))
+            SerializeOnceLock::InitializedOwned(convert_vec_defaultsymbol(value))
         } else {
-            SerializeOnceCell::Uninitialized
+            SerializeOnceLock::Uninitialized
         };
         to_ser.serialize(serializer)
     }
 
-    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<OnceCell<Vec<DefaultSymbol>>, D::Error> where D: Deserializer<'de> {
-        let content: DeserializeOnceCell<Vec<usize>> = serde::de::Deserialize::deserialize(deserializer)?;
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<OnceLock<Vec<DefaultSymbol>>, D::Error> where D: Deserializer<'de> {
+        let content: DeserializeOnceLock<Vec<usize>> = serde::de::Deserialize::deserialize(deserializer)?;
         Ok(
             content.map(convert_vec_usize::<D>).transpose()?.into()
         )
@@ -841,28 +672,28 @@ mod metadata_interned_field_serializer {
 
 mod metadata_unstemmed_serializer {
     use std::collections::HashMap;
-    use once_cell::sync::OnceCell;
-    use serde::{Deserializer, Serialize, Serializer};
+    use std::sync::OnceLock;
+    use serde::{Deserializer, Serializer, Serialize};
     use string_interner::{DefaultSymbol};
-    use crate::toolkit::once_cell_serializer::{DeserializeOnceCell, SerializeOnceCell};
+    use crate::toolkit::once_lock_serializer::{DeserializeOnceLock, SerializeOnceLock};
     use crate::topicmodel::dictionary::metadata::{convert_vec_defaultsymbol, convert_vec_usize};
 
-    pub(crate) fn serialize<S>(target: &OnceCell<HashMap<usize, Vec<DefaultSymbol>>>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    pub(crate) fn serialize<S>(target: &OnceLock<HashMap<usize, Vec<DefaultSymbol>>>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         let to_ser = if let Some(value) = target.get() {
-            SerializeOnceCell::InitializedOwned(
+            SerializeOnceLock::InitializedOwned(
                 value
                     .iter()
                     .map(|(k, v)| (*k, convert_vec_defaultsymbol(v)))
                     .collect::<HashMap<_, _>>()
             )
         } else {
-            SerializeOnceCell::Uninitialized
+            SerializeOnceLock::Uninitialized
         };
         to_ser.serialize(serializer)
     }
 
-    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<OnceCell<HashMap<usize, Vec<DefaultSymbol>>>, D::Error> where D: Deserializer<'de> {
-        let content: DeserializeOnceCell<HashMap<usize, Vec<usize>>> = serde::de::Deserialize::deserialize(deserializer)?;
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<OnceLock<HashMap<usize, Vec<DefaultSymbol>>>, D::Error> where D: Deserializer<'de> {
+        let content: DeserializeOnceLock<HashMap<usize, Vec<usize>>> = serde::de::Deserialize::deserialize(deserializer)?;
         let value = content.map(|value| {
             value.into_iter().map(|(k, v)|
                 match convert_vec_usize::<D>(v) {
@@ -906,10 +737,10 @@ impl<'a> MetadataMutRef<'a> {
         return interned;
     }
 
-    pub fn push_meta_tag(&mut self, tag: impl AsRef<str>) {
+    pub fn push_subject(&mut self, tag: impl AsRef<str>) {
         let interned = unsafe{&mut *self.metadata_ref }.get_tag_interner_mut().get_or_intern(tag);
         unsafe {
-            self.meta.add_meta_tag(interned);
+            self.meta.add_subject(interned);
         }
     }
 
@@ -947,13 +778,19 @@ impl<'a> MetadataMutRef<'a> {
     }
 }
 
-
-#[derive(Debug, Clone)]
+/// A completely memory save copy of some [Metadata]
+#[derive(Debug, Clone, Eq, PartialEq)]
 #[pyclass]
 pub struct SolvedMetadata {
     associated_dictionaries: Option<Vec<String>>,
-    meta_tags: Option<Vec<String>>,
-    unstemmed: Option<Vec<(String, Vec<String>)>>
+    subjects: Option<Vec<String>>,
+    unstemmed: Option<HashMap<String, Vec<String>>>
+}
+
+impl SolvedMetadata {
+    pub fn new(associated_dictionaries: Option<Vec<String>>, subjects: Option<Vec<String>>, unstemmed: Option<HashMap<String, Vec<String>>>) -> Self {
+        Self { associated_dictionaries, subjects, unstemmed }
+    }
 }
 
 #[pymethods]
@@ -964,12 +801,12 @@ impl SolvedMetadata {
     }
 
     #[getter]
-    pub fn meta_tags(&self) -> Option<Vec<String>> {
-        self.meta_tags.clone()
+    pub fn subjects(&self) -> Option<Vec<String>> {
+        self.subjects.clone()
     }
 
     #[getter]
-    pub fn unstemmed(&self) -> Option<Vec<(String, Vec<String>)>> {
+    pub fn unstemmed(&self) -> Option<HashMap<String, Vec<String>>> {
         self.unstemmed.clone()
     }
 
@@ -993,22 +830,22 @@ impl Display for SolvedMetadata {
                 write!(f, "associated_dictionaries=[{}], ", value.join(", "))
             }
         }?;
-        match &self.meta_tags {
+        match &self.subjects {
             None => {
-                write!(f, "meta_tags=[]")
+                write!(f, "subjects=[]")
             }
             Some(value) => {
-                write!(f, "meta_tags=[{}]", value.join(", "))
+                write!(f, "subjects=[{}]", value.join(", "))
             }
         }?;
         match &self.unstemmed {
             None => {
-                write!(f, "unstemmed=[]")
+                write!(f, ", unstemmed=[]")
             }
             Some(value) => {
                 write!(
                     f,
-                    "unstemmed=[{}]",
+                    ", unstemmed=[{}]",
                     value.iter().map(|(k, v)| {
                         format!("({k}, {{{}}})", v.iter().join(", "))
                     }).join(", "))
@@ -1018,12 +855,28 @@ impl Display for SolvedMetadata {
     }
 }
 
+impl<'a> From<MetadataRef<'a>> for SolvedMetadata {
+    fn from(value: MetadataRef<'a>) -> Self {
+        let associated_dictionaries: Option<Vec<String>> = value.associated_dictionaries().map(|value| value.iter().map(|value| value.to_string()).collect());
+        let subjects: Option<Vec<String>> = value.subjects().map(|value| value.iter().map(|value| value.to_string()).collect());
+        let unstemmed: Option<HashMap<String, Vec<String>>> = value.unstemmed().map(|value| value.iter().map(|(a, b)| (a.to_string(), b.iter().map(|v|v.to_string()).collect_vec())).collect());
+        SolvedMetadata::new(
+            associated_dictionaries,
+            subjects,
+            unstemmed
+        )
+    }
+}
+
+
+/// Internally used for associating the [MetadataContainer] with the [Metadata].
+/// Stores the resolved values instead of the memory saving versions.
 pub struct MetadataRef<'a> {
     pub(in super) raw: &'a Metadata,
     pub(in super) metadata_container: &'a MetadataContainer,
-    pub(in super) associated_dictionary_cached: Arc<OnceCell<Vec<&'a str>>>,
-    pub(in super) meta_tags_cached: Arc<OnceCell<Vec<&'a str>>>,
-    pub(in super) unstemmed_cached: Arc<OnceCell<Vec<(&'a str, Vec<&'a str>)>>>,
+    pub(in super) associated_dictionary_cached: Arc<OnceLock<Vec<&'a str>>>,
+    pub(in super) subjects_cached: Arc<OnceLock<Vec<&'a str>>>,
+    pub(in super) unstemmed_cached: Arc<OnceLock<Vec<(&'a str, Vec<&'a str>)>>>,
 }
 
 impl<'a> MetadataRef<'a> {
@@ -1033,7 +886,7 @@ impl<'a> MetadataRef<'a> {
             raw,
             metadata_container,
             associated_dictionary_cached: Default::default(),
-            meta_tags_cached: Default::default(),
+            subjects_cached: Default::default(),
             unstemmed_cached: Default::default()
         }
     }
@@ -1046,8 +899,8 @@ impl<'a> MetadataRef<'a> {
         self.metadata_container.get_dictionary_interner().get(q).is_some_and(|value| self.raw.has_associated_dictionary(value))
     }
 
-    pub fn has_meta_tag(&self, q: impl AsRef<str>) -> bool {
-        self.metadata_container.get_tag_interner().get(q).is_some_and(|value| self.raw.has_meta_tag(value))
+    pub fn has_subject(&self, q: impl AsRef<str>) -> bool {
+        self.metadata_container.get_subject_interner().get(q).is_some_and(|value| self.raw.has_subject(value))
     }
 
     pub fn associated_dictionaries(&self) -> Option<&Vec<&'a str>> {
@@ -1068,18 +921,18 @@ impl<'a> MetadataRef<'a> {
         }
     }
 
-    pub fn meta_tags(&self) -> Option<&Vec<&'a str>> {
-        if let Some(found) = self.meta_tags_cached.get() {
+    pub fn subjects(&self) -> Option<&Vec<&'a str>> {
+        if let Some(found) = self.subjects_cached.get() {
             Some(found)
         } else {
-            if let Some(inner) = self.raw.meta_tags.get() {
-                let interner = self.metadata_container.get_tag_interner();
-                self.meta_tags_cached.set(
+            if let Some(inner) = self.raw.subjects.get() {
+                let interner = self.metadata_container.get_subject_interner();
+                self.subjects_cached.set(
                     inner.iter().map(|value| {
                         interner.resolve(value.clone()).expect("This should be known!")
                     }).collect()
                 ).unwrap();
-                self.meta_tags_cached.get()
+                self.subjects_cached.get()
             } else {
                 None
             }
@@ -1102,28 +955,18 @@ impl<'a> MetadataRef<'a> {
         }
     }
 
-    pub fn clone_metadata(self) -> Metadata {
+    pub fn cloned_metadata(self) -> Metadata {
         self.raw.clone()
     }
-
-    pub fn to_solved_metadata(self) -> SolvedMetadata {
-        let associated_dictionaries: Option<Vec<String>> = self.associated_dictionaries().map(|value| value.iter().map(|value| value.to_string()).collect());
-        let meta_tags: Option<Vec<String>> = self.meta_tags().map(|value| value.iter().map(|value| value.to_string()).collect());
-        let unstemmed = self.unstemmed().map(|value| value.iter().map(|(a, b)| (a.to_string(), b.iter().map(|v|v.to_string()).collect_vec())).collect_vec());
-        SolvedMetadata {
-            associated_dictionaries,
-            meta_tags,
-            unstemmed
-        }
-    }
 }
+
 
 impl Debug for MetadataRef<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MetadataRef")
             .field("inner", self.raw)
             .field("associated_dictionary_cached", &self.associated_dictionary_cached.get())
-            .field("meta_tags_cached", &self.meta_tags_cached.get())
+            .field("meta_tags_cached", &self.subjects_cached.get())
             .field("unstemmed_cached", &self.unstemmed_cached.get())
             .finish_non_exhaustive()
     }
@@ -1135,7 +978,7 @@ impl<'a> Clone for MetadataRef<'a> {
             raw: self.raw,
             metadata_container: self.metadata_container,
             associated_dictionary_cached: self.associated_dictionary_cached.clone(),
-            meta_tags_cached: self.meta_tags_cached.clone(),
+            subjects_cached: self.subjects_cached.clone(),
             unstemmed_cached: self.unstemmed_cached.clone()
         }
     }
@@ -1152,7 +995,7 @@ impl Display for MetadataRef<'_> {
             }
         };
 
-        let b = match self.meta_tags() {
+        let b = match self.subjects() {
             None => {
                 "None".to_string()
             }
@@ -1182,25 +1025,34 @@ pub(crate) fn register_py_metadata(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
     use crate::topicmodel::dictionary::direction::{A, B};
-    use crate::topicmodel::dictionary::metadata::{MetadataContainer};
+    use crate::topicmodel::dictionary::metadata::{MetadataContainer, SolvedMetadata};
 
     #[test]
     fn test_if_it_works(){
-        let mut value = MetadataContainer::new();
-        value.set_dictionary_for::<A>(0, "dict0");
-        value.set_dictionary_for::<B>(0, "dict3");
-        value.set_unstemmed_word_for::<A>(0, "test_word");
-        value.set_unstemmed_word_origin::<A>(0, "test_word", "dict1");
-        value.set_meta_tag_for::<A>(0, "geo");
-        println!("{}", value.get_meta_ref::<A>(0).unwrap());
-        println!("{}", value.get_meta_ref::<B>(0).unwrap());
+        let mut container = MetadataContainer::new();
+        container.set_dictionary_for::<A>(0, "dict0");
+        container.set_dictionary_for::<B>(0, "dict3");
+        container.set_unstemmed_word_for::<A>(0, "test_word");
+        container.set_unstemmed_word_origin::<A>(0, "test_word", "dict1");
+        container.set_subject_for::<A>(0, "geo");
+        let data_a = container.get_meta_ref::<A>(0).expect("There sould be something!");
+        assert_eq!(SolvedMetadata::new(
+            Some(vec!["dict0".to_string(), "dict1".to_string()]),
+            Some(vec!["geo".to_string()]),
+            Some(HashMap::from([("test_word".to_string(), vec!["dict1".to_string()])]))
+        ) , SolvedMetadata::from(data_a));
 
-        let x = serde_json::to_string(&value).unwrap();
-        println!("{x}");
+        let data_b = container.get_meta_ref::<B>(0).expect("There sould be something!");
+        assert_eq!(SolvedMetadata::new(
+            Some(vec!["dict3".to_string()]),
+            None,
+            None
+        ) , SolvedMetadata::from(data_b));
 
+        let x = serde_json::to_string(&container).unwrap();
         let k: MetadataContainer = serde_json::from_str(&x).unwrap();
-        println!("{}", k.get_meta_ref::<A>(0).unwrap());
-        println!("{}", k.get_meta_ref::<B>(0).unwrap());
+        assert_eq!(container, k);
     }
 }

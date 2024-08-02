@@ -5,22 +5,17 @@ pub mod direction;
 pub mod iterators;
 
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use itertools::{Itertools, Position};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use crate::py::helpers::{HasPickleSupport, PyDictionaryStateValue};
-use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::DictionaryFromPyStateError::InvalidValueEncountered;
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{MappableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter, DictIterImpl, DictLangIter};
 
-use crate::topicmodel::dictionary::metadata::{MetadataContainer, MetadataContainerFromPyStateError, MetadataContainerPyStateValues, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataRef, SolvedMetadata};
+use crate::topicmodel::dictionary::metadata::{MetadataContainer, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataRef, SolvedMetadata};
 use crate::topicmodel::language_hint::LanguageHint;#[macro_export]
 
 macro_rules! dict_insert {
@@ -63,58 +58,6 @@ macro_rules! dict {
                 $crate::dict_insert!(__dict, $a $op $b);
             )+
             __dict
-        }
-    }
-
-
-}
-
-
-#[derive(Debug, Error)]
-pub enum DictionaryFromPyStateError<V> where V: HasPickleSupport {
-    #[error(transparent)]
-    VocabularyError(V::Error),
-    #[error(transparent)]
-    MetadataError(#[from] MetadataContainerFromPyStateError),
-    #[error("Invalid value at {0} for {1:?}!")]
-    InvalidValueEncountered(&'static str, DictionaryPyStateValue<V>),
-}
-
-#[derive(Debug)]
-pub enum DictionaryPyStateValue<V> where V: HasPickleSupport {
-    Voc(HashMap<String, V::FieldValue>),
-    Mapping(Vec<Vec<usize>>),
-    Meta(HashMap<String, MetadataContainerPyStateValues>)
-}
-
-impl From<PyDictionaryStateValue> for DictionaryPyStateValue<PyVocabulary> {
-    fn from(value: PyDictionaryStateValue) -> Self {
-        match value {
-            PyDictionaryStateValue::Voc(value) => {
-                DictionaryPyStateValue::Voc(value)
-            }
-            PyDictionaryStateValue::Mapping(value) => {
-                DictionaryPyStateValue::Mapping(value)
-            }
-            PyDictionaryStateValue::Meta(value) => {
-                DictionaryPyStateValue::Meta(value)
-            }
-        }
-    }
-}
-
-impl<V> Clone for DictionaryPyStateValue<V> where V: HasPickleSupport {
-    fn clone(&self) -> Self {
-        match self {
-            DictionaryPyStateValue::Voc(value) => {
-                DictionaryPyStateValue::Voc(value.clone())
-            }
-            DictionaryPyStateValue::Mapping(value) => {
-                DictionaryPyStateValue::Mapping(value.clone())
-            }
-            DictionaryPyStateValue::Meta(value) => {
-                DictionaryPyStateValue::Meta(value.clone())
-            }
         }
     }
 }
@@ -696,74 +639,6 @@ impl<T: Display, V: BasicVocabulary<T>> Display for Dictionary<T, V> {
 }
 
 
-impl<T, V> HasPickleSupport for Dictionary<T, V> where V: HasPickleSupport + Default + Debug {
-    type FieldValue = DictionaryPyStateValue<V>;
-    type Error = DictionaryFromPyStateError<V>;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut result = HashMap::with_capacity(4);
-        result.insert("voc_a".to_string(), DictionaryPyStateValue::Voc(self.voc_a().get_py_state()));
-        result.insert("voc_b".to_string(), DictionaryPyStateValue::Voc(self.voc_b().get_py_state()));
-        result.insert("map_a_to_b".to_string(), DictionaryPyStateValue::Mapping(self.map_a_to_b().clone()));
-        result.insert("map_b_to_a".to_string(), DictionaryPyStateValue::Mapping(self.map_b_to_a().clone()));
-        return result
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error>  where Self: Sized {
-        let voc_a = match values.get("voc_a") {
-            None => {None}
-            Some(DictionaryPyStateValue::Voc(voc)) => {
-                Some(V::from_py_state(voc).map_err(DictionaryFromPyStateError::VocabularyError)?)
-            }
-            Some(illegal_value) => {
-                return Err(InvalidValueEncountered("voc_a", illegal_value.clone()))
-            }
-        };
-
-        let voc_b = match values.get("voc_b") {
-            None => {None}
-            Some(DictionaryPyStateValue::Voc(voc)) => {
-                Some(V::from_py_state(voc).map_err(DictionaryFromPyStateError::VocabularyError)?)
-            }
-            Some(illegal_value) => {
-                return Err(InvalidValueEncountered("voc_b", illegal_value.clone()))
-            }
-        };
-
-        let map_a_to_b = match values.get("map_a_to_b") {
-            None => {None}
-            Some(DictionaryPyStateValue::Mapping(voc)) => {
-                Some(voc.clone())
-            }
-            Some(illegal_value) => {
-                return Err(InvalidValueEncountered("map_a_to_b", illegal_value.clone()))
-            }
-        };
-
-        let map_b_to_a = match values.get("map_b_to_a") {
-            None => {None}
-            Some(DictionaryPyStateValue::Mapping(voc)) => {
-                Some(voc.clone())
-            }
-            Some(illegal_value) => {
-                return Err(InvalidValueEncountered("map_b_to_a", illegal_value.clone()))
-            }
-        };
-
-        Ok(
-            Self {
-                voc_a: voc_a.unwrap_or_default(),
-                voc_b: voc_b.unwrap_or_default(),
-                map_a_to_b: map_a_to_b.unwrap_or_default(),
-                map_b_to_a: map_b_to_a.unwrap_or_default(),
-                _word_type: PhantomData
-            }
-        )
-    }
-}
-
-
-
 pub trait BasicDictionaryWithMeta: BasicDictionary {
     fn metadata(&self) -> &MetadataContainer;
     fn metadata_mut(&mut self) -> &mut MetadataContainer;
@@ -834,8 +709,8 @@ impl<T, V> DictionaryWithMeta<T, V> {
         self.metadata.dictionary_interner.iter().map(|value| value.1).collect_vec()
     }
 
-    pub fn tags(&self) -> Vec<&str> {
-        self.metadata.tag_interner.iter().map(|value| value.1).collect_vec()
+    pub fn subjects(&self) -> Vec<&str> {
+        self.metadata.subject_interner.iter().map(|value| value.1).collect_vec()
     }
 
     pub fn unstemmed(&self) -> &Vocabulary<String> {
@@ -867,7 +742,7 @@ unsafe impl<T, V> Sync for DictionaryWithMeta<T, V>{}
 impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + From<Option<LanguageHint>>, T: Hash + Eq  {
 
     fn insert_meta_for_create_subset<'a, L: Language>(&mut self, word_id: usize, metadata_ref: MetadataRef<'a>) {
-        let tags = metadata_ref.raw.meta_tags.get();
+        let tags = metadata_ref.raw.subjects.get();
         let dics = metadata_ref.raw.associated_dictionaries.get();
         let unstemmed = metadata_ref.raw.unstemmed.get();
 
@@ -881,7 +756,7 @@ impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + From<Option<Lang
             unsafe { meta.add_all_associated_dictionaries(&dics) }
         }
         if let Some(tags) = tags {
-            unsafe { meta.add_all_meta_tags(&tags) }
+            unsafe { meta.add_all_subjects(&tags) }
         }
         if let Some(unstemmed) = unstemmed {
             meta.add_all_unstemmed(unstemmed)
@@ -1171,43 +1046,11 @@ impl<T, V> IntoIterator for DictionaryWithMeta<T, V> where V: BasicVocabulary<T>
     }
 }
 
-impl<T, V> HasPickleSupport for DictionaryWithMeta<T, V> where V: HasPickleSupport + Default + Debug {
-    type FieldValue = DictionaryPyStateValue<V>;
-    type Error = DictionaryFromPyStateError<V>;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut result = self.inner.get_py_state();
-        result.insert("metadata".to_string(), DictionaryPyStateValue::Meta(self.metadata.get_py_state()));
-        result.shrink_to_fit();
-        return result
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
-        let inner = Dictionary::from_py_state(values)?;
-
-        let metadata = match values.get("metadata") {
-            None => {None}
-            Some(DictionaryPyStateValue::Meta(metadata)) => {
-                Some(MetadataContainer::from_py_state(metadata)?)
-            }
-            Some(illegal_value) => {
-                return Err(InvalidValueEncountered("metadata", illegal_value.clone()))
-            }
-        };
-
-        Ok(
-            Self {
-                inner,
-                metadata: metadata.unwrap_or_default()
-            }
-        )
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
     use crate::topicmodel::dictionary::direction::{A, B, DirectionTuple, Invariant};
+    use crate::topicmodel::dictionary::metadata::SolvedMetadata;
     use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
 
     #[test]
@@ -1330,10 +1173,10 @@ mod test {
         for value in dict.iter_with_meta() {
             println!("{}", value.map(
                 |(id, meta)| {
-                    format!("'{}({id})': {}", dict.id_to_word::<A>(id).unwrap().to_string(), meta.map_or("NONE".to_string(), |value| value.to_solved_metadata().to_string()))
+                    format!("'{}({id})': {}", dict.id_to_word::<A>(id).unwrap().to_string(), meta.map_or("NONE".to_string(), |value| SolvedMetadata::from(value).to_string()))
                 },
                 |(id, meta)| {
-                    format!("'{}({id})': {}", dict.id_to_word::<B>(id).unwrap().to_string(), meta.map_or("NONE".to_string(), |value| value.to_solved_metadata().to_string()))
+                    format!("'{}({id})': {}", dict.id_to_word::<B>(id).unwrap().to_string(), meta.map_or("NONE".to_string(), |value| SolvedMetadata::from(value).to_string()))
                 }
             ))
         }

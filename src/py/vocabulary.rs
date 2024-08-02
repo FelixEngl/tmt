@@ -1,5 +1,4 @@
 use std::borrow::{Borrow};
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
@@ -13,7 +12,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::dictionary::{PyDictionary};
-use crate::py::helpers::{HasPickleSupport, LanguageHintValue, ListOrInt, PyVocabularyStateValue};
+use crate::py::helpers::{LanguageHintValue, ListOrInt};
 use crate::topicmodel::create_topic_model_specific_dictionary as create_topic_model_specific_dictionary_impl;
 use crate::topicmodel::language_hint::{LanguageHint, register_py_language_hint};
 use crate::topicmodel::reference::HashRef;
@@ -121,21 +120,6 @@ impl PyVocabulary {
         }
     }
 
-    fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
-        // We only tarn the output in the python API, is always none.
-        (None, None)
-    }
-
-    fn __getstate__(&self) -> HashMap<String, PyVocabularyStateValue> {
-        self.get_py_state()
-    }
-
-    fn __setstate__(&mut self, state: HashMap<String, PyVocabularyStateValue>) -> PyResult<()> {
-        let converted = state.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
-        self.inner = Vocabulary::from_py_state(&converted).map_err(|value| PyValueError::new_err(value.to_string()))?;
-        Ok(())
-    }
-
     fn to_json(&self) -> PyResult<String> {
         Ok(
             serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
@@ -161,25 +145,6 @@ impl DerefMut for PyVocabulary {
         &mut self.inner
     }
 }
-
-impl HasPickleSupport for PyVocabulary {
-    type FieldValue = PyVocabularyStateValue;
-    type Error = <Vocabulary::<String> as HasPickleSupport>::Error;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        self.inner.get_py_state().into_iter().map(|(k, v)| (k, v.into())).collect()
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
-        let value = values.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
-        Ok(
-            Self {
-                inner: Vocabulary::from_py_state(&value)?
-            }
-        )
-    }
-}
-
 
 
 impl BasicVocabulary<String> for PyVocabulary {
@@ -363,4 +328,17 @@ pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_py_language_hint(m)?;
     m.add_function(wrap_pyfunction!(create_topic_model_specific_dictionary, m)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+    use crate::py::dictionary::PyDictionary;
+    use crate::topicmodel::dictionary::BasicDictionary;
+
+    #[test]
+    fn load_test(){
+        let loaded = PyDictionary::load("E:\\git\\ptmt\\data\\experiment1\\my_dictionary.dict".parse::<PathBuf>().unwrap()).unwrap();
+        println!("{}", loaded.iter().count())
+    }
 }

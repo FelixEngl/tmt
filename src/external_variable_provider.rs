@@ -1,8 +1,7 @@
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, OnceLock};
 use evalexpr::{ContextWithMutableVariables, EvalexprError, Value};
-use once_cell::sync::{OnceCell};
 use thiserror::Error;
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::topic_model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
@@ -28,6 +27,7 @@ pub enum VariableProviderError {
 
 pub type VariableProviderResult<T> = Result<T, VariableProviderError>;
 
+#[allow(dead_code)]
 pub trait VariableProviderOut: Sync + Send {
     fn provide_global(&self, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
     fn provide_for_topic(&self, topic_id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
@@ -95,12 +95,12 @@ pub struct InnerVariableProvider {
     topic_count: usize,
     word_count_a: usize,
     word_count_b: usize,
-    global: OnceCell<GlobalVariableProvider>,
-    per_topic: OnceCell<IdBasedVariableProvider<Topics>>,
-    per_word_a: OnceCell<IdBasedVariableProvider<Words>>,
-    per_word_b: OnceCell<IdBasedVariableProvider<Words>>,
-    per_topic_per_word_a: OnceCell<TopicWiseWordVariableProvider>,
-    per_topic_per_word_b: OnceCell<TopicWiseWordVariableProvider>
+    global: OnceLock<GlobalVariableProvider>,
+    per_topic: OnceLock<IdBasedVariableProvider<Topics>>,
+    per_word_a: OnceLock<IdBasedVariableProvider<Words>>,
+    per_word_b: OnceLock<IdBasedVariableProvider<Words>>,
+    per_topic_per_word_a: OnceLock<TopicWiseWordVariableProvider>,
+    per_topic_per_word_b: OnceLock<TopicWiseWordVariableProvider>
 }
 
 unsafe impl Send for InnerVariableProvider{}
@@ -112,12 +112,12 @@ impl InnerVariableProvider {
             topic_count,
             word_count_a,
             word_count_b,
-            global: OnceCell::new(),
-            per_topic: OnceCell::new(),
-            per_word_a: OnceCell::new(),
-            per_word_b: OnceCell::new(),
-            per_topic_per_word_a: OnceCell::new(),
-            per_topic_per_word_b: OnceCell::new()
+            global: OnceLock::new(),
+            per_topic: OnceLock::new(),
+            per_word_a: OnceLock::new(),
+            per_word_b: OnceLock::new(),
+            per_topic_per_word_a: OnceLock::new(),
+            per_topic_per_word_b: OnceLock::new()
         }
     }
 

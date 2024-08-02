@@ -8,7 +8,7 @@ use strum::EnumIs;
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
-use crate::topicmodel::dictionary::metadata::{MetadataRef, SolvedMetadata};
+use crate::topicmodel::dictionary::metadata::{SolvedMetadata};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::BasicVocabulary;
 
@@ -271,11 +271,11 @@ impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDic
         Some(
             next.map(
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(MetadataRef::to_solved_metadata);
+                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(SolvedMetadata::from);
                     (id, href, value)
                 },
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(MetadataRef::to_solved_metadata);
+                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(SolvedMetadata::from);
                     (id, href, value)
                 }
             )

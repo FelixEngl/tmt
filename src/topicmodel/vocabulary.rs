@@ -20,7 +20,6 @@ use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};
 use thiserror::Error;
 use trie_rs::map::{Trie, TrieBuilder};
-use crate::py::helpers::{HasPickleSupport, PyVocabularyStateValue};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::traits::ToParseableString;
@@ -291,64 +290,6 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
 
 }
 
-#[derive(Debug, Clone)]
-pub enum VocabularyPyStateValue<T> {
-    Hint(String),
-    Value(Vec<T>)
-}
-
-impl From<PyVocabularyStateValue> for VocabularyPyStateValue<String> {
-    fn from(value: PyVocabularyStateValue) -> Self {
-        match value {
-            PyVocabularyStateValue::Hint(value) => {
-                VocabularyPyStateValue::Hint(value)
-            }
-            PyVocabularyStateValue::Value(value) => {
-                VocabularyPyStateValue::Value(value)
-            }
-        }
-    }
-}
-
-
-#[derive(Debug, Error)]
-#[error("Invalid value at {0} for {1:?}!")]
-pub struct VocabularyFromPyStateError<T>(&'static str, VocabularyPyStateValue<T>);
-
-impl<T> HasPickleSupport for Vocabulary<T> where T: Clone + Hash + Eq + Debug {
-    type FieldValue = VocabularyPyStateValue<T>;
-    type Error = VocabularyFromPyStateError<T>;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut result = HashMap::with_capacity(1);
-        if let Some(lang) = &self.language {
-            result.insert("language".to_string(), VocabularyPyStateValue::Hint(lang.to_string()));
-        }
-        result.insert("id2value".to_string(), VocabularyPyStateValue::Value(self.id2entry.iter().map(|value| value.as_ref().clone()).collect()));
-        return result
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
-        let hint = match values.get("language") {
-            None => {None}
-            Some(VocabularyPyStateValue::Hint(lang)) => {
-                Some(LanguageHint::new(lang))
-            }
-            Some(other) => {
-                return Err(VocabularyFromPyStateError("language", other.clone()))
-            }
-        };
-        match values.get("id2value") {
-            None => {Ok(Vocabulary::create(hint))}
-            Some(VocabularyPyStateValue::Value(value)) => {
-                Ok(Vocabulary::create_from(hint, value.iter().cloned().collect_vec()))
-            }
-            Some(other) => {
-                Err(VocabularyFromPyStateError("id2value", other.clone()))
-            }
-        }
-    }
-}
 
 impl<T> Default for Vocabulary<T> {
     fn default() -> Self {
