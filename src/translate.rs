@@ -203,13 +203,6 @@ struct DummyAsVariableProvider<T> {
     _phantom: PhantomData<T>
 }
 
-// impl<T> DummyAsVariableProvider<T> {
-//     pub fn new() -> Self {
-//         Self { _phantom: PhantomData }
-//     }
-// }
-
-
 impl<T> AsVariableProvider<T> for DummyAsVariableProvider<T> {
     fn as_variable_provider_for<'a, Model, D, Voc>(&self, _: &'a Model, _: &'a D) -> Result<VariableProvider, AsVariableProviderError> where T: Hash + Eq + Ord + Clone, Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a, D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>, Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats {
         Err(AsVariableProviderError("Never callable!".to_string()))
@@ -846,7 +839,7 @@ pub(crate) mod test {
         let model_a = TopicModel::new(
             vec![
                 vec![0.019, 0.018, 0.012, 0.009, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008],
-                vec![0.02, 0.002, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001],
+                vec![0.002, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.02, 0.0001],
             ],
             voc_a,
             vec![10, 5, 8, 1, 2, 3, 1, 1, 1, 1, 2],
@@ -874,17 +867,6 @@ pub(crate) mod test {
             &config,
         ).unwrap();
 
-        // for (id, (candidate_id, candidate_prob, result), voters) in config.voting.spy_history().lock().unwrap().iter() {
-        //     println!("Topic: {id}");
-        //     println!("  Candidate: {candidate_id} ({candidate_prob})");
-        //     println!("  Result: {result:?}");
-        //     println!("  Voters:");
-        //     for (voter_id, voter_score) in voters {
-        //         println!("    {voter_id} ({voter_score})")
-        //     }
-        // }
-
-        // model_a.show_10().unwrap();
         model_b.show_10().unwrap();
     }
 }
