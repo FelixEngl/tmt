@@ -725,7 +725,6 @@ pub fn read_and_parse_aligned_articles_into(
     }).map(|(idx, value)| {
         match value {
             Ok(value) => {
-
                 fn save_plain(temp_folder: &Path, idx: usize, value: PyTokenizedAlignedArticle) -> Result<(usize, PathBuf), (usize, WriteIntoError)> {
                     let temp_file = temp_folder.join(format!("tmp_{idx}.json"));
                     match File::create_new(&temp_file) {
