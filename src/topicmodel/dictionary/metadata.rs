@@ -966,7 +966,7 @@ impl Debug for MetadataRef<'_> {
         f.debug_struct("MetadataRef")
             .field("inner", self.raw)
             .field("associated_dictionary_cached", &self.associated_dictionary_cached.get())
-            .field("meta_tags_cached", &self.subjects_cached.get())
+            .field("subjects_cached", &self.subjects_cached.get())
             .field("unstemmed_cached", &self.unstemmed_cached.get())
             .finish_non_exhaustive()
     }
