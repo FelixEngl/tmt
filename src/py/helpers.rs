@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::Debug;
@@ -10,13 +24,8 @@ use itertools::Itertools;
 use pyo3::{FromPyObject, IntoPy, PyAny, PyObject, Python};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use crate::py::vocabulary::PyVocabulary;
 use crate::py::voting::PyVoting;
-use crate::topicmodel::dictionary::metadata::MetadataContainerPyStateValues;
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::topic_model::meta::TopicMetaPyStateValue;
-use crate::topicmodel::topic_model::TopicModelPyStateValue;
-use crate::topicmodel::vocabulary::VocabularyPyStateValue;
 use crate::translate::KeepOriginalWord;
 use crate::voting::BuildInVoting;
 use crate::voting::py::PyVotingModel;
@@ -79,36 +88,6 @@ impl Into<LanguageHint> for LanguageHintValue {
 }
 
 
-
-#[derive(FromPyObject, Debug, Clone)]
-pub enum PyVocabularyStateValue {
-    Hint(String),
-    Value(Vec<String>)
-}
-
-impl IntoPy<PyObject> for PyVocabularyStateValue {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            PyVocabularyStateValue::Hint(value) => {value.into_py(py)}
-            PyVocabularyStateValue::Value(value) => {value.into_py(py)}
-        }
-    }
-}
-
-impl From<VocabularyPyStateValue<String>> for PyVocabularyStateValue {
-    fn from(value: VocabularyPyStateValue<String>) -> Self {
-        match value {
-            VocabularyPyStateValue::Hint(value) => {
-                PyVocabularyStateValue::Hint(value)
-            }
-            VocabularyPyStateValue::Value(value) => {
-                PyVocabularyStateValue::Value(value)
-            }
-        }
-    }
-}
-
-
 #[derive(FromPyObject, Debug)]
 pub enum KeepOriginalWordArg {
     String(String),
@@ -145,31 +124,6 @@ pub enum StrOrIntCatching<'a> {
 }
 
 
-
-#[derive(Debug, FromPyObject)]
-pub enum PyDictionaryStateValue {
-    Voc(HashMap<String, <PyVocabulary as HasPickleSupport>::FieldValue>),
-    Mapping(Vec<Vec<usize>>),
-    Meta(HashMap<String, MetadataContainerPyStateValues>)
-}
-
-impl IntoPy<PyObject> for PyDictionaryStateValue {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            PyDictionaryStateValue::Voc(value) => {
-                value.into_py(py)
-            }
-            PyDictionaryStateValue::Mapping(value) => {
-                value.into_py(py)
-            }
-            PyDictionaryStateValue::Meta(value) => {
-                value.into_py(py)
-            }
-        }
-    }
-}
-
-
 #[derive(Debug, Copy, Clone, FromPyObject, From, TryInto)]
 pub enum IntOrFloat {
     Int(usize),
@@ -194,66 +148,6 @@ impl IntoPy<PyObject> for IntOrFloat {
         }
     }
 }
-
-pub(crate) fn get_or_fail<T>(key: &'static str, values: &HashMap<String, IntOrFloat>) -> Result<T, IntOrFloatPyStatsError> where IntOrFloat: TryInto<T> {
-    match values.get(key) {
-        None => {
-            Err(IntOrFloatPyStatsError::ValueMissing(key))
-        }
-        Some(value) => {
-            value.clone().try_into().map_err(|_| IntOrFloatPyStatsError::InvalidValueEncountered(key, value.clone()))
-        }
-    }
-}
-
-
-#[derive(Debug, Clone, FromPyObject)]
-pub enum PyTopicModelStateValue {
-    Voc(HashMap<String, <PyVocabulary as HasPickleSupport>::FieldValue>),
-    VecVecProbability(Vec<Vec<f64>>),
-    VecCount(Vec<u64>),
-    VecMeta(Vec<HashMap<String, TopicMetaPyStateValue>>)
-}
-
-impl IntoPy<PyObject> for PyTopicModelStateValue {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            PyTopicModelStateValue::Voc(value) => {
-                value.into_py(py)
-            }
-            PyTopicModelStateValue::VecVecProbability(value) => {
-                value.into_py(py)
-            }
-            PyTopicModelStateValue::VecCount(value) => {
-                value.into_py(py)
-            }
-            PyTopicModelStateValue::VecMeta(value) => {
-                value.into_py(py)
-            }
-        }
-    }
-}
-
-impl From<TopicModelPyStateValue<PyVocabulary>> for PyTopicModelStateValue {
-    fn from(value: TopicModelPyStateValue<PyVocabulary>) -> Self {
-        match value {
-            TopicModelPyStateValue::Voc(value) => {
-                PyTopicModelStateValue::Voc(value)
-            }
-            TopicModelPyStateValue::VecVecProbability(value) => {
-                PyTopicModelStateValue::VecVecProbability(value)
-            }
-            TopicModelPyStateValue::VecCount(value) => {
-                PyTopicModelStateValue::VecCount(value)
-            }
-            TopicModelPyStateValue::VecMeta(value) => {
-                PyTopicModelStateValue::VecMeta(value)
-            }
-        }
-    }
-}
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "SerializableSpecialVec")]

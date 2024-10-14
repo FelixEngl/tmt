@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::collections::HashMap;
 use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, FloatType, IntType, Value};
 use itertools::Itertools;
@@ -8,6 +22,7 @@ use pyo3::types::PyFunction;
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
 use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodContext, VotingResult};
 
+/// A voting model based on a python method.
 #[derive(Debug, Clone, FromPyObject)]
 #[repr(transparent)]
 pub struct PyVotingModel<'a> {
@@ -36,6 +51,7 @@ impl<'a> VotingMethod for PyVotingModel<'a> {
     }
 }
 
+/// The value that can be returned by the [PyVotingModel]
 #[derive(Clone, Debug)]
 pub enum PyExprValue {
     /// A string value.
@@ -130,7 +146,8 @@ impl IntoPy<PyObject> for PyExprValue {
 
 
 
-/// This is an unsafe reference to a VotingMethodContext
+/// This is an unsafe reference to a VotingMethodContext.
+/// If a python user saves them outside of the method, there will be a memory error.
 #[pyclass]
 #[derive(Copy, Clone, Debug)]
 pub struct PyContextWithMutableVariables {

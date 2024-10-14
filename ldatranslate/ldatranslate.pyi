@@ -1,3 +1,18 @@
+# Copyright 2024 Felix Engl
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 import os
 import typing
 from os import PathLike
@@ -27,9 +42,9 @@ class SolvedMetadata:
     @property
     def associated_dictionaries(self) -> None | list[str]:...
     @property
-    def meta_tags(self) -> None | list[str]:...
+    def subjects(self) -> None | list[str]:...
     @property
-    def unstemmed(self) -> None | list[tuple[str, list[str]]]:...
+    def unstemmed(self) -> None | dict[str, list[str]]:...
     def __str__(self):...
     def __repr__(self):...
 
@@ -51,17 +66,6 @@ class PyVocabulary:
     @staticmethod
     def load(path: str | Path | PathLike) -> 'PyVocabulary': ...
 
-    def __getnewargs__(self) -> tuple[None, None]:
-        """Placeholder values"""
-        ...
-
-    def __getstate__(self) -> dict[str, PyVocabularyStateValue]:
-        ...
-
-    def __setstate__(self, state: dict[str, PyVocabularyStateValue]):
-        """May raise a value error when something illegal is found."""
-        ...
-
     def to_json(self) -> str:...
 
     @staticmethod
@@ -70,8 +74,8 @@ class PyVocabulary:
 class PyDictionaryEntry:
     dictionary_a: None | set[str]
     dictionary_b: None | set[str]
-    meta_a: None | set[str]
-    meta_b: None | set[str]
+    subject_a: None | set[str]
+    subject_b: None | set[str]
     unstemmed_a: None | dict[str, set[str]]
     unstemmed_b: None | dict[str, set[str]]
 
@@ -80,8 +84,8 @@ class PyDictionaryEntry:
         word_b: str,
         dictionary_a: None | str | list[str] | tuple[str, ...] = None,
         dictionary_b: None | str | list[str] | tuple[str, ...] = None,
-        meta_value_a: None | str | list[str] | tuple[str, ...] = None,
-        meta_value_b: None | str | list[str] | tuple[str, ...] = None,
+        subject_a: None | str | list[str] | tuple[str, ...] = None,
+        subject_b: None | str | list[str] | tuple[str, ...] = None,
         unstemmed_a: None | str | list[str] | tuple[str, ...] = None,
         unstemmed_b: None | str | list[str] | tuple[str, ...] = None,
     ) -> None:...
@@ -94,10 +98,10 @@ class PyDictionaryEntry:
     def word_b(self) -> str:...
 
     def set_dictionary_a_value(self, value: str):...
-    def set_meta_a_value(self, value: str):...
+    def set_subject_a_value(self, value: str):...
     def set_unstemmed_word_a(self, value: str, unstemmed_meta: None | str = None):...
     def set_dictionary_b_value(self, value: str):...
-    def set_meta_b_value(self, value: str):...
+    def set_subject_b_value(self, value: str):...
     def set_unstemmed_word_b(self, value: str, unstemmed_meta: None | str = None):...
 
     def __repr__(self):...
@@ -126,7 +130,7 @@ class PyDictionary:
     @property
     def known_dictionaries(self) -> list[str]: ...
     @property
-    def tags(self) -> list[str]: ...
+    def subjects(self) -> list[str]: ...
     @property
     def unstemmed(self) -> PyVocabulary: ...
 
@@ -158,17 +162,6 @@ class PyDictionary:
 
 
     def filter(self, filter_a: Callable[[str, None | SolvedMetadata], bool], filter_b: Callable[[str, None | SolvedMetadata], bool]) -> 'PyDictionary':...
-
-    def __getnewargs__(self) -> tuple[None, None]:
-        """Placeholder values"""
-        ...
-
-    def __getstate__(self) -> dict[str, PyDictionaryStateValue]:
-        ...
-
-    def __setstate__(self, state: dict[str, PyDictionaryStateValue]):
-        """May raise a value error when something illegal is found."""
-        ...
 
     def to_json(self) -> str:...
     @staticmethod
@@ -240,17 +233,6 @@ class PyTopicModel:
     def load_binary(path: str | Path | os.PathLike) -> 'PyTopicModel':...
 
     def normalize(self) -> 'PyTopicModel':...
-
-    def __getnewargs__(self) -> tuple[list[list[float]], PyVocabulary, list[int], list[list[float]], list[int]]:
-        """Placeholder values"""
-        ...
-
-    def __getstate__(self) -> dict[str, PyDictionaryStateValue]:
-        ...
-
-    def __setstate__(self, state: dict[str, PyDictionaryStateValue]):
-        """May raise a value error when something illegal is found."""
-        ...
 
     @staticmethod
     def builder(language_a: None | str | LanguageHint = None) -> PyTopicModelBuilder:
@@ -379,7 +361,7 @@ class PyTranslationConfig:
             top_candidate_limit: int | None = None
     ) -> None:
         """
-
+        The translation config
         :param epsilon: Smallest value in the translated topic model, by default min value of translated topic model minus f64::delta
         :param threshold:
         :param keep_original_word:
@@ -814,14 +796,16 @@ class StoreOptions:
     delete_temp_files_immediately: bool
     """Deletes the temp-files after writing them in the bulk file. (saves space, but less secure)"""
     temp_folder: None | str | PathLike | Path
-    """Set a custom temp folder"""
-
+    """Set a custom temp folder, stores the value in some processing_* folder."""
+    show_progress_after: None | int
+    """If set shows after n processed elements the progress."""
     def __init__(
         self,
         deflate_temp_files: bool = False,
         delete_temp_files_immediately: bool = False,
         compress_result: bool = False,
-        temp_folder: None | str | PathLike | Path = None
+        temp_folder: None | str | PathLike | Path = None,
+        show_progress_after: None | int = None
     ):...
 
 

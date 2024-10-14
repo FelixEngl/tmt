@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -7,6 +21,7 @@ use std::hash::Hash;
 use std::io::{BufReader, BufWriter, IoSliceMut, Read, Write};
 use std::iter::Map;
 use std::mem::transmute;
+use std::num::NonZeroUsize;
 use std::ops::{Deref};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -578,6 +593,7 @@ mod test_filter {
     }
 }
 
+/// The options for storing.
 #[pyclass]
 #[derive(Clone, Default, Debug)]
 pub struct StoreOptions {
@@ -588,6 +604,7 @@ pub struct StoreOptions {
     #[pyo3(get, set)]
     compress_result: bool,
     temp_folder: Option<PathBuf>,
+    show_progress_after: Option<NonZeroUsize>,
 }
 
 #[pymethods]
@@ -597,15 +614,23 @@ impl StoreOptions {
         deflate_temp_files: Option<bool>,
         delete_temp_files_immediately: Option<bool>,
         compress_result: Option<bool>,
-        temp_folder: Option<PathBuf>
+        temp_folder: Option<PathBuf>,
+        show_progress_after: Option<usize>
     ) -> Self {
         Self {
             deflate_temp_files: deflate_temp_files.unwrap_or_default(),
             delete_temp_files_immediately: delete_temp_files_immediately.unwrap_or_default(),
             compress_result: compress_result.unwrap_or_default(),
-            temp_folder
+            temp_folder,
+            show_progress_after: show_progress_after.and_then(|value| NonZeroUsize::new(value))
         }
     }
+
+    #[setter]
+    fn show_progress_after(&mut self, show_progress_after: usize) {self.show_progress_after = NonZeroUsize::new(show_progress_after)}
+
+    #[getter]
+    fn get_show_progress_after(&self) -> Option<usize> {self.show_progress_after.and_then(|value| Some(value.get()))}
 
     #[setter]
     fn temp_folder(&mut self, temp_folder: Option<PathBuf>) {
@@ -617,6 +642,7 @@ impl StoreOptions {
         Some(self.temp_folder.as_ref()?.to_str().unwrap().to_string())
     }
 }
+
 
 #[pyfunction]
 pub fn read_and_parse_aligned_articles_into(
@@ -653,8 +679,14 @@ pub fn read_and_parse_aligned_articles_into(
     let now = std::time::SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards!");
     let temp_folder = temp_folder.join(format!("processing_{}", now.as_millis()));
     std::fs::create_dir_all(&temp_folder)?;
+    eprintln!("Storing data in temp folder {}", temp_folder.to_string_lossy());
 
     let mut files = reader.enumerate().par_bridge().filter_map(|(idx, value)| {
+        if let Some(after) = store_options.show_progress_after {
+            if  idx % after.get() == 0 {
+                eprintln!("Processed {idx} entries.");
+            }
+        }
         let result = match value {
             Ok(value) => {
                 let original_length = value.0.len();
@@ -693,7 +725,6 @@ pub fn read_and_parse_aligned_articles_into(
     }).map(|(idx, value)| {
         match value {
             Ok(value) => {
-
                 fn save_plain(temp_folder: &Path, idx: usize, value: PyTokenizedAlignedArticle) -> Result<(usize, PathBuf), (usize, WriteIntoError)> {
                     let temp_file = temp_folder.join(format!("tmp_{idx}.json"));
                     match File::create_new(&temp_file) {

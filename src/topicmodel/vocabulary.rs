@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 #![allow(dead_code)]
 
 use std::borrow::Borrow;
@@ -20,7 +34,6 @@ use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};
 use thiserror::Error;
 use trie_rs::map::{Trie, TrieBuilder};
-use crate::py::helpers::{HasPickleSupport, PyVocabularyStateValue};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::traits::ToParseableString;
@@ -55,6 +68,7 @@ macro_rules! voc {
     };
 }
 
+/// A basic vocabulary for [HashRef] elements.
 pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> {
     /// Gets the associated language
     fn language(&self) -> Option<&LanguageHint>;
@@ -107,6 +121,7 @@ pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> {
     }
 }
 
+/// Allows to search a vocabulary by a query
 pub trait SearchableVocabulary<T>: BasicVocabulary<T> where T: Eq + Hash {
 
     /// Retrieves the id for `value`
@@ -137,10 +152,11 @@ pub trait SearchableVocabulary<T>: BasicVocabulary<T> where T: Eq + Hash {
     /// Returns a new vocabulary filtered by the ids
     fn filter_by_id<F: Fn(usize) -> bool>(&self, filter: F) -> Self where Self: Sized;
 
+    /// Returns a vocabulary filtered by the values
     fn filter_by_value<'a, F: Fn(&'a HashRef<T>) -> bool>(&'a self, filter: F) -> Self where Self: Sized, T: 'a;
 }
 
-
+/// A vocabulary that can be modified
 pub trait VocabularyMut<T>: SearchableVocabulary<T> where T: Eq + Hash {
     /// Adds the `value` to the vocabulary and returns the associated id
     fn add_hash_ref(&mut self, value: HashRef<T>) -> usize;
@@ -152,11 +168,13 @@ pub trait VocabularyMut<T>: SearchableVocabulary<T> where T: Eq + Hash {
 
 }
 
+/// A vocabulary that can be mapped
 pub trait MappableVocabulary<T>: BasicVocabulary<T> where T: Eq + Hash {
+    /// Mapps the vocabulary entries from [T] to [Q]. The order of the terms stays the same.
     fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&T) -> Q, V: BasicVocabulary<Q>;
 }
 
-
+/// A vocabulary that can be stored to a file.
 pub trait StoreableVocabulary<T> where T: ToParseableString {
     /// Writes the vocabulary as a file to `path` in the list format
     fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<usize> {
@@ -168,6 +186,7 @@ pub trait StoreableVocabulary<T> where T: ToParseableString {
     fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize>;
 }
 
+/// A vocabulary that can be loaded.
 pub trait LoadableVocabulary<T, E> where T: Hash + Eq + FromStr<Err=E>, E: Debug, Self: From<Vec<T>> {
     /// Loads from a `path` in the list format
     fn load_from_file(path: impl AsRef<Path>) -> Result<Self, LoadVocabularyError<E>> {
@@ -285,64 +304,6 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
 
 }
 
-#[derive(Debug, Clone)]
-pub enum VocabularyPyStateValue<T> {
-    Hint(String),
-    Value(Vec<T>)
-}
-
-impl From<PyVocabularyStateValue> for VocabularyPyStateValue<String> {
-    fn from(value: PyVocabularyStateValue) -> Self {
-        match value {
-            PyVocabularyStateValue::Hint(value) => {
-                VocabularyPyStateValue::Hint(value)
-            }
-            PyVocabularyStateValue::Value(value) => {
-                VocabularyPyStateValue::Value(value)
-            }
-        }
-    }
-}
-
-
-#[derive(Debug, Error)]
-#[error("Invalid value at {0} for {1:?}!")]
-pub struct VocabularyFromPyStateError<T>(&'static str, VocabularyPyStateValue<T>);
-
-impl<T> HasPickleSupport for Vocabulary<T> where T: Clone + Hash + Eq + Debug {
-    type FieldValue = VocabularyPyStateValue<T>;
-    type Error = VocabularyFromPyStateError<T>;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut result = HashMap::with_capacity(1);
-        if let Some(lang) = &self.language {
-            result.insert("language".to_string(), VocabularyPyStateValue::Hint(lang.to_string()));
-        }
-        result.insert("id2value".to_string(), VocabularyPyStateValue::Value(self.id2entry.iter().map(|value| value.as_ref().clone()).collect()));
-        return result
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> {
-        let hint = match values.get("language") {
-            None => {None}
-            Some(VocabularyPyStateValue::Hint(lang)) => {
-                Some(LanguageHint::new(lang))
-            }
-            Some(other) => {
-                return Err(VocabularyFromPyStateError("language", other.clone()))
-            }
-        };
-        match values.get("id2value") {
-            None => {Ok(Vocabulary::create(hint))}
-            Some(VocabularyPyStateValue::Value(value)) => {
-                Ok(Vocabulary::create_from(hint, value.iter().cloned().collect_vec()))
-            }
-            Some(other) => {
-                Err(VocabularyFromPyStateError("id2value", other.clone()))
-            }
-        }
-    }
-}
 
 impl<T> Default for Vocabulary<T> {
     fn default() -> Self {

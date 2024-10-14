@@ -1,5 +1,18 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -14,7 +27,7 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use topic_model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
 use topicmodel::topic_model;
-use crate::py::helpers::{HasPickleSupport, LanguageHintValue, PyTopicModelStateValue};
+use crate::py::helpers::{LanguageHintValue};
 use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::PyVocabulary;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
@@ -237,21 +250,6 @@ impl PyTopicModel {
 
     fn normalize(&self) -> Self {
         self.inner.normalize().into()
-    }
-
-    fn __getnewargs__(&self) -> (Vec<Vec<f64>>, PyVocabulary, Vec<u64>, Vec<Vec<f64>>, Vec<u64>) {
-        Default::default()
-    }
-
-    fn __getstate__(&self) -> HashMap<String, PyTopicModelStateValue> {
-        let result = self.inner.get_py_state();
-        return result.into_iter().map(|(k, value)| (k, value.into())).collect()
-    }
-
-    fn __setstate__(&mut self, state: HashMap<String, PyTopicModelStateValue>) -> PyResult<()> {
-        let to_set = state.into_iter().map(|(k, v)| (k, v.into())).collect();
-        self.inner = TopicModel::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
-        Ok(())
     }
 
     #[staticmethod]

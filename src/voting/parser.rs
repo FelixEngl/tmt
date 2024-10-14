@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::sync::Arc;
 use evalexpr::{Value};
 use nom::branch::alt;
@@ -16,15 +30,8 @@ pub mod logic;
 mod traits;
 pub mod input;
 
-#[derive(Debug, EnumIs, Clone)]
-pub enum InterpretedVoting {
-    BuildIn(BuildInVoting),
-    FromRegistry(Arc<VotingFunction>),
-    Parsed(VotingFunction),
-    ForRegistry(VotingAndName),
-    Limited(VotingWithLimit<Box<InterpretedVoting>>),
-}
 
+/// Parse the [ParserInput] to a [InterpretedVoting]
 pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, InterpretedVoting, E> {
     fn parse_internal<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>) -> IResult<ParserInput<'a,'b>, InterpretedVoting, E> {
         alt((
@@ -47,6 +54,16 @@ pub fn parse<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput<'a,'b>
         map(parse_limited(parse_internal), InterpretedVoting::Limited),
         parse_internal
     ))(input)
+}
+
+/// What kind of voting did we parse?
+#[derive(Debug, EnumIs, Clone)]
+pub enum InterpretedVoting {
+    BuildIn(BuildInVoting),
+    FromRegistry(Arc<VotingFunction>),
+    Parsed(VotingFunction),
+    ForRegistry(VotingAndName),
+    Limited(VotingWithLimit<Box<InterpretedVoting>>),
 }
 
 impl VotingMethodMarker for InterpretedVoting {}
@@ -72,7 +89,6 @@ impl VotingMethod for InterpretedVoting {
         }
     }
 }
-
 
 impl From<Arc<VotingFunction>> for InterpretedVoting {
     fn from(value: Arc<VotingFunction>) -> Self {

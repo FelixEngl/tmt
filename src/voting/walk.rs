@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 #![allow(dead_code)]
 
 use std::fmt::{Display, Formatter};
@@ -5,15 +19,8 @@ use evalexpr::{Node, Operator};
 use itertools::Itertools;
 use strum::EnumIs;
 
-#[derive(Debug, Clone)]
-#[derive(EnumIs)]
-pub(crate) enum NodeContainer<'a> {
-    Leaf(&'a Node, bool),
-    Single(&'a Node, Box<NodeContainer<'a>>, bool),
-    Expr(Box<NodeContainer<'a>>, &'a Node, Box<NodeContainer<'a>>, bool),
-    Special(&'a Node, Vec<NodeContainer<'a>>, bool)
-}
 
+/// Walks a node from left to right
 pub(crate) fn walk_left_to_right(node: &Node) -> NodeContainer {
     fn walk_left_to_right_(node: &Node, is_root: bool) -> NodeContainer {
         let children = node.children();
@@ -40,6 +47,16 @@ pub(crate) fn walk_left_to_right(node: &Node) -> NodeContainer {
         }
     }
     walk_left_to_right_(node, true)
+}
+
+/// A node container for walking
+#[derive(Debug, Clone)]
+#[derive(EnumIs)]
+pub(crate) enum NodeContainer<'a> {
+    Leaf(&'a Node, bool),
+    Single(&'a Node, Box<NodeContainer<'a>>, bool),
+    Expr(Box<NodeContainer<'a>>, &'a Node, Box<NodeContainer<'a>>, bool),
+    Special(&'a Node, Vec<NodeContainer<'a>>, bool)
 }
 
 impl<'a> NodeContainer<'a> {

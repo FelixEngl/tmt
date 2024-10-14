@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 #![allow(dead_code)]
 
 pub mod meta;
@@ -27,9 +41,6 @@ use rand::thread_rng;
 use rand_distr::Distribution;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use crate::py::helpers::{HasPickleSupport, PyTopicModelStateValue};
-use crate::py::vocabulary::PyVocabulary;
 use crate::toolkit::normal_number::IsNormalNumber;
 
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
@@ -65,7 +76,7 @@ pub(crate) type DocumentLength = u64;
 
 
 
-/// A basic topic model fulfilling the bare minimum of
+/// A basic topic model fulfilling the bare minimum of a topic model.
 pub trait BasicTopicModel: Send + Sync {
     /// The number of topics in this model
     fn topic_count(&self) -> usize;
@@ -945,130 +956,9 @@ impl<T: ToParseableString, V> TopicModel<T, V> where V: StoreableVocabulary<T> {
     }
 }
 
+/// Allows to map a topic model to another one.
 pub trait MappableTopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T> {
     fn map<VNew>(self) -> TopicModel<T, VNew> where VNew: BasicVocabulary<T>;
-}
-
-
-#[derive(Debug, Clone)]
-pub enum TopicModelPyStateValue<V> where V: HasPickleSupport {
-    Voc(HashMap<String, V::FieldValue>),
-    VecVecProbability(Vec<Vec<f64>>),
-    VecCount(Vec<u64>),
-    VecMeta(Vec<HashMap<String, TopicMetaPyStateValue>>)
-}
-
-impl From<PyTopicModelStateValue> for TopicModelPyStateValue<PyVocabulary> {
-    fn from(value: PyTopicModelStateValue) -> Self {
-        match value {
-            PyTopicModelStateValue::Voc(value) => {
-                TopicModelPyStateValue::Voc(value)
-            }
-            PyTopicModelStateValue::VecVecProbability(value) => {
-                TopicModelPyStateValue::VecVecProbability(value)
-            }
-            PyTopicModelStateValue::VecCount(value) => {
-                TopicModelPyStateValue::VecCount(value)
-            }
-            PyTopicModelStateValue::VecMeta(value) => {
-                TopicModelPyStateValue::VecMeta(value)
-            }
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum TopicModelPyStateValueError<V> where V: HasPickleSupport + Clone {
-    #[error("The value for the field {0} is missing!")]
-    FieldMissing(&'static str),
-    #[error(transparent)]
-    VocabularyError(V::Error),
-    #[error(transparent)]
-    MetaError(#[from] TopicMetaPyStateError),
-    #[error("Invalid value at {0} for {1:?}!")]
-    InvalidValueEncountered(&'static str, TopicModelPyStateValue<V>),
-}
-
-impl<T, V> HasPickleSupport for TopicModel<T, V>
-    where V: HasPickleSupport + Clone + Debug + VocabularyMut<T>,
-          T: Clone + Hash + Eq + Ord + Debug
-{
-    type FieldValue = TopicModelPyStateValue<V>;
-    type Error = TopicModelPyStateValueError<V>;
-
-    fn get_py_state(&self) -> HashMap<String, Self::FieldValue> {
-        let mut map = HashMap::with_capacity(6);
-        map.insert("topics".to_string(), TopicModelPyStateValue::VecVecProbability(self.topics.clone()));
-        map.insert("vocabulary".to_string(), TopicModelPyStateValue::Voc(self.vocabulary.get_py_state()));
-        map.insert("used_vocab_frequency".to_string(), TopicModelPyStateValue::VecCount(self.used_vocab_frequency.clone()));
-        map.insert("doc_topic_distributions".to_string(), TopicModelPyStateValue::VecVecProbability(self.doc_topic_distributions.clone()));
-        map.insert("document_lengths".to_string(), TopicModelPyStateValue::VecCount(self.document_lengths.clone()));
-        map.insert("topic_metas".to_string(), TopicModelPyStateValue::VecMeta(self.topic_metas.iter().map(|value| value.get_py_state()).collect()));
-        return map
-    }
-
-    fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> where Self: Sized {
-        let topics = values.get("topics").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("topics"))?;
-        let vocabulary = values.get("vocabulary").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("vocabulary"))?;
-        let used_vocab_frequency = values.get("used_vocab_frequency").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("used_vocab_frequency"))?;
-        let doc_topic_distributions = values.get("doc_topic_distributions").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("doc_topic_distributions"))?;
-        let document_lengths = values.get("document_lengths").ok_or_else(|| TopicModelPyStateValueError::FieldMissing("document_lengths"))?;
-        let topic_metas = values.get("topic_metas");
-
-        let topics = match topics {
-            TopicModelPyStateValue::VecVecProbability(value) => {value.clone()}
-            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("topics", illegal_value.clone()))
-        };
-
-        let vocabulary = match vocabulary {
-            TopicModelPyStateValue::Voc(value) => {V::from_py_state(value).map_err(TopicModelPyStateValueError::VocabularyError)?}
-            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("vocabulary", illegal_value.clone()))
-        };
-
-        let used_vocab_frequency = match used_vocab_frequency {
-            TopicModelPyStateValue::VecCount(value) => {value.clone()}
-            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("used_vocab_frequency", illegal_value.clone()))
-        };
-        let doc_topic_distributions = match doc_topic_distributions {
-            TopicModelPyStateValue::VecVecProbability(value) => {value.clone()}
-            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("doc_topic_distributions", illegal_value.clone()))
-        };
-
-        let document_lengths = match document_lengths {
-            TopicModelPyStateValue::VecCount(value) => {value.clone()}
-            illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("document_lengths", illegal_value.clone()))
-        };
-
-        if let Some(topic_metas) = topic_metas {
-            let topic_metas = match topic_metas {
-                TopicModelPyStateValue::VecMeta(value) => {
-                    value.iter().map(|value| TopicMeta::from_py_state(value)).collect::<Result<Vec<_>, _>>()?
-                }
-                illegal_value => return Err(TopicModelPyStateValueError::InvalidValueEncountered("topic_metas", illegal_value.clone()))
-            };
-            Ok(
-                Self {
-                    topics,
-                    vocabulary,
-                    used_vocab_frequency,
-                    doc_topic_distributions,
-                    document_lengths,
-                    topic_metas,
-                    _word_type: PhantomData
-                }
-            )
-        } else {
-            Ok(
-                TopicModel::new(
-                    topics,
-                    vocabulary,
-                    used_vocab_frequency,
-                    doc_topic_distributions,
-                    document_lengths
-                )
-            )
-        }
-    }
 }
 
 impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash + Eq, V: MappableVocabulary<T>  {
@@ -1112,6 +1002,7 @@ impl From<Vec<f64>> for SingleOrList {
 }
 
 
+/// Allows to inference probabilities for documents by a topic model.
 pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
     topic_model: &'a Model,
     alpha: SingleOrList,
@@ -1133,12 +1024,26 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
     pub const DEFAULT_MIN_PROBABILITY: f64 = 1E-10;
     pub const DEFAULT_MIN_PHI_VALUE: f64 = 1E-10;
 
+    /// Infer the probabilities for [doc]. Implemented like gensim, with the same default values.
     pub fn get_doc_probability_for_default(
         &self,
         doc: Vec<T>,
         per_word_topics: bool
     ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
         self.get_doc_probability_for(doc, Self::DEFAULT_MIN_PROBABILITY, Self::DEFAULT_MIN_PHI_VALUE, per_word_topics)
+    }
+
+    /// Infer the probabilities for [doc]. Implemented like gensim.
+    pub fn get_doc_probability_for(&self, doc: Vec<T>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
+        let doc = doc.into_iter().map(|value| match self.topic_model.get_id(&value) {
+            None => {
+                WordIdOrUnknown::Unknown(value)
+            }
+            Some(value) => {
+                WordIdOrUnknown::WordId(value)
+            }
+        }).collect_vec();
+        self.get_doc_probability(doc, minimum_probability,minimum_phi_value, per_word_topics)
     }
 
     fn get_doc_probability(&self, doc: Vec<WordIdOrUnknown<T>>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
@@ -1305,17 +1210,7 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
         (counts, (!fallback.is_empty()).then_some(fallback))
     }
 
-    pub fn get_doc_probability_for(&self, doc: Vec<T>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
-        let doc = doc.into_iter().map(|value| match self.topic_model.get_id(&value) {
-            None => {
-                WordIdOrUnknown::Unknown(value)
-            }
-            Some(value) => {
-                WordIdOrUnknown::WordId(value)
-            }
-        }).collect_vec();
-        self.get_doc_probability(doc, minimum_probability,minimum_phi_value, per_word_topics)
-    }
+
 }
 
 

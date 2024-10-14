@@ -874,7 +874,6 @@ dependencies = [
  "nom",
  "num",
  "num_enum",
- "once_cell",
  "paste",
  "pyo3",
  "rand 0.9.0-alpha.1",

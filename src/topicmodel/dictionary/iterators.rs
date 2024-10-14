@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::iter::{Chain, Cloned, Enumerate, FlatMap, Map};
@@ -8,12 +22,11 @@ use strum::EnumIs;
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
-use crate::topicmodel::dictionary::metadata::{MetadataRef, SolvedMetadata};
+use crate::topicmodel::dictionary::metadata::SolvedMetadata;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::BasicVocabulary;
 
-
-
+/// Iterator for a dictionary
 pub struct DictLangIter<'a, T, L, D: ?Sized, V> where L: Language {
     iter: Enumerate<Iter<'a, HashRef<T>>>,
     dict: &'a D,
@@ -97,9 +110,9 @@ impl<'a> Iterator for DictIterImpl<'a> {
 
 
 
-
+/// The state of the dict iterator
 #[derive(Debug, Copy, Clone, EnumIs)]
-pub enum DictionaryIteratorPointerState {
+enum DictionaryIteratorPointerState {
     NextAB,
     NextBA,
     Finished
@@ -233,6 +246,7 @@ impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWi
     }
 }
 
+/// A dict iterator
 pub type DictionaryIterator<T, V> = Unique<DictionaryIteratorImpl<T, V, Dictionary<T, V>>>;
 
 impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq + Hash {
@@ -245,6 +259,7 @@ impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq 
 }
 
 
+/// A dict iterator with metadata
 pub struct DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
     inner: DictionaryIteratorImpl<T, V, D>
 }
@@ -270,11 +285,11 @@ impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDic
         Some(
             next.map(
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(MetadataRef::to_solved_metadata);
+                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(SolvedMetadata::from);
                     (id, href, value)
                 },
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(MetadataRef::to_solved_metadata);
+                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(SolvedMetadata::from);
                     (id, href, value)
                 }
             )

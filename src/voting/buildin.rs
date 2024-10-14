@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::fmt::Write;
 use std::num::NonZeroUsize;
 use evalexpr::{Context, EvalexprError, EvalexprResult, Value};
@@ -7,7 +21,7 @@ use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::variable_names::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
 use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::{Aggregation, AggregationError};
-use crate::voting::aggregations::AggregationType::{AvgOf, GAvgOf, SumOf};
+use crate::voting::aggregations::AggregationKind::{AvgOf, GAvgOf, SumOf};
 use crate::voting::display::{DisplayTree, IndentWriter};
 use crate::voting::traits::{LimitableVotingMethodMarker, RootVotingMethodMarker};
 use crate::voting::VotingExpressionError::{Eval, NoValue};
@@ -133,7 +147,7 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::GCombSum => {
                 let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
@@ -142,7 +156,7 @@ impl VotingMethod for BuildInVoting {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
 
-                Ok(GAvgOf.calculate(calculated.into_iter())?.into())
+                Ok(GAvgOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumTop => {
                 let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
@@ -160,7 +174,7 @@ impl VotingMethod for BuildInVoting {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
 
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombMax => {
                 Ok(
@@ -181,7 +195,7 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                 })?;
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::RRPow2 => {
                 let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
@@ -189,7 +203,7 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
                 })?;
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumRR => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
@@ -201,7 +215,7 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumRRPow2 => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
@@ -213,7 +227,7 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumPow2RR => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
@@ -225,7 +239,7 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumPow2RRPow2 => {
                 let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
@@ -237,7 +251,7 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                Ok(SumOf.calculate(calculated.into_iter())?.into())
+                Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::ExpCombMnz => {
                 let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
@@ -249,8 +263,8 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                let trans = SumOf.calculate(calculated.iter().copied())?;
-                let trans_avg = AvgOf.calculate(calculated.into_iter())?;
+                let trans = SumOf.aggregate(calculated.iter().copied())?;
+                let trans_avg = AvgOf.aggregate(calculated.into_iter())?;
                 let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
                 Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
             }
@@ -260,8 +274,8 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                let trans = SumOf.calculate(calculated.iter().copied())?;
-                let trans_avg = GAvgOf.calculate(calculated.into_iter())?;
+                let trans = SumOf.aggregate(calculated.iter().copied())?;
+                let trans_avg = GAvgOf.aggregate(calculated.into_iter())?;
                 let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
                 Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
             }
@@ -271,8 +285,8 @@ impl VotingMethod for BuildInVoting {
                 } else {
                     Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
                 })?;
-                let trans = SumOf.calculate(calculated.iter().map(|value| value.ln()))?;
-                let trans_avg = AvgOf.calculate(calculated.into_iter())?;
+                let trans = SumOf.aggregate(calculated.iter().map(|value| value.ln()))?;
+                let trans_avg = AvgOf.aggregate(calculated.into_iter())?;
                 let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
                 Ok(((trans + trans_avg.ln()) / (n_voters + 1) as f64).exp().into())
             }
@@ -280,7 +294,7 @@ impl VotingMethod for BuildInVoting {
                 if voters.is_empty() {
                     get_value_or_fail(global_context, EPSILON)
                 } else {
-                    let trans = SumOf.calculate(collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
+                    let trans = SumOf.aggregate(collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
                         Ok(found.clone())
                     } else {
                         Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))

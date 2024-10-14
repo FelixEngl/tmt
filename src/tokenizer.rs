@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 mod phrase_recognizer;
 mod stemming;
 mod unicode_segmenter;
@@ -16,6 +30,7 @@ use crate::tokenizer::reconstruct_or_unicode::SegmentedIter;
 use crate::tokenizer::stemming::{SmartStemmer, StemmedTokenIter};
 use crate::tokenizer::unicode_segmenter::UnicodeSegmenterTokenIter;
 
+/// A builder for a tokenizer
 pub struct TokenizerBuilder<'tb, A> {
     unicode: bool,
     tokenizer_builder: CTokenizerBuilder<'tb, A>,
@@ -45,6 +60,7 @@ impl<'tb, A> TokenizerBuilder<'tb, A> {
         }
     }
 
+    /// Set a trie for phrase detection
     pub fn set_phraser(&mut self, voc: Option<Trie<u8, usize>>) -> &mut Self {
         self.phrase_trie = voc;
         self

@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::borrow::{Borrow};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -13,9 +27,9 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::types::{PyFunction};
 use serde::{Deserialize, Serialize};
-use crate::py::helpers::{HasPickleSupport, LanguageHintValue, PyDictionaryStateValue};
+use crate::py::helpers::{LanguageHintValue};
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryPyStateValue, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, register_py_directions, DirectionKind, DirectionTuple, Invariant, Language, Translation};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter};
 use crate::topicmodel::dictionary::metadata::{register_py_metadata, SolvedMetadata};
@@ -72,8 +86,8 @@ pub struct PyDictionaryEntry {
     word_b: String,
     dictionary_a: Option<HashSet<String>>,
     dictionary_b: Option<HashSet<String>>,
-    meta_value_a: Option<HashSet<String>>,
-    meta_value_b: Option<HashSet<String>>,
+    subject_a: Option<HashSet<String>>,
+    subject_b: Option<HashSet<String>>,
     unstemmed_a: Option<HashMap<String, HashSet<String>>>,
     unstemmed_b: Option<HashMap<String, HashSet<String>>>,
 }
@@ -87,8 +101,8 @@ impl PyDictionaryEntry {
         word_b: String,
         dictionary_a: Option<SingleOrVec<String>>,
         dictionary_b: Option<SingleOrVec<String>>,
-        meta_value_a: Option<SingleOrVec<String>>,
-        meta_value_b: Option<SingleOrVec<String>>,
+        subject_a: Option<SingleOrVec<String>>,
+        subject_b: Option<SingleOrVec<String>>,
         unstemmed_a: Option<HashMap<String, Option<SingleOrVec<String>>>>,
         unstemmed_b: Option<HashMap<String, Option<SingleOrVec<String>>>>,
     ) -> Self {
@@ -105,12 +119,12 @@ impl PyDictionaryEntry {
                 set.extend(x.to_vec());
                 set
             }),
-            meta_value_a: meta_value_a.map(|x| {
+            subject_a: subject_a.map(|x| {
                 let mut set = HashSet::new();
                 set.extend(x.to_vec());
                 set
             }),
-            meta_value_b: meta_value_b.map(|x| {
+            subject_b: subject_b.map(|x| {
                 let mut set = HashSet::new();
                 set.extend(x.to_vec());
                 set
@@ -157,12 +171,12 @@ impl PyDictionaryEntry {
         Ok(())
     }
     #[getter]
-    pub fn meta_a(&self) -> PyResult<Option<HashSet<String>>> {
-        Ok(self.meta_value_a.clone())
+    pub fn subject_a(&self) -> PyResult<Option<HashSet<String>>> {
+        Ok(self.subject_a.clone())
     }
     #[setter]
-    pub fn set_meta_a(&mut self, value: Option<SingleOrVec<String>>) -> PyResult<()> {
-        self.meta_value_a = value.map(|x| {
+    pub fn set_subject_a(&mut self, value: Option<SingleOrVec<String>>) -> PyResult<()> {
+        self.subject_a = value.map(|x| {
             let mut set = HashSet::new();
             set.extend(x.to_vec());
             set
@@ -170,12 +184,12 @@ impl PyDictionaryEntry {
         Ok(())
     }
     #[getter]
-    pub fn meta_b(&self) -> PyResult<Option<HashSet<String>>> {
-        Ok(self.meta_value_b.clone())
+    pub fn subject_b(&self) -> PyResult<Option<HashSet<String>>> {
+        Ok(self.subject_b.clone())
     }
     #[setter]
-    pub fn set_meta_b(&mut self, value: Option<SingleOrVec<String>>) -> PyResult<()> {
-        self.meta_value_b = value.map(|x| {
+    pub fn set_subject_b(&mut self, value: Option<SingleOrVec<String>>) -> PyResult<()> {
+        self.subject_b = value.map(|x| {
             let mut set = HashSet::new();
             set.extend(x.to_vec());
             set
@@ -215,13 +229,13 @@ impl PyDictionaryEntry {
         Ok(())
     }
 
-    pub fn set_meta_a_value(&mut self, value: &str) -> PyResult<()> {
-        self.set_meta_value::<A>(value);
+    pub fn set_subject_a_value(&mut self, value: &str) -> PyResult<()> {
+        self.set_subject_value::<A>(value);
         Ok(())
     }
 
-    pub fn set_meta_b_value(&mut self, value: &str) -> PyResult<()> {
-        self.set_meta_value::<B>(value);
+    pub fn set_subject_b_value(&mut self, value: &str) -> PyResult<()> {
+        self.set_subject_value::<B>(value);
         Ok(())
     }
 
@@ -279,11 +293,11 @@ impl PyDictionaryEntry {
         target.get_or_insert_with(|| HashSet::with_capacity(1)).insert(value.to_string());
     }
 
-    pub fn set_meta_value<L: Language>(&mut self, value: &str) {
+    pub fn set_subject_value<L: Language>(&mut self, value: &str) {
         let target = if L::LANG.is_a() {
-            &mut self.meta_value_a
+            &mut self.subject_a
         } else {
-            &mut self.meta_value_b
+            &mut self.subject_b
         };
         target.get_or_insert_with(|| HashSet::with_capacity(1)).insert(value.to_string());
     }
@@ -314,13 +328,13 @@ impl PyDictionaryEntry {
 impl Display for PyDictionaryEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f,
-               "(A: {}, B: {}, A_Dicts: [{}], B_Dicts: [{}], A_Meta: [{}], B_Meta: [{}], [{}], [{}])",
+               "(A: {}, B: {}, A_Dicts: [{}], B_Dicts: [{}], A_Subjects: [{}], B_Subjects: [{}], [{}], [{}])",
                self.word_a,
                self.word_b,
                self.dictionary_a.as_ref().map_or("".to_string(), |value| value.iter().join(", ")),
                self.dictionary_b.as_ref().map_or("".to_string(), |value| value.iter().join(", ")),
-               self.meta_value_a.as_ref().map_or("".to_string(), |value| value.iter().join(", ")),
-               self.meta_value_b.as_ref().map_or("".to_string(), |value| value.iter().join(", ")),
+               self.subject_a.as_ref().map_or("".to_string(), |value| value.iter().join(", ")),
+               self.subject_b.as_ref().map_or("".to_string(), |value| value.iter().join(", ")),
                self.unstemmed_a.as_ref().map_or("".to_string(), |value| value.iter().map(|(a, b)| format!("({a}, {{{}}})", b.iter().join(", "))).join(", ")),
                self.unstemmed_b.as_ref().map_or("".to_string(), |value| value.iter().map(|(a, b)| format!("({a}, {{{}}})", b.iter().join(", "))).join(", ")),
         )
@@ -331,23 +345,6 @@ impl Display for PyDictionaryEntry {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyDictionary {
     inner: DictionaryWithMeta<String, PyVocabulary>,
-}
-
-
-impl From<DictionaryPyStateValue<PyVocabulary>> for PyDictionaryStateValue {
-    fn from(value: DictionaryPyStateValue<PyVocabulary>) -> Self {
-        match value {
-            DictionaryPyStateValue::Voc(value) => {
-                PyDictionaryStateValue::Voc(value)
-            }
-            DictionaryPyStateValue::Mapping(value) => {
-                PyDictionaryStateValue::Mapping(value)
-            }
-            DictionaryPyStateValue::Meta(value) => {
-                PyDictionaryStateValue::Meta(value)
-            }
-        }
-    }
 }
 
 #[pymethods]
@@ -368,8 +365,8 @@ impl PyDictionary {
     }
 
     #[getter]
-    fn tags(&self) -> Vec<String> {
-        self.inner.tags().into_iter().map(|value| value.to_string()).collect_vec()
+    fn subjects(&self) -> Vec<String> {
+        self.inner.subjects().into_iter().map(|value| value.to_string()).collect_vec()
     }
 
     #[getter]
@@ -420,8 +417,8 @@ impl PyDictionary {
             value.word_b,
             value.dictionary_a,
             value.dictionary_b,
-            value.meta_value_a,
-            value.meta_value_b,
+            value.subject_a,
+            value.subject_b,
             value.unstemmed_a,
             value.unstemmed_b,
         )
@@ -450,10 +447,10 @@ impl PyDictionary {
         }
 
         if let Some(meta_value_a) = meta_value_a {
-            meta.set_meta_tags_for::<A>(result.a, &meta_value_a.into_iter().collect_vec())
+            meta.set_subjects_for::<A>(result.a, &meta_value_a.into_iter().collect_vec())
         }
         if let Some(meta_value_b) = meta_value_b {
-            meta.set_meta_tags_for::<B>(result.b, &meta_value_b.into_iter().collect_vec())
+            meta.set_subjects_for::<B>(result.b, &meta_value_b.into_iter().collect_vec())
         }
 
         if let Some(unstemmed_a) = unstemmed_a {
@@ -544,12 +541,12 @@ impl PyDictionary {
         let created = self.inner.create_subset_with_filters(
             |dict, word, meta|{
                 let value = dict.id_to_word::<A>(word).unwrap().to_string();
-                let solved = meta.cloned().map(|value| value.to_solved_metadata());
+                let solved = meta.cloned().map(SolvedMetadata::from);
                 filter_a.call1((value, solved)).expect("This should not fail!").extract::<bool>().expect("You can only return a boolean!")
             },
             |dict, word, meta|{
                 let value = dict.id_to_word::<B>(word).unwrap().to_string();
-                let solved = meta.cloned().map(|value| value.to_solved_metadata());
+                let solved = meta.cloned().map(SolvedMetadata::from);
                 filter_b.call1((value, solved)).expect("This should not fail!").extract::<bool>().expect("You can only return a boolean!")
             },
         );
@@ -557,32 +554,16 @@ impl PyDictionary {
         Ok(PyDictionary { inner: created })
     }
 
-    fn __getnewargs__(&self) -> (Option<()>, Option<()>) {
-        // We only tarn the output in the python API, is always none.
-        (None, None)
-    }
-
-    fn __getstate__(&self) -> HashMap<String, PyDictionaryStateValue> {
-        let result = self.inner.get_py_state();
-        return result.into_iter().map(|(k, value)| (k, value.into())).collect()
-    }
-
-    fn __setstate__(&mut self, state: HashMap<String, PyDictionaryStateValue>) -> PyResult<()> {
-        let to_set = state.into_iter().map(|(k, v)| (k, v.into())).collect();
-        self.inner = DictionaryWithMeta::from_py_state(&to_set).map_err(|value| PyValueError::new_err(value.to_string()))?;
-        Ok(())
-    }
-
     pub fn get_meta_a_of(&self, word: &str) -> Option<SolvedMetadata> {
         let word_id = self.inner.voc_a().get_id(word)?;
         let meta = self.inner.metadata().get_meta_ref::<A>(word_id)?;
-        Some(meta.to_solved_metadata())
+        Some(meta.into())
     }
 
     pub fn get_meta_b_of(&self, word: &str) -> Option<SolvedMetadata> {
         let word_id = self.inner.voc_b().get_id(word)?;
         let meta = self.inner.metadata().get_meta_ref::<B>(word_id)?;
-        Some(meta.to_solved_metadata())
+        Some(meta.into())
     }
 
 }

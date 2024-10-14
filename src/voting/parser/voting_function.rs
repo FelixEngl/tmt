@@ -1,3 +1,17 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::{Deref, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 use std::sync::Arc;
@@ -217,6 +231,7 @@ impl DisplayTree for VotingOperation {
 
 impl_display_for_displaytree!(VotingOperation);
 
+/// What kind of voting is executed?
 #[derive(Debug, Clone)]
 pub enum VotingExecution {
     BuildIn(BuildInVoting),
@@ -589,7 +604,7 @@ impl Debug for VotingExpression {
     }
 }
 
-
+/// A parsed index or range.
 #[derive(Debug, Clone)]
 pub enum IndexOrRange {
     Index(usize),
