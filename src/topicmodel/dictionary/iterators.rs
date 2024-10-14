@@ -22,7 +22,7 @@ use strum::EnumIs;
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
-use crate::topicmodel::dictionary::metadata::{SolvedMetadata};
+use crate::topicmodel::dictionary::metadata::SolvedMetadata;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::BasicVocabulary;
 

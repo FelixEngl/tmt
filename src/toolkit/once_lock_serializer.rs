@@ -15,141 +15,46 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::OnceLock;
+use serde::de::DeserializeOwned;
 
-#[derive(Serialize)]
-pub enum SerializeOnceLock<'a, T> {
-    #[serde(bound(serialize = "T: Serialize"))]
-    #[serde(rename(serialize = "Initialized"))]
-    InitializedOwned(T),
-    #[serde(bound(serialize = "T: Serialize"))]
-    #[serde(rename(serialize = "Initialized"))]
-    InitializedBorrowed(&'a T),
-    Uninitialized
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "OnceLock")]
+pub struct OnceLockDef<T> {
+    #[serde(bound(serialize = "T: Serialize + Clone", deserialize = "T: Deserialize<'de>"))]
+    #[serde(getter = "get_value_cloned")]
+    value: Option<T>
 }
 
-impl<T> From<OnceLock<T>> for SerializeOnceLock<'_, T> {
-    fn from(mut value: OnceLock<T>) -> Self {
-        match value.take() {
+fn get_value_cloned<T: Clone>(once_lock: &OnceLock<T>) -> Option<T> {
+    once_lock.get().cloned()
+}
+
+impl<T> From<OnceLockDef<T>> for OnceLock<T> {
+    fn from(value: OnceLockDef<T>) -> Self {
+        match value.value {
             None => {
-                SerializeOnceLock::Uninitialized
+                OnceLock::new()
             }
             Some(value) => {
-                Self::InitializedOwned(value)
+                OnceLock::from(value)
             }
         }
     }
 }
 
-impl<'a, T> From<&'a OnceLock<T>> for SerializeOnceLock<'a, T> {
-    fn from(value: &'a OnceLock<T>) -> Self {
-        match value.get() {
-            None => {
-                SerializeOnceLock::Uninitialized
-            }
-            Some(value) => {
-                Self::InitializedBorrowed(value)
-            }
-        }
-    }
-}
-
-
-#[derive(Deserialize)]
-pub enum DeserializeOnceLock<T> {
-    #[serde(bound(deserialize = "T: Deserialize<'de>"))]
-    #[serde(rename(serialize = "Initialized"))]
-    Initialized(T),
-    Uninitialized
-}
-
-impl<T> DeserializeOnceLock<T> {
-    pub fn map<Q, F: FnOnce(T) -> Q>(self, mapping: F) -> DeserializeOnceLock<Q> {
-        match self {
-            DeserializeOnceLock::Initialized(value) => {
-                DeserializeOnceLock::Initialized(mapping(value))
-            }
-            DeserializeOnceLock::Uninitialized => {
-                DeserializeOnceLock::Uninitialized
-            }
-        }
-    }
-
-    pub fn initialized(self) -> Option<T> {
-        match self {
-            DeserializeOnceLock::Initialized(value) => {Some(value)}
-            DeserializeOnceLock::Uninitialized => {None}
-        }
-    }
-
-    pub fn initialized_or<E>(self, err: E) -> Result<T, E> {
-        match self {
-            DeserializeOnceLock::Initialized(value) => {Ok(value)}
-            DeserializeOnceLock::Uninitialized => {Err(err)}
-        }
-    }
-
-    pub fn initialized_or_else<E, F: FnOnce() -> E>(self, err: F) -> Result<T, E> {
-        match self {
-            DeserializeOnceLock::Initialized(value) => {Ok(value)}
-            DeserializeOnceLock::Uninitialized => {Err(err())}
-        }
-    }
-}
-
-impl<T> DeserializeOnceLock<Option<T>> {
-    pub fn transpose(self) -> Option<DeserializeOnceLock<T>> {
-        match self {
-            DeserializeOnceLock::Initialized(Some(x)) => Some(DeserializeOnceLock::Initialized(x)),
-            DeserializeOnceLock::Initialized(None) => None,
-            DeserializeOnceLock::Uninitialized => Some(DeserializeOnceLock::Uninitialized),
-        }
-    }
-}
-
-impl<T, E> DeserializeOnceLock<Result<T, E>> {
-    pub fn transpose(self) -> Result<DeserializeOnceLock<T>, E> {
-        match self {
-            DeserializeOnceLock::Initialized(Ok(x)) => Ok(DeserializeOnceLock::Initialized(x)),
-            DeserializeOnceLock::Initialized(Err(err)) => Err(err),
-            DeserializeOnceLock::Uninitialized => Ok(DeserializeOnceLock::Uninitialized),
-        }
-    }
-}
-
-impl<T> Into<OnceLock<T>> for DeserializeOnceLock<T> {
-    fn into(self) -> OnceLock<T> {
-        let cell = OnceLock::new();
-        #[allow(unused_must_use)]
-        match self {
-            DeserializeOnceLock::Initialized(value) => {
-                cell.set(value);
-            }
-            DeserializeOnceLock::Uninitialized => {}
-        }
-        cell
-    }
-}
-
-pub fn serialize<S, T>(target: &OnceLock<T>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer, T: Serialize {
-    SerializeOnceLock::from(target).serialize(serializer)
-}
-
-pub fn deserialize<'de, D, T>(deserializer: D) -> Result<OnceLock<T>, D::Error> where D: Deserializer<'de>, T: Deserialize<'de> {
-    DeserializeOnceLock::deserialize(deserializer).map(Into::into)
-}
 
 #[cfg(test)]
 mod test {
     use std::fmt::{Debug};
     use std::sync::OnceLock;
     use serde::{Deserialize, Serialize};
-    use super::super::once_lock_serializer;
+    use super::OnceLockDef;
 
 
     #[derive(Serialize, Deserialize, Default, Debug)]
     struct OnceInit<T> where T: Debug {
-        #[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>"))]
-        #[serde(with = "once_lock_serializer")]
+        #[serde(bound(serialize = "T: Serialize + Clone", deserialize = "T: Deserialize<'de>"))]
+        #[serde(with = "OnceLockDef")]
        cell: OnceLock<T>,
     }
 

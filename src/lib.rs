@@ -12,6 +12,8 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+extern crate core;
+
 use pyo3::{Bound, pymodule, PyResult};
 use pyo3::prelude::PyModule;
 use crate::py::register_modules;
