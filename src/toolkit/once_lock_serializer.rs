@@ -13,9 +13,8 @@
 //limitations under the License.
 
 #![allow(dead_code)]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-use serde::de::DeserializeOwned;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "OnceLock")]

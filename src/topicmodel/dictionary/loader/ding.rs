@@ -1,9 +1,8 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io;
-use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::string::FromUtf8Error;
+use std::str::Utf8Error;
 use itertools::Itertools;
 use nom::combinator::{eof, map, not, opt, peek, recognize, value};
 use nom::error::{ParseError};
@@ -11,9 +10,10 @@ use nom::{IResult};
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag};
 use nom::character::complete::{multispace0, space0, char};
-use nom::multi::{many0, many1};
+use nom::multi::{many1};
 use nom::sequence::{delimited, pair, preceded, separated_pair, terminated};
 use thiserror::Error;
+use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, DataLeftError, DictionaryLineParserError, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
 use crate::topicmodel::dictionary::loader::helper::take_bracket;
 use crate::topicmodel::dictionary::loader::word_infos::{PartialWordType, WordInfo};
 
@@ -241,6 +241,7 @@ impl<T> DingEntry<T> {
         DingEntry(self.0.map(&mapper), self.1.map(&mapper))
     }
 }
+
 impl<T> From<(DingLanguageEntries<T>, DingLanguageEntries<T>)> for DingEntry<T> {
     fn from((entry_a, entry_b): (DingLanguageEntries<T>, DingLanguageEntries<T>)) -> Self {
         Self(entry_a, entry_b)
@@ -542,144 +543,54 @@ fn parse_line<'a, E: ParseError<&'a str>, const WITH_ERROR_CORRECTION: bool>(s: 
     }
 }
 
-#[derive(Error, Debug)]
-pub enum DingDictionaryReaderError {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
-    Utf8(#[from] FromUtf8Error),
-    #[error(transparent)]
-    Parser(#[from] nom::Err<nom::error::Error<String>>),
-    #[error("Failed to properly parse the data!")]
-    Lost(String)
-}
-
-#[derive(Error, Debug)]
-#[error("{0}: {1}")]
-pub struct DingDictionaryError(
-    usize,
-    DingDictionaryReaderError
-);
-
-
-pub struct DingDictionaryReader<R> {
-    reader: BufReader<R>,
-    line_number: usize,
-    eof: bool,
-    #[cfg(test)]
-    buffer: Option<Vec<u8>>
-}
-
-impl<R: Read> DingDictionaryReader<R> {
-    #[cfg(test)]
-    pub fn new(reader: R) -> Self {
-        Self {
-            reader: BufReader::new(reader),
-            line_number: 0,
-            eof: false,
-            buffer: None
+fn parse_or_fail(content: &[u8]) -> FileParserResult<DingEntry<String>> {
+    match base_parser_method(
+        content,
+        |s| parse_line::<nom::error::Error<&str>, true>(s)
+    ) {
+        Ok(value) => {
+            Ok(value.map(ToString::to_string))
+        }
+        Err(value) => {
+            Err(value.map(|value| value.map(ToString::to_string)))
         }
     }
 
-    //noinspection RsInvalidFieldsInStructLiteral
-    #[cfg(not(test))]
-    pub fn new(reader: R) -> Self {
-        Self {
-            reader: BufReader::new(reader),
-            line_number: 0,
-            eof: false,
-        }
-    }
+    // let content = std::str::from_utf8(content)?;
+    // let (left, entry) = parse_line::<nom::error::Error<&str>, true>(content).map_err(|err| {
+    //     match err {
+    //         nom::Err::Error(err) => {
+    //             nom::Err::Error(nom::error::Error::from_error_kind(err.input.to_string(), err.code))
+    //         },
+    //         nom::Err::Incomplete(err) => {
+    //             nom::Err::Incomplete(err)
+    //         },
+    //         nom::Err::Failure(err) => {
+    //             nom::Err::Failure(nom::error::Error::from_error_kind(err.input.to_string(), err.code))
+    //         }
+    //     }
+    // })?;
+    // if !left.is_empty() {
+    //     Err(DingDictionaryReaderError::Lost(left.to_string()))
+    // } else {
+    //     Ok(entry.map(|value| value.to_string()))
+    // }
 }
 
 
-impl<R: Read> DingDictionaryReader<R> {
 
-    pub fn current_line_number(&self) -> usize {
-        self.line_number
-    }
 
-    pub fn current_buffer(&self) -> Option<&Vec<u8>> {
-        self.buffer.as_ref()
-    }
-
-    fn next_impl(&mut self) -> Option<Result<DingEntry<String>, DingDictionaryReaderError>> {
-        fn parse_or_fail(content: Vec<u8>) -> Result<DingEntry<String>, DingDictionaryReaderError> {
-            let content = String::from_utf8(content)?;
-            let (left, entry) = parse_line::<nom::error::Error<&str>, true>(content.as_str()).map_err(|err| {
-                match err {
-                    nom::Err::Error(err) => {
-                        nom::Err::Error(nom::error::Error::from_error_kind(err.input.to_string(), err.code))
-                    },
-                    nom::Err::Incomplete(err) => {
-                        nom::Err::Incomplete(err)
-                    },
-                    nom::Err::Failure(err) => {
-                        nom::Err::Failure(nom::error::Error::from_error_kind(err.input.to_string(), err.code))
-                    }
-                }
-            })?;
-            if !left.is_empty() {
-                Err(DingDictionaryReaderError::Lost(left.to_string()))
-            } else {
-                Ok(entry.map(|value| value.to_string()))
-            }
-        }
-
-        if self.eof {
-            return None
-        }
-        let mut content = Vec::new();
-        loop {
-            match self.reader.read_until(b'\n', &mut content) {
-                Ok(value) => {
-                    if value == 0 {
-                        self.eof = true;
-                        break None
-                    } else {
-                        self.line_number += 1;
-                        if let Some(first) = content.first() {
-                            // Comment or empty line
-                            if b'#'.eq(first) || b'\r'.eq(first) || b'\n'.eq(first) {
-                                content.clear();
-                                continue
-                            }
-                        }
-                        #[cfg(test)] {
-                            self.buffer = Some(content.clone())
-                        }
-                        break Some(parse_or_fail(content))
-                    }
-                }
-                Err(value) => {
-                    break Some(Err(value.into()))
-                }
-            }
-        }
-    }
-}
-
-impl<R: Read> Iterator for DingDictionaryReader<R> {
-    type Item = Result<DingEntry<String>, DingDictionaryError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_impl().map(|value| {
-            value.map_err(|err|
-                DingDictionaryError(self.line_number, err)
-            )
-        })
-    }
-}
-
-pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<DingDictionaryReader<File>> {
-    Ok(DingDictionaryReader::new(File::options().read(true).open(file)?))
+pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWiseReader<File, DingEntry<String>>> {
+    Ok(LineWiseDictionaryReader::new(
+        File::options().read(true).open(file)?,
+        parse_or_fail
+    ))
 }
 
 
 
 #[cfg(test)]
 mod test {
-    use std::str::Utf8Error;
     use nom::error::VerboseError;
     use nom::Finish;
     use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
@@ -723,7 +634,7 @@ mod test {
             let result = parse_line::<VerboseError<_>, false>(value).finish();
 
             match &result {
-                Ok((a, b)) => {
+                Ok((_, b)) => {
                     println!("{value}\n\n{b}\n\n{b:?}");
                     assert_eq!(value.replace(' ', "").replace("\t", ""), b.to_string().replace(' ', "").replace("\t", ""));
                 }
@@ -757,7 +668,7 @@ mod test {
                                         // println!("Original:\n{}\n{}\n\n{:?}\n", s.trim(), value, value)
                                     }
                                 }
-                                Err(err) => {
+                                Err(_) => {
                                     println!("Failed to parse original!")
                                 }
                             }
@@ -773,7 +684,7 @@ mod test {
                                     println!("Line: {}", it.current_line_number());
                                     println!("Original:\n{}", s.trim())
                                 }
-                                Err(err) => {
+                                Err(_) => {
                                     println!("Failed to parse original!")
                                 }
                             }

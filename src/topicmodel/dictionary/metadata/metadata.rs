@@ -1,7 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use crate::toolkit::once_lock_serializer::OnceLockDef;
 use crate::topicmodel::dictionary::metadata::typesafe_interner::{DefaultDictionaryOrigin, DefaultTag};

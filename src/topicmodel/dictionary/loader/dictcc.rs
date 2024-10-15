@@ -1,4 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
+use std::fs::File;
+use std::path::Path;
 use itertools::Itertools;
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag};
@@ -8,6 +10,7 @@ use nom::error::{FromExternalError, ParseError};
 use nom::IResult;
 use nom::multi::many1;
 use nom::sequence::{delimited, preceded, terminated};
+use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader};
 use crate::topicmodel::dictionary::loader::helper::take_bracket;
 use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartialWordType, WordType};
 
@@ -250,4 +253,22 @@ fn parse_line<'a, E: DictCCParserError<&'a str>>(s: &'a str) -> IResult<&'a str,
         )),
         Entry::from
     )(s)
+}
+
+fn parse_or_fail(content: &[u8]) -> FileParserResult<Entry<String>> {
+    match base_parser_method(
+        content,
+        |s| parse_line::<nom::error::Error<&str>>(s)
+    ) {
+        Ok(value) => {
+            Ok(value.map(ToString::to_string))
+        }
+        Err(value) => {
+            Err(value.map(|value| value.map(ToString::to_string)))
+        }
+    }
+}
+
+pub fn read_dictionary(file: impl AsRef<Path>) -> FunctionBasedLineWiseReader<File, Entry<String>> {
+
 }
