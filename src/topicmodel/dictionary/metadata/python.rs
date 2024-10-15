@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use itertools::Itertools;
 use pyo3::{pyclass, pymethods, FromPyObject, IntoPy, PyObject, Python};
-use string_interner::DefaultSymbol;
 use crate::topicmodel::dictionary::metadata::container::MetadataContainer;
 use crate::topicmodel::dictionary::metadata::{Metadata, MetadataRef};
 use crate::topicmodel::dictionary::metadata::typesafe_interner::DefaultDictionaryOrigin;

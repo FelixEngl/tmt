@@ -19,7 +19,9 @@ pub mod direction;
 pub mod iterators;
 mod traits;
 mod dictionary;
+mod loader;
 
+pub use loader::*;
 pub use traits::*;
 
 pub use dictionary::*;

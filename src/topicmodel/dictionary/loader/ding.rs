@@ -5,13 +5,13 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::string::FromUtf8Error;
 use itertools::Itertools;
-use nom::combinator::{map, not, opt, peek, recognize, value};
+use nom::combinator::{eof, map, not, opt, peek, recognize, value};
 use nom::error::{ParseError};
 use nom::{IResult};
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag};
 use nom::character::complete::{multispace0, space0, char};
-use nom::multi::{many1};
+use nom::multi::{many0, many1};
 use nom::sequence::{delimited, pair, preceded, separated_pair, terminated};
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::take_bracket;
@@ -28,8 +28,8 @@ pub enum DingWordEntryElement<T> {
     Category(T),
     Contextualisation(T),
     Info(WordInfo<T>),
-    Abbreviation(T),
-    AlternateNotation(T),
+    Abbreviation(T, Option<Vec<T>>),
+    AlternateNotation(T, Option<Vec<T>>),
     /// Basically a placeholder for a word
     WordPlaceholder,
     /// Example:
@@ -43,7 +43,7 @@ impl<T> DingWordEntryElement<T> {
             DingWordEntryElement::Word(_)
             | DingWordEntryElement::PartialWord(_, _)
             | DingWordEntryElement::AlternatingWords(_)
-            | DingWordEntryElement::AlternateNotation(_)
+            | DingWordEntryElement::AlternateNotation(_, _)
             | DingWordEntryElement::WordPlaceholder => true,
             _ => false
         }
@@ -59,22 +59,52 @@ impl<T> DingWordEntryElement<T> {
             DingWordEntryElement::InterchangeableWith => DingWordEntryElement::InterchangeableWith,
             DingWordEntryElement::WordPlaceholder => DingWordEntryElement::WordPlaceholder,
             DingWordEntryElement::AlternatingWords(value) => DingWordEntryElement::AlternatingWords(value.map(mapper)),
-            DingWordEntryElement::Abbreviation(value) => DingWordEntryElement::Abbreviation(mapper(value)),
-            DingWordEntryElement::AlternateNotation(value) => DingWordEntryElement::Abbreviation(mapper(value))
+            DingWordEntryElement::Abbreviation(value, cont) => match cont {
+                None => {
+                    DingWordEntryElement::Abbreviation(mapper(value), None)
+                }
+                Some(values) => {
+                    DingWordEntryElement::Abbreviation(mapper(value), Some(values.into_iter().map(mapper).collect()))
+                }
+            },
+            DingWordEntryElement::AlternateNotation(value, cont) => match cont {
+                None => {
+                    DingWordEntryElement::AlternateNotation(mapper(value), None)
+                }
+                Some(values) => {
+                    DingWordEntryElement::AlternateNotation(mapper(value), Some(values.into_iter().map(mapper).collect()))
+                }
+            }
         }
     }
 }
+
 impl<T> Display for DingWordEntryElement<T> where T: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             DingWordEntryElement::Word(value) => {
                 write!(f, "{value}")
             }
-            DingWordEntryElement::Abbreviation(value) => {
-                write!(f, "/{value}/")
+            DingWordEntryElement::Abbreviation(value, values) => {
+                match values {
+                    None => {
+                        write!(f, "/{value}/")
+                    }
+                    Some(values) => {
+                        write!(f, "/{value}, {}/", values.iter().join(", "))
+                    }
+                }
             }
-            DingWordEntryElement::AlternateNotation(value) => {
-                write!(f, "<{value}>")
+            DingWordEntryElement::AlternateNotation(value, values) => {
+                match values {
+                    None => {
+                        write!(f, "<{value}>")
+                    }
+                    Some(values) => {
+                        write!(f, "<{value} {}>", values.iter().join(" "))
+                    }
+                }
+
             }
             DingWordEntryElement::Category(value) => {
                 write!(f, "[{value}]")
@@ -139,7 +169,7 @@ impl<T> From<(DingAlternatingWordValue<T>, Vec<DingAlternatingWordValue<T>>)> fo
 }
 impl<T> Display for DingAlternatingWord<T> where T: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.0, self.1.iter().join("/"))
+        write!(f, "{} / {}", self.0, self.1.iter().join(" / "))
     }
 }
 
@@ -233,6 +263,16 @@ fn parse_word_content<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str
 }
 
 #[inline(always)]
+fn parse_word_content_no_comma<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, &'a str, E> {
+    recognize(
+        alt((
+            is_not("{[\t:;|…/,"),
+            recognize(pair(char(':'), not(char(':')))),
+        ))
+    )(s)
+}
+
+#[inline(always)]
 fn parse_interchangeable<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
     value(
         DingWordEntryElement::InterchangeableWith,
@@ -242,13 +282,25 @@ fn parse_interchangeable<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a 
 
 #[inline(always)]
 fn parse_abbreviation<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
+    // println!("parse_abbreviation {s}");
     map(
         delimited(
             char('/'),
-            delimited(space0, parse_word_content, space0),
-            terminated(char('/'), peek(not(preceded(space0, parse_word))))
+            pair(
+                preceded(space0, parse_word_content_no_comma),
+                opt(
+                    many1(
+                        delimited(
+                            delimited(space0, is_a(";,"), space0),
+                            parse_word_content_no_comma,
+                            space0
+                        )
+                    )
+                )
+            ),
+            delimited(space0, char('/'), peek(not(preceded(space0, parse_word))))
         ),
-        DingWordEntryElement::Abbreviation
+        |(a, b)| DingWordEntryElement::Abbreviation(a, b)
     )(s)
 }
 
@@ -257,9 +309,23 @@ fn parse_non_word<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Di
         (
             map(take_bracket!('[', ']'), DingWordEntryElement::Category),
             map(take_bracket!('{', '}'), |value: &str| DingWordEntryElement::Info(value.into())),
-            map(take_bracket!('(', ')'), DingWordEntryElement::Contextualisation),
+            map(preceded(opt(char('/')), take_bracket!('(', ')')), DingWordEntryElement::Contextualisation),
             parse_abbreviation,
-            map(delimited(terminated(char('<'), peek(not(char('>')))), parse_word_content, char('>')), DingWordEntryElement::AlternateNotation),
+            delimited(
+                terminated(char('<'), peek(not(char('>')))),
+                map(
+                    pair(
+                        parse_word_content,
+                        opt(
+                            many1(
+                                preceded(space0, parse_word_content)
+                            )
+                        )
+                    ),
+                    |(a, b)| DingWordEntryElement::AlternateNotation(a, b)
+                ),
+                char('>')
+            ),
         )
     )(s)
 }
@@ -286,12 +352,13 @@ fn parse_word_entry_element_no_alt<'a, E: ParseError<&'a str>>(s: &'a str) -> IR
 }
 
 fn parse_single_word_alternative<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingAlternatingWordValue<&'a str>, E> {
+    // println!("parse_single_word_alternative {s}",);
     map(
         pair(
             preceded(space0, parse_word),
             opt(
                 preceded(
-                    peek(preceded(space0, is_a("{[(<"))),
+                    peek(preceded(space0, is_a("{[(</"))),
                     many1(
                         preceded(
                             space0,
@@ -323,7 +390,7 @@ fn parse_word_alternative<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a
                 delimited(
                     preceded(space0, char('/')),
                     parse_single_word_alternative,
-                    space0
+                    terminated(space0, peek(not(terminated(tag("/"), preceded(space0, alt((is_a("(;|["), tag("::"), eof)))))))
                 )
             )
         ),
@@ -355,48 +422,124 @@ fn parse_word_entry<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, 
 
 
 fn parse_alt_word_entries<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingAlternativeEntries<&'a str>, E> {
+    // map(
+    //     many1(
+    //         alt(
+    //             (
+    //                 parse_word_entry,
+    //                 preceded(
+    //                     delimited(space0, char(';'), space0),
+    //                     parse_word_entry
+    //                 ),
+    //             )
+    //         )
+    //     ),
+    //     DingAlternativeEntries::from
+    // )(s)
+
     map(
-        many1(
-            alt(
-                (
-                    parse_word_entry,
+        pair(
+            parse_word_entry,
+            opt(
+                many1(
                     preceded(
                         delimited(space0, char(';'), space0),
                         parse_word_entry
-                    ),
+                    )
                 )
             )
         ),
-        DingAlternativeEntries::from
+        |(first, following)| {
+            match following {
+                None => {
+                    vec![first].into()
+                }
+                Some(value) => {
+                    let mut data = Vec::with_capacity(1 + value.len());
+                    data.push(first);
+                    data.extend(value);
+                    data.into()
+                }
+            }
+        }
     )(s)
 }
 
 
 fn parse_language_entries<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingLanguageEntries<&'a str>, E> {
+
+    // map(
+    //     many1(
+    //         alt(
+    //             (
+    //                 parse_alt_word_entries,
+    //                 preceded(
+    //                     delimited(space0, char('|'), space0),
+    //                     parse_alt_word_entries
+    //                 ),
+    //             )
+    //         )
+    //     ),
+    //     DingLanguageEntries::from
+    // )(s)
+
     map(
-        many1(
-            alt(
-                (
-                    parse_alt_word_entries,
+        pair(
+            parse_alt_word_entries,
+            opt(
+                many1(
                     preceded(
                         delimited(space0, char('|'), space0),
                         parse_alt_word_entries
-                    ),
+                    )
                 )
             )
         ),
-        DingLanguageEntries::from
+        |(first, following)| {
+            match following {
+                None => {
+                    vec![first].into()
+                }
+                Some(value) => {
+                    let mut data = Vec::with_capacity(1 + value.len());
+                    data.push(first);
+                    data.extend(value);
+                    data.into()
+                }
+            }
+        }
     )(s)
 }
 
-fn parse_line<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingEntry<&'a str>, E> {
-    terminated(
-        map(
-            separated_pair(parse_language_entries, delimited(space0, tag("::"), space0), parse_language_entries),
-            DingEntry::from
-        ),
-        multispace0
-    )(s)
+fn parse_line<'a, E: ParseError<&'a str>, const WITH_ERROR_CORRECTION: bool>(s: &'a str) -> IResult<&'a str, DingEntry<&'a str>, E> {
+    if WITH_ERROR_CORRECTION {
+        terminated(
+            map(
+                separated_pair(
+                    parse_language_entries,
+                    delimited(space0, tag("::"),space0),
+                    preceded(
+                        opt(terminated(char('|'), space0)),
+                        parse_language_entries
+                    )
+                ),
+                DingEntry::from
+            ),
+            multispace0
+        )(s)
+    } else {
+        terminated(
+            map(
+                separated_pair(
+                    parse_language_entries,
+                    delimited(space0, tag("::"),space0),
+                    parse_language_entries
+                ),
+                DingEntry::from
+            ),
+            multispace0
+        )(s)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -422,15 +565,29 @@ pub struct DingDictionaryError(
 pub struct DingDictionaryReader<R> {
     reader: BufReader<R>,
     line_number: usize,
-    eof: bool
+    eof: bool,
+    #[cfg(test)]
+    buffer: Option<Vec<u8>>
 }
 
 impl<R: Read> DingDictionaryReader<R> {
+    #[cfg(test)]
     pub fn new(reader: R) -> Self {
         Self {
             reader: BufReader::new(reader),
             line_number: 0,
-            eof: false
+            eof: false,
+            buffer: None
+        }
+    }
+
+    //noinspection RsInvalidFieldsInStructLiteral
+    #[cfg(not(test))]
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader: BufReader::new(reader),
+            line_number: 0,
+            eof: false,
         }
     }
 }
@@ -442,10 +599,14 @@ impl<R: Read> DingDictionaryReader<R> {
         self.line_number
     }
 
+    pub fn current_buffer(&self) -> Option<&Vec<u8>> {
+        self.buffer.as_ref()
+    }
+
     fn next_impl(&mut self) -> Option<Result<DingEntry<String>, DingDictionaryReaderError>> {
         fn parse_or_fail(content: Vec<u8>) -> Result<DingEntry<String>, DingDictionaryReaderError> {
             let content = String::from_utf8(content)?;
-            let (left, entry) = parse_line::<nom::error::Error<&str>>(content.as_str()).map_err(|err| {
+            let (left, entry) = parse_line::<nom::error::Error<&str>, true>(content.as_str()).map_err(|err| {
                 match err {
                     nom::Err::Error(err) => {
                         nom::Err::Error(nom::error::Error::from_error_kind(err.input.to_string(), err.code))
@@ -484,6 +645,9 @@ impl<R: Read> DingDictionaryReader<R> {
                                 continue
                             }
                         }
+                        #[cfg(test)] {
+                            self.buffer = Some(content.clone())
+                        }
                         break Some(parse_or_fail(content))
                     }
                 }
@@ -515,6 +679,7 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<DingDictionaryReade
 
 #[cfg(test)]
 mod test {
+    use std::str::Utf8Error;
     use nom::error::VerboseError;
     use nom::Finish;
     use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
@@ -535,32 +700,32 @@ mod test {
     #[test]
     fn can_recognize_word_category() {
 
-        const TEST_LINES: [&'static str; 11] = [
-            "Aal {m} (auf der Speisekarte) [cook.] | Aal blau; blauer Aal | Aal grün; grüner Aal | Aal in Aspik; Aal in Gelee :: Eel (on a menu) | Eel au bleu; Eel steamed and served with Butter | Boiled Eel served with Parsley Sauce | Jellied Eel",
-            "A {n}; Ais {n};As {n}; Aisis {n}; Ases {n} [mus.] | A-Dur {n} :: A; A sharp; A flat; A double sharp; A double flat | A major",
-            "Abbau {m}; Zersetzung {f}; Degradierung {f} (von etw.) [chem.][biol.] | bakterieller Abbau | biologischer Abbau | chemischerAbbau | photochemischer Abbau; Abbau durch Licht | metabolischer Abbau | thermischer Abbau | Abbau durch Bakterien :: breakdown; decomposition; degradation (of sth.) | bacterialdegradation | biological breakdown/degradation; biodegradation | chemical breakdown/degradation | photochemicalbreakdown/degradation; photodegradation | metabolic breakdown | thermal degradation | bacterial decomposition",
-            "Ding {n}; Sache {f} | Dinge {pl}; Sachen {pl}; Krempel {m} | Dinge für sich behalten | die Dinge laufen lassen | den Dingen auf den Grund gehen | beim augenblicklichen Stand der Dinge | das Ding an sich | über solchen Dingen stehen | Er ist der Sache nicht ganz gewachsen. :: thing | things | to keep things to oneself | to let things slide | to get to the bottom of things | as things stand now; as things are now | the thing-in-itself | to be above such things | He is not really on top of things.",
-            "absolut; überhaupt {adv} (Verstärkung einer Aussage) | jegliche/r/s; absolut jeder | keinerlei; absolut kein | jeglichen Zweifel ausräumen | Ich habe absolut/überhaupt keinen Grund, dorthin zurückzukehren. :: whatsoever (postpositive) (used to emphasize an assertion) | any … whatsoever | no … whatsoever | to remove any doubt whatsoever | I have no reason whatsoever to return there.; I have no reason to return there whatsoever.",
-            "absondernd; sekretorisch; Sekretions…; sezernierend {adj} [biol.] | Sekretionskanälchen {n} | Sekretionsmechanismus {m} | Sekretionsnerv {n} | Gelenkschmiere sezernierend :: secretory | secretory canaliculus | secretory mechanism | secretory nerve | synoviparous",
-            "alterungsbeständig {adj} (Werkstoff) {adj} :: resistant to ageing [Br.]/aging [Am.]; ageing-resistant [Br.]; aging-resistant [Am.]; non-ageing [Br.]; non-aging [Am.] (of a material)",
-            "Abfallcontainer {f}; Müllcontainer {f} | Abfallcontainer {pl}; Müllcontainer {pl} :: waste/rubbish/garbage [Am.] container | waste/rubbish/garbage containers",
-            "Arzneimittelnebenwirkung {f}; unerwünschte Arzeimittelwirkung {f} [pharm.] | Arzneimittelnebenwirkungen {pl}; unerwünschte Arzeimittelwirkungen {pl} | schwerwiegende Nebenwirkung; schwerwiegende unerwünschte Arzneimittelwirkung :: advserse drug reaction; adverse drug effect; adverse effect | advserse drug reactions; adverse drug effects; adverse effects | serious adverse drug reaction /SADR/; serious adverse reaction / SAR/",
-            "Arztpraxis {f}; Ordination {f} [Ös.]; Arztambulatorium {n} [Südtirol] [med.] | Arztpraxen {pl}; Ordinationen {pl}; Arztambulatorien {pl} | Privatpraxis {f} | eine Arztpraxis / Ordination [Ös.] / ein Arztambulatorium [Südtirol] übernehmen :: medical practice; doctor's surgery [Br.]; medical office [Am.] | medical practices; doctor's surgeries; medical offices | private practice | to take over a medical practice/doctor's surgery [Br.] / medical office [Am.]",
-            "Bereitschaftszustand {m}; Bereitschaft {f} [electr.] [techn.] | Laufzeit im Bereitschaftszustand (Mobilgeräte usw.) | Bereitschaftsverlust {m} [electr.] | im Bereitschaftsbetrieb; in Wartestellung | im Bereitschaftsmodus / in Wartestellung / einsatzbereit sein :: standby condition; standby (readiness for immediate deployment) | standby time (of mobile devices etc.) | standby loss | under standby conditions | to be on standby",
+        const TEST_LINES: &[&'static str] = &[
+            // "Aal {m} (auf der Speisekarte) [cook.] | Aal blau; blauer Aal | Aal grün; grüner Aal | Aal in Aspik; Aal in Gelee :: Eel (on a menu) | Eel au bleu; Eel steamed and served with Butter | Boiled Eel served with Parsley Sauce | Jellied Eel",
+            // "A {n}; Ais {n};As {n}; Aisis {n}; Ases {n} [mus.] | A-Dur {n} :: A; A sharp; A flat; A double sharp; A double flat | A major",
+            // "Abbau {m}; Zersetzung {f}; Degradierung {f} (von etw.) [chem.][biol.] | bakterieller Abbau | biologischer Abbau | chemischerAbbau | photochemischer Abbau; Abbau durch Licht | metabolischer Abbau | thermischer Abbau | Abbau durch Bakterien :: breakdown; decomposition; degradation (of sth.) | bacterialdegradation | biological breakdown/degradation; biodegradation | chemical breakdown/degradation | photochemicalbreakdown/degradation; photodegradation | metabolic breakdown | thermal degradation | bacterial decomposition",
+            // "Ding {n}; Sache {f} | Dinge {pl}; Sachen {pl}; Krempel {m} | Dinge für sich behalten | die Dinge laufen lassen | den Dingen auf den Grund gehen | beim augenblicklichen Stand der Dinge | das Ding an sich | über solchen Dingen stehen | Er ist der Sache nicht ganz gewachsen. :: thing | things | to keep things to oneself | to let things slide | to get to the bottom of things | as things stand now; as things are now | the thing-in-itself | to be above such things | He is not really on top of things.",
+            // "absolut; überhaupt {adv} (Verstärkung einer Aussage) | jegliche/r/s; absolut jeder | keinerlei; absolut kein | jeglichen Zweifel ausräumen | Ich habe absolut/überhaupt keinen Grund, dorthin zurückzukehren. :: whatsoever (postpositive) (used to emphasize an assertion) | any … whatsoever | no … whatsoever | to remove any doubt whatsoever | I have no reason whatsoever to return there.; I have no reason to return there whatsoever.",
+            // "absondernd; sekretorisch; Sekretions…; sezernierend {adj} [biol.] | Sekretionskanälchen {n} | Sekretionsmechanismus {m} | Sekretionsnerv {n} | Gelenkschmiere sezernierend :: secretory | secretory canaliculus | secretory mechanism | secretory nerve | synoviparous",
+            // "alterungsbeständig {adj} (Werkstoff) {adj} :: resistant to ageing [Br.]/aging [Am.]; ageing-resistant [Br.]; aging-resistant [Am.]; non-ageing [Br.]; non-aging [Am.] (of a material)",
+            // "Abfallcontainer {f}; Müllcontainer {f} | Abfallcontainer {pl}; Müllcontainer {pl} :: waste/rubbish/garbage [Am.] container | waste/rubbish/garbage containers",
+            // "Arzneimittelnebenwirkung {f}; unerwünschte Arzeimittelwirkung {f} [pharm.] | Arzneimittelnebenwirkungen {pl}; unerwünschte Arzeimittelwirkungen {pl} | schwerwiegende Nebenwirkung; schwerwiegende unerwünschte Arzneimittelwirkung :: advserse drug reaction; adverse drug effect; adverse effect | advserse drug reactions; adverse drug effects; adverse effects | serious adverse drug reaction /SADR/; serious adverse reaction / SAR/",
+            // "Arztpraxis {f}; Ordination {f} [Ös.]; Arztambulatorium {n} [Südtirol] [med.] | Arztpraxen {pl}; Ordinationen {pl}; Arztambulatorien {pl} | Privatpraxis {f} | eine Arztpraxis / Ordination [Ös.] / ein Arztambulatorium [Südtirol] übernehmen :: medical practice; doctor's surgery [Br.]; medical office [Am.] | medical practices; doctor's surgeries; medical offices | private practice | to take over a medical practice/doctor's surgery [Br.] / medical office [Am.]",
+            // "Bereitschaftszustand {m}; Bereitschaft {f} [electr.] [techn.] | Laufzeit im Bereitschaftszustand (Mobilgeräte usw.) | Bereitschaftsverlust {m} [electr.] | im Bereitschaftsbetrieb; in Wartestellung | im Bereitschaftsmodus / in Wartestellung / einsatzbereit sein :: standby condition; standby (readiness for immediate deployment) | standby time (of mobile devices etc.) | standby loss | under standby conditions | to be on standby",
+            // "dümmster anzunehmender Nutzer; dümmster anzunehmender User /DAU/ [ugs.] [comp.] :: dumbest assumable user /DAU/; most stupid user imaginable [coll.]",
+            // "Waschkessel {m} | Waschkessel {pl} :: washboiler <wash-boiler> <wash boiler> | washboilers",
+            // "zur Zeit /z.Z., z.Zt./ :: at present, for the time being, at the time of",
+            // "in der Regel /i. d. R./ :: generally; usually {adv}",
+            // "West Virginia (US-Bundesstaat; Hauptstadt: Charleston) [geogr.] :: West Virginia /W.Va./ /W. Virg./ /WV/ (state of the US, capital: Charleston)",
         ];
         // todo: Requires handling of alternative with ageing [Br.]/aging [Am.]
         for value in TEST_LINES {
-            let result = parse_line::<VerboseError<_>>(value).finish();
+            let result = parse_line::<VerboseError<_>, false>(value).finish();
 
             match &result {
-                Ok(result) => {
-                    println!("######");
-                    println!("{:?}", result.1);
-                    println!("-----");
-                    println!("{}", value);
-                    println!("-----");
-                    println!("{}", result.1);
-                    println!("######");
+                Ok((a, b)) => {
+                    println!("{value}\n\n{b}\n\n{b:?}");
+                    assert_eq!(value.replace(' ', "").replace("\t", ""), b.to_string().replace(' ', "").replace("\t", ""));
                 }
                 Err(value) => {
                     println!("!!!!!!");
@@ -574,13 +739,53 @@ mod test {
     #[test]
     fn can_read_file(){
         let value = read_dictionary("E:\\git\\ldatranslation\\bambergdictionary\\dictionaryprocessor\\data\\ding\\de-en.txt").unwrap();
-        for v in value {
+        let mut it = value.into_iter();
+
+        let mut ct_err = 0usize;
+        let mut ct_diff = 0usize;
+        while let Some(v) = it.next() {
             match v {
-                Ok(_) => {}
+                Ok(value) => {
+                    match it.current_buffer() {
+                        None => {}
+                        Some(buf) => {
+                            match std::str::from_utf8(buf.as_slice()) {
+                                Ok(s) => {
+                                    if s.replace(' ', "").replace('\t', "").trim().ne(value.to_string().replace(' ', "").replace('\t', "").as_str().trim()) {
+                                        ct_diff+=1;
+                                        // println!("Line: {}", it.current_line_number());
+                                        // println!("Original:\n{}\n{}\n\n{:?}\n", s.trim(), value, value)
+                                    }
+                                }
+                                Err(err) => {
+                                    println!("Failed to parse original!")
+                                }
+                            }
+                        }
+                    }
+                }
                 Err(error) => {
-                    println!("{:?}", error)
+                    ct_err += 1;
+                    match it.current_buffer() {
+                        Some(buf) => {
+                            match std::str::from_utf8(buf.as_slice()) {
+                                Ok(s) => {
+                                    println!("Line: {}", it.current_line_number());
+                                    println!("Original:\n{}", s.trim())
+                                }
+                                Err(err) => {
+                                    println!("Failed to parse original!")
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+
+                    println!("{:?}\n", error)
                 }
             }
         }
+        // Err: 26, Diff: 37
+        println!("Err: {ct_err}, Diff: {ct_diff}");
     }
 }
