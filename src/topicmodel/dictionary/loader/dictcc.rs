@@ -10,7 +10,7 @@ use nom::error::{FromExternalError, ParseError};
 use nom::IResult;
 use nom::multi::many1;
 use nom::sequence::{delimited, preceded, terminated};
-use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader};
+use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
 use crate::topicmodel::dictionary::loader::helper::take_bracket;
 use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartialWordType, WordType};
 
@@ -270,5 +270,8 @@ fn parse_or_fail(content: &[u8]) -> FileParserResult<Entry<String>> {
 }
 
 pub fn read_dictionary(file: impl AsRef<Path>) -> FunctionBasedLineWiseReader<File, Entry<String>> {
-
+    LineWiseDictionaryReader::new(
+        File::options().read(true).open(file)?,
+        parse_or_fail
+    )
 }
