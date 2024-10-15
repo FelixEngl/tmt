@@ -269,9 +269,11 @@ fn parse_or_fail(content: &[u8]) -> FileParserResult<Entry<String>> {
     }
 }
 
-pub fn read_dictionary(file: impl AsRef<Path>) -> FunctionBasedLineWiseReader<File, Entry<String>> {
-    LineWiseDictionaryReader::new(
-        File::options().read(true).open(file)?,
-        parse_or_fail
+pub fn read_dictionary(file: impl AsRef<Path>) -> std::io::Result<FunctionBasedLineWiseReader<File, Entry<String>>> {
+    Ok(
+        LineWiseDictionaryReader::new(
+            File::options().read(true).open(file)?,
+            parse_or_fail
+        )
     )
 }

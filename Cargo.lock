@@ -876,6 +876,7 @@ dependencies = [
  "num_enum",
  "paste",
  "pyo3",
+ "quick-xml",
  "rand 0.9.0-alpha.1",
  "rand_distr 0.5.0-alpha.1",
  "rayon",
@@ -1637,6 +1638,15 @@ dependencies = [
  "pyo3-build-config",
  "quote",
  "syn 2.0.63",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

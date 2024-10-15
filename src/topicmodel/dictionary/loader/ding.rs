@@ -2,7 +2,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::path::Path;
-use std::str::Utf8Error;
 use itertools::Itertools;
 use nom::combinator::{eof, map, not, opt, peek, recognize, value};
 use nom::error::{ParseError};
@@ -12,8 +11,7 @@ use nom::bytes::complete::{is_a, is_not, tag};
 use nom::character::complete::{multispace0, space0, char};
 use nom::multi::{many1};
 use nom::sequence::{delimited, pair, preceded, separated_pair, terminated};
-use thiserror::Error;
-use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, DataLeftError, DictionaryLineParserError, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
+use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
 use crate::topicmodel::dictionary::loader::helper::take_bracket;
 use crate::topicmodel::dictionary::loader::word_infos::{PartialWordType, WordInfo};
 
@@ -543,10 +541,10 @@ fn parse_line<'a, E: ParseError<&'a str>, const WITH_ERROR_CORRECTION: bool>(s: 
     }
 }
 
-fn parse_or_fail(content: &[u8]) -> FileParserResult<DingEntry<String>> {
+fn parse_or_fail<'a>(content: &'a [u8]) -> FileParserResult<DingEntry<String>> {
     match base_parser_method(
         content,
-        |s| parse_line::<nom::error::Error<&str>, true>(s)
+        |s| parse_line::<nom::error::Error<&'a str>, true>(s)
     ) {
         Ok(value) => {
             Ok(value.map(ToString::to_string))

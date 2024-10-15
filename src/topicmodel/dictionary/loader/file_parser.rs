@@ -45,7 +45,7 @@ pub enum DictionaryLineParserError<O> {
     Utf8(#[from] Utf8Error),
     #[error(transparent)]
     Parser(#[from] nom::Err<nom::error::Error<String>>),
-    #[error("Failed to properly parse the data!")]
+    #[error("Failed to properly parse the data! {0:?} {1}")]
     Lost(O, String)
 }
 
@@ -77,26 +77,26 @@ impl<O> DataLeftError<O> for DictionaryLineParserError<O> {
     }
 }
 
-pub fn base_parser_method<O, F>(
-    content: &[u8],
+pub fn base_parser_method<'a, O, F>(
+    content: &'a [u8],
     parser_function: F
 ) -> Result<O, DictionaryLineParserError<O>>
 where
     O: Debug,
-    F: FnOnce(&str) -> IResult<&str, O, nom::error::Error<&str>>
+    F: FnOnce(&'a str) -> IResult<&'a str, O, nom::error::Error<&'a str>>
 {
     generic_base_parser_method(content, parser_function)
 }
 
 /// A base function to create a content parser from a normal nom parser method.
 #[inline(always)]
-pub fn generic_base_parser_method<O, E, F>(
-    content: &[u8],
+pub fn generic_base_parser_method<'a, O, E, F>(
+    content: &'a [u8],
     parser_function: F
 ) -> Result<O, E>
 where
     E: From<nom::Err<nom::error::Error<String>>> + DataLeftError<O> + From<Utf8Error>,
-    F: FnOnce(&str) -> IResult<&str, O, nom::error::Error<&str>>
+    F: FnOnce(&'a str) -> IResult<&'a str, O, nom::error::Error<&'a str>>
 {
     let content = std::str::from_utf8(content)?;
     let (left, entry) = parser_function(content).map_err(|err| {
@@ -112,7 +112,7 @@ where
             }
         }
     })?;
-    if !left.is_empty() {
+    if !left.trim().is_empty() {
         Err(E::create(entry, left))
     } else {
         Ok(entry)
