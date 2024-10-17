@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::str::Utf8Error;
 use aho_corasick::Anchored::No;
+use derive_builder::Builder;
 use itertools::{Either, Itertools};
 use quick_xml::Error;
 use quick_xml::events::attributes::Attribute;
@@ -10,6 +11,7 @@ use serde_json::de::Read;
 use strum::{AsRefStr, Display, EnumString, ToString};
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::{HasLineInfo, XmlReaderBase};
+use crate::topicmodel::dictionary::word_infos::{GrammaticalGender, GrammaticalNumber};
 
 pub struct TEIReader<R> {
     inner: XmlReaderBase<R>,
@@ -35,6 +37,44 @@ pub enum TEIReaderError {
     Utf8(#[from] Utf8Error)
 }
 
+#[derive(Builder)]
+pub struct Entry {
+    form: Form,
+    sense: TEISense
+}
+
+pub struct GramGroup {
+    pos: String,
+    num: Option<GrammaticalNumber>,
+    gen: Option<GrammaticalGender>,
+}
+
+#[derive(Builder)]
+pub struct Form {
+    orth: String,
+    pron: String
+}
+
+#[derive(Builder)]
+pub struct TEISense {
+    #[builder(setter(custom))]
+    #[builder(field(ty = "Vec<TEICit>", build = "self.cit.clone()"))]
+    cit: Vec<TEICit>,
+    #[builder(default)]
+    note: Option<String>
+}
+
+impl TEISenseBuilder {
+    fn add_cit(&mut self, cit: TEICit) {
+        self.cit.push(cit)
+    }
+}
+
+#[derive(Builder)]
+pub struct TEICit {
+    type_: String,
+    quote: String,
+}
 
 impl<R> TEIReader<R> where R: Read {
 
@@ -86,6 +126,24 @@ impl<R> TEIReader<R> where R: Read {
                             println!("Current != Back: {current} != {back}")
                         }
                     }
+                    match current {
+                        Position::Entry => {
+
+                        }
+                        Position::Form => {}
+                        Position::Orth => {}
+                        Position::Pron => {}
+                        Position::Sense => {}
+                        Position::Cit => {}
+                        Position::Quote => {}
+                        Position::GramGrp => {}
+                        Position::Pos => {}
+                        Position::Num => {}
+                        Position::Body => {}
+                        Position::Unknown => {}
+                        Position::Gen => {}
+                        Position::Note => {}
+                    }
                 }
                 Event::Text(value) => {
 
@@ -121,10 +179,14 @@ enum Position {
     GramGrp,
     #[strum(serialize = "pos")]
     Pos,
+    #[strum(serialize = "gen")]
+    Gen,
     #[strum(serialize = "num")]
     Num,
     #[strum(serialize = "body")]
     Body,
+    #[strum(serialize = "note")]
+    Note,
     Unknown
 }
 

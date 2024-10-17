@@ -862,6 +862,7 @@ dependencies = [
  "compact_str",
  "const-str",
  "delegate",
+ "derive_builder",
  "derive_more",
  "enum_dispatch",
  "evalexpr",
