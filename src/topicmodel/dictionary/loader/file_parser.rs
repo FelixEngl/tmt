@@ -6,6 +6,7 @@ use std::str::Utf8Error;
 use nom::error::ParseError;
 use nom::IResult;
 use thiserror::Error;
+use crate::topicmodel::dictionary::loader::helper::HasLineInfo;
 
 pub type FunctionBasedLineWiseReader<R, O, E = DictionaryLineParserError<O>> =  LineWiseDictionaryReader<R, fn(&[u8]) -> Result<O, E>>;
 
@@ -21,7 +22,7 @@ pub trait DictionaryLineParser {
 
 impl<O, E, F> DictionaryLineParser for F
 where
-    E: Error + From<std::io::Error>,
+    E: Error + From<io::Error>,
     F: Fn(&[u8]) -> Result<O, E>
 {
     type LineEntry = O;
@@ -129,6 +130,16 @@ pub struct LineWiseDictionaryReader<R, P: DictionaryLineParser> {
     buffer: Option<Vec<u8>>
 }
 
+impl<R, P: DictionaryLineParser> HasLineInfo for LineWiseDictionaryReader<R, P> {
+    fn current_buffer(&self) -> Option<&[u8]> {
+        self.buffer.as_ref().map(|value| value.as_slice())
+    }
+
+    fn current_line_number(&self) -> usize {
+        self.line_number
+    }
+}
+
 impl<R: Read, P: DictionaryLineParser> LineWiseDictionaryReader<R, P> {
     pub fn new(reader: R, parser: P) -> Self {
         Self {
@@ -143,15 +154,6 @@ impl<R: Read, P: DictionaryLineParser> LineWiseDictionaryReader<R, P> {
 
 
 impl<R: Read, P: DictionaryLineParser> LineWiseDictionaryReader<R, P> {
-
-    pub fn current_line_number(&self) -> usize {
-        self.line_number
-    }
-
-    pub fn current_buffer(&self) -> Option<&Vec<u8>> {
-        self.buffer.as_ref()
-    }
-
     fn next_impl(&mut self) -> Option<Result<P::LineEntry, P::Error>> {
         if self.eof {
             return None

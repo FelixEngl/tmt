@@ -6,6 +6,8 @@ mod file_parser;
 mod wikipedia;
 mod omega_wiki;
 mod tbx;
+mod eurovoc;
+mod free_dict;
 
 pub enum Dialect {
 

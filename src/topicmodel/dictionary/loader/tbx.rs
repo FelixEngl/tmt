@@ -1,8 +1,12 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::io::{BufRead};
+use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::num::ParseIntError;
+use std::path::Path;
 use std::str::Utf8Error;
+use itertools::chain;
 use nom::{AsBytes, IResult};
 use nom::branch::alt;
 use nom::bytes::complete::is_not;
@@ -13,13 +17,24 @@ use nom::multi::many1;
 use nom::sequence::{delimited, pair, preceded};
 use quick_xml::events::Event;
 use thiserror::Error;
-use crate::topicmodel::dictionary::loader::helper::map_merge_list_opt;
+use crate::topicmodel::dictionary::loader::helper::HasLineInfo;
 
 struct TbxReader<R> {
     reader: quick_xml::reader::Reader<R>,
     buffer: Vec<u8>,
     in_body: bool,
     finished: bool
+}
+
+impl<R> TbxReader<R> {
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader: quick_xml::reader::Reader::from_reader(reader),
+            buffer: Vec::new(),
+            in_body: false,
+            finished: false
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -44,9 +59,31 @@ impl From<nom::Err<nom::error::Error<&str>>> for TbxReaderError {
     }
 }
 
+#[derive(Debug, Clone)]
 struct TbxEntry {
     term_id: Option<usize>,
     entries: HashMap<String, Vec<String>>
+}
+
+impl Display for TbxEntry  {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.term_id {
+            None => {
+                write!(f, "{{Id=-!-, ")?;
+            }
+            Some(value) => {
+                write!(f, "{{Id={value}, ")?;
+            }
+        }
+        for (k, v) in self.entries.iter() {
+            write!(f, "[Lang={k}")?;
+            for value in v {
+                write!(f, ", \"{value}\"")?;
+            }
+            write!(f, "]")?;
+        }
+        write!(f, "}}")
+    }
 }
 
 fn term_parser<'a, E: nom::error::ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Vec<&'a str>, E> {
@@ -62,7 +99,7 @@ fn term_parser<'a, E: nom::error::ParseError<&'a str>>(s: &'a str) -> IResult<&'
                 )
             )
         ),
-        map_merge_list_opt
+        |(a, b)| chain!(std::iter::once(a), b.into_iter().flatten()).collect()
     )(s)
 }
 
@@ -132,12 +169,12 @@ impl<R> TbxReader<R> where R: BufRead {
                     let s = std::str::from_utf8(t.as_bytes())?;
                     let (left, extracted) = term_parser::<nom::error::Error<&str>>(s)?;
                     if left.is_empty() {
-                        terms.extend(extracted.into_iter().map(ToString::to_string))
+                        terms.extend(extracted.into_iter().map(|value| value.trim().to_string()))
                     } else if extracted.is_empty() {
                         return Err(TbxReaderError::ParserFailed(left.to_string()))
                     } else {
                         log::error!("Failed to completely parse an entry:\n\"{s}\"\n\"{left}\"");
-                        terms.extend(extracted.into_iter().map(ToString::to_string))
+                        terms.extend(extracted.into_iter().map(|value| value.trim().to_string()))
                     }
                 }
                 Event::End(e) => {
@@ -177,6 +214,16 @@ impl<R> TbxReader<R> where R: BufRead {
     }
 }
 
+impl<R> HasLineInfo for TbxReader<R> {
+    fn current_buffer(&self) -> Option<&[u8]> {
+        None
+    }
+
+    fn current_line_number(&self) -> usize {
+        0
+    }
+}
+
 impl<R> Iterator for TbxReader<R> where R: BufRead {
     type Item = Result<TbxEntry, TbxReaderError>;
 
@@ -200,3 +247,20 @@ impl<R> Iterator for TbxReader<R> where R: BufRead {
     }
 }
 
+pub fn read_dictionary(path: impl AsRef<Path>) -> std::io::Result<TbxReader<BufReader<File>>> {
+    Ok(TbxReader::new(BufReader::new(File::options().read(true).open(path)?)))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
+    use crate::topicmodel::dictionary::loader::tbx::read_dictionary;
+
+    #[test]
+    fn can_read(){
+        let value = read_dictionary(
+            "dictionaries/dicts.info/english-german-2020-12-10.tbx"
+        ).unwrap();
+        execute_test_read_for(value, 5, 30);
+    }
+}

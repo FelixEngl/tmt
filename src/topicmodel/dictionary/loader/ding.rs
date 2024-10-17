@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::path::Path;
-use itertools::Itertools;
+use itertools::{chain, Itertools};
 use nom::combinator::{eof, map, not, opt, peek, recognize, value};
 use nom::error::{ParseError};
 use nom::{IResult};
@@ -10,9 +10,9 @@ use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag};
 use nom::character::complete::{multispace0, space0, char};
 use nom::multi::{many1};
-use nom::sequence::{delimited, pair, preceded, separated_pair, terminated};
+use nom::sequence::{delimited, pair, preceded, separated_pair, terminated, tuple};
 use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
-use crate::topicmodel::dictionary::loader::helper::take_bracket;
+use crate::topicmodel::dictionary::loader::helper::{take_nested_bracket_delimited};
 use crate::topicmodel::dictionary::loader::word_infos::{PartialWordType, WordInfo};
 
 /// The single elements that make up an entry
@@ -26,22 +26,22 @@ pub enum DingWordEntryElement<T> {
     Category(T),
     Contextualisation(T),
     Info(WordInfo<T>),
-    Abbreviation(T, Option<Vec<T>>),
-    AlternateNotation(T, Option<Vec<T>>),
+    Abbreviation(Abbreviation<T>),
+    AlternateNotation(T, Option<Vec<T>>, Option<Abbreviation<T>>),
     /// Basically a placeholder for a word
     WordPlaceholder,
     /// Example:
     /// to put forward <> sth. -> to put forward, to put sth. forward, to put forward sth.
     InterchangeableWith,
-    
 }
+
 impl<T> DingWordEntryElement<T> {
     pub fn is_word(&self) -> bool {
         match self {
             DingWordEntryElement::Word(_)
             | DingWordEntryElement::PartialWord(_, _)
             | DingWordEntryElement::AlternatingWords(_)
-            | DingWordEntryElement::AlternateNotation(_, _)
+            | DingWordEntryElement::AlternateNotation(_, _, _)
             | DingWordEntryElement::WordPlaceholder => true,
             _ => false
         }
@@ -57,22 +57,13 @@ impl<T> DingWordEntryElement<T> {
             DingWordEntryElement::InterchangeableWith => DingWordEntryElement::InterchangeableWith,
             DingWordEntryElement::WordPlaceholder => DingWordEntryElement::WordPlaceholder,
             DingWordEntryElement::AlternatingWords(value) => DingWordEntryElement::AlternatingWords(value.map(mapper)),
-            DingWordEntryElement::Abbreviation(value, cont) => match cont {
-                None => {
-                    DingWordEntryElement::Abbreviation(mapper(value), None)
-                }
-                Some(values) => {
-                    DingWordEntryElement::Abbreviation(mapper(value), Some(values.into_iter().map(mapper).collect()))
-                }
-            },
-            DingWordEntryElement::AlternateNotation(value, cont) => match cont {
-                None => {
-                    DingWordEntryElement::AlternateNotation(mapper(value), None)
-                }
-                Some(values) => {
-                    DingWordEntryElement::AlternateNotation(mapper(value), Some(values.into_iter().map(mapper).collect()))
-                }
-            }
+            DingWordEntryElement::Abbreviation(value) => DingWordEntryElement::Abbreviation(value.map(mapper)),
+            DingWordEntryElement::AlternateNotation(value, cont, abbr) =>
+                DingWordEntryElement::AlternateNotation(
+                    mapper(value),
+                    cont.map(|value| value.into_iter().map(mapper).collect()),
+                    abbr.map(|value| value.map(mapper))
+                )
         }
     }
 }
@@ -83,23 +74,22 @@ impl<T> Display for DingWordEntryElement<T> where T: Display {
             DingWordEntryElement::Word(value) => {
                 write!(f, "{value}")
             }
-            DingWordEntryElement::Abbreviation(value, values) => {
-                match values {
-                    None => {
-                        write!(f, "/{value}/")
-                    }
-                    Some(values) => {
-                        write!(f, "/{value}, {}/", values.iter().join(", "))
-                    }
-                }
+            DingWordEntryElement::Abbreviation(value) => {
+                write!(f, "{value}")
             }
-            DingWordEntryElement::AlternateNotation(value, values) => {
-                match values {
-                    None => {
+            DingWordEntryElement::AlternateNotation(value, values, abbrev) => {
+                match (values, abbrev) {
+                    (None, None) => {
                         write!(f, "<{value}>")
                     }
-                    Some(values) => {
+                    (Some(values), None) => {
                         write!(f, "<{value} {}>", values.iter().join(" "))
+                    }
+                    (None, Some(abbrev)) => {
+                        write!(f, "<{value} {}>", abbrev)
+                    }
+                    (Some(values), Some(abbrev)) => {
+                        write!(f, "<{value} {} {abbrev}>", values.iter().join(" "))
                     }
                 }
 
@@ -132,6 +122,36 @@ impl<T> Display for DingWordEntryElement<T> where T: Display {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Abbreviation<T>(pub T, pub Option<Vec<T>>);
+
+
+impl<T> Abbreviation<T> {
+    pub fn map<R, F: Fn(T) -> R>(self, mapper: &F) -> Abbreviation<R> {
+        match self.1 {
+            None => {
+                Abbreviation(mapper(self.0), None)
+            }
+            Some(values) => {
+                Abbreviation(mapper(self.0), Some(values.into_iter().map(mapper).collect()))
+            }
+        }
+    }
+}
+
+impl<T> Display for Abbreviation<T> where T: Display {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.1 {
+            None => {
+                write!(f, "/{}/", self.0)
+            }
+            Some(values) => {
+                write!(f, "/{}, {}/", self.0, values.iter().join(", "))
+            }
+        }
+    }
+}
+
 /// Represents a single element in an DingAltEntry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[repr(transparent)]
@@ -154,20 +174,17 @@ impl<T> Display for DingAlternatingWordValue<T> where T: Display {
 
 /// Represents a word that can be alternated or altered by the following entries.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DingAlternatingWord<T>(pub DingAlternatingWordValue<T>, pub Vec<DingAlternatingWordValue<T>>);
+#[repr(transparent)]
+pub struct DingAlternatingWord<T>(pub Vec<DingAlternatingWordValue<T>>);
 impl<T> DingAlternatingWord<T> {
     pub fn map<R, F: Fn(T) -> R>(self, mapper: &F) -> DingAlternatingWord<R> {
-        DingAlternatingWord(self.0.map(mapper), self.1.into_iter().map(|value| value.map(mapper)).collect_vec())
+        DingAlternatingWord(self.0.into_iter().map(|value| value.map(mapper)).collect_vec())
     }
 }
-impl<T> From<(DingAlternatingWordValue<T>, Vec<DingAlternatingWordValue<T>>)> for DingAlternatingWord<T> {
-    fn from((leading, following): (DingAlternatingWordValue<T>, Vec<DingAlternatingWordValue<T>>)) -> Self {
-        Self(leading, following)
-    }
-}
+
 impl<T> Display for DingAlternatingWord<T> where T: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} / {}", self.0, self.1.iter().join(" / "))
+        write!(f, "{}", self.0.iter().join(" / "))
     }
 }
 
@@ -261,15 +278,6 @@ fn parse_word_content<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str
     )(s)
 }
 
-#[inline(always)]
-fn parse_word_content_no_comma<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, &'a str, E> {
-    recognize(
-        alt((
-            is_not("{[\t:;|…/,"),
-            recognize(pair(char(':'), not(char(':')))),
-        ))
-    )(s)
-}
 
 #[inline(always)]
 fn parse_interchangeable<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
@@ -279,52 +287,75 @@ fn parse_interchangeable<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a 
     )(s)
 }
 
+
 #[inline(always)]
-fn parse_abbreviation<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
-    // println!("parse_abbreviation {s}");
-    map(
-        delimited(
-            char('/'),
-            pair(
-                preceded(space0, parse_word_content_no_comma),
-                opt(
-                    many1(
-                        delimited(
-                            delimited(space0, is_a(";,"), space0),
-                            parse_word_content_no_comma,
-                            space0
-                        )
-                    )
-                )
-            ),
-            delimited(space0, char('/'), peek(not(preceded(space0, parse_word))))
-        ),
-        |(a, b)| DingWordEntryElement::Abbreviation(a, b)
+fn parse_word_content_no_comma<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, &'a str, E> {
+    recognize(
+        alt((
+            is_not("{[\t;|…/"),
+            recognize(pair(char(':'), not(char(':')))),
+        ))
     )(s)
 }
+
+
+#[inline(always)]
+fn parse_abbreviation<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Abbreviation<&'a str>, E> {
+    // println!("parse_abbreviation {s}");
+    map(
+        preceded(
+            space0,
+            delimited(
+                char('/'),
+                pair(
+                    preceded(space0, parse_word_content_no_comma),
+                    opt(
+                        many1(
+                            delimited(
+                                delimited(space0, is_a(";,"), space0),
+                                parse_word_content_no_comma,
+                                space0
+                            )
+                        )
+                    )
+                ),
+                delimited(space0, char('/'), peek(not(preceded(space0, parse_word))))
+            )
+        ),
+        |(a, b)| Abbreviation(a, b)
+    )(s)
+}
+
+// Err: 20, Diff: 83
+// Err: 24, Diff: 79
+// Err: 17, Diff: 80
 
 fn parse_non_word<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
     alt(
         (
-            map(take_bracket!('[', ']'), DingWordEntryElement::Category),
-            map(take_bracket!('{', '}'), |value: &str| DingWordEntryElement::Info(value.into())),
-            map(preceded(opt(char('/')), take_bracket!('(', ')')), DingWordEntryElement::Contextualisation),
-            parse_abbreviation,
+            map(take_nested_bracket_delimited('[', ']'), DingWordEntryElement::Category),
+            map(take_nested_bracket_delimited('{', '}'), |value: &str| DingWordEntryElement::Info(value.into())),
+            map(take_nested_bracket_delimited('(', ')'), DingWordEntryElement::Contextualisation),
+            map(parse_abbreviation, DingWordEntryElement::Abbreviation),
             delimited(
                 terminated(char('<'), peek(not(char('>')))),
                 map(
-                    pair(
-                        parse_word_content,
-                        opt(
-                            many1(
-                                preceded(space0, parse_word_content)
-                            )
+                    tuple(
+                        (
+                            parse_word_content,
+                            opt(
+                                many1(
+                                    preceded(space0, parse_word_content)
+                                )
+                            ),
+                            opt(parse_abbreviation)
                         )
                     ),
-                    |(a, b)| DingWordEntryElement::AlternateNotation(a, b)
+                    |(a, b, abbrev)| DingWordEntryElement::AlternateNotation(a, b, abbrev)
                 ),
                 char('>')
             ),
+            // map(preceded(opt(char('/')), take_bracket!('(', ')')), DingWordEntryElement::Contextualisation),
         )
     )(s)
 }
@@ -353,29 +384,29 @@ fn parse_word_entry_element_no_alt<'a, E: ParseError<&'a str>>(s: &'a str) -> IR
 fn parse_single_word_alternative<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingAlternatingWordValue<&'a str>, E> {
     // println!("parse_single_word_alternative {s}",);
     map(
-        pair(
-            preceded(space0, parse_word),
-            opt(
-                preceded(
-                    peek(preceded(space0, is_a("{[(</"))),
-                    many1(
-                        preceded(
-                            space0,
-                            parse_non_word
+        tuple(
+            (
+                opt(preceded(space0, map(take_nested_bracket_delimited('(', ')'), DingWordEntryElement::Contextualisation))),
+                preceded(space0, parse_word),
+                opt(
+                    preceded(
+                        peek(preceded(space0, is_a("{[(</"))),
+                        many1(
+                            preceded(
+                                space0,
+                                parse_non_word
+                            )
                         )
                     )
-                )
-            ),
+                ),
+            )
         ),
-        |(value, rest)| {
-            if let Some(rest) = rest {
-                let mut content = Vec::with_capacity(1+rest.len());
-                content.push(value);
-                content.extend(rest);
-                content
-            } else {
-                vec![value]
-            }.into()
+        |(context, value, rest)| {
+            chain!(
+                context,
+                std::iter::once(value),
+                rest.into_iter().flatten()
+            ).collect_vec().into()
         }
     )(s)
 }
@@ -393,7 +424,9 @@ fn parse_word_alternative<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a
                 )
             )
         ),
-        DingAlternatingWord::from
+        |(first, following)| {
+            DingAlternatingWord(chain!(std::iter::once(first), following).collect())
+        }
     )(s)
 }
 
@@ -421,21 +454,6 @@ fn parse_word_entry<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, 
 
 
 fn parse_alt_word_entries<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingAlternativeEntries<&'a str>, E> {
-    // map(
-    //     many1(
-    //         alt(
-    //             (
-    //                 parse_word_entry,
-    //                 preceded(
-    //                     delimited(space0, char(';'), space0),
-    //                     parse_word_entry
-    //                 ),
-    //             )
-    //         )
-    //     ),
-    //     DingAlternativeEntries::from
-    // )(s)
-
     map(
         pair(
             parse_word_entry,
@@ -516,7 +534,7 @@ fn parse_line<'a, E: ParseError<&'a str>, const WITH_ERROR_CORRECTION: bool>(s: 
             map(
                 separated_pair(
                     parse_language_entries,
-                    delimited(space0, tag("::"),space0),
+                    delimited(space0, tag("::"), space0),
                     preceded(
                         opt(terminated(char('|'), space0)),
                         parse_language_entries
@@ -592,6 +610,7 @@ mod test {
     use nom::error::VerboseError;
     use nom::Finish;
     use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
+    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
 
     #[test]
     fn can_parse_alt(){
@@ -626,6 +645,7 @@ mod test {
             // "zur Zeit /z.Z., z.Zt./ :: at present, for the time being, at the time of",
             // "in der Regel /i. d. R./ :: generally; usually {adv}",
             // "West Virginia (US-Bundesstaat; Hauptstadt: Charleston) [geogr.] :: West Virginia /W.Va./ /W. Virg./ /WV/ (state of the US, capital: Charleston)",
+            "sich differenzieren; sich verschieden entwickeln (von etw. / zu etw.) {vr} | Adulte Stammzellen differenzieren sich / entwickeln sich zum gewünschten Zelltyp. :: to differentiate (from sth. / (in)to sth.) | Adult stem cells differentiate into the required type of cell.",
         ];
         // todo: Requires handling of alternative with ageing [Br.]/aging [Am.]
         for value in TEST_LINES {
@@ -638,7 +658,7 @@ mod test {
                 }
                 Err(value) => {
                     println!("!!!!!!");
-                    println!("{}", value.to_string());
+                    println!("{:?}", value);
                     println!("!!!!!!");
                 }
             }
@@ -647,54 +667,7 @@ mod test {
 
     #[test]
     fn can_read_file(){
-        let value = read_dictionary("E:\\git\\ldatranslation\\bambergdictionary\\dictionaryprocessor\\data\\ding\\de-en.txt").unwrap();
-        let mut it = value.into_iter();
-
-        let mut ct_err = 0usize;
-        let mut ct_diff = 0usize;
-        while let Some(v) = it.next() {
-            match v {
-                Ok(value) => {
-                    match it.current_buffer() {
-                        None => {}
-                        Some(buf) => {
-                            match std::str::from_utf8(buf.as_slice()) {
-                                Ok(s) => {
-                                    if s.replace(' ', "").replace('\t', "").trim().ne(value.to_string().replace(' ', "").replace('\t', "").as_str().trim()) {
-                                        ct_diff+=1;
-                                        // println!("Line: {}", it.current_line_number());
-                                        // println!("Original:\n{}\n{}\n\n{:?}\n", s.trim(), value, value)
-                                    }
-                                }
-                                Err(_) => {
-                                    println!("Failed to parse original!")
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(error) => {
-                    ct_err += 1;
-                    match it.current_buffer() {
-                        Some(buf) => {
-                            match std::str::from_utf8(buf.as_slice()) {
-                                Ok(s) => {
-                                    println!("Line: {}", it.current_line_number());
-                                    println!("Original:\n{}", s.trim())
-                                }
-                                Err(_) => {
-                                    println!("Failed to parse original!")
-                                }
-                            }
-                        }
-                        None => {}
-                    }
-
-                    println!("{:?}\n", error)
-                }
-            }
-        }
-        // Err: 26, Diff: 37
-        println!("Err: {ct_err}, Diff: {ct_diff}");
+        let value = read_dictionary(".\\dictionaries\\ding\\de-en.txt").unwrap();
+        execute_test_read_for(value, 0, 0);
     }
 }

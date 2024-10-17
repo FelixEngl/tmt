@@ -1,19 +1,20 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::path::Path;
-use itertools::Itertools;
+use itertools::{Itertools};
 use nom::branch::alt;
-use nom::bytes::complete::{is_not, tag};
-use nom::character::complete::{char, multispace0, space0};
-use nom::combinator::{map, map_res, opt, value};
+use nom::bytes::complete::{is_a, is_not, tag, take_until};
+use nom::character::complete::{char, multispace0};
+use nom::combinator::{map, map_parser, map_res, opt, value};
 use nom::error::{FromExternalError, ParseError};
 use nom::IResult;
-use nom::multi::many1;
-use nom::sequence::{delimited, preceded, terminated};
+use nom::multi::{many0, many1, separated_list0};
+use nom::sequence::{delimited, pair, preceded, terminated};
+use strum::{Display, EnumString};
 use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
-use crate::topicmodel::dictionary::loader::helper::take_bracket;
+use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, take_nested_bracket_delimited};
 use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartialWordType, WordType};
-
+use crate::topicmodel::dictionary::word_infos::GrammaticalNumber;
 
 pub trait DictCCParserError<I>: ParseError<I> + FromExternalError<I, strum::ParseError>{}
 
@@ -24,7 +25,9 @@ impl<T, I> DictCCParserError<I> for T where T:  ParseError<I> + FromExternalErro
 pub enum WordEntryElement<T> {
     Word(T),
     PartialWord(T, PartialWordType),
-    Info(GrammaticalGender),
+    Gender(GrammaticalGender),
+    Number(GrammaticalNumber),
+    MetaInfo(T),
     Contextualisation(T),
     Abbreviation(T),
     Combination(T),
@@ -34,9 +37,11 @@ pub enum WordEntryElement<T> {
 impl<T> WordEntryElement<T> {
     pub fn map<R, F: FnOnce(T) -> R>(self, mapper: F) -> WordEntryElement<R> {
         match self {
+            WordEntryElement::MetaInfo(value) => WordEntryElement::MetaInfo(mapper(value)),
             WordEntryElement::Word(value) => WordEntryElement::Word(mapper(value)),
             WordEntryElement::PartialWord(value, typ) => WordEntryElement::PartialWord(mapper(value), typ),
-            WordEntryElement::Info(value) => WordEntryElement::Info(value),
+            WordEntryElement::Gender(value) => WordEntryElement::Gender(value),
+            WordEntryElement::Number(value) => WordEntryElement::Number(value),
             WordEntryElement::Contextualisation(value) => WordEntryElement::Contextualisation(mapper(value)),
             WordEntryElement::Abbreviation(value) => WordEntryElement::Abbreviation(mapper(value)),
             WordEntryElement::Combination(value) => WordEntryElement::Combination(mapper(value)),
@@ -51,7 +56,10 @@ impl<T> Display for WordEntryElement<T> where T: Display {
             WordEntryElement::Word(value) => {
                 write!(f, "{value}")
             }
-            WordEntryElement::Info(value) => {
+            WordEntryElement::Gender(value) => {
+                write!(f, "{{{value}}}")
+            }
+            WordEntryElement::MetaInfo(value) => {
                 write!(f, "{{{value}}}")
             }
             WordEntryElement::Contextualisation(value) => {
@@ -71,6 +79,9 @@ impl<T> Display for WordEntryElement<T> where T: Display {
                     PartialWordType::Prefix => write!(f, "{value}..."),
                     PartialWordType::Suffix => write!(f, "...{value}")
                 }
+            }
+            WordEntryElement::Number(value) => {
+                write!(f, "{{{value}}}")
             }
         }
     }
@@ -100,15 +111,32 @@ impl<T> Display for WordEntry<T> where T: Display {
     }
 }
 
-#[derive(Clone, Debug)]
-#[repr(transparent)]
-pub struct WordTypes(Vec<WordType>);
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
+pub enum SpecialInfo {
+    #[strum(to_string = "archaic")]
+    Archaic,
+    #[strum(to_string = "rare")]
+    Rare
+}
 
-impl From<Vec<WordType>> for WordTypes {
-    fn from(value: Vec<WordType>) -> Self {
-        Self(value)
+#[derive(Clone, Debug, Copy)]
+pub struct WordTypeInfo(pub Option<SpecialInfo>, pub WordType);
+
+impl Display for WordTypeInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref spec) = self.0 {
+            write!(f, "{spec}:{}", self.1)
+        } else {
+            write!(f, "{}", self.1)
+        }
+
     }
 }
+
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct WordTypes(Vec<WordTypeInfo>);
+
 
 impl Display for WordTypes {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -180,12 +208,22 @@ fn parse_entry<'a, E: DictCCParserError<&'a str>>(s: &'a str) -> IResult<&'a str
     map(
         many1(
             delimited(
-                space0,
+                space_only0,
                 alt((
-                    map_res(take_bracket!('{', '}'), |value: &str| value.parse().map(|g: GrammaticalGender| WordEntryElement::Info(g))),
-                    map(take_bracket!('(', ')'), WordEntryElement::Combination),
-                    map(take_bracket!('[', ']'), WordEntryElement::Contextualisation),
-                    map(take_bracket!('<', '>'), WordEntryElement::Abbreviation),
+                    map(
+                        take_nested_bracket_delimited('{', '}'),
+                        |value: &str|
+                            if let Ok(parsed) = value.parse().map(WordEntryElement::Gender) {
+                                parsed
+                            } else if let Ok(parsed) = value.parse().map(WordEntryElement::Number) {
+                                parsed
+                            } else {
+                                WordEntryElement::MetaInfo(value)
+                            }
+                    ),
+                    map(take_nested_bracket_delimited('(', ')'), WordEntryElement::Combination),
+                    map(take_nested_bracket_delimited('[', ']'), WordEntryElement::Contextualisation),
+                    map(take_nested_bracket_delimited('<', '>'), WordEntryElement::Abbreviation),
                     map(preceded(tag("..."), is_not("{[(< \t")), |value| WordEntryElement::PartialWord(value, PartialWordType::Suffix)),
                     value(WordEntryElement::Placeholder, tag("...")),
                     map(is_not("{[(< \t"), |value: &str| {
@@ -196,7 +234,7 @@ fn parse_entry<'a, E: DictCCParserError<&'a str>>(s: &'a str) -> IResult<&'a str
                         }
                     }),
                 )),
-                space0
+                space_only0
             )
         ),
         WordEntry::from
@@ -204,15 +242,26 @@ fn parse_entry<'a, E: DictCCParserError<&'a str>>(s: &'a str) -> IResult<&'a str
 }
 
 
+fn parse_word_type_info<'a, E: DictCCParserError<&'a str>>(s: &'a str) -> IResult<&'a str, WordTypeInfo, E> {
+    map(
+        pair(
+            opt(terminated(map_res(take_until(":"), |value: &str| value.to_lowercase().parse()), char(':'))),
+            map_res(is_not(" .\t/"), |value: &str| value.try_into()),
+        ),
+        |value| WordTypeInfo(value.0, value.1)
+    )(s)
+}
+
 fn parse_word_type<'a, E: DictCCParserError<&'a str>>(s: &'a str) -> IResult<&'a str, WordTypes, E> {
     map(
-        many1(
-            terminated(
-                map_res(is_not(" .\t"), |value: &str| value.try_into()),
-                opt(char(' '))
-            )
+        map_parser(
+            is_not("\t"),
+            separated_list0(
+                is_a(" ,/"),
+                parse_word_type_info
+            ),
         ),
-        WordTypes::from
+        WordTypes
     )(s)
 }
 
@@ -276,4 +325,51 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> std::io::Result<FunctionBasedL
             parse_or_fail
         )
     )
+}
+
+#[cfg(test)]
+mod test {
+    use nom::bytes::complete::is_not;
+    use nom::IResult;
+    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, parse_word_type_info, read_dictionary};
+    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
+
+    #[test]
+    fn word_info_parser() {
+        let result: IResult<_, _> = is_not("\t")("noun	[biochem.] ");
+        println!("{result:?}");
+        let result: IResult<_, _> = parse_word_type("noun	[biochem.] ");
+        println!("{result:?}");
+    }
+
+    #[test]
+    fn can_read(){
+        let value = read_dictionary(
+            "dictionaries/DictCC/dict.txt"
+        ).unwrap();
+        execute_test_read_for(value, 30, 0);
+    }
+
+    #[test]
+    fn read_single(){
+        const VALUES: &[&str] = &[
+            "&#945;-Keratin {n}	&#945;-keratin	noun	[biochem.] ",
+            "(allgemeines) Besäufnis {n} [ugs.]	binge [coll.] [drinking spree]	noun	",
+            "(Amerikanische) Schnappschildkröte {f}	snapper [coll.] [Chelydra serpentina]	noun	[zool.] [T] ",
+            "(Echter) Alant {m}	scabwort [Inula helenium] [horse-heal]	noun	[bot.] [T] ",
+            "NMR-Tomographie {f}	NMR tomography	noun	[MedTech.] ",
+            "Goethe-Pflanze {f}	donkey ears {pl} [treated as sg.] [Kalanchoe pinnata, syn.: Bryophyllum calycinum, Cotyledon pinnata, Vereia pinnata]	noun	[bot.] [T] "
+        ];
+
+        for s in VALUES.iter().copied() {
+            match parse_line::<nom::error::VerboseError<&str>>(s) {
+                Ok((value, data)) => {
+                    println!("Left: {value}\nData: {data}")
+                }
+                Err(value) => {
+                    println!("{value:?}")
+                }
+            }
+        }
+    }
 }

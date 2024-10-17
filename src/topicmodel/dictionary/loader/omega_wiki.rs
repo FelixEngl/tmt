@@ -1,18 +1,19 @@
+use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::path::Path;
+use itertools::{chain, Itertools};
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not};
-use nom::character::complete::{char, satisfy, space0};
-use nom::character::is_alphanumeric;
-use nom::combinator::{cond, map, opt, peek, recognize};
+use nom::character::complete::{char, multispace1, satisfy, space0};
+use nom::combinator::{cond, map, not, opt, peek, recognize};
 use nom::IResult;
 use nom::multi::many1;
 use nom::sequence::{delimited, pair, preceded, terminated, tuple};
 use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
-use crate::topicmodel::dictionary::loader::helper::{merge_list_opt, space_only0, take_bracket};
+use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, OptionalEntry};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OmegaWikiWord<T> {
     word: T,
     meta: Option<T>
@@ -27,7 +28,21 @@ impl<T> OmegaWikiWord<T> {
     }
 }
 
-#[derive(Debug)]
+impl<T> Display for OmegaWikiWord<T> where T: Display {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.meta {
+            None => {
+                write!(f, "{}", self.word)
+            }
+            Some(ref value) => {
+                write!(f, "{} ({})", self.word, value)
+            }
+        }
+
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OmegaWikiEntry<T> {
     lang_a: Vec<OmegaWikiWord<T>>,
     lang_b: Vec<OmegaWikiWord<T>>
@@ -42,6 +57,12 @@ impl<T> OmegaWikiEntry<T> {
     }
 }
 
+impl<T> Display for OmegaWikiEntry<T> where T: Display {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}\t{}", self.lang_a.iter().join(" ; "), self.lang_b.iter().join(" ; "))
+    }
+}
+
 fn parse_word<'a, E: nom::error::ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, OmegaWikiWord<&'a str>, E> {
     map(
         pair(
@@ -50,7 +71,7 @@ fn parse_word<'a, E: nom::error::ParseError<&'a str>>(s: &'a str) -> IResult<&'a
                 map(recognize(
                     alt((
                         is_not("(\t;"),
-                        terminated(is_a("()"), peek(is_alphanumeric))
+                        terminated(is_a("()"), peek(not(alt((multispace1, is_a(";"))))))
                     ))
                 ), |value: &str | value.trim()),
             ),
@@ -94,32 +115,41 @@ fn parse_line<'a, E: nom::error::ParseError<&'a str>>(s: &'a str) -> IResult<&'a
             ),
             |(a, a_alt, _, b, b_alt)| {
                 OmegaWikiEntry {
-                    lang_a: merge_list_opt(a, a_alt),
-                    lang_b: merge_list_opt(b, b_alt)
+                    lang_a: chain!(std::iter::once(a), a_alt.into_iter().flatten()).collect(),
+                    lang_b: chain!(std::iter::once(b), b_alt.into_iter().flatten()).collect()
                 }
             }
         )
     )(s)
 }
 
-fn parse_or_fail(content: &[u8]) -> FileParserResult<Option<OmegaWikiEntry<String>>> {
+
+pub type OptionalOmegaWikiEntry = OptionalEntry<OmegaWikiEntry<String>>;
+
+
+fn parse_or_fail(content: &[u8]) -> FileParserResult<OptionalOmegaWikiEntry> {
     match base_parser_method(
         content,
         |s| parse_line::<nom::error::Error<&str>>(s)
     ) {
-        Ok(None) => {
-            Ok(None)
-        }
-        Ok(Some(value)) => {
-            Ok(Some(value.map(ToString::to_string)))
+        Ok(value) => {
+            Ok(OptionalEntry(value.map(|value| value.map(ToString::to_string))))
         }
         Err(value) => {
-            Err(value.map(|value| value.map(|value| value.map(ToString::to_string))))
+            Err(
+                value
+                    .map(
+                        |value|
+                            OptionalEntry(
+                                value.map(|value| value.map(ToString::to_string))
+                            )
+                    )
+            )
         }
     }
 }
 
-pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWiseReader<File, Option<OmegaWikiEntry<String>>>> {
+pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWiseReader<File, OptionalOmegaWikiEntry>> {
     // todo: english    german als letzte zeile filtern
     Ok(LineWiseDictionaryReader::new(
         File::options().read(true).open(file)?,
@@ -130,23 +160,12 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWi
 
 #[cfg(test)]
 mod test {
+    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
     use crate::topicmodel::dictionary::loader::omega_wiki::{read_dictionary};
 
     #[test]
     fn can_read(){
-        let mut reader = read_dictionary(r#"C:\git\tmt\data\dictionaries\dicts.info\OmegaWiki.txt"#).expect("This should read!");
-        let mut ct = 0usize;
-        for value in reader {
-            match value {
-                Ok(Some(value)) => {
-                    ct += 1;
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    println!("{err}")
-                }
-            }
-        }
-        println!("CT: {ct}")
+        let reader = read_dictionary(r#".\dictionaries\dicts.info\OmegaWiki.txt"#).expect("This should read!");
+        execute_test_read_for(reader, 0, 0)
     }
 }

@@ -86,19 +86,19 @@ pub enum WordType {
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
 pub enum GrammaticalGender {
-    #[strum(to_string = "f", serialize = "female")]
+    #[strum(to_string = "f", serialize = "female", serialize = "f.")]
     Feminine,
-    #[strum(to_string = "m", serialize = "male")]
+    #[strum(to_string = "m", serialize = "male", serialize = "m.")]
     Masculine,
-    #[strum(to_string = "n", serialize = "neutral")]
+    #[strum(to_string = "n", serialize = "neutral", serialize = "n.")]
     Neutral
 }
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
 pub enum GrammaticalNumber {
-    #[strum(to_string = "sg")]
+    #[strum(to_string = "sg", serialize = "sg.")]
     Singular,
-    #[strum(to_string = "pl")]
+    #[strum(to_string = "pl", serialize = "pl.")]
     Plural
 }
 
