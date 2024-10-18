@@ -1,6 +1,6 @@
 mod xml_reader;
 
-pub use xml_reader::XmlReaderBase;
+pub use xml_reader::*;
 
 use std::fmt::{Display, Formatter};
 use std::ops::{Range, RangeFrom};

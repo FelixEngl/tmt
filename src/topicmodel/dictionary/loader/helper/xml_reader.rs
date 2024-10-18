@@ -1,5 +1,7 @@
+use std::error::Error;
 use std::io::{BufReader, Read};
 use quick_xml::events::Event;
+use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::HasLineInfo;
 
 pub struct XmlReaderBase<R> {
@@ -16,6 +18,14 @@ impl<R> XmlReaderBase<R> {
     pub fn is_eof(&self) -> bool {
         self.eof
     }
+}
+
+#[derive(Debug, Error)]
+pub enum ReadTagContentError {
+    #[error("Unexpected event while reading: {0}")]
+    UnexpectedEventError(String),
+    #[error("Unexpected event while reading: {0}")]
+    TagClosedBeforeOpening(String)
 }
 
 impl<R> XmlReaderBase<R> where R: Read {

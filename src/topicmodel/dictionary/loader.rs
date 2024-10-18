@@ -8,6 +8,7 @@ mod omega_wiki;
 mod tbx;
 mod eurovoc;
 mod free_dict;
+mod dtd_parser;
 
 pub enum Dialect {
 
