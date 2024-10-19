@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::io::{BufReader, Read};
 use quick_xml::events::Event;
 use thiserror::Error;

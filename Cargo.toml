@@ -58,3 +58,4 @@ indenter = { version = "0", features = ["std"] }
 const-str = "0.5"
 quick-xml = "0.36"
 derive_builder = "0.20"
+memchr = "2.7"

@@ -872,6 +872,7 @@ dependencies = [
  "indenter",
  "itertools",
  "log",
+ "memchr",
  "nom",
  "num",
  "num_enum",
