@@ -48,12 +48,13 @@ mod documents {
         use nom::IResult;
         use nom::multi::many1;
         use nom::sequence::tuple;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use super::super::{element, misc, prolog, Element, Misc, Prolog, XMLParseError};
 
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-        pub struct Document<'a>(pub Prolog<'a>, pub Element<'a>, pub Option<Vec<Misc<'a>>>);
+        pub struct Document<I>(pub Prolog<I>, pub Element<I>, pub Option<Vec<Misc<I>>>);
 
-        impl<'a> Display for Document<'a> {
+        impl<I> Display for Document<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}{}", self.0, self.1)?;
                 if let Some(ref misc) = self.2 {
@@ -65,7 +66,7 @@ mod documents {
             }
         }
 
-        pub fn document<'a, E: XMLParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Document<'a>, E> {
+        pub fn document<I: DtdParserInput, E: XMLParseError<I>>(s: I) -> IResult<I, Document<I>, E> {
             map(
                 tuple((
                     prolog,
@@ -101,20 +102,24 @@ mod documents {
         use nom::sequence::delimited;
         pub use names_and_tokens::*;
         pub use literals::*;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use super::super::XMLParseError;
 
         mod names_and_tokens {
             use itertools::Itertools;
             use nom::bytes::complete::{take_while, take_while1};
             use nom::character::complete::char;
-            use nom::combinator::{map, recognize};
+            use nom::combinator::{into, recognize};
             use nom::error::{ErrorKind};
             use nom::multi::separated_list1;
             use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
             use std::fmt::{Display, Formatter};
             use std::ops::Deref;
+            use derive_more::From;
             use nom::sequence::pair;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
             use super::super::super::{XMLParseError as ParseError, is_char};
+            use derive_where::derive_where;
 
             pub fn dtd_char<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
             where
@@ -160,31 +165,32 @@ mod documents {
             }
 
 
-            #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+            #[derive(From, Clone, Debug, Eq, PartialEq, Hash)]
             #[repr(transparent)]
-            pub struct Name<'a>(&'a str);
+            pub struct Name<I>(pub I);
 
-            pub fn name<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Name<'a>, E> {
-                map(
+            pub fn name<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, Name<I>, E>
+
+            {
+                into(
                     recognize(
-                        pair(
+                        pair::<I, I, I, E, _, _>(
                             take_while1(is_name_start),
                             take_while(is_name_char)
                         )
-                    ),
-                    Name
+                    )
                 )(s)
             }
 
-            impl<'a> Deref for Name<'a> {
+            impl<I> Deref for Name<I> where I: AsRef<str> {
                 type Target = str;
 
                 fn deref(&self) -> &Self::Target {
-                    self.0
+                    self.0.as_ref()
                 }
             }
 
-            impl<'a> Display for Name<'a> {
+            impl<I> Display for Name<I> where I: Display {
                 delegate::delegate! {
                     to self.0 {
                         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
@@ -192,54 +198,52 @@ mod documents {
                 }
             }
 
-            #[derive(Clone, Debug)]
+            #[derive(Clone, Debug, From)]
             #[repr(transparent)]
-            pub struct Names<'a>(pub Vec<Name<'a>>);
+            pub struct Names<I>(pub Vec<Name<I>>);
 
-            pub fn names<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Names<'a>, E> {
-                map(
+            pub fn names<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, Names<I>, E>
+
+            {
+                into(
                     separated_list1(
-                        char('\u{20}'),
+                        char::<I, E>('\u{20}'),
                         name
-                    ),
-                    Names
+                    )
                 )(s)
             }
 
-            impl<'a> Deref for Names<'a> {
-                type Target = [Name<'a>];
+            impl<I> Deref for Names<I> {
+                type Target = [Name<I>];
 
                 fn deref(&self) -> &Self::Target {
                     &self.0
                 }
             }
 
-            impl Display for Names<'_> {
+            impl<I> Display for Names<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "{}", self.0.iter().join("\u{20}"))
                 }
             }
 
-            #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+            #[derive(Clone, Hash, Eq, PartialEq, Debug, From)]
             #[repr(transparent)]
-            pub struct Nmtoken<'a>(&'a str);
+            pub struct Nmtoken<I>(pub I);
 
-            pub fn nm_token<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Nmtoken<'a>, E> {
-                map(
-                    take_while1(is_name_char),
-                    Nmtoken
-                )(s)
+            pub fn nm_token<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, Nmtoken<I>, E> {
+                into(take_while1::<_, I, E>(is_name_char))(s)
             }
 
-            impl<'a> Deref for Nmtoken<'a> {
+            impl<I> Deref for Nmtoken<I> where I: AsRef<str> {
                 type Target = str;
 
                 fn deref(&self) -> &Self::Target {
-                    self.0
+                    self.0.as_ref()
                 }
             }
 
-            impl<'a> Display for Nmtoken<'a> {
+            impl<I> Display for Nmtoken<I> where I: Display {
                 delegate::delegate! {
                     to self.0 {
                         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
@@ -247,28 +251,27 @@ mod documents {
                 }
             }
 
-            #[derive(Clone, Debug)]
+            #[derive(Clone, Debug, From)]
             #[repr(transparent)]
-            pub struct Nmtokens<'a>(Vec<Nmtoken<'a>>);
+            pub struct Nmtokens<I>(Vec<Nmtoken<I>>);
 
-            pub fn nm_tokens<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Nmtokens<'a>, E> {
-                map(
+            pub fn nm_tokens<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, Nmtokens<I>, E> {
+                into(
                     separated_list1(
-                        char('\u{20}'),
-                        nm_token
+                        char::<I, E>('\u{20}'),
+                        nm_token::<I, E>
                     ),
-                    Nmtokens
                 )(s)
             }
-            impl<'a> Deref for Nmtokens<'a> {
-                type Target = [Nmtoken<'a>];
+            impl<I> Deref for Nmtokens<I> {
+                type Target = [Nmtoken<I>];
 
                 fn deref(&self) -> &Self::Target {
                     &self.0
                 }
             }
 
-            impl Display for Nmtokens<'_> {
+            impl<I> Display for Nmtokens<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "{}", self.0.iter().join("\u{20}"))
                 }
@@ -281,16 +284,18 @@ mod documents {
             use nom::branch::alt;
             use nom::bytes::complete::{take_while, take_while1};
             use nom::character::complete::char;
-            use nom::combinator::{map, recognize};
+            use nom::combinator::{into, map, recognize};
             use super::super::super::XMLParseError as ParseError;
             use nom::multi::many0;
             use nom::sequence::delimited;
             use nom::{IResult, Parser};
-            use std::borrow::Cow;
             use std::fmt::{Display, Formatter};
             use std::ops::Deref;
+            use derive_more::From;
             use itertools::Itertools;
             use strum::Display;
+            use derive_where::derive_where;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
 
             fn is_pub_id_char(c: char) -> bool {
                 matches!(
@@ -316,32 +321,15 @@ mod documents {
                 ) || "-()+,./:=?;!*#@$_%".contains(c)
             }
 
-            #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Display)]
-            pub enum EntityValuePart<'a> {
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
+            pub enum EntityValuePart<I> {
                 #[strum(to_string = "{0}")]
-                Raw(&'a str),
+                Raw(I),
                 #[strum(to_string = "{0}")]
-                PEReference(PEReference<'a>),
+                PEReference(PEReference<I>),
                 #[strum(to_string = "{0}")]
-                Reference(Reference<'a>),
+                Reference(Reference<I>),
             }
-
-            impl<'a>  EntityValuePart<'a> {
-                pub fn as_str(&'a self) -> Cow<'a, str> {
-                    match self {
-                        EntityValuePart::Raw(value) => {
-                            Cow::Borrowed(*value)
-                        }
-                        EntityValuePart::PEReference(value) => {
-                            Cow::Borrowed(value.deref())
-                        }
-                        EntityValuePart::Reference(value) => {
-                            value.as_str()
-                        }
-                    }
-                }
-            }
-
 
 
             fn is_raw_entity_value_part(delimiter: char) -> impl Fn(char) -> bool {
@@ -350,20 +338,21 @@ mod documents {
                 }
             }
 
-            pub fn entity_value_part<'a, E: ParseError<&'a str>>(delimiter: char) -> impl Parser<&'a str, EntityValuePart<'a>, E> {
-                alt((
-                    map(recognize(take_while1(is_raw_entity_value_part(delimiter))), EntityValuePart::Raw),
-                    map(pe_reference, EntityValuePart::PEReference),
-                    map(reference, EntityValuePart::Reference),
+            pub fn entity_value_part<I: DtdParserInput, E: ParseError<I>>(delimiter: char) -> impl Parser<I, EntityValuePart<I>, E>
 
+            {
+                alt((
+                    into(recognize(take_while1::<_, I, E>(is_raw_entity_value_part(delimiter)))),
+                    into(pe_reference::<_, E>),
+                    into(reference::<_, E>),
                 ))
             }
 
             macro_rules! value_display {
-                ($name: ident) => {
-                    impl<'a> Display for $name<'a> {
+                ($name: ty) => {
+                    impl<I> Display for $name where I: Display + AsRef<str> {
                         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                            if self.0.iter().any(|v| v.as_str().contains('"')) {
+                            if self.contains_str("\"") {
                                 write!(f, "'{}'", self.0.iter().join(""))
                             } else {
                                 write!(f, "\"{}\"", self.0.iter().join(""))
@@ -373,50 +362,64 @@ mod documents {
                 };
             }
 
-            #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
             #[repr(transparent)]
-            pub struct EntityValue<'a>(pub Vec<EntityValuePart<'a>>);
+            pub struct EntityValue<I>(pub Vec<EntityValuePart<I>>);
 
-            pub fn entity_value<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EntityValue<'a>, E> {
-                map(
+            impl<I> EntityValue<I> where I: AsRef<str> {
+                pub fn contains_str(&self, s: &str) -> bool {
+                    self.0.iter().any(
+                        |value| {
+                            match value {
+                                EntityValuePart::Raw(value) => {
+                                    value.as_ref().contains(s)
+                                }
+                                EntityValuePart::PEReference(value) => {
+                                    value.contains(s)
+                                }
+                                EntityValuePart::Reference(value) => {
+                                    match value {
+                                        Reference::EntityRef(value) => {
+                                            value.contains(s)
+                                        }
+                                        Reference::CharRef(value) => {
+                                            s.chars().exactly_one().is_ok_and(|c| c == value.as_char())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            pub fn entity_value<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EntityValue<I>, E> {
+                into(
                     alt((
                         delimited(
-                            char('"'),
+                            char::<I, E>('"'),
                             many0(entity_value_part('"')),
-                            char('"'),
+                            char::<I, E>('"'),
                         ),
                         delimited(
-                            char('\''),
+                            char::<I, E>('\''),
                             many0(entity_value_part('\'')),
-                            char('\''),
+                            char::<I, E>('\''),
                         )
-                    )),
-                    EntityValue
+                    ))
                 )(s)
             }
 
-            value_display!(EntityValue);
+            value_display!(EntityValue<I>);
 
-            #[derive(Debug, Clone, Eq, PartialEq, Hash, Display)]
-            pub enum AttValuePart<'a> {
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
+            pub enum AttValuePart<I> {
                 #[strum(to_string = "{0}")]
-                Raw(&'a str),
+                Raw(I),
                 #[strum(to_string = "{0}")]
-                Reference(Reference<'a>)
+                Reference(Reference<I>)
             }
 
-            impl<'a> AttValuePart<'a> {
-                pub fn as_str(&'a self) -> Cow<'a, str> {
-                    match self {
-                        AttValuePart::Raw(value) => {
-                            Cow::Borrowed(*value)
-                        }
-                        AttValuePart::Reference(value) => {
-                            value.as_str()
-                        }
-                    }
-                }
-            }
 
             fn is_raw_att_value_part(delimiter: char) -> impl Fn(char) -> bool {
                 move |c| {
@@ -424,41 +427,64 @@ mod documents {
                 }
             }
 
-            pub fn att_value_part<'a, E: ParseError<&'a str>>(delimiter: char) -> impl Parser<&'a str, AttValuePart<'a>, E> {
+            pub fn att_value_part<I: DtdParserInput, E: ParseError<I>>(delimiter: char) -> impl Parser<I, AttValuePart<I>, E> {
                 alt((
-                    map(recognize(take_while1(is_raw_att_value_part(delimiter))), AttValuePart::Raw),
-                    map(reference, AttValuePart::Reference),
+                    into(recognize(take_while1::<_, I, E>(is_raw_att_value_part(delimiter)))),
+                    into(reference::<_, E>),
                 ))
             }
 
-            #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
             #[repr(transparent)]
-            pub struct AttValue<'a>(pub Vec<AttValuePart<'a>>);
+            pub struct AttValue<I>(pub Vec<AttValuePart<I>>);
 
-            pub fn att_value<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, AttValue<'a>, E> {
-                map(
+            pub fn att_value<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, AttValue<I>, E> {
+                into(
                     alt((
                         delimited(
-                            char('"'),
+                            char::<I, E>('"'),
                             many0(att_value_part('"')),
-                            char('"'),
+                            char::<I, E>('"'),
                         ),
                         delimited(
-                            char('\''),
+                            char::<I, E>('\''),
                             many0(att_value_part('\'')),
-                            char('\''),
+                            char::<I, E>('\''),
                         )
-                    )),
-                    AttValue
+                    ))
                 )(s)
             }
 
-            value_display!(AttValue);
+            impl<I> AttValue<I> where I: AsRef<str> {
+                pub fn contains_str(&self, s: &str) -> bool {
+                    self.0.iter().any(
+                        |value| {
+                            match value {
+                                AttValuePart::Raw(value) => {
+                                    value.as_ref().contains(s)
+                                }
+                                AttValuePart::Reference(value) => {
+                                    match value {
+                                        Reference::EntityRef(value) => {
+                                            value.contains(s)
+                                        }
+                                        Reference::CharRef(value) => {
+                                            s.chars().exactly_one().is_ok_and(|c| c == value.as_char())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            value_display!(AttValue<I>);
 
 
             macro_rules! literal_display {
                 ($name: ident) => {
-                    impl<'a> Display for $name<'a> {
+                    impl Display for $name {
                         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                             if self.0.contains('"') {
                                 write!(f, "'{}'", self.0)
@@ -470,74 +496,85 @@ mod documents {
                 };
             }
 
-            #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
             #[repr(transparent)]
-            pub struct SystemLiteral<'a>(pub &'a str);
+            pub struct SystemLiteral<I>(pub I);
 
-            impl<'a> Deref for SystemLiteral<'a> {
-                type Target = str;
-
-                fn deref(&self) -> &Self::Target {
-                    self.0
+            impl<I> Display for SystemLiteral<I> where I: Display {
+                delegate::delegate! {
+                    to self.0 {
+                        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
+                    }
                 }
             }
 
-            literal_display!(SystemLiteral);
+
+            impl<I> Deref for SystemLiteral<I> where I: AsRef<str> {
+                type Target = str;
+
+                fn deref(&self) -> &Self::Target {
+                    self.0.as_ref()
+                }
+            }
 
 
-            pub fn system_literal<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, SystemLiteral<'a>, E> {
-                map(
+            pub fn system_literal<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, SystemLiteral<I>, E> {
+                into(
                     alt((
                         delimited(
-                            char('"'),
+                            char::<I, E>('"'),
                             take_while(|value| value != '"'),
-                            char('"'),
+                            char::<I, E>('"'),
                         ),
                         delimited(
-                            char('\''),
+                            char::<I, E>('\''),
                             take_while(|value| value != '\''),
-                            char('\''),
+                            char::<I, E>('\''),
                         )
-                    )),
-                    SystemLiteral
+                    ))
                 )(s)
             }
 
-            #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
             #[repr(transparent)]
-            pub struct PubidLiteral<'a>(pub &'a str);
+            pub struct PubidLiteral<I>(pub I);
 
-            impl<'a> Deref for PubidLiteral<'a> {
+            impl<I> Display for PubidLiteral<I> where I: Display {
+                 delegate::delegate! {
+                     to self.0 {
+                         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
+                     }
+                 }
+            }
+
+            impl<I> Deref for PubidLiteral<I> where I: AsRef<str> {
                 type Target = str;
 
                 fn deref(&self) -> &Self::Target {
-                    self.0
+                    self.0.as_ref()
                 }
             }
 
-            literal_display!(PubidLiteral);
-
-            pub fn pub_id_literal<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, PubidLiteral<'a>, E> {
-                map(
+            pub fn pub_id_literal<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, PubidLiteral<I>, E> {
+                into(
                     alt((
                         delimited(
-                            char('"'),
+                            char::<I, E>('"'),
                             take_while(is_pub_id_char),
-                            char('"'),
+                            char::<I, E>('"'),
                         ),
                         delimited(
-                            char('\''),
+                            char::<I, E>('\''),
                             take_while(is_pub_id_char_no_apostroph),
-                            char('\''),
+                            char::<I, E>('\''),
                         )
-                    )),
-                    PubidLiteral
+                    ))
                 )(s)
             }
         }
 
         // customs
-        pub fn eq<'a, E: XMLParseError<&'a str>>(s: &'a str) -> IResult<&'a str, char, E> {
+        pub fn eq<I: DtdParserInput, E: XMLParseError<I>>(s: I) -> IResult<I, char, E> {
             delimited(
                 multispace0,
                 nom::character::complete::char('='),
@@ -548,16 +585,18 @@ mod documents {
 
     mod character_data_and_markup {
         use std::fmt::{Display, Formatter};
+        use derive_more::From;
         use nom::bytes::complete::take_while;
-        use nom::combinator::map;
+        use nom::combinator::{into};
         use super::super::XMLParseError as ParseError;
         use nom::IResult;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
 
-        #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+        #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
         #[repr(transparent)]
-        pub struct CharData<'a>(pub &'a str);
+        pub struct CharData<I>(pub I);
 
-        impl Display for CharData<'_> {
+        impl<I> Display for CharData<I> where I: Display {
             delegate::delegate! {
                 to self.0 {
                     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
@@ -565,34 +604,36 @@ mod documents {
             }
         }
 
-        pub fn char_data<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, CharData<'a>, E> {
-            map(
+        pub fn char_data<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, CharData<I>, E> {
+            into(
                 nom::combinator::verify(
-                    take_while(|value: char| value != '<' && value != '&'),
-                    |value: &str| !value.contains("]]>")
-                ),
-                CharData
+                    take_while::<_, I, E>(|value: char| value != '<' && value != '&'),
+                    |value: &I| !value.contains("]]>")
+                )
             )(s)
         }
     }
 
     mod comments {
         use std::fmt::{Display, Formatter};
+        use derive_more::{From};
         use super::characters::is_char;
         use nom::branch::alt;
         use nom::bytes::complete::{tag, take_while1};
         use nom::character::complete::char;
-        use nom::combinator::{map, recognize};
+        use nom::combinator::{into, map, recognize};
         use super::super::XMLParseError as ParseError;
         use nom::sequence::{delimited, pair};
         use nom::IResult;
         use nom::multi::many0;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
 
-        #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+        #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
         #[repr(transparent)]
-        pub struct Comment<'a>(pub &'a str);
+        pub struct Comment<I>(pub I);
 
-        impl Display for Comment<'_> {
+
+        impl<I> Display for Comment<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<!--{}-->", self.0)
             }
@@ -602,10 +643,10 @@ mod documents {
             c != '-' && is_char(c)
         }
 
-        pub fn comment<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Comment<'a>, E> {
-            map(
+        pub fn comment<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Comment<I>, E> {
+            into(
                 delimited(
-                    tag("<!--"),
+                    tag::<_, I, E>("<!--"),
                     recognize(many0(
                         alt((
                             take_while1(is_comment_char),
@@ -613,28 +654,29 @@ mod documents {
                         ))
                     )),
                     tag("-->"),
-                ),
-                Comment
+                )
             )(s)
         }
     }
 
     mod processing_instruction {
         use std::fmt::{Display, Formatter};
+        use derive_more::From;
         use super::{Name, name};
         use nom::bytes::complete::take_until1;
         use nom::bytes::complete::tag;
         use nom::character::complete::multispace1;
-        use nom::combinator::{map, opt, verify};
+        use nom::combinator::{into, map, opt, verify};
         use super::super::XMLParseError as ParseError;
         use nom::sequence::{delimited, pair, preceded};
         use nom::IResult;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
 
-        #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+        #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
         #[repr(transparent)]
-        pub struct PITarget<'a>(pub Name<'a>);
+        pub struct PITarget<I>(pub Name<I>);
 
-        impl Display for PITarget<'_> {
+        impl<I> Display for PITarget<I> where  I: Display {
             delegate::delegate! {
                 to self.0 {
                     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
@@ -642,38 +684,37 @@ mod documents {
             }
         }
 
-        pub fn pi_target<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, PITarget<'a>, E> {
-            map(
+        pub fn pi_target<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, PITarget<I>, E> {
+            into(
                 verify(
-                    name,
+                    name::<I, E>,
                     |value| !value.eq_ignore_ascii_case("xml")
-                ),
-                PITarget
+                )
             )(s)
         }
 
-        #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-        pub struct PI<'a>(
-            pub PITarget<'a>,
-            pub Option<&'a str>
+        #[derive(Debug, Clone, Hash, Eq, PartialEq)]
+        pub struct PI<I>(
+            pub PITarget<I>,
+            pub Option<I>
         );
 
-        impl Display for PI<'_> {
+        impl<I> Display for PI<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<?{}", self.0)?;
-                if let Some(s) = self.1 {
+                if let Some(ref s) = self.1 {
                     write!(f, " {s}")?;
                 }
                 write!(f, "?>")
             }
         }
 
-        pub fn pi<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, PI<'a>, E> {
+        pub fn pi<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, PI<I>, E> {
             map(
                 delimited(
-                    tag("<?"),
+                    tag::<_, I, E>("<?"),
                     pair(
-                        pi_target,
+                        pi_target::<I, E>,
                         opt(
                             preceded(
                                 multispace1,
@@ -681,39 +722,40 @@ mod documents {
                             )
                         )
                     ),
-                    tag("?>"),
+                    tag::<_, I, E>("?>"),
                 ),
-                |(a, b)| PI(a, b)
+                |(a, b): (PITarget<I>, Option<I>)| PI(a, b)
             )(s)
         }
     }
 
     mod cdata_sections {
         use std::fmt::{Display, Formatter};
+        use derive_more::From;
         use nom::bytes::complete::{tag, take_until1};
-        use nom::combinator::map;
+        use nom::combinator::{into};
         use super::super::XMLParseError as ParseError;
         use nom::IResult;
         use nom::sequence::delimited;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
 
-        #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+        #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
         #[repr(transparent)]
-        pub struct CDSect<'a>(pub &'a str);
+        pub struct CDSect<I>(pub I);
 
-        impl Display for CDSect<'_> {
+        impl<I> Display for CDSect<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<!CDATA[{}]]>", self.0)
             }
         }
 
-        pub fn cd_sect<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, CDSect<'a>, E> {
-            map(
+        pub fn cd_sect<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, CDSect<I>, E> {
+            into(
                 delimited(
-                    tag("<!CDATA["),
+                    tag::<_, I, E>("<!CDATA["),
                     take_until1("]]>"),
-                    tag("]]>")
-                ),
-                CDSect
+                    tag::<_, I, E>("]]>")
+                )
             )(s)
         }
     }
@@ -725,16 +767,18 @@ mod documents {
 
         mod prolog {
             use std::fmt::{Display, Formatter};
+            use derive_more::From;
             use itertools::Itertools;
             use nom::branch::alt;
             use nom::bytes::complete::{tag};
             use nom::character::complete::{char, multispace1};
-            use nom::combinator::{map, map_res, opt, recognize, value};
+            use nom::combinator::{into, map, map_res, opt, recognize, value};
             use super::super::super::XMLParseError as ParseError;
             use nom::IResult;
             use nom::multi::many0;
             use nom::sequence::{delimited, pair, preceded, tuple};
             use thiserror::Error;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
             use super::super::super::physical_structures::{encoding_decl, EncodingDecl};
             use super::{doc_type_decl, DocTypeDecl};
             use super::super::comments::{comment, Comment};
@@ -743,13 +787,13 @@ mod documents {
             use super::super::standalone_document_declaration::{sd_decl, SDDecl};
 
             #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-            pub struct Prolog<'a>(
-                pub Option<XMLDecl<'a>>,
-                pub Vec<Misc<'a>>,
-                pub Option<(DocTypeDecl<'a>, Vec<Misc<'a>>)>
+            pub struct Prolog<I>(
+                pub Option<XMLDecl<I>>,
+                pub Vec<Misc<I>>,
+                pub Option<(DocTypeDecl<I>, Vec<Misc<I>>)>
             );
 
-            impl Display for Prolog<'_> {
+            impl<I> Display for Prolog<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     if let Some(ref xml_decl) = self.0 {
                         write!(f, "{xml_decl}")?;
@@ -762,7 +806,7 @@ mod documents {
                 }
             }
 
-            pub fn prolog<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Prolog<'a>, E> {
+            pub fn prolog<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Prolog<I>, E> {
                 map(
                     tuple((
                         opt(xml_decl),
@@ -773,17 +817,17 @@ mod documents {
                 )(s)
             }
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-            pub struct XMLDecl<'a> (
-                pub VersionInfo<'a>,
-                pub Option<EncodingDecl<'a>>,
+            #[derive(Debug, Clone, Hash, Eq, PartialEq)]
+            pub struct XMLDecl<I>(
+                pub VersionInfo<I>,
+                pub Option<EncodingDecl<I>>,
                 pub Option<SDDecl>
             );
 
-            impl Display for XMLDecl<'_> {
+            impl<I> Display for XMLDecl<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "<?xml{}", self.0)?;
-                    if let Some(enc) = self.1 {
+                    if let Some(enc) = &self.1 {
                         write!(f, "{enc}")?;
                     }
                     if let Some(enc) = self.2 {
@@ -797,7 +841,7 @@ mod documents {
             #[error("The {0} was declared multiple times!")]
             pub struct AlreadyInUseError(&'static str);
 
-            pub fn xml_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, XMLDecl<'a>, E> {
+            pub fn xml_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, XMLDecl<I>, E> {
                 delimited(
                     tag("<?xml"),
                     map_res(
@@ -809,65 +853,26 @@ mod documents {
                             )
                         ),
                         |(version_info, b, c)| {
-                            let encoding_decl = match b {
-                                None => {
-                                    return Ok(
-                                        XMLDecl(version_info, None, None)
-                                    )
-                                }
-                                Some(EncDeclOrSDDecl::Enc(value)) => {
-                                    Some(value)
-                                }
-                                Some(_) => {
-                                    match c {
-                                        None => {
-                                            None
-                                        }
-                                        Some(EncDeclOrSDDecl::Enc(value)) => {
-                                            Some(value)
-                                        }
-                                        Some(_) => {
-                                            return Err(AlreadyInUseError("The standalone was declared multiple times!"));
-                                        }
-                                    }
-                                }
-                            };
-
-                            let sd_decl = match b {
-                                None => {
-                                    return Ok(XMLDecl(version_info, encoding_decl, None))
-                                }
-                                Some(EncDeclOrSDDecl::SD(value)) => {
-                                    Some(value)
-                                }
-                                Some(_) => {
-                                    match c {
-                                        None => {
-                                            None
-                                        }
-                                        Some(EncDeclOrSDDecl::SD(value)) => {
-                                            Some(value)
-                                        }
-                                        Some(_) => {
-                                            return Err(AlreadyInUseError("The encoding was declared multiple times!"));
-                                        }
-                                    }
-                                }
-                            };
-
-                            Ok(XMLDecl(version_info, encoding_decl, sd_decl))
+                            match (b, c) {
+                                (None, None) => Ok(XMLDecl(version_info, None, None)),
+                                (Some(EncDeclOrSDDecl::SD(c)), None) | (None, Some(EncDeclOrSDDecl::SD(c))) => Ok(XMLDecl(version_info, None, Some(c))),
+                                (None, Some(EncDeclOrSDDecl::Enc(b))) | (Some(EncDeclOrSDDecl::Enc(b)), None) => Ok(XMLDecl(version_info, Some(b), None)),
+                                (Some(EncDeclOrSDDecl::SD(c)), Some(EncDeclOrSDDecl::Enc(b))) | (Some(EncDeclOrSDDecl::Enc(b)), Some(EncDeclOrSDDecl::SD(c))) => Ok(XMLDecl(version_info, Some(b), Some(c))),
+                                (Some(EncDeclOrSDDecl::Enc(_)), Some(EncDeclOrSDDecl::Enc(_))) => Err(AlreadyInUseError("The encoding was declared multiple times!")),
+                                (Some(EncDeclOrSDDecl::SD(_)), Some(EncDeclOrSDDecl::SD(_))) => Err(AlreadyInUseError("The standalone was declared multiple times!")),
+                            }
                         }
                     ),
                     tag("?>")
                 )(s)
             }
 
-            enum EncDeclOrSDDecl<'a> {
-                Enc(EncodingDecl<'a>),
+            enum EncDeclOrSDDecl<I> {
+                Enc(EncodingDecl<I>),
                 SD(SDDecl)
             }
 
-            fn enc_or_sd<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EncDeclOrSDDecl<'a>, E> {
+            fn enc_or_sd<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EncDeclOrSDDecl<I>, E> {
                 alt((
                     map(encoding_decl, EncDeclOrSDDecl::Enc),
                     map(sd_decl, EncDeclOrSDDecl::SD),
@@ -875,16 +880,16 @@ mod documents {
             }
 
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+            #[derive(Debug, Clone, Hash, Eq, PartialEq)]
             #[repr(transparent)]
-            pub struct VersionInfo<'a>(pub VersionNum<'a>);
-            impl Display for VersionInfo<'_> {
+            pub struct VersionInfo<I>(pub VersionNum<I>);
+            impl<I> Display for VersionInfo<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, " version=\"{}\"", self.0)
                 }
             }
 
-            pub fn version_info<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, VersionInfo<'a>, E> {
+            pub fn version_info<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, VersionInfo<I>, E> {
                 map(
                     preceded(
                         delimited(multispace1, tag("version"), eq),
@@ -905,36 +910,36 @@ mod documents {
                 )(s)
             }
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
             #[repr(transparent)]
-            pub struct VersionNum<'a>(pub &'a str);
+            pub struct VersionNum<I>(pub I);
 
-            impl Display for VersionNum<'_> {
+
+            impl<I> Display for VersionNum<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "{}", self.0)
                 }
             }
 
-            pub fn version_num<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, VersionNum<'a>, E> {
-                map(
+            pub fn version_num<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, VersionNum<I>, E> {
+                into(
                     recognize(
                         preceded(
                             tag("1."),
-                            nom::character::complete::digit1
+                            nom::character::complete::digit1::<I, E>
                         )
                     ),
-                    VersionNum
                 )(s)
             }
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-            pub enum Misc<'a> {
-                Comment(Comment<'a>),
-                PI(PI<'a>),
+            #[derive(Debug, Clone, Hash, Eq, PartialEq)]
+            pub enum Misc<I> {
+                Comment(Comment<I>),
+                PI(PI<I>),
                 Space
             }
 
-            impl Display for Misc<'_> {
+            impl<I> Display for Misc<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     match self {
                         Misc::Comment(value) => {
@@ -950,7 +955,7 @@ mod documents {
                 }
             }
 
-            pub fn misc<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Misc<'a>, E> {
+            pub fn misc<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Misc<I>, E> {
                 alt((
                     map(comment, Misc::Comment),
                     map(pi, Misc::PI),
@@ -960,11 +965,9 @@ mod documents {
         }
 
         mod document_type_definition {
-            use std::cell::LazyCell;
             use std::fmt::{Display, Formatter};
-            use std::hash::{Hash, Hasher};
+            use std::hash::{Hash};
             use std::iter::FlatMap;
-            use std::sync::Arc;
             use derive_more::From;
             use itertools::Itertools;
             use nom::branch::alt;
@@ -976,10 +979,7 @@ mod documents {
             use nom::multi::many0;
             use nom::sequence::{delimited, preceded, terminated, tuple};
             use strum::Display;
-            use thiserror::Error;
-            use crate::topicmodel::dictionary::loader::dtd_parser::{content, content_spec, ContentSpec, InnerChildren, XMLParseError};
-            use crate::topicmodel::dictionary::loader::dtd_parser::solving::{DTDResolver, ResolverError};
-            use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::MayBeUnresolved;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::super::super::logical_structures::{attlist_decl, AttlistDecl, element_decl, ElementDecl};
             use super::super::super::physical_structures::{
                 entity_decl,
@@ -995,16 +995,16 @@ mod documents {
             use super::super::{pi, PI};
             use super::super::{Name, name};
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Display)]
-            pub enum DeclSep<'a> {
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, Display)]
+            pub enum DeclSep<I> {
                 #[strum(to_string=" ")]
                 Space,
                 #[strum(to_string="{0}")]
-                PEReference(PEReference<'a>)
+                PEReference(PEReference<I>)
             }
 
 
-            pub fn decl_sep<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DeclSep<'a>, E> {
+            pub fn decl_sep<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, DeclSep<I>, E> {
                 alt((
                     map(pe_reference, DeclSep::PEReference),
                     value(DeclSep::Space, multispace1)
@@ -1012,142 +1012,75 @@ mod documents {
             }
 
             #[derive(Debug, Clone, Hash, Eq, PartialEq, Display, From)]
-            pub enum MarkUpDecl<'a> {
-                ElementDecl(ElementDecl<'a>),
-                AttlistDecl(AttlistDecl<'a>),
-                EntityDecl(EntityDecl<'a>),
-                NotationDecl(NotationDecl<'a>),
-                PI(PI<'a>),
-                Comment(Comment<'a>),
+            pub enum MarkUpDecl<I> {
+                ElementDecl(ElementDecl<I>),
+                AttlistDecl(AttlistDecl<I>),
+                EntityDecl(EntityDecl<I>),
+                NotationDecl(NotationDecl<I>),
+                PI(PI<I>),
+                Comment(Comment<I>),
             }
 
-            pub fn mark_up_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, MarkUpDecl<'a>, E> {
+            pub fn mark_up_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, MarkUpDecl<I>, E> {
                 alt((
-                    into(element_decl::<E>),
-                    into(attlist_decl::<E>),
-                    into(entity_decl::<E>),
-                    into(notation_decl::<E>),
-                    into(pi::<E>),
-                    into(comment::<E>),
+                    into(element_decl::<_, E>),
+                    into(attlist_decl::<_, E>),
+                    into(entity_decl::<_, E>),
+                    into(notation_decl::<_, E>),
+                    into(pi::<_, E>),
+                    into(comment::<_, E>),
                 ))(s)
             }
 
             #[derive(Debug, Clone, Hash, Eq, PartialEq, Display, From)]
-            pub enum IntSubsetPart<'a> {
+            pub enum IntSubsetPart<I> {
                 #[strum(to_string="{0}")]
-                MarkupDecl(MarkUpDecl<'a>),
+                MarkupDecl(MarkUpDecl<I>),
                 #[strum(to_string="{0}")]
-                DeclSep(DeclSep<'a>)
+                DeclSep(DeclSep<I>)
             }
 
-            fn int_subset_part<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, IntSubsetPart<'a>, E> {
+            fn int_subset_part<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, IntSubsetPart<I>, E> {
                 alt((
-                    into(mark_up_decl::<E>),
-                    into(decl_sep::<E>),
+                    into(mark_up_decl::<_, E>),
+                    into(decl_sep::<_, E>),
                 ))(s)
             }
 
-            #[derive(Debug, Clone)]
-            pub struct IntSubset<'a>(pub Vec<IntSubsetPart<'a>>, DTDResolver<'a>);
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
+            #[repr(transparent)]
+            pub struct IntSubset<I>(pub Vec<IntSubsetPart<I>>);
 
-            impl<'a> Hash for IntSubset<'a> {
-                fn hash<H: Hasher>(&self, state: &mut H) {
-                    self.0.hash(state)
-                }
-            }
-
-            impl<'a> Eq for IntSubset<'a> {}
-            impl<'a> PartialEq for IntSubset<'a> {
-                fn eq(&self, other: &Self) -> bool {
-                    self.0.eq(&other.0)
-                }
-            }
-
-
-            impl<'a> IntSubset<'a> {
-                pub fn iter(&self) -> std::slice::Iter<IntSubsetPart<'a>> {
+            impl<I> IntSubset<I> {
+                pub fn iter(&self) -> std::slice::Iter<IntSubsetPart<I>> {
                     self.0.iter()
                 }
-
-                pub fn resolve<E: XMLParseError<&'a str>>(&mut self) -> Result<(), ResolverError<'a, E>> {
-                    let targets = self.0.iter().filter_map(
-                        |value| {
-                            if let IntSubsetPart::MarkupDecl(MarkUpDecl::EntityDecl(value)) = value {
-                                Some(value)
-                            } else {
-                                None
-                            }
-                        }
-                    ).collect_vec();
-                    self.1.register_complete_list(targets).unwrap();
-                    for vale in self.0.iter_mut() {
-                        match vale {
-                            IntSubsetPart::MarkupDecl(targs) => {
-                                match targs {
-                                    MarkUpDecl::ElementDecl(element) => {
-                                        let resolved = if let Some(resolved) = element.1.as_mut_resolved() {
-                                            resolved
-                                        } else {
-                                            let unres = element.1.as_unresolved().unwrap();
-                                            if let Some(resolved) = self.1.resolve(unres) {
-                                                element.1.set_resolved(content_spec::<E>(resolved.as_ref())?.1);
-                                            } else {
-                                                return Err(ResolverError::FailedToResolve(element.0))
-                                            }
-                                            element.1.as_mut_resolved().unwrap()
-                                        };
-
-                                        match resolved {
-                                            ContentSpec::Mixed(value) => {
-                                                value.resolve(&mut self.1)?;
-                                            }
-                                            ContentSpec::Children(value) => {
-                                                value.resolve(&mut self.1)?;
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                    MarkUpDecl::AttlistDecl(attribute) => {}
-                                    _ => {}
-                                }
-                            }
-                            IntSubsetPart::DeclSep(_) => {}
-                        }
-                    }
-                    Ok(())
-                }
             }
 
-            impl Display for IntSubset<'_> {
+            impl<I> Display for IntSubset<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "{}", self.0.iter().join(""))
                 }
             }
 
-            pub fn int_subset<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, IntSubset<'a>, E> {
-                map(
-                    many0(int_subset_part),
-                    |value| IntSubset(value, Default::default())
-                )(s)
+            pub fn int_subset<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, IntSubset<I>, E> {
+                into(many0(int_subset_part::<I, E>))(s)
             }
 
-
-
-
             #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-            pub struct DocTypeDecl<'a>(
-                pub Name<'a>,
-                pub Option<ExternalID<'a>>,
-                pub Option<IntSubset<'a>>
+            pub struct DocTypeDecl<I>(
+                pub Name<I>,
+                pub Option<ExternalID<I>>,
+                pub Option<IntSubset<I>>
             );
 
-            impl<'a> DocTypeDecl<'a> {
-                pub fn iter<'b>(&'b self) -> FlatMap<std::option::Iter<'b, IntSubset<'a>>, std::slice::Iter<'b, IntSubsetPart<'a>>, impl FnMut(&'b IntSubset<'a>) -> std::slice::Iter<'b, IntSubsetPart<'a>>> {
+            impl<I> DocTypeDecl<I> {
+                pub fn iter<'a>(&'a self) -> FlatMap<std::option::Iter<'a, IntSubset<I>>, std::slice::Iter<'a, IntSubsetPart<I>>, impl FnMut(&'a IntSubset<I>) -> std::slice::Iter<'a, IntSubsetPart<I>>> {
                     self.2.iter().flat_map(|value| value.iter())
                 }
             }
 
-            impl<'a> Display for DocTypeDecl<'a> {
+            impl<I> Display for DocTypeDecl<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "<!DOCTYPE {}", self.0)?;
                     if let Some(ref ext) = self.1 {
@@ -1160,7 +1093,7 @@ mod documents {
                 }
             }
 
-            pub fn doc_type_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DocTypeDecl<'a>, E> {
+            pub fn doc_type_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, DocTypeDecl<I>, E> {
                 map(
                     delimited(
                         terminated(tag("<!DOCTYPE"), multispace1),
@@ -1178,32 +1111,34 @@ mod documents {
             }
 
             #[inline(always)]
-            pub fn doc_type_no_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, IntSubset<'a>, E> {
+            pub fn doc_type_no_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, IntSubset<I>, E> {
                 int_subset(s)
             }
         }
 
         mod external_subset {
             use std::fmt::{Display, Formatter};
+            use derive_more::From;
             use itertools::Itertools;
             use nom::branch::alt;
-            use nom::combinator::{map, opt};
+            use nom::combinator::{into, map, opt};
             use super::super::super::XMLParseError as ParseError;
             use nom::IResult;
             use nom::multi::many0;
             use nom::sequence::pair;
             use strum::Display;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::super::super::logical_structures::{conditional_sect, ConditionalSect};
             use super::super::prolog_and_xml::{decl_sep, mark_up_decl, DeclSep, MarkUpDecl};
             use super::super::super::physical_structures::{text_decl, TextDecl};
 
             #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-            pub struct ExtSubset<'a>(
-                pub Option<TextDecl<'a>>,
-                pub ExtSubsetDecl<'a>,
+            pub struct ExtSubset<I>(
+                pub Option<TextDecl<I>>,
+                pub ExtSubsetDecl<I>,
             );
 
-            impl<'a> Display for ExtSubset<'a> {
+            impl<I> Display for ExtSubset<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     if let Some(ref v) = self.0 {
                         write!(f, "{v}")?;
@@ -1212,7 +1147,7 @@ mod documents {
                 }
             }
 
-            pub fn ext_subset<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ExtSubset<'a>, E> {
+            pub fn ext_subset<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ExtSubset<I>, E> {
                 map(
                     pair(
                         opt(text_decl),
@@ -1222,38 +1157,35 @@ mod documents {
                 )(s)
             }
 
-            #[derive(Debug, Clone, Hash, Eq, PartialEq, Display)]
-            pub enum ExtSubsetDeclPart<'a>{
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, Display, From)]
+            pub enum ExtSubsetDeclPart<I> {
                 #[strum(to_string = "{0}")]
-                MarkUpDecl(MarkUpDecl<'a>),
+                MarkUpDecl(MarkUpDecl<I>),
                 #[strum(to_string = "{0}")]
-                ConditionalSect(ConditionalSect<'a>),
+                ConditionalSect(ConditionalSect<I>),
                 #[strum(to_string = "{0}")]
-                DeclSep(DeclSep<'a>)
+                DeclSep(DeclSep<I>)
             }
 
-            pub fn ext_subset_decl_part<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ExtSubsetDeclPart<'a>, E> {
+            pub fn ext_subset_decl_part<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ExtSubsetDeclPart<I>, E> {
                 alt((
-                    map(mark_up_decl, ExtSubsetDeclPart::MarkUpDecl),
-                    map(conditional_sect, ExtSubsetDeclPart::ConditionalSect),
-                    map(decl_sep, ExtSubsetDeclPart::DeclSep),
+                    into(mark_up_decl::<I, E>),
+                    into(conditional_sect::<I, E>),
+                    into(decl_sep::<I, E>),
                 ))(s)
             }
 
-            #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-            pub struct ExtSubsetDecl<'a>(pub Vec<ExtSubsetDeclPart<'a>>);
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
+            pub struct ExtSubsetDecl<I>(pub Vec<ExtSubsetDeclPart<I>>);
 
-            impl<'a> Display for ExtSubsetDecl<'a> {
+            impl<I> Display for ExtSubsetDecl<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "{}", self.0.iter().join(""))
                 }
             }
 
-            pub fn ext_subset_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ExtSubsetDecl<'a>, E> {
-                map(
-                    many0(ext_subset_decl_part),
-                    ExtSubsetDecl
-                )(s)
+            pub fn ext_subset_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ExtSubsetDecl<I>, E> {
+                into(many0(ext_subset_decl_part::<I, E>))(s)
             }
         }
     }
@@ -1267,6 +1199,7 @@ mod documents {
         use nom::IResult;
         use nom::sequence::{delimited, preceded};
         use strum::{Display, EnumString};
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use super::common_syntactic_constructs::eq;
 
         #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Display, EnumString)]
@@ -1277,19 +1210,19 @@ mod documents {
             No
         }
 
-        pub fn sd_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, SDDecl, E> {
+        pub fn sd_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, SDDecl, E> {
             preceded(
                 delimited(multispace1, tag("standalone"), eq),
                 alt((
                     delimited(
-                        char('"'),
-                        map_res(is_not("\""), |value: &str| value.parse()),
-                        char('"'),
+                        char::<I, E>('"'),
+                        map_res(is_not("\""), |value: I| value.as_ref().parse()),
+                        char::<I, E>('"'),
                     ),
                     delimited(
-                        char('\''),
-                        map_res(is_not("'"), |value: &str| value.parse()),
-                        char('\''),
+                        char::<I, E>('\''),
+                        map_res(is_not("'"), |value: I| value.as_ref().parse()),
+                        char::<I, E>('\''),
                     )
                 ))
             )(s)
@@ -1418,6 +1351,7 @@ mod documents {
         use super::super::XMLParseError as ParseError;
         use nom::IResult;
         use strum::{Display, EnumString};
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
 
         #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Display, EnumString)]
         pub enum Cardinality {
@@ -1429,8 +1363,8 @@ mod documents {
             OneOrMany,
         }
 
-        pub fn cardinality<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Cardinality, E> {
-            map_res(take(1usize), Cardinality::from_str)(s)
+        pub fn cardinality<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Cardinality, E> {
+            map_res(take(1usize), |v: I| Cardinality::from_str(v.as_ref()))(s)
         }
     }
 }
@@ -1449,16 +1383,17 @@ mod logical_structures {
     use nom::IResult;
     use nom::sequence::tuple;
     use strum::Display;
+    use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash, Display)]
-    pub enum Element<'a> {
+    pub enum Element<I> {
         #[strum(to_string = "{0}")]
-        EmptyElementTag(EmptyElementTag<'a>),
+        EmptyElementTag(EmptyElementTag<I>),
         #[strum(to_string = "{0}{1}{2}")]
-        Element(STag<'a>, Content<'a>, ETag<'a>)
+        Element(STag<I>, Content<I>, ETag<I>)
     }
 
-    pub fn element<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Element<'a>, E> {
+    pub fn element<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Element<I>, E> {
         alt((
             map(empty_element_tag, Element::EmptyElementTag),
             map(tuple((s_tag, content, e_tag)), |(a, b, c)| Element::Element(a, b, c)),
@@ -1478,15 +1413,16 @@ mod logical_structures {
         use nom::multi::many1;
         use nom::sequence::{delimited, pair, preceded, separated_pair, tuple};
         use strum::Display;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use super::super::physical_structures::{Reference, reference};
         use super::super::documents::{cd_sect, CDSect,char_data, CharData, comment, Comment,att_value, AttValue, Name, name, eq,pi, PI};
         use super::{element, Element};
 
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct STag<'a>(pub Name<'a>, pub Option<Vec<Attribute<'a>>>);
+        pub struct STag<I>(pub Name<I>, pub Option<Vec<Attribute<I>>>);
 
-        impl<'a> Display for STag<'a> {
+        impl<I> Display for STag<I> where I: Display + AsRef<str> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<{}", self.0)?;
                 if let Some(ref value) = self.1 {
@@ -1498,7 +1434,7 @@ mod logical_structures {
             }
         }
 
-        pub fn s_tag<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, STag<'a>, E> {
+        pub fn s_tag<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, STag<I>, E> {
             map(
                 delimited(
                     char('<'),
@@ -1515,78 +1451,77 @@ mod logical_structures {
 
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct Attribute<'a>(pub Name<'a>, pub AttValue<'a>);
+        pub struct Attribute<I>(pub Name<I>, pub AttValue<I>);
 
-        impl<'a> Display for Attribute<'a> {
+        impl<I> Display for Attribute<I> where I: Display + AsRef<str> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}={}", self.0, self.1)
             }
         }
 
-        pub fn attribute<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Attribute<'a>, E> {
+        pub fn attribute<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, Attribute<I>, E> {
             map(
                 separated_pair(
-                    name,
-                    eq,
-                    att_value
+                    name::<I, E>,
+                    eq::<I, E>,
+                    att_value::<I, E>
                 ),
                 |(a, b)| Attribute(a, b)
             )(s)
         }
 
 
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
         #[repr(transparent)]
-        pub struct ETag<'a>(pub Name<'a>);
+        pub struct ETag<I>(pub Name<I>);
 
-        impl<'a> Display for ETag<'a> {
+        impl<I> Display for ETag<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "</{}>", self.0)
             }
         }
 
-        pub fn e_tag<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ETag<'a>, E> {
-            map(
+        pub fn e_tag<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, ETag<I>, E> {
+            into(
                 delimited(
-                    tag("</"),
-                    name,
-                    preceded(multispace0, char('>'))
-                ),
-                ETag
+                    tag::<_, I, E>("</"),
+                    name::<I, E>,
+                    preceded(multispace0, char::<I, E>('>'))
+                )
             )(s)
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
-        pub enum InnerContent<'a> {
+        pub enum InnerContent<I> {
             #[strum(to_string="{0}")]
-            Element(Element<'a>),
+            Element(Element<I>),
             #[strum(to_string="{0}")]
-            Reference(Reference<'a>),
+            Reference(Reference<I>),
             #[strum(to_string="{0}")]
-            CDSect(CDSect<'a>),
+            CDSect(CDSect<I>),
             #[strum(to_string="{0}")]
-            PI(PI<'a>),
+            PI(PI<I>),
             #[strum(to_string="{0}")]
-            Comment(Comment<'a>)
+            Comment(Comment<I>)
         }
 
-        fn inner_content<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, InnerContent<'a>, E> {
+        fn inner_content<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, InnerContent<I>, E> {
             alt((
-                into(element::<E>),
-                into(reference::<E>),
-                into(cd_sect::<E>),
-                into(pi::<E>),
-                into(comment::<E>),
+                into(element::<_, E>),
+                into(reference::<_, E>),
+                into(cd_sect::<_, E>),
+                into(pi::<_, E>),
+                into(comment::<_, E>),
             ))(s)
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct Content<'a>(
-            pub Option<CharData<'a>>,
-            pub Option<Vec<(InnerContent<'a>, Option<CharData<'a>>)>>
+        pub struct Content<I>(
+            pub Option<CharData<I>>,
+            pub Option<Vec<(InnerContent<I>, Option<CharData<I>>)>>
         );
 
-        impl<'a> Display for Content<'a> {
+        impl<I> Display for Content<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 if let Some(ref a) = self.0 {
                     write!(f, "{a}")?;
@@ -1603,15 +1538,15 @@ mod logical_structures {
             }
         }
 
-        pub fn content<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Content<'a>, E> {
+        pub fn content<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, Content<I>, E> {
             map(
                 tuple((
-                    opt(char_data),
+                    opt(char_data::<I, E>),
                     opt(
                         many1(
                             pair(
-                                inner_content,
-                                opt(char_data)
+                                inner_content::<I, E>,
+                                opt(char_data::<I, E>)
                             )
                         )
                     )
@@ -1623,12 +1558,12 @@ mod logical_structures {
 
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct EmptyElementTag<'a>(
-            pub Name<'a>,
-            pub Option<Vec<Attribute<'a>>>
+        pub struct EmptyElementTag<I>(
+            pub Name<I>,
+            pub Option<Vec<Attribute<I>>>
         );
 
-        impl<'a> Display for EmptyElementTag<'a> {
+        impl<I> Display for EmptyElementTag<I> where I: Display + AsRef<str> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<{}", self.0)?;
                 if let Some(ref value) = self.1 {
@@ -1640,15 +1575,15 @@ mod logical_structures {
             }
         }
 
-        pub fn empty_element_tag<'a, E:ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EmptyElementTag<'a>, E> {
+        pub fn empty_element_tag<I: DtdParserInput, E:ParseError<I>>(s: I) -> IResult<I, EmptyElementTag<I>, E> {
             map(
                 delimited(
-                    char('<'),
+                    char::<I, E>('<'),
                     pair(
-                        name,
+                        name::<I, E>,
                         opt(many1(preceded(multispace1, attribute)))
                     ),
-                    tag("/>")
+                    tag::<_, I, E>("/>")
                 ),
                 |(a, b)| EmptyElementTag(a, b)
             )(s)
@@ -1666,23 +1601,28 @@ mod logical_structures {
         use nom::IResult;
         use nom::sequence::{delimited, preceded, separated_pair, terminated};
         use strum::{Display};
-        use crate::topicmodel::dictionary::loader::dtd_parser::solving::{DTDResolver, ResolverError};
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::{may_be_unresolved, MayBeUnresolved};
-        use crate::topicmodel::dictionary::loader::dtd_parser::XMLParseError;
         use super::super::documents::{Name, name};
         use super::element_content::{children, Children};
         use super::mixed_content::{mixed, Mixed};
 
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct ElementDecl<'a>(pub Name<'a>, pub MayBeUnresolved<'a, ContentSpec<'a>>);
+        // #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 
-        impl<'a> Display for ElementDecl<'a> {
+        #[derive_where::derive_where(Debug; I: std::fmt::Debug)]
+        #[derive_where(Clone; I: Clone)]
+        #[derive_where(Eq; I: Eq)]
+        #[derive_where(PartialEq; I: PartialEq)]
+        #[derive_where(Hash; I: std::hash::Hash)]
+        pub struct ElementDecl<I>(pub Name<I>, pub MayBeUnresolved<I, ContentSpec<I>>);
+
+        impl<I> Display for ElementDecl<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<!ELEMENT {} {}>\n", self.0, self.1)
             }
         }
 
-        pub fn element_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ElementDecl<'a>, E> {
+        pub fn element_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ElementDecl<I>, E> {
             map(
                 delimited(
                     preceded(tag("<!ELEMENT"), multispace1),
@@ -1698,32 +1638,19 @@ mod logical_structures {
         }
 
         #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
-        pub enum ContentSpec<'a> {
+        pub enum ContentSpec<I> {
             #[strum(to_string="EMPTY")]
             Empty,
             #[strum(to_string="ANY")]
             Any,
             #[strum(to_string="{0}")]
-            Mixed(Mixed<'a>),
+            Mixed(Mixed<I>),
             #[strum(to_string="{0}")]
-            Children(Children<'a>),
+            Children(Children<I>),
         }
+        
 
-        impl<'a> ContentSpec<'a> {
-            pub fn resolve<E: XMLParseError<&'a str>>(&mut self, resolver: &DTDResolver<'a>) -> Result<(), ResolverError<'a, E>> {
-                match self {
-                    ContentSpec::Mixed(value) => {
-                        value.resolve(resolver)
-                    }
-                    ContentSpec::Children(value) => {
-                        value.resolve(resolver)
-                    }
-                    _ => Ok(())
-                }
-            }
-        }
-
-        pub fn content_spec<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ContentSpec<'a>, E> {
+        pub fn content_spec<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ContentSpec<I>, E> {
             alt((
                 value(ContentSpec::Empty, tag("EMPTY")),
                 value(ContentSpec::Any, tag("ANY")),
@@ -1737,7 +1664,6 @@ mod logical_structures {
 
     mod element_content {
         use std::fmt::{Display, Formatter};
-        use std::ops::Deref;
         use derive_more::From;
         use itertools::{Itertools};
         use nom::branch::alt;
@@ -1748,46 +1674,31 @@ mod logical_structures {
         use nom::multi::separated_list1;
         use nom::sequence::{delimited, pair, preceded, terminated};
         use strum::{Display};
-        use crate::topicmodel::dictionary::loader::dtd_parser::solving::{DTDResolver, ResolverError};
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::{may_be_unresolved, MayBeUnresolved};
-        use crate::topicmodel::dictionary::loader::dtd_parser::XMLParseError;
         use super::super::documents::{cardinality, Cardinality, Name, name};
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
-        pub enum InnerChildren<'a> {
+        pub enum InnerChildren<I> {
             #[strum(to_string = "{0}")]
-            Choice(Choice<'a>),
-            Seq(Seq<'a>)
+            Choice(Choice<I>),
+            Seq(Seq<I>)
         }
 
-        fn inner_child<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, InnerChildren<'a>, E> {
+        fn inner_child<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, InnerChildren<I>, E> {
             alt((
-                into(choice::<E>),
-                into(seq::<E>),
+                into(choice::<_, E>),
+                into(seq::<_, E>),
             ))(s)
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct Children<'a>(
-            pub InnerChildren<'a>,
+        pub struct Children<I>(
+            pub InnerChildren<I>,
             pub Option<Cardinality>
         );
 
-        impl<'a> Children<'a> {
-
-            pub fn resolve<E: XMLParseError<&'a str>>(&mut self, resolver: &DTDResolver<'a>) -> Result<(), ResolverError<'a, E>> {
-                match &mut self.0 {
-                    InnerChildren::Choice(value) => {
-                        value.resolve(resolver)
-                    }
-                    InnerChildren::Seq(value) => {
-                        value.resolve(resolver)
-                    }
-                }
-            }
-        }
-
-        impl<'a> Display for Children<'a> {
+        impl<I> Display for Children<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.0)?;
                 if let Some(mu) = self.1 {
@@ -1797,7 +1708,7 @@ mod logical_structures {
             }
         }
 
-        pub fn children<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Children<'a>, E> {
+        pub fn children<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Children<I>, E> {
             map(
                 pair(
                     inner_child,
@@ -1808,55 +1719,27 @@ mod logical_structures {
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
-        pub enum CPInner<'a> {
+        pub enum CPInner<I> {
             #[strum(to_string = "{0}")]
-            Name(Name<'a>),
+            Name(Name<I>),
             #[strum(to_string = "{0}")]
-            Choice(Choice<'a>),
+            Choice(Choice<I>),
             #[strum(to_string = "{0}")]
-            Seq(Seq<'a>),
+            Seq(Seq<I>),
         }
 
-        impl<'a> CPInner<'a> {
-            pub fn resolve<E: XMLParseError<&'a str>>(&mut self, resolver: &DTDResolver<'a>) -> Result<(), ResolverError<'a, E>> {
-                match self {
-                    CPInner::Name(_) => {
-                        Ok(())
-                    }
-                    CPInner::Choice(value) => {
-                        value.resolve(resolver)
-                    }
-                    CPInner::Seq(value) => {
-                        value.resolve(resolver)
-                    }
-                }
-            }
-        }
-
-        fn cp_inner<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, CPInner<'a>, E> {
+        fn cp_inner<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, CPInner<I>, E> {
             alt((
-                into(name::<E>),
-                into(choice::<E>),
-                into(seq::<E>),
+                into(name::<_, E>),
+                into(choice::<_, E>),
+                into(seq::<_, E>),
             ))(s)
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct CP<'a>(pub MayBeUnresolved<'a, CPInner<'a>>, pub Option<Cardinality>);
+        pub struct CP<I>(pub MayBeUnresolved<I, CPInner<I>>, pub Option<Cardinality>);
 
-        impl<'a> CP<'a> {
-            pub fn resolve<E: XMLParseError<&'a str>>(&mut self, resolver: &DTDResolver<'a>) -> Result<(), ResolverError<'a, E>> {
-                if resolver.resolve_if_possible(&mut self.0, cp_inner)? {
-                    self.0.as_mut_resolved().unwrap().resolve(resolver)
-                } else {
-                    use std::borrow::Borrow;
-                    let name: &Name<'a> = self.0.as_unresolved().unwrap().borrow();
-                    Err(ResolverError::FailedToResolve(name.clone()))
-                }
-            }
-        }
-
-        impl<'a> Display for CP<'a> {
+        impl<I> Display for CP<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.0)?;
                 if let Some(c) = self.1 {
@@ -1866,7 +1749,7 @@ mod logical_structures {
             }
         }
 
-        pub fn cp<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, CP<'a>, E> {
+        pub fn cp<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, CP<I>, E> {
             map(
                 pair(
                     may_be_unresolved(cp_inner),
@@ -1877,73 +1760,55 @@ mod logical_structures {
         }
 
 
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
         #[repr(transparent)]
-        pub struct Choice<'a>(pub Vec<CP<'a>>);
+        pub struct Choice<I>(pub Vec<CP<I>>);
 
-        impl<'a> Choice<'a> {
-            pub fn resolve<E: XMLParseError<&'a str>>(&mut self, resolver: &DTDResolver<'a>) -> Result<(), ResolverError<'a, E>> {
-                for value in self.0.iter_mut() {
-                    value.resolve(resolver)?;
-                }
-                Ok(())
-            }
-        }
 
-        impl<'a> Display for Choice<'a> {
+        impl<I> Display for Choice<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "({})", self.0.iter().join("|"))
             }
         }
 
-        pub fn choice<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Choice<'a>, E> {
-            map(
+        pub fn choice<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Choice<I>, E> {
+            into(
                 delimited(
-                    terminated(char('('), multispace0),
+                    terminated(char::<I, E>('('), multispace0),
                     verify(
                         separated_list1(
-                            delimited(multispace0, char('|'), multispace0),
+                            delimited(multispace0, char::<I, E>('|'), multispace0),
                             cp
                         ),
-                        |value: &Vec<CP<'a>>| { value.len() > 1 }
+                        |value: &Vec<CP<I>>| { value.len() > 1 }
                     ),
-                    preceded(multispace0, char(')'))
-                ),
-                Choice
+                    preceded(multispace0, char::<I, E>(')'))
+                )
             )(s)
         }
 
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
         #[repr(transparent)]
-        pub struct Seq<'a>(pub Vec<CP<'a>>);
-
-        impl<'a> Seq<'a> {
-            pub fn resolve<E: XMLParseError<&'a str>>(&mut self, resolver: &DTDResolver<'a>) -> Result<(), ResolverError<'a, E>> {
-                for value in self.0.iter_mut() {
-                    value.resolve(resolver)?;
-                }
-                Ok(())
-            }
-        }
+        pub struct Seq<I>(pub Vec<CP<I>>);
 
 
-        impl<'a> Display for Seq<'a> {
+
+        impl<I> Display for Seq<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "({})", self.0.iter().join(","))
             }
         }
 
-        pub fn seq<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Seq<'a>, E> {
-            map(
+        pub fn seq<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Seq<I>, E> {
+            into(
                 delimited(
-                    terminated(char('('), multispace0),
+                    terminated(char::<I, E>('('), multispace0),
                     separated_list1(
-                        delimited(multispace0, char(','), multispace0),
+                        delimited(multispace0, char::<I, E>(','), multispace0),
                         cp
                     ),
-                    preceded(multispace0, char(')'))
-                ),
-                Seq
+                    preceded(multispace0, char::<I, E>(')'))
+                )
             )(s)
         }
     }
@@ -1953,48 +1818,21 @@ mod logical_structures {
         use nom::branch::alt;
         use nom::bytes::complete::tag;
         use nom::character::complete::{char, multispace0};
-        use nom::combinator::{map, opt, value};
+        use nom::combinator::{map, value};
         use super::super::XMLParseError as ParseError;
         use nom::IResult;
-        use nom::multi::{many1, separated_list1};
+        use nom::multi::{many1};
         use nom::sequence::{delimited, preceded, terminated, tuple};
-        use crate::topicmodel::dictionary::loader::dtd_parser::solving::{DTDResolver, ResolverError};
         use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::{may_be_unresolved, MayBeUnresolved};
-        use crate::topicmodel::dictionary::loader::dtd_parser::{names, XMLParseError};
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use super::super::documents::{Name, name};
 
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
         #[repr(transparent)]
-        pub struct Mixed<'a>(pub Option<Vec<MayBeUnresolved<'a, Name<'a>>>>);
+        pub struct Mixed<I>(pub Option<Vec<MayBeUnresolved<I, Name<I>>>>);
 
-        impl<'a> Mixed<'a> {
-            pub fn resolve<E: XMLParseError<&'a str>>(&mut self, resolver: &DTDResolver<'a>) -> Result<(), ResolverError<'a, E>> {
-                if let Some(names2) = self.0.as_mut() {
-                    for targ in names2.iter_mut() {
-                        if targ.is_unresolved() {
-                            let unres = targ.as_unresolved().unwrap();
-                            if let Some(res) = resolver.resolve(unres) {
-                                match names::<E>(res.as_ref()) {
-                                    Ok((_, mut values)) => {
-                                        if let Some(value) = values.0.pop() {
-                                            targ.set_resolved(value);
-                                        }
-                                        names2.extend(values.into_iter().copied().map(MayBeUnresolved::resolved))
-                                    }
-                                    Err(e) => {
-                                        return Err(ResolverError::ParserFailed(e))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            }
-        }
-
-        impl<'a> Display for Mixed<'a> {
+        impl<I> Display for Mixed<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "(#PCDATA")?;
                 if let Some(ref names) = self.0 {
@@ -2006,7 +1844,7 @@ mod logical_structures {
             }
         }
 
-        pub fn mixed<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Mixed<'a>, E> {
+        pub fn mixed<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Mixed<I>, E> {
             map(
                 alt((
                     delimited(
@@ -2039,30 +1877,29 @@ mod logical_structures {
     mod attribute_list_declarations {
         use std::fmt::{Display, Formatter};
         use std::str::FromStr;
-        use derive_more::From;
         use itertools::Itertools;
-        use nom::branch::alt;
         use nom::bytes::complete::tag;
         use nom::character::complete::{char, multispace0, multispace1};
-        use nom::combinator::{into, map, opt};
+        use nom::combinator::{map, opt};
         use super::super::XMLParseError as ParseError;
         use nom::IResult;
         use nom::multi::{many1};
         use nom::sequence::{delimited, pair, preceded, terminated, tuple};
         use attribute_types::{AttType, att_type};
         use attribute_defaults::{default_decl, DefaultDecl};
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
         use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::{may_be_unresolved, may_be_unresolved_wrapped, MayBeUnresolved};
         use super::super::documents::{Name, name};
 
         // todo: https://www.w3.org/TR/REC-xml/#AVNormalize
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct AttlistDecl<'a>(
-            pub Name<'a>,
-            pub Option<Vec<MayBeUnresolved<'a, AttDef<'a>>>>
+        pub struct AttlistDecl<I>(
+            pub Name<I>,
+            pub Option<Vec<MayBeUnresolved<I, AttDef<I>>>>
         );
 
-        impl<'a> Display for AttlistDecl<'a> {
+        impl<I> Display for AttlistDecl<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<!ATTLIST {}", self.0)?;
                 if let Some(ref att) = self.1 {
@@ -2072,7 +1909,7 @@ mod logical_structures {
             }
         }
 
-        pub fn attlist_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, AttlistDecl<'a>, E> {
+        pub fn attlist_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, AttlistDecl<I>, E> {
             map(
                 delimited(
                     terminated(tag("<!ATTLIST"), multispace1),
@@ -2084,19 +1921,19 @@ mod logical_structures {
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct AttDef<'a>(
-            pub Name<'a>,
-            pub MayBeUnresolved<'a, AttType<'a>>,
-            pub DefaultDecl<'a>
+        pub struct AttDef<I>(
+            pub Name<I>,
+            pub MayBeUnresolved<I, AttType<I>>,
+            pub DefaultDecl<I>
         );
 
-        impl<'a> Display for AttDef<'a> {
+        impl<I> Display for AttDef<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, " {} {} {}", self.0, self.1, self.2)
             }
         }
 
-        pub fn att_def<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, AttDef<'a>, E> {
+        pub fn att_def<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, AttDef<I>, E> {
             map(
                 tuple((
                     preceded(multispace1, name),
@@ -2121,19 +1958,20 @@ mod logical_structures {
             use nom::multi::separated_list1;
             use nom::sequence::{delimited, preceded, terminated, tuple};
             use strum::{Display, EnumString};
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::super::super::documents::{Name, name, Nmtoken, nm_token};
 
             #[derive(Debug, Clone, Eq, PartialEq, Hash, Display)]
-            pub enum AttType<'a> {
+            pub enum AttType<I> {
                 #[strum(to_string = "CDATA")]
                 StringType,
                 #[strum(to_string = "{0}")]
                 TokenizedType(TokenizedType),
                 #[strum(to_string = "{0}")]
-                EnumeratedType(EnumeratedType<'a>)
+                EnumeratedType(EnumeratedType<I>)
             }
 
-            pub fn att_type<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, AttType<'a>, E> {
+            pub fn att_type<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, AttType<I>, E> {
                 alt((
                     value(AttType::StringType, tag("CDATA")),
                     map(tokenized_type, AttType::TokenizedType),
@@ -2153,70 +1991,68 @@ mod logical_structures {
                 NmTokens
             }
 
-            pub fn tokenized_type<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, TokenizedType, E> {
-                map_res(alpha1, TokenizedType::from_str)(s)
+            pub fn tokenized_type<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, TokenizedType, E> {
+                map_res(alpha1, |v: I| TokenizedType::from_str(v.as_ref()))(s)
             }
 
             #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
-            pub enum EnumeratedType<'a> {
+            pub enum EnumeratedType<I> {
                 #[strum(to_string = "{0}")]
-                NotationType(NotationType<'a>),
+                NotationType(NotationType<I>),
                 #[strum(to_string = "{0}")]
-                Enumeration(Enumeration<'a>)
+                Enumeration(Enumeration<I>)
             }
 
-            pub fn enumerated_type<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EnumeratedType<'a>, E> {
+            pub fn enumerated_type<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EnumeratedType<I>, E> {
                 alt((
-                    into(notation_type::<E>),
-                    into(enumeration::<E>),
+                    into(notation_type::<_, E>),
+                    into(enumeration::<_, E>),
                 ))(s)
             }
 
-            #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
             #[repr(transparent)]
-            pub struct NotationType<'a>(pub Vec<Name<'a>>);
+            pub struct NotationType<I>(pub Vec<Name<I>>);
 
-            impl<'a> Display for NotationType<'a> {
+            impl<I> Display for NotationType<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "NOTATION ({})", self.0.iter().join("|"))
                 }
             }
 
-            pub fn notation_type<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, NotationType<'a>, E> {
-                map(
+            pub fn notation_type<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, NotationType<I>, E> {
+                into(
                     delimited(
-                        tuple((tag("NOTATION"), multispace1, char('('), multispace0)),
+                        tuple((tag::<_, I, E>("NOTATION"), multispace1, char('('), multispace0)),
                         separated_list1(
                             delimited(multispace0, char('|'), multispace0),
                             name
                         ),
                         preceded(multispace0, char(')')),
-                    ),
-                    NotationType
+                    )
                 )(s)
             }
 
-            #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+            #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
             #[repr(transparent)]
-            pub struct Enumeration<'a>(pub Vec<Nmtoken<'a>>);
+            pub struct Enumeration<I>(pub Vec<Nmtoken<I>>);
 
-            impl<'a> Display for Enumeration<'a> {
+            impl<I> Display for Enumeration<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "({})", self.0.iter().join("|"))
                 }
             }
 
-            pub fn enumeration<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Enumeration<'a>, E> {
-                map(
+            pub fn enumeration<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Enumeration<I>, E> {
+                into(
                     delimited(
-                        preceded(char('('), multispace0),
+                        preceded(char::<I, E>('('), multispace0),
                         separated_list1(
                             delimited(multispace0, char('|'), multispace0),
                             nm_token
                         ),
                         terminated(multispace0, char(')')),
-                    ),
-                    Enumeration
+                    )
                 )(s)
             }
         }
@@ -2230,19 +2066,20 @@ mod logical_structures {
             use nom::IResult;
             use nom::sequence::{preceded, terminated};
             use strum::Display;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::super::super::documents::{att_value, AttValue};
 
             #[derive(Debug, Clone, Eq, PartialEq, Hash, Display)]
-            pub enum DefaultDecl<'a> {
+            pub enum DefaultDecl<I> {
                 #[strum(to_string = "#REQUIRED")]
                 Required,
                 #[strum(to_string = "#IMPLIED")]
                 Implied,
                 #[strum(to_string = "#FIXED {0}")]
-                AttValue(AttValue<'a>)
+                AttValue(AttValue<I>)
             }
 
-            pub fn default_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DefaultDecl<'a>, E> {
+            pub fn default_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, DefaultDecl<I>, E> {
                 alt((
                     value(DefaultDecl::Required, tag("#REQUIRED")),
                     value(DefaultDecl::Implied, tag("#IMPLIED")),
@@ -2275,12 +2112,13 @@ mod logical_structures {
         use nom::multi::{many0, many1};
         use nom::sequence::{delimited, pair};
         use strum::Display;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
         use super::super::documents::{ExtSubsetDecl, ext_subset_decl};
 
-        #[derive(Debug, Clone, Hash, Eq, PartialEq, Copy)]
-        pub struct Ignore<'a>(pub &'a str);
+        #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
+        pub struct Ignore<I>(pub I);
 
-        impl<'a> Display for Ignore<'a> {
+        impl<I> Display for Ignore<I> where I: Display {
             delegate::delegate! {
                 to self.0 {
                     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
@@ -2288,23 +2126,22 @@ mod logical_structures {
             }
         }
 
-        pub fn ignore<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Ignore<'a>, E> {
-            map(
+        pub fn ignore<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Ignore<I>, E> {
+            into(
                 nom::combinator::verify(
-                    take_until1("]]>"),
-                    |value: &str| !value.contains("<![")
-                ),
-                Ignore
+                    take_until1::<_, I, E>("]]>"),
+                    |value: &I| !value.contains("<![")
+                )
             )(s)
         }
 
         #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-        pub struct IgnoreSectContents<'a>(
-            pub Ignore<'a>,
-            pub Option<Vec<(Box<IgnoreSectContents<'a>>, Ignore<'a>)>>
+        pub struct IgnoreSectContents<I>(
+            pub Ignore<I>,
+            pub Option<Vec<(Box<IgnoreSectContents<I>>, Ignore<I>)>>
         );
 
-        impl<'a> Display for IgnoreSectContents<'a> {
+        impl<I> Display for IgnoreSectContents<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.0)?;
                 if let Some(ref rest) = self.1 {
@@ -2316,7 +2153,7 @@ mod logical_structures {
             }
         }
 
-        pub fn ignore_sect_contents<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, IgnoreSectContents<'a>, E> {
+        pub fn ignore_sect_contents<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, IgnoreSectContents<I>, E> {
             map(
                 pair(
                     ignore,
@@ -2342,52 +2179,51 @@ mod logical_structures {
             )(s)
         }
 
-        #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-        pub struct IgnoreSect<'a>(pub Vec<IgnoreSectContents<'a>>);
+        #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
+        pub struct IgnoreSect<I>(pub Vec<IgnoreSectContents<I>>);
 
-        impl<'a> Display for IgnoreSect<'a> {
+        impl<I> Display for IgnoreSect<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<![IGNORE[{}]]>", self.0.iter().join(""))
             }
         }
 
-        pub fn ignore_sect<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, IgnoreSect<'a>, E> {
-            map(
+        pub fn ignore_sect<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, IgnoreSect<I>, E> {
+            into(
                 delimited(
                     delimited(
                         tag("<!["),
                         delimited(
-                            multispace0,
-                            tag("IGNORE"),
-                            multispace0
+                            multispace0::<I, E>,
+                            tag::<_, I, E>("IGNORE"),
+                            multispace0::<I, E>
                         ),
                         char('['),
 
                     ),
                     many0(ignore_sect_contents),
                     tag("]]>")
-                ),
-                IgnoreSect
+                )
             )(s)
         }
 
 
-        #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-        pub struct IncludeSect<'a>(pub ExtSubsetDecl<'a>);
+        #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
+        pub struct IncludeSect<I>(pub ExtSubsetDecl<I>);
 
-        impl<'a> Display for IncludeSect<'a> {
+        impl<I> Display for IncludeSect<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<![INCLUDE[{}]]>", self.0)
             }
         }
 
-        pub fn include_sect<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, IncludeSect<'a>, E> {
-            map(
+        pub fn include_sect<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, IncludeSect<I>, E> {
+            into(
                 delimited(
                     delimited(
                         tag("<!["),
                         delimited(
-                            multispace0,
+                            multispace0::<I, E>,
                             tag("INCLUDE"),
                             multispace0
                         ),
@@ -2396,23 +2232,22 @@ mod logical_structures {
                     ),
                     ext_subset_decl,
                     tag("]]>")
-                ),
-                IncludeSect
+                )
             )(s)
         }
 
         #[derive(Debug, Clone, Hash, Eq, PartialEq, Display, From)]
-        pub enum ConditionalSect<'a> {
+        pub enum ConditionalSect<I> {
             #[strum(to_string="{0}")]
-            IncludeSect(IncludeSect<'a>),
+            IncludeSect(IncludeSect<I>),
             #[strum(to_string="{0}")]
-            IgnoreSect(IgnoreSect<'a>)
+            IgnoreSect(IgnoreSect<I>)
         }
 
-        pub fn conditional_sect<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ConditionalSect<'a>, E> {
+        pub fn conditional_sect<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ConditionalSect<I>, E> {
             alt((
-                into(include_sect::<E>),
-                into(ignore_sect::<E>),
+                into(include_sect::<_, E>),
+                into(ignore_sect::<_, E>),
             ))(s)
         }
     }
@@ -2429,16 +2264,16 @@ mod physical_structures {
         use nom::branch::alt;
         use nom::bytes::complete::{tag};
         use nom::character::complete::{char, digit1, hex_digit1};
-        use nom::combinator::{into, map, map_res};
+        use nom::combinator::{into, map_res};
         use super::super::XMLParseError as ParseError;
         use nom::sequence::delimited;
         use nom::IResult;
-        use std::borrow::{Borrow, Cow};
+        use std::borrow::{Borrow};
         use std::fmt::{Display, Formatter};
         use std::ops::Deref;
         use derive_more::From;
         use strum::Display;
-
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
 
         #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
         #[repr(transparent)]
@@ -2464,17 +2299,17 @@ mod physical_structures {
             }
         }
 
-        pub fn char_ref<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, CharRef, E> {
+        pub fn char_ref<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, CharRef, E> {
             map_res(
                 alt((
                     delimited(
-                        tag("&#"),
-                        map_res(digit1, |value| u32::from_str_radix(value, 10)),
+                        tag::<_, I, E>("&#"),
+                        map_res(digit1, |value: I| u32::from_str_radix(value.as_ref(), 10)),
                         char(';'),
                     ),
                     delimited(
                         tag("&#x"),
-                        map_res(hex_digit1, |value| u32::from_str_radix(value, 16)),
+                        map_res(hex_digit1, |value: I| u32::from_str_radix(value.as_ref(), 16)),
                         char(';'),
                     )
                 )),
@@ -2485,64 +2320,33 @@ mod physical_structures {
         }
 
 
-        #[derive(Debug, Copy, Clone, Eq, Hash, Display, From)]
-        pub enum Reference<'a> {
+        #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, From)]
+        pub enum Reference<I> {
             #[strum(to_string = "{0}")]
-            EntityRef(EntityRef<'a>),
+            EntityRef(EntityRef<I>),
             #[strum(to_string = "{0}")]
             CharRef(CharRef),
         }
 
-        impl<'a> Reference<'a> {
-            pub fn as_str(&'a self) -> Cow<'a, str> {
-                match self {
-                    Reference::EntityRef(value) => {
-                        Cow::Borrowed(value)
-                    }
-                    Reference::CharRef(value) => {
-                        Cow::Owned(value.to_string())
-                    }
-                }
-            }
-        }
 
-        impl<'a> PartialEq for Reference<'a> {
-            fn eq(&self, other: &Self) -> bool {
-                match (self, other) {
-                    (Self::EntityRef(a), Self::EntityRef(b)) => {
-                        a == b
-                    },
-                    (Self::EntityRef(a), Self::CharRef(b)) => {
-                        a.chars().exactly_one().is_ok_and(|value| value == b.as_char())
-                    },
-                    (Self::CharRef(a), Self::EntityRef(b)) => {
-                        b.chars().exactly_one().is_ok_and(|value| value == a.as_char())
-                    },
-                    (Self::CharRef(a), Self::CharRef(b)) => {
-                        a == b
-                    }
-                }
-            }
-        }
-
-        pub fn reference<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, Reference<'a>, E> {
+        pub fn reference<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, Reference<I>, E> {
             alt((
-                into(char_ref::<E>),
-                into(entity_ref::<E>),
+                into(char_ref::<_, E>),
+                into(entity_ref::<_, E>),
             ))(s)
         }
 
-        #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
         #[repr(transparent)]
-        pub struct InnerEntityRef<'a>(pub Name<'a>);
+        pub struct InnerEntityRef<I>(pub Name<I>);
 
-        impl<'a> Borrow<Name<'a>> for InnerEntityRef<'a> {
-            fn borrow(&self) -> &Name<'a> {
+        impl<I> Borrow<Name<I>> for InnerEntityRef<I> {
+            fn borrow(&self) -> &Name<I> {
                 &self.0
             }
         }
 
-        impl<'a> Deref for InnerEntityRef<'a> {
+        impl<I> Deref for InnerEntityRef<I> where I: AsRef<str> {
             type Target = str;
 
             fn deref(&self) -> &Self::Target {
@@ -2550,7 +2354,7 @@ mod physical_structures {
             }
         }
 
-        impl Display for InnerEntityRef<'_> {
+        impl<I> Display for InnerEntityRef<I> where I: Display {
             delegate::delegate! {
                 to self.0 {
                     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
@@ -2558,28 +2362,27 @@ mod physical_structures {
             }
         }
 
-        fn inner_entity_ref<'a, E: ParseError<&'a str>>(c: char) -> impl FnMut(&'a str) -> IResult<&'a str, InnerEntityRef<'a>, E> {
-            map(
+        fn inner_entity_ref<I: DtdParserInput, E: ParseError<I>>(c: char) -> impl FnMut(I) -> IResult<I, InnerEntityRef<I>, E> {
+            into(
                 delimited(
-                    char(c),
-                    name,
-                    char(';'),
+                    char::<I, E>(c),
+                    name::<I, E>,
+                    char::<I, E>(';'),
                 ),
-                InnerEntityRef
             )
         }
 
-        #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
         #[repr(transparent)]
-        pub struct EntityRef<'a>(pub InnerEntityRef<'a>);
+        pub struct EntityRef<I>(pub InnerEntityRef<I>);
 
-        impl<'a> Borrow<Name<'a>> for EntityRef<'a> {
-            fn borrow(&self) -> &Name<'a> {
+        impl<I> Borrow<Name<I>> for EntityRef<I> {
+            fn borrow(&self) -> &Name<I> {
                 self.0.borrow()
             }
         }
 
-        impl<'a> Deref for EntityRef<'a> {
+        impl<I> Deref for EntityRef<I> where I: AsRef<str> {
             type Target = str;
 
             fn deref(&self) -> &Self::Target {
@@ -2587,22 +2390,22 @@ mod physical_structures {
             }
         }
 
-        impl Display for EntityRef<'_> {
+        impl<I> Display for EntityRef<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "&{};", self.0)
             }
         }
 
         #[inline(always)]
-        pub fn entity_ref<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EntityRef<'a>, E> {
-            map(inner_entity_ref('&'), EntityRef)(s)
+        pub fn entity_ref<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EntityRef<I>, E> {
+            into(inner_entity_ref::<I, E>('&'))(s)
         }
 
-        #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, From)]
         #[repr(transparent)]
-        pub struct PEReference<'a>(pub InnerEntityRef<'a>);
+        pub struct PEReference<I>(pub InnerEntityRef<I>);
 
-        impl<'a> Deref for PEReference<'a> {
+        impl<I> Deref for PEReference<I> where I: AsRef<str> {
             type Target = str;
 
             fn deref(&self) -> &Self::Target {
@@ -2610,21 +2413,21 @@ mod physical_structures {
             }
         }
 
-        impl<'a> Borrow<Name<'a>> for PEReference<'a> {
-            fn borrow(&self) -> &Name<'a> {
+        impl<I> Borrow<Name<I>> for PEReference<I> {
+            fn borrow(&self) -> &Name<I> {
                 self.0.borrow()
             }
         }
 
-        impl Display for PEReference<'_> {
+        impl<I> Display for PEReference<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "%{};", self.0)
             }
         }
 
         #[inline(always)]
-        pub fn pe_reference<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, PEReference<'a>, E> {
-            map(inner_entity_ref('%'), PEReference)(s)
+        pub fn pe_reference<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, PEReference<I>, E> {
+            into(inner_entity_ref::<I, E>('%'))(s)
         }
 
 
@@ -2646,30 +2449,31 @@ mod physical_structures {
         use crate::topicmodel::dictionary::loader::dtd_parser::physical_structures::entity_declarations::external_entities::NDataDecl;
         use super::super::documents::{entity_value, EntityValue, Name, name};
         pub use external_entities::*;
+        use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
-        pub enum EntityDecl<'a> {
-            GEDecl(GEDecl<'a>),
-            PEDecl(PEDecl<'a>),
+        pub enum EntityDecl<I> {
+            GEDecl(GEDecl<I>),
+            PEDecl(PEDecl<I>),
         }
 
-        pub fn entity_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EntityDecl<'a>, E> {
+        pub fn entity_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EntityDecl<I>, E> {
             alt((
-                into(ge_decl::<E>),
-                into(pe_decl::<E>)
+                into(ge_decl::<_, E>),
+                into(pe_decl::<_, E>)
             ))(s)
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct GEDecl<'a>(pub Name<'a>, pub EntityDef<'a>);
+        pub struct GEDecl<I>(pub Name<I>, pub EntityDef<I>);
 
-        impl<'a> Display for GEDecl<'a> {
+        impl<I> Display for GEDecl<I> where I: Display + AsRef<str> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<!ENTITY {} {}>\n", self.0, self.1)
             }
         }
 
-        pub fn ge_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, GEDecl<'a>, E> {
+        pub fn ge_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, GEDecl<I>, E> {
             map(
                 delimited(
                     terminated(tag("<!ENTITY"), multispace1),
@@ -2685,15 +2489,15 @@ mod physical_structures {
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub struct PEDecl<'a>(pub Name<'a>, pub PEDef<'a>);
+        pub struct PEDecl<I>(pub Name<I>, pub PEDef<I>);
 
-        impl<'a> Display for PEDecl<'a> {
+        impl<I> Display for PEDecl<I> where I: Display {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(f, "<!ENTITY % {} {}>", self.0, self.1)
             }
         }
 
-        pub fn pe_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, PEDecl<'a>, E> {
+        pub fn pe_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, PEDecl<I>, E> {
             map(
                 delimited(
                     tuple((tag("<!ENTITY"), multispace1, char('%'), multispace1)),
@@ -2710,13 +2514,13 @@ mod physical_structures {
 
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-        pub enum EntityDef<'a> {
-            EntityValue(EntityValue<'a>),
-            ExternalId(ExternalID<'a>, Option<NDataDecl<'a>>)
+        pub enum EntityDef<I> {
+            EntityValue(EntityValue<I>),
+            ExternalId(ExternalID<I>, Option<NDataDecl<I>>)
         }
 
 
-        impl<'a> Display for EntityDef<'a> {
+        impl<I> Display for EntityDef<I> where I: Display + AsRef<str> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 match self {
                     EntityDef::EntityValue(value) => {
@@ -2733,7 +2537,7 @@ mod physical_structures {
             }
         }
 
-        pub fn entity_def<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EntityDef<'a>, E> {
+        pub fn entity_def<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EntityDef<I>, E> {
             alt((
                 map(entity_value, EntityDef::EntityValue),
                 map(pair(external_id, opt(n_data_decl)), |(a, b)| EntityDef::ExternalId(a, b)),
@@ -2741,17 +2545,17 @@ mod physical_structures {
         }
 
         #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
-        pub enum PEDef<'a> {
+        pub enum PEDef<I> {
             #[strum(to_string = "{0}")]
-            EntityValue(EntityValue<'a>),
+            EntityValue(EntityValue<I>),
             #[strum(to_string = "{0}")]
-            ExternalId(ExternalID<'a>)
+            ExternalId(ExternalID<I>)
         }
 
-        pub fn pe_def<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, PEDef<'a>, E> {
+        pub fn pe_def<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, PEDef<I>, E> {
             alt((
-                into(entity_value::<E>),
-                into(external_id::<E>),
+                into(entity_value::<_, E>),
+                into(external_id::<_, E>),
             ))(s)
         }
 
@@ -2760,26 +2564,28 @@ mod physical_structures {
 
         pub mod external_entities {
             use std::fmt::{Display, Formatter};
+            use derive_more::From;
             use nom::branch::alt;
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace1;
-            use nom::combinator::map;
+            use nom::combinator::{into, map};
             use super::super::super::XMLParseError as ParseError;
             use nom::IResult;
             use nom::sequence::{delimited, preceded, separated_pair, terminated};
             use crate::topicmodel::dictionary::loader::dtd_parser::{pub_id_literal, system_literal};
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::super::super::documents::{PubidLiteral, SystemLiteral, Name, name};
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-            pub struct ExternalID<'a>(pub Option<PubidLiteral<'a>>, pub SystemLiteral<'a>);
+            #[derive(Debug, Clone, Hash, Eq, PartialEq)]
+            pub struct ExternalID<I>(pub Option<PubidLiteral<I>>, pub SystemLiteral<I>);
 
-            impl<'a> ExternalID<'a> {
+            impl<I> ExternalID<I> {
                 pub fn is_public(&self) -> bool {
                     self.0.is_some()
                 }
             }
 
-            impl Display for ExternalID<'_> {
+            impl<I> Display for ExternalID<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     if let Some(ref pu) = self.0 {
                         write!(f, "PUBLIC {} {}", pu, self.1)
@@ -2789,7 +2595,7 @@ mod physical_structures {
                 }
             }
 
-            pub fn external_id<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ExternalID<'a>, E> {
+            pub fn external_id<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ExternalID<I>, E> {
                 alt((
                     map(preceded(terminated(tag("SYSTEM"), multispace1), system_literal),
                         |value| ExternalID(None, value)
@@ -2803,20 +2609,22 @@ mod physical_structures {
                 ))(s)
             }
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
             #[repr(transparent)]
-            pub struct NDataDecl<'a>(pub Name<'a>);
+            pub struct NDataDecl<I>(pub Name<I>);
 
-            impl Display for NDataDecl<'_> {
+            impl<I> Display for NDataDecl<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, " NDATA {}", self.0)
                 }
             }
 
-            pub fn n_data_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, NDataDecl<'a>, E> {
-                preceded(
-                    delimited(multispace1, tag("NDATA"), multispace1),
-                    map(name, NDataDecl)
+            pub fn n_data_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, NDataDecl<I>, E> {
+                into(
+                    preceded(
+                        delimited(multispace1, tag("NDATA"), multispace1),
+                        name::<I, E>
+                    )
                 )(s)
             }
         }
@@ -2836,13 +2644,14 @@ mod physical_structures {
             use super::super::super::XMLParseError as ParseError;
             use nom::IResult;
             use nom::sequence::{delimited, pair};
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::{encoding_decl, EncodingDecl};
             use super::super::super::documents::{version_info, VersionInfo};
 
-            #[derive(Debug, Clone, Hash, Eq, PartialEq, Copy)]
-            pub struct TextDecl<'a>(pub EncodingDecl<'a>, pub Option<VersionInfo<'a>>);
+            #[derive(Debug, Clone, Hash, Eq, PartialEq)]
+            pub struct TextDecl<I>(pub EncodingDecl<I>, pub Option<VersionInfo<I>>);
 
-            impl<'a> Display for TextDecl<'a> {
+            impl<I> Display for TextDecl<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "<?xml")?;
                     if let Some(ref v) = self.1 {
@@ -2852,7 +2661,7 @@ mod physical_structures {
                 }
             }
 
-            pub fn text_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, TextDecl<'a>, E> {
+            pub fn text_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, TextDecl<I>, E> {
                 map(
                     delimited(
                         tag("<?xml"),
@@ -2875,13 +2684,14 @@ mod physical_structures {
             use super::super::super::XMLParseError as ParseError;
             use nom::IResult;
             use nom::sequence::pair;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::super::super::logical_structures::{content, Content};
             use super::{text_decl, TextDecl};
 
             #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-            pub struct ExtParsedEnt<'a>(pub Option<TextDecl<'a>>, pub Content<'a>);
+            pub struct ExtParsedEnt<I>(pub Option<TextDecl<I>>, pub Content<I>);
 
-            impl<'a> Display for ExtParsedEnt<'a> {
+            impl<I> Display for ExtParsedEnt<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     if let Some(ref decl) = self.0 {
                         write!(f, "{decl}")?;
@@ -2890,7 +2700,7 @@ mod physical_structures {
                 }
             }
 
-            pub fn ext_parsed_ent<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, ExtParsedEnt<'a>, E> {
+            pub fn ext_parsed_ent<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, ExtParsedEnt<I>, E> {
                 map(
                     pair(
                         opt(text_decl),
@@ -2903,29 +2713,31 @@ mod physical_structures {
 
         mod encoding_declaration {
             use std::fmt::{Display, Formatter};
+            use derive_more::From;
             use nom::branch::alt;
             use nom::bytes::complete::{tag, take_while};
             use nom::character::complete::{alpha1, char, multispace1};
-            use nom::combinator::{map, recognize};
+            use nom::combinator::{into, map, recognize};
             use super::super::super::XMLParseError as ParseError;
             use nom::IResult;
             use nom::sequence::{delimited, pair, preceded};
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::{DtdParserInput};
             use super::super::super::documents::eq;
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
             #[repr(transparent)]
-            pub struct EncodingDecl<'a>(pub EncName<'a>);
+            pub struct EncodingDecl<I>(pub EncName<I>);
 
-            impl Display for EncodingDecl<'_> {
+            impl<I> Display for EncodingDecl<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, " encoding=\"{}\"", self.0)
                 }
             }
 
-            pub fn encoding_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EncodingDecl<'a>, E> {
-                map(
+            pub fn encoding_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EncodingDecl<I>, E> {
+                into(
                     preceded(
-                        delimited(multispace1, tag("encoding"), eq),
+                        delimited(multispace1::<I, E>, tag("encoding"), eq),
                         alt((
                             delimited(
                                 char('"'),
@@ -2938,32 +2750,30 @@ mod physical_structures {
                                 char('\''),
                             )
                         ))
-                    ),
-                    EncodingDecl
+                    )
                 )(s)
             }
 
-            #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
             #[repr(transparent)]
-            pub struct EncName<'a>(pub &'a str);
+            pub struct EncName<I>(pub I);
 
-            impl Display for EncName<'_> {
+            impl<I> Display for EncName<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "{}", self.0)
                 }
             }
 
-            pub fn enc_name<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, EncName<'a>, E> {
-                map(
+            pub fn enc_name<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, EncName<I>, E> {
+                into(
                     recognize(
                         pair(
-                            alpha1,
+                            alpha1::<I, E>,
                             take_while(|value| {
                                 nom::AsChar::is_alpha(value) || value == '.' || value == '_' || value == '-'
                             })
                         )
                     ),
-                    EncName
                 )(s)
             }
         }
@@ -2979,32 +2789,33 @@ mod physical_structures {
             use nom::IResult;
             use nom::sequence::{delimited, pair, preceded, separated_pair, terminated};
             use strum::Display;
+            use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
             use super::super::super::documents::{pub_id_literal, Name, PubidLiteral, name};
             use super::super::super::physical_structures::{external_id, ExternalID};
 
-            #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Display, From)]
-            pub enum InnerNotationDeclId<'a> {
-                ExternalId(ExternalID<'a>),
-                PublicId(PublicID<'a>),
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, Display, From)]
+            pub enum InnerNotationDeclId<I> {
+                ExternalId(ExternalID<I>),
+                PublicId(PublicID<I>),
             }
 
-            pub fn inner_notation_decl_id<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, InnerNotationDeclId<'a>, E> {
+            pub fn inner_notation_decl_id<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, InnerNotationDeclId<I>, E> {
                 alt((
-                    into(external_id::<E>),
-                    into(public_id::<E>)
+                    into(external_id::<_, E>),
+                    into(public_id::<_, E>)
                 ))(s)
             }
 
-            #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-            pub struct NotationDecl<'a>(pub Name<'a>, pub InnerNotationDeclId<'a>);
+            #[derive(Debug, Clone, Hash, Eq, PartialEq)]
+            pub struct NotationDecl<I>(pub Name<I>, pub InnerNotationDeclId<I>);
 
-            impl<'a> Display for NotationDecl<'a> {
+            impl<I> Display for NotationDecl<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "<!NOTATION {} {}>\n", self.0, self.1)
                 }
             }
 
-            pub fn notation_decl<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, NotationDecl<'a>, E> {
+            pub fn notation_decl<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, NotationDecl<I>, E> {
                 map(
                     delimited(
                         terminated(tag("<!NOTATION"), multispace1),
@@ -3019,25 +2830,26 @@ mod physical_structures {
                 )(s)
             }
 
-            #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+            #[derive(Debug, Clone, Hash, Eq, PartialEq, From)]
             #[repr(transparent)]
-            pub struct PublicID<'a>(pub PubidLiteral<'a>);
+            pub struct PublicID<I>(pub PubidLiteral<I>);
 
-            impl<'a> Display for PublicID<'a> {
+            impl<I> Display for PublicID<I> where I: Display {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                     write!(f, "PUBLIC {}", self.0)
                 }
             }
 
-            pub fn public_id<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, PublicID<'a>, E> {
-                map(
-                    preceded(pair(tag("PUBLIC"), multispace1), pub_id_literal),
-                    PublicID
+            pub fn public_id<I: DtdParserInput, E: ParseError<I>>(s: I) -> IResult<I, PublicID<I>, E> {
+                into(
+                    preceded(pair(tag("PUBLIC"), multispace1::<I, E>), pub_id_literal)
                 )(s)
             }
         }
     }
 }
+
+
 
 pub mod solving {
     // todo: https://www.w3.org/TR/REC-xml/#intern-replacement
@@ -3046,181 +2858,512 @@ pub mod solving {
     use std::collections::hash_map::Entry;
     use std::collections::HashMap;
     use std::fmt::{Debug, Display};
+    use std::hash::Hash;
+    use std::marker::PhantomData;
     use std::sync::{Arc, Mutex};
     use itertools::Itertools;
     use nom::{IResult, Parser};
     use thiserror::Error;
     use crate::topicmodel::dictionary::loader::dtd_parser::{DeclSep, EntityDecl, EntityDef, EntityValue, EntityValuePart, IntSubset, IntSubsetPart, MarkUpDecl, Name, PEDef, Reference, XMLParseError};
+    use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
     use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::{MayBeUnresolved, UnresolvedReference};
 
-    #[derive(Debug, Default, Clone)]
-    pub struct DTDResolver<'a> {
-        resolved: Arc<Mutex<HashMap<Name<'a>, Cow<'a, str>>>>,
+    #[derive(Debug, Default)]
+    pub struct DTDResolver<T> {
+        resolved: HashMap<Name<T>, T>,
     }
 
-    impl<'a> DTDResolver<'a> {
+    pub trait MergeByRef<TSelf = Self> {
+        fn merge(&self, other: &TSelf) -> Self;
+    }
 
-        pub fn resolve_if_possible<T, E, F>(&self, target: &mut MayBeUnresolved<'a, T>, mut parser: F) -> Result<bool, ResolverError<'a, E>>
-        where
-            E: XMLParseError<&'a str>,
-            F: Parser<&'a str, T, E>,
-            T: Display + Debug + 'a + Clone
-        {
-            if target.is_unresolved(){
-                let name: &Name<'a> = target.as_unresolved().unwrap().borrow();
-                if let Some(resolved) = self.resolve(name) {
-                    match parser.parse(resolved.as_ref()) {
-                        Ok((_, value)) => {
-                            target.set_resolved(value);
-                        }
-                        Err(err) => {
-                            return Err(ResolverError::ParserFailed(err))
-                        }
-                    }
-                } else {
-                    return Ok(false)
-                }
-            }
-            Ok(true)
-        }
 
-        pub fn register_complete(&mut self, values: &IntSubset<'a>) -> Result<(), usize> {
-            let targets = values.iter().filter_map(
-                |value| {
-                    if let IntSubsetPart::MarkupDecl(MarkUpDecl::EntityDecl(value)) = value {
-                        Some(value)
-                    } else {
-                        None
-                    }
-                }
-            ).collect_vec();
-            self.register_complete_list(targets)
-        }
+    impl<T> DTDResolver<T> where T: MergeByRef + From<char> + Clone + Eq + Hash {
+        // fn resolve_entity_def_value_part(&self, value_part: &EntityValuePart<T>) -> Option<Cow<T>> {
+        //     match value_part {
+        //         EntityValuePart::Raw(value) => {
+        //             Some(Cow::Borrowed(value))
+        //         }
+        //         EntityValuePart::PEReference(value) => {
+        //             Some(Cow::Borrowed(self.resolved.get(&value.0.0)?))
+        //         }
+        //         EntityValuePart::Reference(value) => {
+        //             match value {
+        //                 Reference::EntityRef(value) => {
+        //                     Some(Cow::Borrowed(self.resolved.get(&value.0.0)?))
+        //                 }
+        //                 Reference::CharRef(value) => {
+        //                     Some(Cow::Owned(value.as_char().into()))
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+    }
 
-        pub fn register_complete_list(&mut self, targets: Vec<&EntityDecl<'a>>) -> Result<(), usize> {
-            let mut ct = 0usize;
-            let mut last = None;
-            loop {
-                for value in targets.iter().copied() {
-                    if self.register(value) {
-                        ct+=1;
-                    }
-                }
-                if let Some(last) = last.replace(ct) {
-                    if ct == last {
-                        break Err(targets.len() - ct)
-                    }
-                }
-                if ct == targets.len() {
-                    break Ok(())
-                }
-            }
-        }
+    impl<T> DTDResolver<T> {
 
-        pub fn register(&mut self, entity_decl: &EntityDecl<'a>) -> bool {
-            let mut resolver = self.resolved.lock().unwrap();
-            match entity_decl {
-                EntityDecl::GEDecl(decl) => {
-                    if resolver.contains_key(&decl.0) {
-                        return true;
-                    }
-                    match &decl.1 {
-                        EntityDef::EntityValue(value) => {
-                            match self.resolve_entity_def(value) {
-                                None => {
-                                    false
-                                }
-                                Some(value) => {
-                                    resolver.insert(decl.0, value);
-                                    true
-                                }
-                            }
-                        }
-                        EntityDef::ExternalId(_, _) => {
-                            // todo: https://www.w3.org/TR/REC-xml/#NT-ExternalID
-                            log::warn!("ExternalID not supported!");
-                            false
-                        }
-                    }
-                }
-                EntityDecl::PEDecl(decl) => {
-                    if self.resolved.lock().unwrap().contains_key(&decl.0) {
-                        return true;
-                    }
-                    match &decl.1 {
-                        PEDef::EntityValue(value) => {
-                            match self.resolve_entity_def(value) {
-                                None => {
-                                    false
-                                }
-                                Some(value) => {
-                                    self.resolved.lock().unwrap().insert(decl.0, value);
-                                    true
-                                }
-                            }
-                        }
-                        PEDef::ExternalId(_) => {
-                            // todo: https://www.w3.org/TR/REC-xml/#NT-ExternalID
-                            log::warn!("ExternalID not supported!");
-                            false
-                        }
-                    }
-                }
-            }
-        }
+        // pub fn resolve_if_possible<I, O, E, F>(&self, target: &mut MayBeUnresolved<I, O>, mut parser: F) -> Result<bool, ResolverError<I, E>>
+        // where
+        //     I: DtdParserInput,
+        //     E: XMLParseError<I>,
+        //     F: Parser<I, T, E>,
+        //     O: Display + Debug + Clone
+        // {
+        //     if target.is_unresolved(){
+        //         if let Some(resolved) = self.resolve(target.as_unresolved().unwrap()) {
+        //             match parser.parse(resolved.as_ref()) {
+        //                 Ok((_, value)) => {
+        //                     target.set_resolved(value);
+        //                 }
+        //                 Err(err) => {
+        //                     return Err(ResolverError::ParserFailed(err))
+        //                 }
+        //             }
+        //         } else {
+        //             return Ok(false)
+        //         }
+        //     }
+        //     Ok(true)
+        // }
+        //
+        // pub fn register_complete(&mut self, values: &IntSubset<T>) -> Result<(), usize> {
+        //     let targets = values.iter().filter_map(
+        //         |value| {
+        //             if let IntSubsetPart::MarkupDecl(MarkUpDecl::EntityDecl(value)) = value {
+        //                 Some(value)
+        //             } else {
+        //                 None
+        //             }
+        //         }
+        //     ).collect_vec();
+        //     self.register_complete_list(targets)
+        // }
+        //
+        // pub fn register_complete_list(&mut self, targets: Vec<&EntityDecl<T>>) -> Result<(), usize> {
+        //     let mut ct = 0usize;
+        //     let mut last = None;
+        //     loop {
+        //         for value in targets.iter().copied() {
+        //             if self.register(value) {
+        //                 ct+=1;
+        //             }
+        //         }
+        //         if let Some(last) = last.replace(ct) {
+        //             if ct == last {
+        //                 break Err(targets.len() - ct)
+        //             }
+        //         }
+        //         if ct == targets.len() {
+        //             break Ok(())
+        //         }
+        //     }
+        // }
 
-        pub fn resolve<Q: Borrow<Name<'a>>>(&self, a: &Q) -> Option<&Cow<'a, str>> {
-            let name = a.borrow();
-            self.resolved.lock().unwrap().get(name)
-        }
+        // pub fn register(&mut self, entity_decl: &EntityDecl<T>) -> bool {
+        //     match entity_decl {
+        //         EntityDecl::GEDecl(decl) => {
+        //             if self.resolved.contains_key(&decl.0) {
+        //                 return true;
+        //             }
+        //             match &decl.1 {
+        //                 EntityDef::EntityValue(value) => {
+        //                     match self.resolve_entity_def(value) {
+        //                         None => {
+        //                             false
+        //                         }
+        //                         Some(value) => {
+        //                             self.resolved.insert(decl.0.clone(), value);
+        //                             true
+        //                         }
+        //                     }
+        //                 }
+        //                 EntityDef::ExternalId(_, _) => {
+        //                     // todo: https://www.w3.org/TR/REC-xml/#NT-ExternalID
+        //                     log::warn!("ExternalID not supported!");
+        //                     false
+        //                 }
+        //             }
+        //         }
+        //         EntityDecl::PEDecl(decl) => {
+        //             if self.resolved.contains_key(&decl.0) {
+        //                 return true;
+        //             }
+        //             match &decl.1 {
+        //                 PEDef::EntityValue(value) => {
+        //                     match self.resolve_entity_def(value) {
+        //                         None => {
+        //                             false
+        //                         }
+        //                         Some(value) => {
+        //                             self.resolved.insert(decl.0.clone(), value);
+        //                             true
+        //                         }
+        //                     }
+        //                 }
+        //                 PEDef::ExternalId(_) => {
+        //                     // todo: https://www.w3.org/TR/REC-xml/#NT-ExternalID
+        //                     log::warn!("ExternalID not supported!");
+        //                     false
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        //
+        // pub fn resolve<Q: Borrow<Name<T>>>(&self, a: &Q) -> Option<&T> {
+        //     let name = a.borrow();
+        //     self.resolved.get(name)
+        // }
+        //
+        // fn resolve_entity_def(&self, entity_value: &EntityValue<T>) -> Option<Cow<'static, str>> {
+        //     match entity_value.0.len(){
+        //         0 => Some(Cow::Borrowed("")),
+        //         1 => {
+        //             self.resolve_entity_def_value_part(unsafe{entity_value.0.get_unchecked(0)})
+        //         }
+        //         _ => {
+        //             let mut new_value = String::new();
+        //             for value in entity_value.0.iter() {
+        //                 new_value.push_str(self.resolve_entity_def_value_part(value)?.as_ref());
+        //             }
+        //             Some(Cow::Owned(new_value))
+        //         }
+        //     }
+        // }
 
-        fn resolve_entity_def(&self, entity_value: &EntityValue<'a>) -> Option<Cow<'a, str>> {
-            match entity_value.0.len(){
-                0 => Some(Cow::Borrowed("")),
-                1 => {
-                    self.resolve_entity_def_value_part(unsafe{entity_value.0.get_unchecked(0)})
-                }
-                _ => {
-                    let mut new_value = String::new();
-                    for value in entity_value.0.iter() {
-                        new_value.push_str(self.resolve_entity_def_value_part(value)?.as_ref());
-                    }
-                    Some(Cow::Owned(new_value))
-                }
-            }
-        }
 
-        fn resolve_entity_def_value_part(&self, value_part: &EntityValuePart<'a>) -> Option<Cow<'a, str>> {
-            match value_part {
-                EntityValuePart::Raw(value) => {
-                    Some(Cow::Borrowed(*value))
-                }
-                EntityValuePart::PEReference(value) => {
-                    Some(self.resolved.lock().unwrap().get(&value.0.0)?.clone())
-                }
-                EntityValuePart::Reference(value) => {
-                    match value {
-                        Reference::EntityRef(value) => {
-                            Some(self.resolved.lock().unwrap().get(&value.0.0)?.clone())
-                        }
-                        Reference::CharRef(value) => {
-                            Some(Cow::Owned(value.as_char().to_string()))
-                        }
-                    }
-                }
-            }
-        }
     }
 
     #[derive(Debug, Error)]
-    pub enum ResolverError<'a, E: XMLParseError<&'a str>> {
+    pub enum ResolverError<I: DtdParserInput, E: XMLParseError<I>> {
         #[error("Failed to register {0} elements!")]
         FailedToRegisterCompletely(usize),
         #[error("Failed to resolve {0}")]
-        FailedToResolve(Name<'a>),
+        FailedToResolve(Name<I>),
         #[error(transparent)]
-        ParserFailed(#[from] nom::Err<E>)
+        ParserFailed(#[from] nom::Err<E>),
     }
+
+
+}
+
+pub mod input {
+    use std::borrow::Cow;
+    use std::fmt::{Debug, Display, Formatter};
+    use std::hash::{Hash, Hasher};
+    use std::mem;
+    use std::ops::{Deref, RangeFrom, RangeTo};
+    use std::str::{CharIndices, Chars};
+    use std::sync::{Arc, Mutex};
+    use nom::{Compare, CompareResult, FindSubstring, IResult, InputIter, InputLength, InputTake, InputTakeAtPosition, Needed, Offset, Slice};
+    use nom::error::{ErrorKind, ParseError};
+    use crate::topicmodel::dictionary::loader::dtd_parser::EntityDecl;
+    use crate::topicmodel::dictionary::loader::dtd_parser::solving::{DTDResolver, MergeByRef};
+    use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::UnresolvedReference;
+
+    pub trait Contains<T> {
+        fn contains(&self, other: T) -> bool;
+    }
+
+    pub trait ResolverFeature<T> {
+        fn register(&self, entry: &EntityDecl<T>);
+
+        fn try_to_resolve(&self, unresolved: UnresolvedReference<T>) -> Option<T>;
+    }
+
+    pub trait DtdParserInput: InputTakeAtPosition<Item=char>
+    + Clone
+    + Offset
+    + Slice<RangeTo<usize>>
+    + Slice<RangeFrom<usize>>
+    + InputIter<Item=char>
+    + AsRef<str>
+    + InputLength
+    + InputTake
+    + MergeByRef
+    + for<'a> Compare<&'a str>
+    + for<'a> FindSubstring<&'a str>
+    + for<'a> Contains<&'a str>
+    where Self: Sized
+    {}
+
+
+    pub struct InputWithSolver<'a> {
+        data: Cow<'a, str>,
+        shared_resolver: Arc<Mutex<DTDResolver<Cow<'a, str>>>>
+    }
+
+    impl<'a> Debug for InputWithSolver<'a> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            Debug::fmt(&self.data, f)
+        }
+    }
+
+    impl<'a> Display for InputWithSolver<'a> {
+        #[inline(always)]
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            Display::fmt(self.data.as_ref(), f)
+        }
+    }
+
+    impl<'a> PartialEq for InputWithSolver<'a> {
+        #[inline(always)]
+        fn eq(&self, other: &Self) -> bool {
+            self.data.as_ref().eq(other.data.as_ref())
+        }
+    }
+
+    impl<'a> Eq for InputWithSolver<'a> {}
+
+    impl<'a> Hash for InputWithSolver<'a> {
+        #[inline(always)]
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.data.hash(state)
+        }
+    }
+
+    impl InputWithSolver<'static> {
+        pub fn new(s: String) -> Self {
+            Self {
+                data: Cow::Owned(s),
+                shared_resolver: Default::default()
+            }
+        }
+    }
+
+    impl<'a> InputWithSolver<'a> {
+        pub fn new_from_str(s: &'a str) -> Self {
+            Self {
+                data: Cow::Borrowed(s),
+                shared_resolver: Default::default()
+            }
+        }
+
+        fn pack_single_result(&self, result: &'a str) -> InputWithSolver<'a> {
+            Self {
+                shared_resolver: self.shared_resolver.clone(),
+                data: Cow::Borrowed(result)
+            }
+        }
+
+        fn pack_pair_result(&self, (a, b): (&'a str, &'a str)) -> (InputWithSolver<'a>, InputWithSolver<'a>) {
+            (self.pack_single_result(a), self.pack_single_result(b))
+        }
+    }
+
+    impl<'a> InputTakeAtPosition for InputWithSolver<'a> {
+        type Item = char;
+
+        fn split_at_position<P, E: ParseError<Self>>(&self, predicate: P) -> IResult<Self, Self, E>
+        where
+            P: Fn(Self::Item) -> bool
+        {
+            match self.data.find(predicate) {
+                // find() returns a byte index that is already in the slice at a char boundary
+                Some(i) => unsafe {
+                    Ok(self.pack_pair_result((
+                        mem::transmute(self.data.get_unchecked(i..)),
+                        mem::transmute(self.data.get_unchecked(..i))
+                    )))
+                },
+                None => Err(nom::Err::Incomplete(Needed::new(1))),
+            }
+        }
+
+        fn split_at_position1<P, E: ParseError<Self>>(&self, predicate: P, e: ErrorKind) -> IResult<Self, Self, E>
+        where
+            P: Fn(Self::Item) -> bool
+        {
+            match self.data.as_ref().find(predicate) {
+                Some(0) => Err(nom::Err::Error(E::from_error_kind(self.clone(), e))),
+                // find() returns a byte index that is already in the slice at a char boundary
+                Some(i) => unsafe {
+                    Ok(self.pack_pair_result((
+                        mem::transmute(self.data.get_unchecked(i..)),
+                        mem::transmute(self.data.get_unchecked(..i))
+                    )))
+                },
+                None => Err(nom::Err::Incomplete(Needed::new(1))),
+            }
+        }
+
+        fn split_at_position_complete<P, E: ParseError<Self>>(&self, predicate: P) -> IResult<Self, Self, E>
+        where
+            P: Fn(Self::Item) -> bool
+        {
+            match self.data.find(predicate) {
+                // find() returns a byte index that is already in the slice at a char boundary
+                Some(i) => unsafe {
+                    Ok(self.pack_pair_result((
+                        mem::transmute(self.data.get_unchecked(i..)),
+                        mem::transmute(self.data.get_unchecked(..i))
+                    )))
+                },
+                // the end of slice is a char boundary
+                None => unsafe {
+                    Ok(self.pack_pair_result((
+                        mem::transmute(self.data.get_unchecked(self.data.len()..)),
+                        mem::transmute(self.data.get_unchecked(..self.data.len())),
+                    )))
+                },
+            }
+        }
+
+        fn split_at_position1_complete<P, E: ParseError<Self>>(&self, predicate: P, e: ErrorKind) -> IResult<Self, Self, E>
+        where
+            P: Fn(Self::Item) -> bool
+        {
+            match self.data.find(predicate) {
+                Some(0) => Err(nom::Err::Error(E::from_error_kind(self.clone(), e))),
+                // find() returns a byte index that is already in the slice at a char boundary
+                Some(i) => unsafe {
+                    Ok(self.pack_pair_result((
+                        mem::transmute(self.data.get_unchecked(i..)),
+                        mem::transmute(self.data.get_unchecked(..i))
+                    )))
+                },
+                None => {
+                    if self.data.is_empty() {
+                        Err(nom::Err::Error(E::from_error_kind(self.clone(), e)))
+                    } else {
+                        // the end of slice is a char boundary
+                        unsafe {
+                            Ok(self.pack_pair_result((
+                                mem::transmute(self.data.get_unchecked(self.data.len()..)),
+                                mem::transmute(self.data.get_unchecked(..self.data.len())),
+                            )))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'a> Clone for InputWithSolver<'a> {
+        fn clone(&self) -> Self {
+            Self {
+                shared_resolver: self.shared_resolver.clone(),
+                data: self.data.clone()
+            }
+        }
+    }
+
+    impl<'a> Offset for InputWithSolver<'a> {
+        #[inline(always)]
+        fn offset(&self, second: &Self) -> usize {
+            self.data.offset(second.data.deref())
+        }
+    }
+
+    impl<'a> Slice<RangeTo<usize>> for InputWithSolver<'a> {
+        #[inline(always)]
+        fn slice(&self, range: RangeTo<usize>) -> Self {
+            self.pack_single_result(unsafe{mem::transmute(self.data.as_ref().slice(range))})
+        }
+    }
+
+    impl<'a> Slice<RangeFrom<usize>> for InputWithSolver<'a> {
+        #[inline(always)]
+        fn slice(&self, range: RangeFrom<usize>) -> Self {
+            self.pack_single_result(unsafe{mem::transmute(self.data.deref().slice(range))})
+        }
+    }
+
+    impl<'a> InputIter for InputWithSolver<'a> {
+        type Item = char;
+        type Iter = CharIndices<'a>;
+        type IterElem = Chars<'a>;
+
+        #[inline(always)]
+        fn iter_indices(&self) -> Self::Iter {
+            unsafe{mem::transmute(self.data.as_ref().iter_indices())}
+        }
+
+        #[inline(always)]
+        fn iter_elements(&self) -> Self::IterElem {
+            unsafe{mem::transmute(self.data.as_ref().iter_elements())}
+        }
+
+        #[inline(always)]
+        fn position<P>(&self, predicate: P) -> Option<usize>
+        where
+            P: Fn(Self::Item) -> bool
+        {
+            self.data.as_ref().position(predicate)
+        }
+
+        #[inline(always)]
+        fn slice_index(&self, count: usize) -> Result<usize, Needed> {
+            self.data.as_ref().slice_index(count)
+        }
+    }
+
+    impl<'a> AsRef<str> for InputWithSolver<'a> {
+        #[inline(always)]
+        fn as_ref(&self) -> &str {
+            self.data.as_ref()
+        }
+    }
+
+    impl<'a> InputLength for InputWithSolver<'a> {
+        #[inline(always)]
+        fn input_len(&self) -> usize {
+            self.data.as_ref().input_len()
+        }
+    }
+
+    impl<'a> InputTake for InputWithSolver<'a> {
+        #[inline(always)]
+        fn take(&self, count: usize) -> Self {
+            self.pack_single_result(unsafe{mem::transmute(self.data.as_ref().take(count))})
+        }
+
+        #[inline(always)]
+        fn take_split(&self, count: usize) -> (Self, Self) {
+            self.pack_pair_result(unsafe{mem::transmute(self.data.as_ref().take_split(count))})
+        }
+    }
+
+    impl<'a> MergeByRef for InputWithSolver<'a> {
+        fn merge(&self, other: &Self) -> Self {
+            let mut new_str = String::with_capacity(self.data.len() + other.data.len());
+            new_str.push_str(self.data.as_ref());
+            new_str.push_str(other.data.as_ref());
+            Self {
+                data: Cow::Owned(new_str),
+                shared_resolver: self.shared_resolver.clone()
+            }
+        }
+    }
+
+    impl<'a, 'b> Compare<&'a str> for InputWithSolver<'b> {
+        #[inline(always)]
+        fn compare(&self, t: &'a str) -> CompareResult {
+            self.data.as_ref().compare(t)
+        }
+
+        #[inline(always)]
+        fn compare_no_case(&self, t: &'a str) -> CompareResult {
+            self.data.as_ref().compare_no_case(t)
+        }
+    }
+
+    impl<'a, 'b> FindSubstring<&'a str> for InputWithSolver<'b> {
+        #[inline(always)]
+        fn find_substring(&self, substr: &'a str) -> Option<usize> {
+            self.data.as_ref().find_substring(substr)
+        }
+    }
+
+    impl<'a, 'b> Contains<&'a str> for InputWithSolver<'b> {
+        #[inline(always)]
+        fn contains(&self, other: &'a str) -> bool {
+            self.data.as_ref().contains(other)
+        }
+    }
+
+    impl<'a> DtdParserInput for InputWithSolver<'a> {}
 
 
 }
@@ -3232,28 +3375,35 @@ pub mod unresolved_helper {
     use std::marker::PhantomData;
     use std::ops::Deref;
     use derive_more::From;
-    use itertools::Either;
     use nom::branch::alt;
     use nom::combinator::{into, map};
     use nom::{IResult, Parser};
     use strum::Display;
-    use crate::topicmodel::dictionary::loader::dtd_parser::{entity_ref, pe_reference, EntityRef, InnerEntityRef, Name, PEReference};
+    use crate::topicmodel::dictionary::loader::dtd_parser::{entity_ref, pe_reference, EntityRef, Name, PEReference};
     use crate::topicmodel::dictionary::loader::dtd_parser::errors::XMLParseError;
+    use crate::topicmodel::dictionary::loader::dtd_parser::input::DtdParserInput;
 
-    #[derive(Debug, Clone, Eq, PartialEq, Hash, Display)]
-    pub enum MayBeUnresolvedRepr<'a, T> where T: Display + Debug + Clone + 'a {
+    #[derive(Display, Debug, Clone)]
+    #[derive_where::derive_where(Eq; I: Eq, T: Eq)]
+    #[derive_where(PartialEq; I: PartialEq, T: PartialEq)]
+    #[derive_where(Hash; I: std::hash::Hash, T: std::hash::Hash)]
+    pub enum MayBeUnresolvedRepr<I, T> {
         #[strum(to_string = "{0}")]
         Resolved(T),
         #[strum(to_string = "{0}")]
-        Unresolved(UnresolvedReference<'a>)
+        Unresolved(UnresolvedReference<I>)
     }
 
-    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-    pub struct MayBeUnresolved<'a, T> where T: Display + Debug + Clone + 'a {
-        inner: MayBeUnresolvedRepr<'a, T>
+    #[derive_where::derive_where(Clone; I: Clone, T: Clone)]
+    #[derive_where(Debug; I: Debug, T: Debug)]
+    #[derive_where(Eq; I: Eq, T: Eq)]
+    #[derive_where(PartialEq; I: PartialEq, T: PartialEq)]
+    #[derive_where(Hash; I: std::hash::Hash, T: std::hash::Hash)]
+    pub struct MayBeUnresolved<I, T> {
+        inner: MayBeUnresolvedRepr<I, T>
     }
 
-    impl<'a, T> MayBeUnresolved<'a, T> where T: Display + Debug + Clone + 'a {
+    impl<I, T> MayBeUnresolved<I, T> {
         pub fn is_unresolved(&self) -> bool {
             matches!(self.inner, MayBeUnresolvedRepr::Unresolved(_))
         }
@@ -3280,7 +3430,7 @@ pub mod unresolved_helper {
             }
         }
 
-        pub fn as_unresolved(&self) -> Option<&UnresolvedReference<'a>> {
+        pub fn as_unresolved(&self) -> Option<&UnresolvedReference<I>> {
             match self.inner {
                 MayBeUnresolvedRepr::Resolved(_) => {
                     None
@@ -3291,13 +3441,13 @@ pub mod unresolved_helper {
             }
         }
 
-        pub fn set_resolved(&mut self, resolved: T) -> MayBeUnresolved<'a, T> {
+        pub fn set_resolved(&mut self, resolved: T) -> MayBeUnresolved<I, T> {
             MayBeUnresolved {
                 inner: std::mem::replace(&mut self.inner, MayBeUnresolvedRepr::Resolved(resolved))
             }
         }
 
-        pub fn unresolved(reference: UnresolvedReference<'a>) -> Self{
+        pub fn unresolved(reference: UnresolvedReference<I>) -> Self{
             Self {
                 inner: MayBeUnresolvedRepr::Unresolved(reference)
             }
@@ -3310,64 +3460,61 @@ pub mod unresolved_helper {
         }
     }
 
-    impl<'a, T> AsRef<MayBeUnresolvedRepr<'a, T>> for MayBeUnresolved<'a, T> where T: Display + Debug + Clone + 'a {
-        fn as_ref(&self) -> &MayBeUnresolvedRepr<'a, T> {
+    impl<I, T> AsRef<MayBeUnresolvedRepr<I, T>> for MayBeUnresolved<I, T> {
+        fn as_ref(&self) -> &MayBeUnresolvedRepr<I, T> {
             &self.inner
         }
     }
 
-    impl<'a, T> AsMut<MayBeUnresolvedRepr<'a, T>> for MayBeUnresolved<'a, T> where T: Display + Debug + Clone + 'a {
-        fn as_mut(&mut self) -> &mut MayBeUnresolvedRepr<'a, T> {
+    impl<I, T> AsMut<MayBeUnresolvedRepr<I, T>> for MayBeUnresolved<I, T> {
+        fn as_mut(&mut self) -> &mut MayBeUnresolvedRepr<I, T> {
             &mut self.inner
         }
     }
 
-    impl<'a, T> Display for MayBeUnresolved<'a, T> where T: Display + Debug + Clone + 'a {
+    impl<I, T> Display for MayBeUnresolved<I, T> where T: Display, I: Display {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             Display::fmt(&self.inner, f)
         }
     }
 
-    impl<'a, T> MayBeUnresolved<'a, T> where T: Display + Debug + Clone + 'a {
 
+    pub struct UnresolvedReferenceFn<I, E> {
+        _dat: PhantomData<fn(I) -> E>
     }
 
-    pub struct UnresolvedReferenceFn<'a, E> {
-        _dat: PhantomData<fn(&'a ()) -> E>
-    }
-
-    impl<'a, E> UnresolvedReferenceFn<'a, E> {
+    impl<I, E> UnresolvedReferenceFn<I, E> {
         pub fn new() -> Self {
             Self { _dat: PhantomData }
         }
     }
 
-    impl<'a, E> Parser<&'a str, UnresolvedReference<'a>, E> for UnresolvedReferenceFn<'a, E>
+    impl<I: DtdParserInput, E> Parser<I, UnresolvedReference<I>, E> for UnresolvedReferenceFn<I, E>
         where
-            E: XMLParseError<&'a str>
+            E: XMLParseError<I>
     {
-        fn parse(&mut self, input: &'a str) -> IResult<&'a str, UnresolvedReference<'a>, E> {
+        fn parse(&mut self, input: I) -> IResult<I, UnresolvedReference<I>, E> {
             unresolved_reference(input)
         }
     }
 
     /// Helps the parser to parse an element or attlist with somne unresolved data.
-    #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Display, From)]
-    pub enum UnresolvedReference<'a> {
+    #[derive(Debug, Clone, Eq, PartialEq, Hash, Display, From)]
+    pub enum UnresolvedReference<I> {
         #[strum(to_string="{0}")]
-        EntityRef(EntityRef<'a>),
+        EntityRef(EntityRef<I>),
         #[strum(to_string="{0}")]
-        PEReference(PEReference<'a>)
+        PEReference(PEReference<I>)
     }
 
-    impl<'a> Borrow<Name<'a>> for UnresolvedReference<'a> {
-        fn borrow(&self) -> &Name<'a> {
+    impl<I> Borrow<Name<I>> for UnresolvedReference<I> {
+        fn borrow(&self) -> &Name<I> {
             self.deref()
         }
     }
 
-    impl<'a> Deref for UnresolvedReference<'a> {
-        type Target = Name<'a>;
+    impl<I> Deref for UnresolvedReference<I> {
+        type Target = Name<I>;
 
         fn deref(&self) -> &Self::Target {
             match self {
@@ -3377,17 +3524,17 @@ pub mod unresolved_helper {
         }
     }
 
-    pub fn unresolved_reference<'a, E: XMLParseError<&'a str>>(s: &'a str) -> IResult<&'a str, UnresolvedReference<'a>, E> {
+    pub fn unresolved_reference<I: DtdParserInput, E: XMLParseError<I>>(s: I) -> IResult<I, UnresolvedReference<I>, E> {
         alt((
-            into(entity_ref::<E>),
-            into(pe_reference::<E>),
+            into(entity_ref::<_, E>),
+            into(pe_reference::<_, E>),
         ))(s)
     }
 
-    pub fn may_be_unresolved<'a, O1, E: XMLParseError<&'a str>, F>(parser: F) -> impl FnMut(&'a str) -> IResult<&'a str, MayBeUnresolved<'a, O1>, E>
+    pub fn may_be_unresolved<I: DtdParserInput, O1, E, F>(parser: F) -> impl FnMut(I) -> IResult<I, MayBeUnresolved<I, O1>, E>
         where
-            F: Parser<&'a str, O1, E>,
-            O1: Display + Debug + Clone + 'a
+            F: Parser<I, O1, E>,
+            E: XMLParseError<I>
     {
         alt((
             map(parser, MayBeUnresolved::resolved),
@@ -3395,12 +3542,12 @@ pub mod unresolved_helper {
         ))
     }
 
-    pub fn may_be_unresolved_wrapped<'a, O1, E: XMLParseError<&'a str>, F, W, Q>(parser: F, wrapper: W) -> impl FnMut(&'a str) -> IResult<&'a str, MayBeUnresolved<'a, O1>, E>
+    pub fn may_be_unresolved_wrapped<I: DtdParserInput, O1, E, F, W, Q>(parser: F, wrapper: W) -> impl FnMut(I) -> IResult<I, MayBeUnresolved<I, O1>, E>
     where
-        F: Parser<&'a str, O1, E>,
-        O1: Display + Debug + Clone + 'a,
-        W: Fn(UnresolvedReferenceFn<'a, E>) -> Q,
-        Q: Parser<&'a str, UnresolvedReference<'a>, E>
+        F: Parser<I, O1, E>,
+        W: Fn(UnresolvedReferenceFn<I, E>) -> Q,
+        Q: Parser<I, UnresolvedReference<I>, E>,
+        E: XMLParseError<I>
     {
         alt((
             map(parser, MayBeUnresolved::resolved),
@@ -3416,6 +3563,7 @@ mod test {
     use std::io::{BufReader, Read};
     use nom::{Finish, IResult};
     use crate::topicmodel::dictionary::loader::dtd_parser::{att_def, att_value, attlist_decl, doc_type_no_decl, element_decl, mixed};
+    use crate::topicmodel::dictionary::loader::dtd_parser::input::InputWithSolver;
     use crate::topicmodel::dictionary::loader::dtd_parser::solving::DTDResolver;
     use crate::topicmodel::dictionary::loader::dtd_parser::unresolved_helper::may_be_unresolved;
 
@@ -3476,30 +3624,30 @@ mod test {
  //            }
  //        }
 
-        match mixed::<nom::error::VerboseError<_>>(r#"( #PCDATA |
- _DUMMY_model.gLike |
- %model.highlighted; |
- %model.pPart.data; |
- %model.pPart.edit; |
- _DUMMY_model.segLike |
- %model.ptrLike; |
- %model.biblPart; |
- %model.global;)*>"#).finish() {
-            Ok(a) => {
-                println!("Success: {a:?}")
-            }
-            Err(b) => {
-                println!("{b}")
-            }
-        }
-        match mixed::<nom::error::VerboseError<_>>(r#"( #PCDATA )>"#).finish() {
-            Ok(a) => {
-                println!("Success: {a:?}")
-            }
-            Err(b) => {
-                println!("{b}")
-            }
-        }
+ //        match mixed::<_, nom::error::VerboseError<_>>(r#"( #PCDATA |
+ // _DUMMY_model.gLike |
+ // %model.highlighted; |
+ // %model.pPart.data; |
+ // %model.pPart.edit; |
+ // _DUMMY_model.segLike |
+ // %model.ptrLike; |
+ // %model.biblPart; |
+ // %model.global;)*>"#).finish() {
+ //            Ok(a) => {
+ //                println!("Success: {a:?}")
+ //            }
+ //            Err(b) => {
+ //                println!("{b}")
+ //            }
+ //        }
+ //        match mixed::<_, nom::error::VerboseError<_>>(r#"( #PCDATA )>"#).finish() {
+ //            Ok(a) => {
+ //                println!("Success: {a:?}")
+ //            }
+ //            Err(b) => {
+ //                println!("{b}")
+ //            }
+ //        }
 
 
         // match nom::Parser::parse(&mut may_be_unresolved(att_def::<nom::error::VerboseError<_>>), r#"%att.global.attribute.xmlid;"#).finish() {
@@ -3542,16 +3690,13 @@ mod test {
     #[test]
     fn parse_mega() {
         let mut s = String::new();
-
         let data = BufReader::new(File::open(r#"D:\Downloads\freedict-eng-deu-1.9-fd1.src\eng-deu\freedict-P5.dtd"#).unwrap()).read_to_string(&mut s).unwrap();
-        let (x, parsed) = doc_type_no_decl::<nom::error::VerboseError<_>>(s.trim()).unwrap();
+        let (x, parsed) = doc_type_no_decl::<_, nom::error::VerboseError<_>>(InputWithSolver::new_from_str(s.trim())).unwrap();
         for value in parsed.iter() {
             println!("{value:?}")
         }
 
-        let mut resolver = DTDResolver::default();
-        resolver.register_complete(&parsed).unwrap();
-        println!("{resolver:?}")
+
     }
 }
 
