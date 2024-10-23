@@ -332,7 +332,7 @@ impl CodeElement {
         write!(w, "            }}\n").unwrap();
         write!(w, "            quick_xml::events::Event::Empty(value) => {{\n").unwrap();
         write!(w, "                \n").unwrap();
-        write!(w, "                match start.local_name().as_ref(){{\n").unwrap();
+        write!(w, "                match value.local_name().as_ref(){{\n").unwrap();
         if let Some(v) = self.elements.get() {
             for value in v.values() {
                 if value.is_marker() {
@@ -341,7 +341,7 @@ impl CodeElement {
                     write!(w, "                    }}\n").unwrap();
                 } else {
                     write!(w, "                    b\"{}\" => {{\n", value.real_name).unwrap();
-                    write!(w, "                        let recognized = read_{}(reader, start)?;\n", value.method_base_name()).unwrap();
+                    write!(w, "                        let recognized = read_{}(reader, value)?;\n", value.method_base_name()).unwrap();
                     write!(w, "                        builder.{}(recognized);\n", value.method_base_name()).unwrap();
                     write!(w, "                    }}\n").unwrap();
                 }
@@ -391,8 +391,8 @@ impl CodeElement {
     }
 
     pub fn register(&mut self, other: CodeElement) -> Result<(), XML2CodeConverterError> {
-        if self.name != other.name {
-            Err(XML2CodeConverterError::WrongElementName(self.name.clone(), other))
+        if self.real_name != other.real_name {
+            Err(XML2CodeConverterError::WrongElementName(self.real_name.clone(), other))
         } else {
             self.encounters += other.encounters;
             if let Some(attr) = other.attributes.into_inner() {
@@ -604,7 +604,7 @@ impl CodeElementBuilder {
     }
 
     pub fn attribute(&mut self, attr: CodeAttribute) -> Result<(), XML2CodeConverterError> {
-        match Self::init_field_and_get_mut(&mut self.attributes).entry(attr.name.clone()) {
+        match Self::init_field_and_get_mut(&mut self.attributes).entry(attr.real_name.clone()) {
             Entry::Occupied(mut value) => {
                 value.get_mut().register(attr)?;
             }
@@ -623,7 +623,7 @@ impl CodeElementBuilder {
     }
 
     pub fn element(&mut self, elem: CodeElement) -> Result<(), XML2CodeConverterError> {
-        match Self::init_field_and_get_mut(&mut self.elements).entry(elem.name.clone()) {
+        match Self::init_field_and_get_mut(&mut self.elements).entry(elem.real_name.clone()) {
             Entry::Occupied(mut value) => {
                 value.get_mut().register(elem)?;
             }
@@ -650,8 +650,8 @@ pub struct CodeAttribute {
 
 impl CodeAttribute {
     pub fn register(&mut self, other: CodeAttribute) -> Result<(), XML2CodeConverterError> {
-        if self.name != other.name {
-            Err(XML2CodeConverterError::WrongAttributeName(self.name.clone(), other))
+        if self.real_name != other.real_name {
+            Err(XML2CodeConverterError::WrongAttributeName(self.real_name.clone(), other))
         } else {
             self.encounters += other.encounters;
             self.values.extend(other.values);
