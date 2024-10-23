@@ -872,6 +872,7 @@ dependencies = [
  "charabia",
  "compact_str",
  "const-str",
+ "convert_case",
  "delegate",
  "derive-where",
  "derive_builder",

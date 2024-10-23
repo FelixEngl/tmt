@@ -10,6 +10,7 @@ mod eurovoc;
 mod free_dict;
 mod dtd_parser;
 mod test;
+mod xml2code;
 
 pub enum Dialect {
 
