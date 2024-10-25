@@ -705,10 +705,12 @@ impl CodeElement {
                 write!(w, "                        builder.{}(recognized);\n", read.method_base_name())?;
                 write!(w, "                    }}\n")?;
             }
-            write!(w, "                    _ => {{}}\n")?;
+            write!(w, "                    unknown => {{ log::warn!(\"Unknown Tag: '{{}}'\", String::from_utf8_lossy(unknown)); }}\n")?;
             write!(w, "                }}\n")?;
             write!(w, "            }}\n")?;
         }
+
+
         write!(w, "            quick_xml::events::Event::End(value) => {{\n")?;
         write!(w, "                match value.name().local_name().as_ref() {{\n")?;
         write!(w, "                    b\"{}\" => {{\n", self.name)?;
@@ -734,7 +736,7 @@ impl CodeElement {
                     write!(w, "                    }}\n")?;
                 }
             }
-            write!(w, "                    _ => {{}}\n")?;
+            write!(w, "                    unknown => {{ log::warn!(\"Unknown Tag: '{{}}'\", String::from_utf8_lossy(unknown)); }}\n")?;
             write!(w, "                }}\n")?;
             write!(w, "                break;\n")?;
             write!(w, "            }}\n")?;
@@ -1188,9 +1190,11 @@ mod test {
         // }
         use std::io::Write;
         let mut x = HashMap::<&'static str, _>::new();
-        let mut targ = BufWriter::new(File::options().truncate(true).create(true).write(true).open(r#"E:\git\tmt\src\topicmodel\dictionary\loader\test.rs"#).unwrap());
+        let mut targ = BufWriter::new(File::options().truncate(true).create(true).write(true).open(r#"E:\git\tmt\src\topicmodel\dictionary\loader\free_dict.rs"#).unwrap());
         let analyzed = BufReader::new(File::open(r#"D:\Downloads\freedict-eng-deu-1.9-fd1.src\eng-deu\eng-deu.tei"#).unwrap());
-        let result = analyze_xml(analyzed).unwrap();
+        let mut result = analyze_xml(analyzed).unwrap();
+        let analyzed = BufReader::new(File::open(r#"D:\Downloads\freedict-deu-eng-1.9-fd1.src\deu-eng\deu-eng.tei"#).unwrap());
+        result.analyze(&mut quick_xml::reader::Reader::from_reader(analyzed)).unwrap();
         result.generate_code(&mut targ, &x).unwrap();
     }
 
