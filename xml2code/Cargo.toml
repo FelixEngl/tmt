@@ -1,0 +1,18 @@
+[package]
+name = "xml2code"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nom = "7"
+quick-xml = "0.36"
+strum = { version = "0.26", features = ["derive"] }
+thiserror = "1.0"
+itertools = "0.13"
+convert_case = "0.6"
+derive_more = { version = "1.0", features = ["from"] }
+indexmap = "2.6"
+log = "0.4"
+derive_builder = "0.20"
+twox-hash = { version = "2.0", features = ["std"] }
+base64 = "0.22"

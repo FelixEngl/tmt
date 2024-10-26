@@ -1,8 +1,13 @@
 mod xml_reader;
+pub(super) mod gen_freedict_tei_reader;
+pub(super) mod gen_iate_tbx_reader;
+pub(super) mod gen_ms_terms_reader;
 
 pub use xml_reader::*;
 
 use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::BufReader;
 use std::ops::{Range, RangeFrom};
 use nom::error::{ParseError};
 use nom::{AsChar, InputTakeAtPosition, IResult, Slice, InputIter, InputLength};
@@ -66,8 +71,8 @@ pub fn take_nested_bracket<I, E: ParseError<I>>(
     opening_bracket: char,
     closing_bracket: char,
 ) -> impl Fn(I) -> IResult<I, I, E>
-    where I: Slice<RangeFrom<usize>> + Slice<Range<usize>> + InputIter,
-          <I as InputIter>::Item: AsChar,
+where I: Slice<RangeFrom<usize>> + Slice<Range<usize>> + InputIter,
+      <I as InputIter>::Item: AsChar,
 {
     move |i: I| {
         match i
@@ -244,4 +249,90 @@ pub mod test {
         }
 
     }
+
+    use std::fs::File;
+    use std::io::BufReader;
+    use super::gen_freedict_tei_reader;
+
+    #[test]
+    fn test11(){
+        let x = BufReader::new(File::open(r#"D:\Downloads\freedict-eng-deu-1.9-fd1.src\eng-deu\eng-deu.tei"#).unwrap());
+        match gen_freedict_tei_reader::read_as_root_tei_element(&mut quick_xml::reader::Reader::from_reader(x)) {
+            Ok(value) => {
+                assert!(value.is_some());
+            }
+            Err(error) => {
+                println!("{error}")
+            }
+        }
+    }
+    #[test]
+    fn test12(){
+        let x = BufReader::new(File::open(r#"D:\Downloads\freedict-deu-eng-1.9-fd1.src\deu-eng\deu-eng.tei"#).unwrap());
+        match gen_freedict_tei_reader::read_as_root_tei_element(&mut quick_xml::reader::Reader::from_reader(x)) {
+            Ok(value) => {
+                assert!(value.is_some());
+            }
+            Err(error) => {
+                println!("{error}")
+            }
+        }
+    }
+
+    #[test]
+    fn test21(){
+        let x = BufReader::new(File::open(r#"D:\Downloads\freedict-eng-deu-1.9-fd1.src\eng-deu\eng-deu.tei"#).unwrap());
+        let reader = quick_xml::reader::Reader::from_reader(x);
+        let mut i = gen_freedict_tei_reader::iter_for_entry_element(reader);
+        let mut x = 0;
+        while let Some(value) = i.next() {
+            match value {
+                Ok(value) => {
+                    if let Some(f) = value.form_element {
+                        if f.form_elements.len() > 0 {
+                            println!("FOUND form!")
+                        }
+                        if f.gram_grp_element.is_some() {
+                            println!("FOUND gramGrp!")
+                        }
+                    }
+                    x+=1usize;
+                }
+                Err(error) => {
+                    println!("ERROR: {error}");
+                    break
+                }
+            }
+        }
+        println!("{x}");
+    }
+
+    #[test]
+    fn test22(){
+        let x = BufReader::new(File::open(r#"D:\Downloads\freedict-deu-eng-1.9-fd1.src\deu-eng\deu-eng.tei"#).unwrap());
+        let reader = quick_xml::reader::Reader::from_reader(x);
+        let mut i = gen_freedict_tei_reader::iter_for_entry_element(reader);
+        let mut x = 0;
+        while let Some(value) = i.next() {
+            match value {
+                Ok(value) => {
+                    if let Some(f) = value.form_element {
+                        if f.form_elements.len() > 0 {
+                            println!("FOUND form!")
+                        }
+                        if f.gram_grp_element.is_some() {
+                            println!("FOUND gramGrp!")
+                        }
+                    }
+                    x+=1usize;
+                }
+                Err(error) => {
+                    println!("ERROR: {error}");
+                    break
+                }
+            }
+        }
+        println!("{x}");
+    }
 }
+

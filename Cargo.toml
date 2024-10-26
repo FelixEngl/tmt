@@ -38,7 +38,7 @@ evalexpr = "11"
 nom = "7"
 num = "0.4"
 num_enum = "0.7"
-derive_more = "0.99"
+derive_more = { version = "1.0", features = ["from", "try_from", "try_into"] }
 paste = "1.0"
 #derive-where = "1.2"
 #tap = "1"
@@ -59,6 +59,9 @@ const-str = "0.5"
 quick-xml = "0.36"
 derive_builder = "0.20"
 memchr = "2.7"
-derive-where = "1.2"
+#derive-where = "1.2"
 convert_case = "0"
 indexmap = "2.6"
+
+[build-dependencies]
+xml2code = {path = "xml2code"}

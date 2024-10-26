@@ -254,7 +254,7 @@ pub fn read_dictionary(path: impl AsRef<Path>) -> std::io::Result<TbxReader<BufR
 #[cfg(test)]
 mod test {
     use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
-    use crate::topicmodel::dictionary::loader::tbx::read_dictionary;
+    use super::read_dictionary;
 
     #[test]
     fn can_read(){

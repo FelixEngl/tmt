@@ -1,4 +1,5 @@
-use crate::topicmodel::reference::HashRef;
+#![allow(dead_code)]
+use crate::hashref::HashRef;
 use convert_case::Case::Pascal;
 use convert_case::{Case, Casing};
 use derive_more::From;
@@ -8,20 +9,21 @@ use nom::bytes::complete::tag_no_case;
 use nom::character::complete::{alpha1, alphanumeric0, char, multispace0};
 use nom::combinator::{all_consuming, opt, recognize, success, value};
 use nom::sequence::{delimited, pair, tuple};
-use nom::{AsChar, Finish, IResult};
+use nom::{Finish, IResult};
 use quick_xml::events::attributes::{AttrError, Attribute, Attributes};
 use quick_xml::events::{BytesStart, Event};
-use std::borrow::Borrow;
+use std::borrow::{Borrow};
 use std::cell::OnceCell;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::hash_map::Entry;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::io::BufRead;
-use std::ops::{AddAssign, Deref};
+use std::ops::{Deref};
 use std::str::Utf8Error;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use strum::Display;
 use thiserror::Error;
@@ -62,7 +64,7 @@ pub struct XML2CodeConverter {
 
 impl XML2CodeConverter {
 
-    pub fn generate_code<K, W: std::io::Write>(
+    pub fn generate_code<K, W: Write>(
         &self,
         f: &mut W,
         map: &HashMap<K, RecognizedContentType>
@@ -70,7 +72,7 @@ impl XML2CodeConverter {
     where
         K: Borrow<str> + Eq + Hash
     {
-
+        let mut all_elements = Vec::new();
         if let Some(value) = self.root.get() {
             let mut builder_error_names = Vec::with_capacity(self.factory.elements.read().len());
             let error_name = format!("{}ReaderError", value.name.to_case(Pascal));
@@ -79,6 +81,7 @@ impl XML2CodeConverter {
                     ElementOrAttribute::Element(value) => {
                         builder_error_names.push(value.builder_error_name());
                         write!(f, "{}\n", value.create_definition(map, &error_name)?)?;
+                        all_elements.push(value);
                     }
                     ElementOrAttribute::Attribute(value) => {
                         write!(f, "{}\n", value.create_definition(map, &error_name)?)?;
@@ -87,36 +90,22 @@ impl XML2CodeConverter {
             }
 
             write!(f, r#"
-mod iter {{
-    trait IterHelper<R, I, E> {{
-        fn goto_next(&self, reader: &mut quick_xml::reader::Reader<R>) -> Result<Option<I>, E>;
+pub mod iter {{
+    pub trait IterHelper<I, E> {{
+        fn goto_next<R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>) -> Result<Option<I>, E>;
     }}
 
-    impl<R, I, E, F> IterHelper<R, I, E> for F
-    where
-        F: Fn(&mut quick_xml::reader::Reader<R>) -> Result<Option<I>, E>,
-        R: std::io::BufRead,
-        I: Sized,
-        E: std::error::Error
-    {{
-        #[inline(always)]
-        fn goto_next(&self, reader: &mut quick_xml::reader::Reader<R>) -> Result<Option<I>, E> {{
-            self(reader)
-        }}
-    }}
-
-    pub struct Iter<R, I, E, H> where H: IterHelper<R, I, E> {{
+    pub struct Iter<R, I, E, H> where H: IterHelper<I, E> {{
         reader: quick_xml::reader::Reader<R>,
-        read_method: H,
-        _phantom: std::marker::PhantomData<(E, I)>
+        _phantom: std::marker::PhantomData<fn(H, I) -> E>
     }}
 
     impl<R, I, E, H> Iter<R, I, E, H>
     where
-        H: IterHelper<R, I, E>
+        H: IterHelper<I, E>
     {{
-        pub(super) fn new(reader: quick_xml::reader::Reader<R>, read_method: H) -> Self {{
-            Self {{ reader, read_method, _phantom: std::marker::PhantomData }}
+        pub(super) fn new(reader: quick_xml::reader::Reader<R>) -> Self {{
+            Self {{ reader, _phantom: std::marker::PhantomData }}
         }}
 
         pub fn into_inner(self) -> quick_xml::reader::Reader<R> {{
@@ -129,15 +118,26 @@ mod iter {{
         R: std::io::BufRead,
         E: std::error::Error,
         I: Sized,
-        H: IterHelper<R, I, E>
+        H: IterHelper<I, E>
     {{
         type Item = Result<I, E>;
 
         fn next(&mut self) -> Option<Self::Item> {{
-            self.read_method.goto_next(&mut self.reader).transpose()
+            H::goto_next(&mut self.reader).transpose()
         }}
     }}
-}}"#)?;
+
+"#)?;
+            write!(f, "    use super::{};\n", error_name)?;
+            for elem in all_elements {
+                write!(f, "\n")?;
+                write!(f, "    use super::{};\n", elem.type_name())?;
+                write!(f, "    use super::{};\n", elem.generate_iter_method_wrapper_name())?;
+                write!(f, "    /// Iterator for {}\n", elem.type_name())?;
+                write!(f, "    pub type {} = {};\n", elem.generate_iterator_type_alias_name("R"), elem.generate_iterator_type(&error_name, "R"))?;
+            }
+
+            write!(f, "}}")?;
 
             write!(f, "\n\n#[derive(Debug, thiserror::Error)]\npub enum {}{{", error_name)?;
             write!(f,
@@ -264,6 +264,8 @@ impl Iterator for Iter {
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct LockedRef<T>(Arc<RwLock<T>>);
+unsafe impl<T> Sync for LockedRef<T>{}
+unsafe impl<T> Send for LockedRef<T>{}
 
 impl<T> LockedRef<T> {
     pub fn new(value: T) -> Self {
@@ -361,44 +363,66 @@ impl CodeEntityFactory {
     }
 
     pub fn element(&self, name: &str, parent: Arc<CodeElement>, depth: usize) -> Arc<CodeElement> {
-        let mut created = self.get_or_create_element(name, depth);
+        let created = self.get_or_create_element(name, depth);
         created.add_parent(parent);
         created
     }
 }
 
+fn unique_id() -> u64 {
+    static UNIQUE_ID: AtomicU64 = AtomicU64::new(0);
+    UNIQUE_ID.fetch_add(1, Ordering::SeqCst)
+}
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CodeElement {
+    id: u64,
     name: HashRef<String>,
-    encounters_at: LockedRef<HashSet<usize>>,
+    encounters_at: LockedRef<HashMap<usize, usize>>,
     encounters: Arc<AtomicUsize>,
     shared_pool: CodeEntityFactory,
-    elements: LockedRef<HashSet<Arc<CodeElement>>>,
+    elements: LockedRef<HashMap<Arc<CodeElement>, ElementsMeta>>,
     attributes: LockedRef<HashSet<Arc<CodeAttribute>>>,
     texts: LockedRef<OnceCell<Vec<String>>>,
     parents: LockedRef<HashSet<Arc<CodeElement>>>,
-    direct_nested_count: Arc<AtomicUsize>,
+    contains_self: Arc<AtomicBool>
+}
+
+#[derive(Debug, Default)]
+struct ElementsMeta {
+    needs_vec: bool,
+    entry_to_depth_count: HashMap<usize, usize>,
+    was_in_a_diff: bool
 }
 
 impl Eq for CodeElement {}
 
 impl PartialEq for CodeElement {
     fn eq(&self, other: &Self) -> bool {
-        self.name.eq(&other.name)
+        self.id == other.id
     }
 }
 
 impl Hash for CodeElement {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state)
+        self.id.hash(state)
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum NeededType {
+    Boxed,
+    Option,
+    BoxedOption,
+    Vec,
+    NormalField
 }
 
 
 impl CodeElement {
     pub unsafe fn new(name: HashRef<String>, shared_pool: CodeEntityFactory) -> Self {
         Self {
+            id: unique_id(),
             name,
             encounters_at: Default::default(),
             encounters: Arc::new(AtomicUsize::new(1)),
@@ -407,7 +431,7 @@ impl CodeElement {
             attributes: Default::default(),
             texts: Default::default(),
             parents: Default::default(),
-            direct_nested_count: Arc::new(AtomicUsize::new(0))
+            contains_self: Arc::new(AtomicBool::new(false))
         }
     }
 
@@ -424,14 +448,25 @@ impl CodeElement {
     }
 
     pub fn get_or_add_child(self: &Arc<Self>, name: &str, depth: usize) -> Arc<CodeElement> {
-        if self.name.as_str().eq(name) {
-            self.inc_encounters();
-            self.direct_nested_count.fetch_add(1, Ordering::SeqCst);
-            self.clone()
-        } else {
-            let child = self.shared_pool.element(name, self.clone(), depth);
-            self.add_element(child.clone());
-            child
+        let child = self.shared_pool.element(name, self.clone(), depth);
+        self.add_element(child.clone(), depth);
+        if self.as_ref().eq(child.as_ref()) {
+            self.contains_self.store(true, Ordering::SeqCst);
+        }
+        child
+    }
+
+    fn add_element(&self, element: Arc<CodeElement>, depth: usize) {
+        let mut writer = self.elements.write();
+        match writer.entry(element) {
+            Entry::Vacant(value) => {
+                let mut m = ElementsMeta::default();
+                m.entry_to_depth_count.insert(depth, 1);
+                value.insert(m);
+            }
+            Entry::Occupied(mut value) => {
+                *value.get_mut().entry_to_depth_count.entry(depth).or_insert(0) += 1;
+            }
         }
     }
 
@@ -441,25 +476,31 @@ impl CodeElement {
         Ok(())
     }
 
-    fn analyze<'a, R>(
+
+    fn analyze<R>(
         self: &Arc<Self>,
         reader: &mut quick_xml::reader::Reader<R>,
-        buffer: &'a mut Vec<u8>,
+        buffer: &mut Vec<u8>,
         depth: usize,
     ) -> Result<(), XML2CodeConverterError> where R: BufRead {
+        buffer.clear();
+        let mut already_met = HashSet::new();
+        let old: HashSet<_> = self.elements.read().keys().cloned().collect();
         loop {
-            buffer.clear();
             match reader.read_event_into(buffer)? {
                 Event::Start(start) => {
-                    let mut element_inner = self.get_or_add_child(get_real_name_as_str(&start)?, depth);
+                    let element_inner = self.get_or_add_child(get_real_name_as_str(&start)?, depth);
                     element_inner.add_attributes_raw(start.attributes())?;
                     element_inner.analyze(reader, buffer, depth + 1)?;
+                    if !already_met.insert(element_inner.clone()) {
+                        self.set_needs_vectorisation(&element_inner);
+                    }
                 }
                 Event::End(_) => {
-                    return Ok(())
+                    break;
                 }
                 Event::Empty(empty) => {
-                    let mut element_inner = self.get_or_add_child(get_real_name_as_str(&empty)?, depth);
+                    let element_inner = self.get_or_add_child(get_real_name_as_str(&empty)?, depth);
                     element_inner.add_attributes_raw(empty.attributes())?;
                 }
                 Event::Text(value) => {
@@ -469,12 +510,17 @@ impl CodeElement {
                     }
                 }
                 Event::Eof => {
-                    return Ok(())
+                    break;
                 }
                 _ => {}
             }
+            buffer.clear();
+        }
+        for difference in old.symmetric_difference(&already_met) {
+            self.register_difference(difference)
         }
 
+        Ok(())
     }
 
     pub fn add_text(&self, text: impl Into<String>) {
@@ -485,7 +531,7 @@ impl CodeElement {
         self.encounters.fetch_add(1, Ordering::SeqCst);
     }
     pub fn add_depth(&self, value: usize) {
-        self.encounters_at.write().insert(value);
+        *self.encounters_at.write().entry(value).or_insert(0) += 1;
     }
 
     pub fn add_attributes<I: IntoIterator<Item=Arc<CodeAttribute>>>(&self, attributes: I) {
@@ -496,9 +542,67 @@ impl CodeElement {
         self.attributes.write().insert(attribute);
     }
 
-    pub fn add_element(&self, element: Arc<CodeElement>) {
-        assert_ne!(self.name, element.name);
-        self.elements.write().insert(element);
+
+
+    fn get_elements_as_vec(&self) -> Vec<Arc<CodeElement>> {
+        self.elements.read().keys().cloned().collect_vec()
+    }
+
+    fn get_info_to_field(&self, field: &Arc<CodeElement>) -> NeededType {
+        let read = self.elements.read();
+        let meta = read.get(field).expect("This is necessary!");
+        if meta.needs_vec {
+            return NeededType::Vec
+        }
+        if meta.was_in_a_diff {
+            return if self.eq(field.as_ref()) {
+                NeededType::BoxedOption
+            } else {
+                NeededType::Option
+            };
+        }
+        let field_enc = field.encounters_at.read();
+        let mut needs_option = false;
+        for (depth, count_per_depth_for_field) in meta.entry_to_depth_count.iter() {
+            match field_enc.get(depth) {
+                None => {
+                    needs_option = true
+                }
+                Some(count_in_whole_file_for_depth) => {
+                    let count_per_depth_for_field = *count_per_depth_for_field;
+                    let count_in_whole_file_for_depth = *count_in_whole_file_for_depth;
+                    if count_per_depth_for_field != count_in_whole_file_for_depth {
+                        needs_option = true
+                    }
+                }
+            }
+        }
+        if self.eq(field.as_ref()) {
+            if needs_option {
+                NeededType::BoxedOption
+            } else {
+                NeededType::Boxed
+            }
+        } else {
+            if needs_option {
+                NeededType::Option
+            } else {
+                NeededType::NormalField
+            }
+        }
+    }
+
+    pub fn set_needs_vectorisation(&self, element: &Arc<CodeElement>) {
+        let mut writer = self.elements.write();
+        let value = writer.get_mut(element).expect("This value should be known at this point!");
+        value.needs_vec = true;
+    }
+
+
+    pub fn register_difference(&self, element: &Arc<CodeElement>) {
+        let mut writer = self.elements.write();
+        let value = writer.get_mut(element).expect("This value should be known at this point!");
+        value.was_in_a_diff = true;
     }
 
     fn is_unique(&self) -> bool {
@@ -513,12 +617,8 @@ impl CodeElement {
         !self.elements.read().is_empty()
     }
 
-    fn self_referencing_count(&self) -> usize {
-        self.direct_nested_count.load(Ordering::SeqCst)
-    }
-
     fn is_marker(&self) -> bool {
-        if self.direct_nested_count.load(Ordering::SeqCst) == 0 && self.elements.read().is_empty() && self.attributes.read().is_empty() {
+        if !self.contains_self.load(Ordering::SeqCst) && self.elements.read().is_empty() && self.attributes.read().is_empty() {
             match self.texts.read().get() {
                 None => {
                     true
@@ -537,6 +637,23 @@ impl CodeElement {
         field.get_mut().unwrap()
     }
 
+    fn generate_iterator_type(&self, error_name: &str, generic: &str) -> String {
+        let tn = self.type_name();
+        format!("Iter<{generic}, {tn}, {error_name}, {}>", self.generate_iter_method_wrapper_name())
+    }
+
+    fn generate_iterator_type_alias_name(&self, generic: &str) -> String {
+        format!("{}Iter<{generic}>", self.type_name())
+    }
+
+    fn generate_iter_method_wrapper_name(&self) -> String {
+        format!("{}IterFunction", self.type_name())
+    }
+
+    fn contains_self(&self) -> bool {
+        self.contains_self.load(Ordering::SeqCst)
+    }
+
     pub fn create_definition<K>(&self, map: &HashMap<K, RecognizedContentType>, error_name: &str) -> std::io::Result<String>
     where
         K: Borrow<str> + Eq + Hash
@@ -547,11 +664,12 @@ impl CodeElement {
         match ty {
             Some(ContentType::Enum(ref value)) => {
                 write!(w, "#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]\n")?;
-                write!(w, "pub enum E{value} {{")?;
+                write!(w, "pub enum E{value} {{\n")?;
                 for value in self.texts.read().get().unwrap().iter().unique() {
-                    write!(w, "\n    #[strum(serialize=\"{}\")]\n    {},", value, value.to_case(Case::Pascal))?;
+                    write!(w, "    #[strum(serialize=\"{}\")]\n", value)?;
+                    write!(w, "    {},\n", value.to_case(Case::Pascal))?;
                 }
-                write!(w, "\n}}\n")?;
+                write!(w, "}}\n\n")?;
             }
             _ => {}
         }
@@ -563,12 +681,26 @@ impl CodeElement {
         write!(w, "pub struct {} {{\n", name)?;
         let attr_read = self.attributes.read();
         for v in attr_read.iter() {
-            write!(w, "    #[builder(setter(strip_option), default)]\n")?;
-            write!(w, "    pub {}: Option<{}>,\n", v.method_base_name(), v.get_or_infer_type(map))?;
+            if v.encounters.load(Ordering::SeqCst) == self.encounters.load(Ordering::SeqCst) {
+                write!(w, "    pub {}: {},\n", v.method_base_name(), v.get_or_infer_type(map))?;
+            } else {
+                write!(w, "    #[builder(setter(strip_option), default)]\n")?;
+                write!(w, "    pub {}: Option<{}>,\n", v.method_base_name(), v.get_or_infer_type(map))?;
+            }
         }
-        let mut special_setter: Vec<&Arc<CodeElement>> = Vec::new();
-        let read_elem = self.elements.read();
-        for read in read_elem.iter() {
+        let mut special_setter: Vec<(&Arc<CodeElement>, NeededType)> = Vec::new();
+        let read_elem = self.get_elements_as_vec();
+        let read_elem = read_elem.into_iter().map(
+            |value| {
+                let t = self.get_info_to_field(&value);
+                (value, t)
+            }
+        ).collect_vec();
+
+        for (read, needed_type) in read_elem.iter() {
+            if self.eq(read.as_ref()) && !self.contains_self() {
+                continue
+            }
             if read.is_marker() {
                 write!(w, "    #[builder(default)]\n")?;
                 write!(w, "    pub {}: bool,\n", read.method_base_name())?;
@@ -576,74 +708,118 @@ impl CodeElement {
                 write!(w, "    #[builder(setter(strip_option), default)]\n")?;
                 write!(w, "    pub {}: Option<{}>,\n", read.method_base_name(), read.type_name())?;
             } else {
-                write!(w, "    #[builder(setter(custom), default)]\n")?;
-                write!(w, "    pub {}: Vec<{}>,\n", read.method_base_name(), read.type_name())?;
-                special_setter.push(read);
-            }
-        }
-        let sr = self.self_referencing_count();
-        if sr != 0 {
-            write!(w, "    #[builder(setter(custom), default)]\n")?;
-            if sr == 1 {
-                write!(w, "    pub {}: Box<{}>,\n", self.method_base_name(), self.type_name())?;
-            } else {
-                write!(w, "    pub {}: Vec<{}>,\n", self.method_base_name(), self.type_name())?;
+                match needed_type {
+                    NeededType::Boxed => {
+                        write!(w, "    #[builder(setter(custom))]\n")?;
+                        write!(w, "    pub {}: Box<{}>,\n", read.method_base_name(), read.type_name())?;
+                    }
+                    NeededType::Option => {
+                        write!(w, "    #[builder(setter(custom), default)]\n")?;
+                        write!(w, "    pub {}: Option<{}>,\n", read.method_base_name(), read.type_name())?;
+                    }
+                    NeededType::BoxedOption => {
+                        write!(w, "    #[builder(setter(custom), default)]\n")?;
+                        write!(w, "    pub {}: Option<Box<{}>>,\n", read.method_base_name(), read.type_name())?;
+                    }
+                    NeededType::Vec => {
+                        write!(w, "    #[builder(setter(custom), default)]\n")?;
+                        write!(w, "    pub {}s: Vec<{}>,\n", read.method_base_name(), read.type_name())?;
+                    }
+                    NeededType::NormalField => {
+                        write!(w, "    #[builder(setter(custom))]\n")?;
+                        write!(w, "    pub {}: {},\n", read.method_base_name(), read.type_name())?;
+                    }
+                }
+                special_setter.push((read, *needed_type));
             }
         }
 
         if let Some(content) = ty {
-            write!(w, "    #[builder(setter(strip_option), default)]\n")?;
-            match content {
-                ContentType::Enum(value) => {
-                    write!(w, "    pub content: Option<E{value}>,\n", )?;
-                },
-                other => {
-                    write!(w, "    pub content: Option<{other}>,\n")?;
+            let text_count = self.texts.read().get().unwrap().len();
+            if text_count == self.encounters.load(Ordering::SeqCst) {
+                match content {
+                    ContentType::Enum(value) => {
+                        write!(w, "    pub content: E{value},\n", )?;
+                    },
+                    other => {
+                        write!(w, "    pub content: {other},\n")?;
+                    }
+                }
+            } else {
+                write!(w, "    #[builder(setter(strip_option), default)]\n")?;
+                match content {
+                    ContentType::Enum(value) => {
+                        write!(w, "    pub content: Option<E{value}>,\n", )?;
+                    },
+                    other => {
+                        write!(w, "    pub content: Option<{other}>,\n")?;
+                    }
                 }
             }
         }
+        write!(w, "}}\n\n")?;
 
-        write!(w, "}}\n")?;
-
-        if !special_setter.is_empty() || sr != 0 {
-            write!(w, "\nimpl {}Builder{{\n", name)?;
-            for read in special_setter {
-                let m_name = read.method_base_name();
-                write!(w, "    pub fn {m_name}(&mut self, value: {}){{\n", read.type_name())?;
-                write!(w, "        let targ = self.{m_name}.get_or_insert_with(Default::default);\n")?;
-                write!(w, "        targ.push(value);\n")?;
-                write!(w, "    }}\n")?;
-            }
-            if sr != 0 {
-                let m_name = self.method_base_name();
-                write!(w, "    pub fn {m_name}(&mut self, value: {}){{\n", self.type_name())?;
-                if sr == 1 {
-                    write!(w, "        self.{m_name} = Some(Box::new(value));\n")?;
-                } else {
-                    write!(w, "        let targ = self.{m_name}.get_or_insert_with(Default::default);\n")?;
-                    write!(w, "        targ.push(value);\n")?;
+        if !special_setter.is_empty() {
+            write!(w, "impl {}Builder {{\n", name)?;
+            for (read, needed) in special_setter {
+                if self.eq(read.as_ref()) && !self.contains_self() {
+                    continue
                 }
-                write!(w, "    }}\n")?;
+                let m_name = read.method_base_name();
+                match needed {
+                    NeededType::Boxed => {
+                        write!(w, "    pub fn {m_name}(&mut self, value: {}){{\n", self.type_name())?;
+                        write!(w, "        assert!(self.{m_name}.is_none(), \"{m_name} in {} should be unset!\");\n", self.type_name())?;
+                        write!(w, "        self.{m_name} = Some(Box::new(value));\n")?;
+                        write!(w, "    }}\n")?;
+                    }
+                    NeededType::BoxedOption => {
+                        write!(w, "    pub fn {m_name}(&mut self, value: {}){{\n", self.type_name())?;
+                        write!(w, "        assert!(self.{m_name}.is_none(), \"{m_name} in {} should be unset!\");\n", self.type_name())?;
+                        write!(w, "        self.{m_name} = Some(Some(Box::new(value)));\n")?;
+                        write!(w, "    }}\n")?;
+                    }
+                    NeededType::Vec => {
+                        write!(w, "    pub fn {m_name}(&mut self, value: {}){{\n", read.type_name())?;
+                        write!(w, "        let targ = self.{m_name}s.get_or_insert_with(Default::default);\n")?;
+                        write!(w, "        targ.push(value);\n")?;
+                        write!(w, "    }}\n")?;
+                    }
+                    NeededType::Option => {
+                        write!(w, "    pub fn {m_name}(&mut self, value: {}){{\n", read.type_name())?;
+                        write!(w, "        assert!(self.{m_name}.is_none(), \"{m_name} in {} should be unset!\");\n", self.type_name())?;
+                        write!(w, "        self.{m_name} = Some(Some(value));\n")?;
+                        write!(w, "    }}\n")?;
+                    }
+                    NeededType::NormalField => {
+                        write!(w, "    pub fn {m_name}(&mut self, value: {}){{\n", read.type_name())?;
+                        write!(w, "        assert!(self.{m_name}.is_none(), \"{m_name} in {} should be unset!\");\n", self.type_name())?;
+                        write!(w, "        self.{m_name} = Some(value);\n")?;
+                        write!(w, "    }}\n")?;
+                    }
+                }
             }
-            write!(w, "}}")?;
+            write!(w, "}}\n\n")?;
         }
         let tn = self.type_name();
+        // Iter<R, {tn}, {error_name}, impl for<'a> Fn(&'a mut quick_xml::reader::Reader<R>) -> Result<Option<{tn}>, {error_name}>>
 
-        write!(
-            w,
-            "\npub fn iter_for_{}<R: std::io::BufRead>(reader: quick_xml::reader::Reader<R>) -> iter::Iter<R, {tn}, {error_name}, impl for<'a> Fn(&'a mut quick_xml::reader::Reader<R>) -> Result<Option<{tn}>, {error_name}>>{{\n",
-            self.method_base_name()
-        )?;
-        write!(w, "    let f = |r: &mut quick_xml::reader::Reader<R>| read_as_root_{}(r);\n", self.method_base_name())?;
-        write!(w, "    iter::Iter::new(reader, f)\n")?;
-        write!(w, "}}\n")?;
+        let iter_method_name = self.generate_iter_method_wrapper_name();
 
-        write!(
-            w,
-            "\npub fn read_as_root_{}<R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>) -> Result<Option<{}>, {error_name}>{{\n",
-            self.method_base_name(),
-            tn
-        )?;
+        write!(w, "pub struct {iter_method_name};\n\n")?;
+
+        write!(w, "impl iter::IterHelper<{tn}, {error_name}> for {iter_method_name} {{\n")?;
+        write!(w, "    #[inline(always)]\n")?;
+        write!(w, "    fn goto_next<R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>) -> Result<Option<{tn}>, {error_name}> {{\n")?;
+        write!(w, "        read_as_root_{}(reader)\n", self.method_base_name())?;
+        write!(w, "    }}\n")?;
+        write!(w, "}}\n\n")?;
+
+        write!(w, "pub fn iter_for_{}<R: std::io::BufRead>(reader: quick_xml::reader::Reader<R>) -> iter::{}{{\n", self.method_base_name(), self.generate_iterator_type_alias_name("R"))?;
+        write!(w, "    iter::Iter::new(reader)\n")?;
+        write!(w, "}}\n\n")?;
+
+        write!(w, "pub fn read_as_root_{}<R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>) -> Result<Option<{}>, {error_name}>{{\n", self.method_base_name(), tn)?;
         write!(w, "    let mut buffer = Vec::new();\n")?;
         write!(w, "    loop {{\n")?;
         write!(w, "        match reader.read_event_into(&mut buffer)? {{\n")?;
@@ -658,20 +834,21 @@ impl CodeElement {
         write!(w, "            quick_xml::events::Event::Eof => {{break Ok(None)}}\n")?;
         write!(w, "            _ => {{}}\n")?;
         write!(w, "        }}\n")?;
+        write!(w, "        buffer.clear();\n")?;
         write!(w, "    }}\n")?;
-        write!(w, "}}\n")?;
+        write!(w, "}}\n\n")?;
 
         if attr_read.is_empty() {
             write!(
                 w,
-                "\npub fn read_{}<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>, _start: quick_xml::events::BytesStart<'a>) -> Result<{}, {error_name}>{{\n",
+                "pub fn read_{}<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>, _start: quick_xml::events::BytesStart<'a>) -> Result<{}, {error_name}>{{\n",
                 self.method_base_name(),
                 tn
             )?;
         } else {
             write!(
                 w,
-                "\npub fn read_{}<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>, start: quick_xml::events::BytesStart<'a>) -> Result<{}, {error_name}>{{\n",
+                "pub fn read_{}<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::Reader<R>, start: quick_xml::events::BytesStart<'a>) -> Result<{}, {error_name}>{{\n",
                 self.method_base_name(),
                 tn
             )?;
@@ -699,7 +876,10 @@ impl CodeElement {
         if !read_elem.is_empty() {
             write!(w, "            quick_xml::events::Event::Start(start) => {{\n")?;
             write!(w, "                match start.local_name().as_ref(){{\n")?;
-            for read in read_elem.iter() {
+            for (read, _) in read_elem.iter() {
+                if self.eq(read.as_ref()) && !self.contains_self() {
+                    continue
+                }
                 write!(w, "                    b\"{}\" => {{\n", read.name)?;
                 write!(w, "                        let recognized = read_{}(reader, start)?;\n", read.method_base_name())?;
                 write!(w, "                        builder.{}(recognized);\n", read.method_base_name())?;
@@ -723,7 +903,7 @@ impl CodeElement {
             write!(w, "            quick_xml::events::Event::Empty(value) => {{\n")?;
             write!(w, "                \n")?;
             write!(w, "                match value.local_name().as_ref(){{\n")?;
-            for value in read_elem.iter() {
+            for value in read_elem.iter().map(|(a, _)| a) {
                 let method_base_name = value.method_base_name();
                 if value.is_marker() {
                     write!(w, "                    b\"{}\" => {{\n", value.name)?;
@@ -773,7 +953,7 @@ impl CodeElement {
         write!(w, "        buffer.clear();\n")?;
         write!(w, "    }}\n")?;
         write!(w, "    Ok(builder.build()?)\n")?;
-        write!(w, "}}\n")?;
+        write!(w, "}}\n\n")?;
         Ok(unsafe{String::from_utf8_unchecked(s)})
     }
 
@@ -807,7 +987,17 @@ impl CodeElement {
         let elem_read = self.elements.read();
         if !elem_read.is_empty() {
             write!(f, "{indent}elem: {}\n", elem_read.len())?;
-            for i in elem_read.iter() {
+            for (i, value) in elem_read.iter() {
+                write!(f, "{indent}  Needs Vec: {}\n", value.needs_vec)?;
+                write!(f, "{indent}  Was in diff: {}\n", value.was_in_a_diff)?;
+                write!(f, "{indent}  DepthCTss:\n")?;
+                for (k, v) in value.entry_to_depth_count.iter() {
+                    write!(f, "{indent}    {}: {}\n", *k, *v)?;
+                }
+                if self.eq(i.as_ref()) {
+                    write!(f, "{indent}    -SELF-\n\n")?;
+                    continue
+                }
                 i.write_indent(f, indent_len + 1)?;
                 write!(f, "\n")?;
             }
@@ -858,6 +1048,7 @@ fn get_name_as_str(start: &BytesStart, depth: usize, iter: usize) -> Result<Stri
 
 #[derive(Debug, Clone)]
 pub struct CodeAttribute {
+    id: u64,
     name: HashRef<String>,
     encounters: Arc<AtomicUsize>,
     values: LockedRef<HashSet<String>>
@@ -866,13 +1057,13 @@ pub struct CodeAttribute {
 impl Eq for CodeAttribute{}
 impl PartialEq for CodeAttribute {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.id == other.id
     }
 }
 
 impl Hash for CodeAttribute {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state)
+        self.id.hash(state)
     }
 }
 
@@ -908,11 +1099,12 @@ impl CodeAttribute {
             ContentType::Enum(en) => {
                 write!(w, "// Attribute - {} - {}\n", self.name, name)?;
                 write!(w, "#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]\n")?;
-                write!(w, "pub enum {en} {{")?;
+                write!(w, "pub enum {en} {{\n")?;
                 for value in self.values.read().iter() {
-                    write!(w, "\n    #[strum(serialize=\"{}\")]\n    {},", value, value.to_case(Case::Pascal))?;
+                    write!(w, "    #[strum(serialize=\"{}\")]\n", value)?;
+                    write!(w, "    {},\n", value.to_case(Case::Pascal))?;
                 }
-                write!(w, "\n}}\n")?;
+                write!(w, "}}\n\n")?;
             }
             _ => {}
         }
@@ -933,11 +1125,11 @@ impl CodeAttribute {
                 write!(w, "        }}\n")?;
             }
             _ => {
-                write!(w, "        Ok(Some(value.trim().to_lowercase().as_str().parse()?))")?;
+                write!(w, "        Ok(Some(value.trim().to_lowercase().as_str().parse()?))\n")?;
             }
         }
-        write!(w, "\n    }} else {{ Ok(None) }}")?;
-        write!(w, "\n}}");
+        write!(w, "    }} else {{ Ok(None) }}\n")?;
+        write!(w, "}}\n")?;
         Ok(unsafe{String::from_utf8_unchecked(s)})
     }
 
@@ -965,7 +1157,7 @@ impl CodeAttribute {
     }
 
     unsafe fn new(name: HashRef<String>) -> Self {
-        Self { name, encounters: Arc::new(AtomicUsize::new(1)), values: Default::default() }
+        Self { id: unique_id(), name, encounters: Arc::new(AtomicUsize::new(1)), values: Default::default() }
     }
 
     fn write_indent(&self, f: &mut Formatter<'_>, indent_count: usize) -> std::fmt::Result {
@@ -1126,9 +1318,6 @@ impl RecognizedContentType {
     }
 }
 
-
-
-
 #[derive(Debug, Error)]
 pub enum GenericXMLParserError {
     #[error(transparent)]
@@ -1147,68 +1336,4 @@ pub enum GenericXMLParserError {
     IllegalValue(&'static str, String),
     #[error(transparent)]
     Utf8(#[from] Utf8Error),
-}
-
-#[cfg(test)]
-mod test {
-    use crate::topicmodel::dictionary::loader::xml2code::{analyze_xml, GenericXMLParserError};
-    use std::collections::HashMap;
-    use std::fs::File;
-    use std::io::{BufReader, BufWriter};
-
-    pub fn read_id(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<String>, GenericXMLParserError>{
-        if attr.key.local_name().as_ref() == b"id" {
-            let value = attr.unescape_value()?;
-            Ok(Some(value.into_owned()))
-        } else { Ok(None) }
-    }
-
-    #[derive(Debug, Clone, derive_builder::Builder)]
-    pub struct Title {
-        pub content: String,
-    }
-
-    #[test]
-    pub fn test(){
-        // let analyzed = BufReader::new(File::open("src/topicmodel/dictionary/loader/books.xml").unwrap());
-        // let result = analyze_xml(analyzed).unwrap();
-        // println!("{result}");
-        // let mut x = HashMap::<String, _>::new();
-        // // x.insert("id".to_string(), RecognizedContentType::String);
-        // x.insert("publish_date2".to_string(), RecognizedContentType::String);
-        // if let Some(found) = result.root.get() {
-        //     for value in found.iter(){
-        //         match value {
-        //             ElementOrAttribute::Element(value) => {
-        //                 println!("{}", value.create_definition(&x));
-        //             }
-        //             ElementOrAttribute::Attribute(value) => {
-        //                 println!("{}", value.create_definition(&x));
-        //             }
-        //         }
-        //     }
-        // }
-        use std::io::Write;
-        let mut x = HashMap::<&'static str, _>::new();
-        let mut targ = BufWriter::new(File::options().truncate(true).create(true).write(true).open(r#"E:\git\tmt\src\topicmodel\dictionary\loader\free_dict.rs"#).unwrap());
-        let analyzed = BufReader::new(File::open(r#"D:\Downloads\freedict-eng-deu-1.9-fd1.src\eng-deu\eng-deu.tei"#).unwrap());
-        let mut result = analyze_xml(analyzed).unwrap();
-        let analyzed = BufReader::new(File::open(r#"D:\Downloads\freedict-deu-eng-1.9-fd1.src\deu-eng\deu-eng.tei"#).unwrap());
-        result.analyze(&mut quick_xml::reader::Reader::from_reader(analyzed)).unwrap();
-        result.generate_code(&mut targ, &x).unwrap();
-    }
-
-    #[test]
-    pub fn test2(){
-        // use super::super::test::read_tei_0_init;
-        // let x = BufReader::new(File::open(r#"D:\Downloads\freedict-eng-deu-1.9-fd1.src\eng-deu\eng-deu.tei"#).unwrap());
-        // match read_tei_0_init(quick_xml::reader::Reader::from_reader(x)) {
-        //     Ok(_) => {
-        //         println!("Worked!")
-        //     }
-        //     Err(e) => {
-        //         println!("Err: {e}")
-        //     }
-        // }
-    }
 }
