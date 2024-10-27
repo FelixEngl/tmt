@@ -14,19 +14,20 @@ use quick_xml::events::attributes::{AttrError, Attribute, Attributes};
 use quick_xml::events::{BytesStart, Event};
 use std::borrow::{Borrow};
 use std::cell::OnceCell;
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::io::BufRead;
-use std::ops::{Deref};
+use std::ops::{AddAssign, Deref};
 use std::str::Utf8Error;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use strum::Display;
 use thiserror::Error;
+use regex::Regex;
 
 pub fn analyze_xml<R: BufRead>(reader: R) -> Result<XML2CodeConverter, XML2CodeConverterError> {
     let mut data = XML2CodeConverter::default();
@@ -194,7 +195,7 @@ pub mod iter {{
                     }
                     let new = self.factory.root_element(get_real_name_as_str(&start)?, 0);
                     element = Some(new.clone());
-                    new.add_attributes(CodeAttribute::analyze_all(start.attributes(), &self.factory)?);
+                    new.add_attributes(CodeAttribute::analyze_all(&new, start.attributes(), &self.factory, 0)?);
                     new.analyze(reader, buffer, 1)?;
                 }
                 Event::Empty(empty) => {
@@ -203,7 +204,7 @@ pub mod iter {{
                     }
                     let new = self.factory.root_element(get_real_name_as_str(&empty)?, 0);
                     element = Some(new.clone());
-                    new.add_attributes(CodeAttribute::analyze_all(empty.attributes(), &self.factory)?);
+                    new.add_attributes(CodeAttribute::analyze_all(&new,  empty.attributes(), &self.factory, 0)?);
                 }
                 Event::Eof => break,
                 _ => {}
@@ -317,18 +318,14 @@ impl CodeEntityFactory {
             read.clone()
         } else {
             drop(read);
-            let mut write = self.attributes.write();
-            match write.entry(name.clone()) {
-                indexmap::map::Entry::Occupied(value) => {
-                    let enc = value.get().clone();
-                    enc.inc_encounter();
-                    enc
-                }
-                indexmap::map::Entry::Vacant(value) => {
-                    let value = value.insert(Arc::new(unsafe{CodeAttribute::new(name)}));
-                    value.clone()
-                }
-            }
+            let enc = self
+                .attributes
+                .write()
+                .entry(name.clone())
+                .or_insert_with(|| Arc::new(unsafe{CodeAttribute::new(name)}))
+                .clone();
+            enc.inc_encounter();
+            enc
         }
     }
 
@@ -341,20 +338,15 @@ impl CodeEntityFactory {
             element.clone()
         } else {
             drop(read);
-            let mut write = self.elements.write();
-            match write.entry(name.clone()) {
-                indexmap::map::Entry::Occupied(value) => {
-                    let enc = value.get().clone();
-                    enc.add_depth(depth);
-                    enc.inc_encounters();
-                    enc
-                }
-                indexmap::map::Entry::Vacant(value) => {
-                    let value = value.insert(Arc::new(unsafe{CodeElement::new(name, self.clone())}));
-                    value.add_depth(depth);
-                    value.clone()
-                }
-            }
+            let enc = self
+                .elements
+                .write()
+                .entry(name.clone())
+                .or_insert_with(|| Arc::new(unsafe{CodeElement::new(name, self.clone())}))
+                .clone();
+            enc.add_depth(depth);
+            enc.inc_encounters();
+            enc
         }
     }
 
@@ -385,7 +377,8 @@ pub struct CodeElement {
     attributes: LockedRef<HashSet<Arc<CodeAttribute>>>,
     texts: LockedRef<OnceCell<Vec<String>>>,
     parents: LockedRef<HashSet<Arc<CodeElement>>>,
-    contains_self: Arc<AtomicBool>
+    contains_self: Arc<AtomicBool>,
+    min_max_per_depth: LockedRef<HashMap<Arc<CodeElement>, HashMap<usize, (usize, usize)>>>
 }
 
 #[derive(Debug, Default)]
@@ -425,13 +418,14 @@ impl CodeElement {
             id: unique_id(),
             name,
             encounters_at: Default::default(),
-            encounters: Arc::new(AtomicUsize::new(1)),
+            encounters: Arc::new(AtomicUsize::new(0)),
             shared_pool,
             elements: Default::default(),
             attributes: Default::default(),
             texts: Default::default(),
             parents: Default::default(),
-            contains_self: Arc::new(AtomicBool::new(false))
+            contains_self: Arc::new(AtomicBool::new(false)),
+            min_max_per_depth: Default::default(),
         }
     }
 
@@ -442,6 +436,15 @@ impl CodeElement {
     pub fn builder_error_name(&self) -> String {
         format!("{}ElementBuilderError", self.name.to_case(Case::Pascal))
     }
+
+    pub fn get_text_count(&self) -> usize {
+        self.texts.read().get().map(|value| value.len()).unwrap_or_default()
+    }
+
+    pub fn get_text_count_unique(&self) -> usize {
+        self.texts.read().get().map(|value| value.iter().unique().count()).unwrap_or_default()
+    }
+
 
     pub fn add_parent(&self, parent: Arc<CodeElement>) {
         self.parents.write().insert(parent);
@@ -458,20 +461,12 @@ impl CodeElement {
 
     fn add_element(&self, element: Arc<CodeElement>, depth: usize) {
         let mut writer = self.elements.write();
-        match writer.entry(element) {
-            Entry::Vacant(value) => {
-                let mut m = ElementsMeta::default();
-                m.entry_to_depth_count.insert(depth, 1);
-                value.insert(m);
-            }
-            Entry::Occupied(mut value) => {
-                *value.get_mut().entry_to_depth_count.entry(depth).or_insert(0) += 1;
-            }
-        }
+        let entry = writer.entry(element).or_insert_with(ElementsMeta::default);
+        *entry.entry_to_depth_count.entry(depth).or_insert(0) += 1;
     }
 
-    pub fn add_attributes_raw(&self, attributes: Attributes) -> Result<(), XML2CodeConverterError> {
-        let attrs = CodeAttribute::analyze_all(attributes, &self.shared_pool)?;
+    fn add_attributes_raw(&self, attributes: Attributes, depth: usize) -> Result<(), XML2CodeConverterError> {
+        let attrs = CodeAttribute::analyze_all(self, attributes, &self.shared_pool, depth)?;
         self.add_attributes(attrs);
         Ok(())
     }
@@ -485,23 +480,28 @@ impl CodeElement {
     ) -> Result<(), XML2CodeConverterError> where R: BufRead {
         buffer.clear();
         let mut already_met = HashSet::new();
+        let mut code_element_counts = HashMap::new();
         let old: HashSet<_> = self.elements.read().keys().cloned().collect();
+        for value in old.iter() {
+            code_element_counts.insert(value.clone(), 0);
+        }
         loop {
             match reader.read_event_into(buffer)? {
                 Event::Start(start) => {
                     let element_inner = self.get_or_add_child(get_real_name_as_str(&start)?, depth);
-                    element_inner.add_attributes_raw(start.attributes())?;
+                    element_inner.add_attributes_raw(start.attributes(), depth)?;
                     element_inner.analyze(reader, buffer, depth + 1)?;
                     if !already_met.insert(element_inner.clone()) {
                         self.set_needs_vectorisation(&element_inner);
                     }
+                    *code_element_counts.entry(element_inner.clone()).or_insert(0usize) += 1;
                 }
                 Event::End(_) => {
                     break;
                 }
                 Event::Empty(empty) => {
                     let element_inner = self.get_or_add_child(get_real_name_as_str(&empty)?, depth);
-                    element_inner.add_attributes_raw(empty.attributes())?;
+                    element_inner.add_attributes_raw(empty.attributes(), depth)?;
                 }
                 Event::Text(value) => {
                     let target = std::str::from_utf8(value.as_ref())?.trim();
@@ -519,6 +519,8 @@ impl CodeElement {
         for difference in old.symmetric_difference(&already_met) {
             self.register_difference(difference)
         }
+
+        self.register_depth_counts(depth, code_element_counts);
 
         Ok(())
     }
@@ -542,10 +544,20 @@ impl CodeElement {
         self.attributes.write().insert(attribute);
     }
 
-
-
     fn get_elements_as_vec(&self) -> Vec<Arc<CodeElement>> {
         self.elements.read().keys().cloned().collect_vec()
+    }
+
+    fn generate_multiplicity_report(&self, field: &Arc<CodeElement>) -> Option<(usize, usize)> {
+        let min_max = self.min_max_per_depth.read();
+        let value = min_max.get(field)?;
+        let mut mi = usize::MAX;
+        let mut ma = usize::MIN;
+        for (a, b) in value.values().copied() {
+            mi = min(a, mi);
+            ma = max(b, mi);
+        }
+        Some((mi, ma))
     }
 
     fn get_info_to_field(&self, field: &Arc<CodeElement>) -> NeededType {
@@ -554,7 +566,17 @@ impl CodeElement {
         if meta.needs_vec {
             return NeededType::Vec
         }
+        let report = self.generate_multiplicity_report(field);
         if meta.was_in_a_diff {
+            if let Some(found) = report {
+                if found.0 != 0 {
+                    return if self.eq(field.as_ref()) {
+                        NeededType::Boxed
+                    } else {
+                        NeededType::NormalField
+                    }
+                }
+            };
             return if self.eq(field.as_ref()) {
                 NeededType::BoxedOption
             } else {
@@ -563,20 +585,25 @@ impl CodeElement {
         }
         let field_enc = field.encounters_at.read();
         let mut needs_option = false;
-        for (depth, count_per_depth_for_field) in meta.entry_to_depth_count.iter() {
-            match field_enc.get(depth) {
-                None => {
-                    needs_option = true
-                }
-                Some(count_in_whole_file_for_depth) => {
-                    let count_per_depth_for_field = *count_per_depth_for_field;
-                    let count_in_whole_file_for_depth = *count_in_whole_file_for_depth;
-                    if count_per_depth_for_field != count_in_whole_file_for_depth {
+        if let Some((mi, _)) = report {
+            needs_option = mi == 0;
+        } else {
+            for (depth, count_per_depth_for_field) in meta.entry_to_depth_count.iter() {
+                match field_enc.get(depth) {
+                    None => {
                         needs_option = true
+                    }
+                    Some(count_in_whole_file_for_depth) => {
+                        let count_per_depth_for_field = *count_per_depth_for_field;
+                        let count_in_whole_file_for_depth = *count_in_whole_file_for_depth;
+                        if count_per_depth_for_field != count_in_whole_file_for_depth {
+                            needs_option = true
+                        }
                     }
                 }
             }
         }
+
         if self.eq(field.as_ref()) {
             if needs_option {
                 NeededType::BoxedOption
@@ -596,6 +623,24 @@ impl CodeElement {
         let mut writer = self.elements.write();
         let value = writer.get_mut(element).expect("This value should be known at this point!");
         value.needs_vec = true;
+    }
+
+    pub fn register_depth_counts(&self, depth: usize, counts: HashMap<Arc<CodeElement>, usize>) {
+        let mut w = self.min_max_per_depth.write();
+        for (target, count) in counts {
+            let map = w.entry(target).or_default();
+            match map.entry(depth) {
+                Entry::Occupied(mut value) => {
+                    let value = value.get_mut();
+                    value.0 = min(value.0, count);
+                    value.1 = max(value.1, count);
+                }
+                Entry::Vacant(value) => {
+                    value.insert((count, count));
+                }
+            }
+        }
+
     }
 
 
@@ -663,11 +708,11 @@ impl CodeElement {
         let w = &mut s;
         match ty {
             Some(ContentType::Enum(ref value)) => {
-                write!(w, "#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]\n")?;
+                write!(w, "#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, strum::Display, strum::EnumString)]\n")?;
                 write!(w, "pub enum E{value} {{\n")?;
                 for value in self.texts.read().get().unwrap().iter().unique() {
-                    write!(w, "    #[strum(serialize=\"{}\")]\n", value)?;
-                    write!(w, "    {},\n", value.to_case(Case::Pascal))?;
+                    write!(w, "    #[strum(serialize=\"{}\")]\n", value.trim())?;
+                    write!(w, "    {},\n", create_enum_name(value.as_str()))?;
                 }
                 write!(w, "}}\n\n")?;
             }
@@ -675,13 +720,64 @@ impl CodeElement {
         }
 
 
-        write!(w, "// Element - {} - {}\n", self.name, self.name)?;
+        write!(w, "/// Element - {} - {}\n", self.name, self.map_name())?;
+        write!(w, "/// Encounters: {}\n", self.encounters.load(Ordering::SeqCst))?;
+        {
+            let parents = self.parents.read();
+            let mut cts = HashMap::new();
+            for p in parents.iter() {
+                let mm = p.min_max_per_depth.read();
+                if let Some(found) = mm.get(self) {
+                    for (depth, min_max) in found.iter() {
+                        cts.entry(*depth).or_insert_with(Vec::new).push((p.clone(), min_max.clone()));
+                    }
+                }
+            }
+            if !cts.is_empty() {
+                let mut cts = cts.into_iter().collect_vec();
+                cts.sort_by_key(|v| v.0);
+                write!(w, "/// ```text\n")?;
+                for (depth, m_m) in cts {
+                    let mut mi = usize::MAX;
+                    let mut ma = usize::MIN;
+                    for (_, (a, b)) in m_m.iter() {
+                        mi = min(mi, *a);
+                        ma = max(ma, *b);
+                    }
+                    write!(w, "///     Depth {depth}: {mi}..{ma}\n")?;
+                    for (parent, (a, b)) in m_m.iter() {
+                        write!(w, "///         - {} ({}, {}): {a}..{b}\n", parent.type_name(), parent.name, parent.map_name())?;
+                    }
+                }
+                write!(w, "/// ```\n")?;
+            }
+        }
         write!(w, "#[derive(Debug, Clone, derive_builder::Builder)]\n")?;
         let name= self.type_name();
         write!(w, "pub struct {} {{\n", name)?;
         let attr_read = self.attributes.read();
         for v in attr_read.iter() {
-            if v.encounters.load(Ordering::SeqCst) == self.encounters.load(Ordering::SeqCst) {
+            let is_enum = matches!(v.get_or_infer_type(map), ContentType::Enum(_));
+            let meta = v.get_meta(self).unwrap();
+            let infos = meta.depth_to_encounters.into_iter().sorted_by_key(|value| value.0).collect_vec();
+            write!(w, "    /// Meta Infos\n")?;
+            write!(w, "    /// ```text\n")?;
+            for (k, v) in infos {
+                write!(w, "    /// Depth: {k}\n")?;
+                if is_enum {
+                    for (entry, count) in v.into_iter().sorted_by_key(|v| v.0.clone()) {
+                        write!(w, "    ///     {}: {count}\n", create_enum_name(entry.as_str()))?;
+                    }
+                } else if v.len() < 32 {
+                    for (entry, count) in v.into_iter().sorted_by_key(|v| v.0.clone()) {
+                        write!(w, "    ///     {entry}: {count}\n")?;
+                    }
+                } else {
+                    write!(w, "    ///     This value has {} different values.\n", v.len())?;
+                }
+            }
+            write!(w, "    ///```\n")?;
+            if meta.encounters == self.encounters.load(Ordering::SeqCst) {
                 write!(w, "    pub {}: {},\n", v.method_base_name(), v.get_or_infer_type(map))?;
             } else {
                 write!(w, "    #[builder(setter(strip_option), default)]\n")?;
@@ -701,12 +797,38 @@ impl CodeElement {
             if self.eq(read.as_ref()) && !self.contains_self() {
                 continue
             }
+            {
+                let r = self.min_max_per_depth.read();
+                match r.get(read) {
+                    None => {
+                        write!(w, "    ///No multiplicity registered:\n")?;
+                        write!(w, "    ///```text\n")?;
+                        write!(w, "    ///    Encounters: {}\n", read.encounters.load(Ordering::SeqCst))?;
+                        write!(w, "    ///```\n")?;
+                    }
+                    Some(counts) => {
+                        write!(w, "    ///Multiplicity:\n")?;
+                        write!(w, "    ///```text\n")?;
+                        write!(w, "    ///    Encounters: {}\n", read.encounters.load(Ordering::SeqCst))?;
+                        for (depth, (min, max)) in counts.iter().sorted_by_key(|value| *value.0) {
+                            write!(w, "    ///        - Depth {depth}: - {min}..{max}\n")?;
+                        }
+                        write!(w, "    ///```\n")?;
+                    }
+                }
+
+
+            }
+
+            /*
+            if read.is_unique() {
+                write!(w, "    #[builder(setter(strip_option), default)]\n")?;
+                write!(w, "    pub {}: Option<{}>,\n", read.method_base_name(), read.type_name())?;
+            } else
+            */
             if read.is_marker() {
                 write!(w, "    #[builder(default)]\n")?;
                 write!(w, "    pub {}: bool,\n", read.method_base_name())?;
-            } else if read.is_unique() {
-                write!(w, "    #[builder(setter(strip_option), default)]\n")?;
-                write!(w, "    pub {}: Option<{}>,\n", read.method_base_name(), read.type_name())?;
             } else {
                 match needed_type {
                     NeededType::Boxed => {
@@ -736,6 +858,7 @@ impl CodeElement {
 
         if let Some(content) = ty {
             let text_count = self.texts.read().get().unwrap().len();
+            write!(w, "    /// Content-Count: Overall={} Unique={} \n", self.get_text_count(), self.get_text_count_unique())?;
             if text_count == self.encounters.load(Ordering::SeqCst) {
                 match content {
                     ContentType::Enum(value) => {
@@ -746,6 +869,7 @@ impl CodeElement {
                     }
                 }
             } else {
+                write!(w, "    /// Content-Count: Overall={} Unique={} \n", self.get_text_count(), self.get_text_count_unique())?;
                 write!(w, "    #[builder(setter(strip_option), default)]\n")?;
                 match content {
                     ContentType::Enum(value) => {
@@ -957,6 +1081,10 @@ impl CodeElement {
         Ok(unsafe{String::from_utf8_unchecked(s)})
     }
 
+    pub fn map_name(&self) -> String {
+        format!("e_{}", self.name)
+    }
+
     pub fn get_or_infer_type<K>(&self, map: &HashMap<K, RecognizedContentType>) -> Option<ContentType>
     where
         K: Borrow<str> + Eq + Hash
@@ -966,7 +1094,7 @@ impl CodeElement {
         if values.is_empty() {
             return None
         }
-        let found = map.get(self.name.as_str()).copied().unwrap_or_else(|| RecognizedContentType::determine_type(
+        let found = map.get(self.map_name().as_str()).copied().unwrap_or_else(|| RecognizedContentType::determine_type(
             values.iter().map(|value| value.as_str()).collect_vec().as_slice()
         ));
         Some(ContentType::from_recognized(found, self))
@@ -1045,13 +1173,35 @@ fn get_name_as_str(start: &BytesStart, depth: usize, iter: usize) -> Result<Stri
     Ok(format!("{}{}{}", std::str::from_utf8(start.name().local_name().as_ref())?, depth, iter))
 }
 
+fn create_enum_name(name: &str) -> String {
+    let regex = Regex::new("[^a-zA-Z0-9]").unwrap();
+    let name = name.trim();
+    let result = regex.replace_all(name, "_").to_case(Pascal);
+    if result.starts_with(|c| matches!(c, 'a'..'z' | 'A'..'Z')) {
+        result
+    } else {
+        const FIXED_PREFIX: &str = "ZZZ_FIXED_";
+        let mut s = String::with_capacity(result.len() + FIXED_PREFIX.len());
+        s.push_str(FIXED_PREFIX);
+        s.push_str(&result);
+        s
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct CodeAttribute {
     id: u64,
     name: HashRef<String>,
     encounters: Arc<AtomicUsize>,
-    values: LockedRef<HashSet<String>>
+    element_encounters: LockedRef<HashMap<u64, ElementMeta>>,
+    values: LockedRef<HashSet<HashRef<String>>>
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ElementMeta {
+    encounters: usize,
+    depth_to_encounters: HashMap<usize, HashMap<HashRef<String>, usize>>
 }
 
 impl Eq for CodeAttribute{}
@@ -1073,11 +1223,15 @@ impl CodeAttribute {
         format!("{}Attribute", self.name.to_case(Pascal))
     }
 
+    fn map_name(&self) -> String {
+        format!("a_{}", self.name.as_str())
+    }
+
     pub fn get_or_infer_type<K>(&self, map: &HashMap<K, RecognizedContentType>) -> ContentType
     where
         K: Borrow<str> + Eq + Hash
     {
-        let found = map.get(self.name.as_str()).copied().unwrap_or_else(|| RecognizedContentType::determine_type(
+        let found = map.get(self.map_name().as_str()).copied().unwrap_or_else(|| RecognizedContentType::determine_type(
             self.values.read().iter().map(|value| value.as_str()).collect_vec().as_slice()
         ));
         ContentType::from_recognized(found, self)
@@ -1086,6 +1240,8 @@ impl CodeAttribute {
     pub fn inc_encounter(&self) {
         self.encounters.fetch_add(1, Ordering::SeqCst);
     }
+
+
 
     pub fn create_definition<K>(&self, map: &HashMap<K, RecognizedContentType>, error_name: &str) -> std::io::Result<String>
     where
@@ -1097,25 +1253,38 @@ impl CodeAttribute {
         let name = self.shown_name();
         match &ty {
             ContentType::Enum(en) => {
-                write!(w, "// Attribute - {} - {}\n", self.name, name)?;
-                write!(w, "#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]\n")?;
+                write!(w, "// Attribute - {} - {} - {}\n", self.name, self.map_name(), name)?;
+                write!(w, "#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]\n")?;
                 write!(w, "pub enum {en} {{\n")?;
                 for value in self.values.read().iter() {
-                    write!(w, "    #[strum(serialize=\"{}\")]\n", value)?;
-                    write!(w, "    {},\n", value.to_case(Case::Pascal))?;
+                    write!(w, "    #[strum(serialize=\"{}\")]\n", value.trim().to_lowercase())?;
+                    write!(w, "    {},\n", create_enum_name(&value))?;
                 }
                 write!(w, "}}\n\n")?;
             }
             _ => {}
         }
         let m_name = self.method_base_name();
-        write!(w, "// Attribute - {} - {}\n", self.name, name)?;
+        write!(w, "/// Attribute - {} - {}\n", self.name, self.map_name())?;
+        if !matches!(ty, ContentType::Enum(_)) {
+            let vals = self.values.read();
+            if vals.len() < 64 {
+                write!(w, "///```text\n")?;
+                write!(w, "/// Values:\n")?;
+                for value in vals.iter().sorted_by_key(|value| (*value).clone()) {
+                    write!(w, "///    {}\n", value)?;
+                }
+                write!(w, "///```\n")?;
+            } else {
+                write!(w, "/// Has {} unique values.\n", vals.len())?;
+            }
+        }
         write!(w, "pub fn read_{}(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<{}>, {error_name}>{{\n", m_name, ty)?;
         write!(w, "    if attr.key.local_name().as_ref() == b\"{}\" {{\n", self.name)?;
         write!(w, "        let value = attr.unescape_value()?;\n")?;
         match ty {
             ContentType::String => {
-                write!(w, "        Ok(Some(value.into_owned()))")?;
+                write!(w, "        Ok(Some(value.into_owned()))\n")?;
             }
             ContentType::Enum(_) => {
                 write!(w, "        let s = value.trim().to_lowercase();\n")?;
@@ -1133,11 +1302,11 @@ impl CodeAttribute {
         Ok(unsafe{String::from_utf8_unchecked(s)})
     }
 
-    pub fn analyze_all(attributes: Attributes, factory: &CodeEntityFactory) -> Result<Vec<Arc<CodeAttribute>>, XML2CodeConverterError> {
+    pub fn analyze_all(elem: &CodeElement, attributes: Attributes, factory: &CodeEntityFactory, depth: usize) -> Result<Vec<Arc<CodeAttribute>>, XML2CodeConverterError> {
         attributes.into_iter().map(|value| {
             match value {
                 Ok(value) => {
-                    Self::analyze_single(value, factory)
+                    Self::analyze_single(elem, value, factory, depth)
                 }
                 Err(value) => {
                     Err(value.into())
@@ -1146,18 +1315,47 @@ impl CodeAttribute {
         }).collect()
     }
 
-    pub fn analyze_single(attribute: Attribute, factory: &CodeEntityFactory) -> Result<Arc<CodeAttribute>, XML2CodeConverterError> {
+    pub fn get_coocurrences(&self, elem: &CodeElement) -> usize {
+        self.element_encounters.read().get(&elem.id).map(|value| value.encounters).unwrap_or_default()
+    }
+
+    pub fn get_meta(&self, elem: &CodeElement) -> Option<ElementMeta> {
+        self.element_encounters.read().get(&elem.id).cloned()
+    }
+
+    fn analyze_single(elem: &CodeElement, attribute: Attribute, factory: &CodeEntityFactory, depth: usize) -> Result<Arc<CodeAttribute>, XML2CodeConverterError> {
         let new = factory.attribute(std::str::from_utf8(attribute.key.local_name().into_inner())?);
-        new.set_value(attribute.unescape_value()?.into_owned());
+        let value = HashRef::new(attribute.unescape_value()?.into_owned());
+        new.set_value(value.clone());
+        new.count_id(elem.id);
+        new.associate_id_to_types_and_depth(elem.id, depth, value);
         Ok(new)
     }
 
-    pub fn set_value(&self, value: String) {
+    fn count_id(&self, elem_id: u64) {
+        let mut write = self.element_encounters.write();
+        let w = write.entry(elem_id).or_default();
+        w.encounters += 1;
+    }
+
+    fn associate_id_to_types_and_depth(&self, elem_id: u64, depth: usize, value: HashRef<String>) {
+        self.element_encounters.write().entry(elem_id).or_default()
+            .depth_to_encounters.entry(depth).or_default()
+            .entry(value).or_insert(0).add_assign(1);
+    }
+
+    fn set_value(&self, value: HashRef<String>) {
         self.values.write().insert(value);
     }
 
     unsafe fn new(name: HashRef<String>) -> Self {
-        Self { id: unique_id(), name, encounters: Arc::new(AtomicUsize::new(1)), values: Default::default() }
+        Self {
+            id: unique_id(),
+            name,
+            encounters: Arc::new(AtomicUsize::new(0)),
+            element_encounters: Default::default(),
+            values: Default::default()
+        }
     }
 
     fn write_indent(&self, f: &mut Formatter<'_>, indent_count: usize) -> std::fmt::Result {
@@ -1277,7 +1475,7 @@ impl ContentType {
 }
 
 
-#[derive(Debug, Clone, Copy, Ord, PartialOrd, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Hash, PartialEq, Eq, Display)]
 pub enum RecognizedContentType {
     Bool,
     UInt,

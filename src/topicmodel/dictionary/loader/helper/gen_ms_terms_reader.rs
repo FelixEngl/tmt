@@ -1,26 +1,45 @@
 //hash_signature:FmLi9BrcLOXQMqSqzt9Kbg==
 
-// Element - martif - martif
+/// Element - martif - e_martif
+/// Encounters: 2
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct MartifElement {
-    #[builder(setter(strip_option), default)]
-    pub lang_attribute: Option<String>,
-    #[builder(setter(strip_option), default)]
-    pub type_attribute: Option<TypeAttribute>,
-    #[builder(setter(custom), default)]
-    pub martif_header_element: Option<MartifHeaderElement>,
-    #[builder(setter(custom), default)]
-    pub text_element: Option<TextElement>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     Tbx: 2
+    ///```
+    pub type_attribute: TypeAttribute,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     EnUs: 2
+    ///```
+    pub lang_attribute: LangAttribute,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 1: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub martif_header_element: MartifHeaderElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 1: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub text_element: TextElement,
 }
 
 impl MartifElementBuilder {
     pub fn martif_header_element(&mut self, value: MartifHeaderElement){
         assert!(self.martif_header_element.is_none(), "martif_header_element in MartifElement should be unset!");
-        self.martif_header_element = Some(Some(value));
+        self.martif_header_element = Some(value);
     }
     pub fn text_element(&mut self, value: TextElement){
         assert!(self.text_element.is_none(), "text_element in MartifElement should be unset!");
-        self.text_element = Some(Some(value));
+        self.text_element = Some(value);
     }
 }
 
@@ -62,12 +81,12 @@ pub fn read_martif_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
     for attr in start.attributes() {
         match attr {
             Ok(attr) => {
-                if let Some(value) = read_lang_attribute(&attr)? {
-                    builder.lang_attribute(value);
-                    continue;
-                }
                 if let Some(value) = read_type_attribute(&attr)? {
                     builder.type_attribute(value);
+                    continue;
+                }
+                if let Some(value) = read_lang_attribute(&attr)? {
+                    builder.lang_attribute(value);
                     continue;
                 }
             }
@@ -122,17 +141,27 @@ pub fn read_martif_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
 }
 
 
-// Element - martifHeader - martifHeader
+/// Element - martifHeader - e_martifHeader
+/// Encounters: 2
+/// ```text
+///     Depth 1: 1..1
+///         - MartifElement (martif, e_martif): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct MartifHeaderElement {
-    #[builder(setter(custom), default)]
-    pub file_desc_element: Option<FileDescElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 2: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub file_desc_element: FileDescElement,
 }
 
 impl MartifHeaderElementBuilder {
     pub fn file_desc_element(&mut self, value: FileDescElement){
         assert!(self.file_desc_element.is_none(), "file_desc_element in MartifHeaderElement should be unset!");
-        self.file_desc_element = Some(Some(value));
+        self.file_desc_element = Some(value);
     }
 }
 
@@ -211,23 +240,38 @@ pub fn read_martif_header_element<'a, R: std::io::BufRead>(reader: &mut quick_xm
 }
 
 
-// Element - fileDesc - fileDesc
+/// Element - fileDesc - e_fileDesc
+/// Encounters: 2
+/// ```text
+///     Depth 2: 1..1
+///         - MartifHeaderElement (martifHeader, e_martifHeader): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct FileDescElement {
-    #[builder(setter(custom), default)]
-    pub title_stmt_element: Option<TitleStmtElement>,
-    #[builder(setter(custom), default)]
-    pub source_desc_element: Option<SourceDescElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 3: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub source_desc_element: SourceDescElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 3: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub title_stmt_element: TitleStmtElement,
 }
 
 impl FileDescElementBuilder {
-    pub fn title_stmt_element(&mut self, value: TitleStmtElement){
-        assert!(self.title_stmt_element.is_none(), "title_stmt_element in FileDescElement should be unset!");
-        self.title_stmt_element = Some(Some(value));
-    }
     pub fn source_desc_element(&mut self, value: SourceDescElement){
         assert!(self.source_desc_element.is_none(), "source_desc_element in FileDescElement should be unset!");
-        self.source_desc_element = Some(Some(value));
+        self.source_desc_element = Some(value);
+    }
+    pub fn title_stmt_element(&mut self, value: TitleStmtElement){
+        assert!(self.title_stmt_element.is_none(), "title_stmt_element in FileDescElement should be unset!");
+        self.title_stmt_element = Some(value);
     }
 }
 
@@ -270,13 +314,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"titleStmt" => {
-                        let recognized = read_title_stmt_element(reader, start)?;
-                        builder.title_stmt_element(recognized);
-                    }
                     b"sourceDesc" => {
                         let recognized = read_source_desc_element(reader, start)?;
                         builder.source_desc_element(recognized);
+                    }
+                    b"titleStmt" => {
+                        let recognized = read_title_stmt_element(reader, start)?;
+                        builder.title_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -291,13 +335,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"titleStmt" => {
-                        let recognized = read_title_stmt_element(reader, value)?;
-                        builder.title_stmt_element(recognized);
-                    }
                     b"sourceDesc" => {
                         let recognized = read_source_desc_element(reader, value)?;
                         builder.source_desc_element(recognized);
+                    }
+                    b"titleStmt" => {
+                        let recognized = read_title_stmt_element(reader, value)?;
+                        builder.title_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -314,17 +358,27 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
 }
 
 
-// Element - titleStmt - titleStmt
+/// Element - titleStmt - e_titleStmt
+/// Encounters: 2
+/// ```text
+///     Depth 3: 1..1
+///         - FileDescElement (fileDesc, e_fileDesc): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TitleStmtElement {
-    #[builder(setter(custom), default)]
-    pub title_element: Option<TitleElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 4: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub title_element: TitleElement,
 }
 
 impl TitleStmtElementBuilder {
     pub fn title_element(&mut self, value: TitleElement){
         assert!(self.title_element.is_none(), "title_element in TitleStmtElement should be unset!");
-        self.title_element = Some(Some(value));
+        self.title_element = Some(value);
     }
 }
 
@@ -403,9 +457,15 @@ pub fn read_title_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
 }
 
 
-// Element - title - title
+/// Element - title - e_title
+/// Encounters: 2
+/// ```text
+///     Depth 4: 1..1
+///         - TitleStmtElement (titleStmt, e_titleStmt): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TitleElement {
+    /// Content-Count: Overall=2 Unique=1 
     pub content: String,
 }
 
@@ -468,17 +528,27 @@ pub fn read_title_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
 }
 
 
-// Element - sourceDesc - sourceDesc
+/// Element - sourceDesc - e_sourceDesc
+/// Encounters: 2
+/// ```text
+///     Depth 3: 1..1
+///         - FileDescElement (fileDesc, e_fileDesc): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct SourceDescElement {
-    #[builder(setter(custom), default)]
-    pub p_element: Option<PElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 4: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub p_element: PElement,
 }
 
 impl SourceDescElementBuilder {
     pub fn p_element(&mut self, value: PElement){
         assert!(self.p_element.is_none(), "p_element in SourceDescElement should be unset!");
-        self.p_element = Some(Some(value));
+        self.p_element = Some(value);
     }
 }
 
@@ -557,9 +627,15 @@ pub fn read_source_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml:
 }
 
 
-// Element - p - p
+/// Element - p - e_p
+/// Encounters: 2
+/// ```text
+///     Depth 4: 1..1
+///         - SourceDescElement (sourceDesc, e_sourceDesc): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct PElement {
+    /// Content-Count: Overall=2 Unique=1 
     pub content: String,
 }
 
@@ -622,17 +698,27 @@ pub fn read_p_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::R
 }
 
 
-// Element - text - text
+/// Element - text - e_text
+/// Encounters: 2
+/// ```text
+///     Depth 1: 1..1
+///         - MartifElement (martif, e_martif): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TextElement {
-    #[builder(setter(custom), default)]
-    pub body_element: Option<BodyElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 2: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub body_element: BodyElement,
 }
 
 impl TextElementBuilder {
     pub fn body_element(&mut self, value: BodyElement){
         assert!(self.body_element.is_none(), "body_element in TextElement should be unset!");
-        self.body_element = Some(Some(value));
+        self.body_element = Some(value);
     }
 }
 
@@ -711,9 +797,19 @@ pub fn read_text_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-// Element - body - body
+/// Element - body - e_body
+/// Encounters: 2
+/// ```text
+///     Depth 2: 1..1
+///         - TextElement (text, e_text): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct BodyElement {
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 40246
+    ///        - Depth 3: - 4481..35765
+    ///```
     #[builder(setter(custom), default)]
     pub term_entry_elements: Vec<TermEntryElement>,
 }
@@ -800,11 +896,25 @@ pub fn read_body_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-// Element - termEntry - termEntry
+/// Element - termEntry - e_termEntry
+/// Encounters: 40246
+/// ```text
+///     Depth 3: 4481..35765
+///         - BodyElement (body, e_body): 4481..35765
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TermEntryElement {
-    #[builder(setter(strip_option), default)]
-    pub id_attribute: Option<String>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 3
+    ///     This value has 35927 different values.
+    ///```
+    pub id_attribute: String,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 80492
+    ///        - Depth 4: - 2..2
+    ///```
     #[builder(setter(custom), default)]
     pub lang_set_elements: Vec<LangSetElement>,
 }
@@ -902,13 +1012,34 @@ pub fn read_term_entry_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
 }
 
 
-// Element - langSet - langSet
+/// Element - langSet - e_langSet
+/// Encounters: 80492
+/// ```text
+///     Depth 4: 2..2
+///         - TermEntryElement (termEntry, e_termEntry): 2..2
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct LangSetElement {
-    #[builder(setter(strip_option), default)]
-    pub lang_attribute: Option<String>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 4
+    ///     DeDe: 35765
+    ///     EnGb: 4481
+    ///     EnUs: 40246
+    ///```
+    pub lang_attribute: LangAttribute,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 81535
+    ///        - Depth 5: - 1..7
+    ///```
     #[builder(setter(custom), default)]
     pub ntig_elements: Vec<NtigElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 40246
+    ///        - Depth 5: - 0..1
+    ///```
     #[builder(setter(custom), default)]
     pub descrip_grp_element: Option<DescripGrpElement>,
 }
@@ -1018,17 +1149,27 @@ pub fn read_lang_set_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
 }
 
 
-// Element - descripGrp - descripGrp
+/// Element - descripGrp - e_descripGrp
+/// Encounters: 40246
+/// ```text
+///     Depth 5: 0..1
+///         - LangSetElement (langSet, e_langSet): 0..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct DescripGrpElement {
-    #[builder(setter(custom), default)]
-    pub descrip_element: Option<DescripElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 40246
+    ///        - Depth 6: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub descrip_element: DescripElement,
 }
 
 impl DescripGrpElementBuilder {
     pub fn descrip_element(&mut self, value: DescripElement){
         assert!(self.descrip_element.is_none(), "descrip_element in DescripGrpElement should be unset!");
-        self.descrip_element = Some(Some(value));
+        self.descrip_element = Some(value);
     }
 }
 
@@ -1107,11 +1248,21 @@ pub fn read_descrip_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml:
 }
 
 
-// Element - descrip - descrip
+/// Element - descrip - e_descrip
+/// Encounters: 40246
+/// ```text
+///     Depth 6: 1..1
+///         - DescripGrpElement (descripGrp, e_descripGrp): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct DescripElement {
-    #[builder(setter(strip_option), default)]
-    pub type_attribute: Option<TypeAttribute>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 6
+    ///     Definition: 40246
+    ///```
+    pub type_attribute: TypeAttribute,
+    /// Content-Count: Overall=40246 Unique=30510 
     pub content: String,
 }
 
@@ -1185,17 +1336,27 @@ pub fn read_descrip_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::rea
 }
 
 
-// Element - ntig - ntig
+/// Element - ntig - e_ntig
+/// Encounters: 81535
+/// ```text
+///     Depth 5: 1..7
+///         - LangSetElement (langSet, e_langSet): 1..7
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct NtigElement {
-    #[builder(setter(custom), default)]
-    pub term_grp_element: Option<TermGrpElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 81535
+    ///        - Depth 6: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub term_grp_element: TermGrpElement,
 }
 
 impl NtigElementBuilder {
     pub fn term_grp_element(&mut self, value: TermGrpElement){
         assert!(self.term_grp_element.is_none(), "term_grp_element in NtigElement should be unset!");
-        self.term_grp_element = Some(Some(value));
+        self.term_grp_element = Some(value);
     }
 }
 
@@ -1274,23 +1435,38 @@ pub fn read_ntig_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-// Element - termGrp - termGrp
+/// Element - termGrp - e_termGrp
+/// Encounters: 81535
+/// ```text
+///     Depth 6: 1..1
+///         - NtigElement (ntig, e_ntig): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TermGrpElement {
-    #[builder(setter(custom), default)]
-    pub term_element: Option<TermElement>,
-    #[builder(setter(custom), default)]
-    pub term_note_element: Option<TermNoteElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 81535
+    ///        - Depth 7: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub term_note_element: TermNoteElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 81535
+    ///        - Depth 7: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub term_element: TermElement,
 }
 
 impl TermGrpElementBuilder {
-    pub fn term_element(&mut self, value: TermElement){
-        assert!(self.term_element.is_none(), "term_element in TermGrpElement should be unset!");
-        self.term_element = Some(Some(value));
-    }
     pub fn term_note_element(&mut self, value: TermNoteElement){
         assert!(self.term_note_element.is_none(), "term_note_element in TermGrpElement should be unset!");
-        self.term_note_element = Some(Some(value));
+        self.term_note_element = Some(value);
+    }
+    pub fn term_element(&mut self, value: TermElement){
+        assert!(self.term_element.is_none(), "term_element in TermGrpElement should be unset!");
+        self.term_element = Some(value);
     }
 }
 
@@ -1333,13 +1509,13 @@ pub fn read_term_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"term" => {
-                        let recognized = read_term_element(reader, start)?;
-                        builder.term_element(recognized);
-                    }
                     b"termNote" => {
                         let recognized = read_term_note_element(reader, start)?;
                         builder.term_note_element(recognized);
+                    }
+                    b"term" => {
+                        let recognized = read_term_element(reader, start)?;
+                        builder.term_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1354,13 +1530,13 @@ pub fn read_term_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"term" => {
-                        let recognized = read_term_element(reader, value)?;
-                        builder.term_element(recognized);
-                    }
                     b"termNote" => {
                         let recognized = read_term_note_element(reader, value)?;
                         builder.term_note_element(recognized);
+                    }
+                    b"term" => {
+                        let recognized = read_term_element(reader, value)?;
+                        builder.term_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1377,11 +1553,21 @@ pub fn read_term_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
 }
 
 
-// Element - term - term
+/// Element - term - e_term
+/// Encounters: 81535
+/// ```text
+///     Depth 7: 1..1
+///         - TermGrpElement (termGrp, e_termGrp): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TermElement {
-    #[builder(setter(strip_option), default)]
-    pub id_attribute: Option<String>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 7
+    ///     This value has 76231 different values.
+    ///```
+    pub id_attribute: String,
+    /// Content-Count: Overall=81535 Unique=59360 
     pub content: String,
 }
 
@@ -1455,12 +1641,38 @@ pub fn read_term_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-// Element - termNote - termNote
+#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+pub enum ETermNoteElement {
+    #[strum(serialize="Noun")]
+    Noun,
+    #[strum(serialize="Other")]
+    Other,
+    #[strum(serialize="Verb")]
+    Verb,
+    #[strum(serialize="Proper Noun")]
+    ProperNoun,
+    #[strum(serialize="Adjective")]
+    Adjective,
+    #[strum(serialize="Adverb")]
+    Adverb,
+}
+
+/// Element - termNote - e_termNote
+/// Encounters: 81535
+/// ```text
+///     Depth 7: 1..1
+///         - TermGrpElement (termGrp, e_termGrp): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TermNoteElement {
-    #[builder(setter(strip_option), default)]
-    pub type_attribute: Option<TypeAttribute>,
-    pub content: String,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 7
+    ///     PartOfSpeech: 81535
+    ///```
+    pub type_attribute: TypeAttribute,
+    /// Content-Count: Overall=81535 Unique=6 
+    pub content: ETermNoteElement,
 }
 
 pub struct TermNoteElementIterFunction;
@@ -1520,7 +1732,15 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
             }
             quick_xml::events::Event::Text(value) => {
                 let s_value = std::str::from_utf8(value.as_ref())?;
-                builder.content(s_value.to_string());
+                let s = s_value.trim();
+                match s.parse(){
+                    Ok(value) => {
+                        builder.content(value);
+                    }
+                    Err(error) => {
+                        return Err(MartifReaderError::ElementStrumParserError("termNote", error, s.to_string()));
+                    }
+                }
             }
             quick_xml::events::Event::Eof => {
                 break;
@@ -1533,18 +1753,18 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
 }
 
 
-// Attribute - type - TypeAttribute
+// Attribute - type - a_type - TypeAttribute
 #[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
 pub enum TypeAttribute {
-    #[strum(serialize="TBX")]
+    #[strum(serialize="tbx")]
     Tbx,
     #[strum(serialize="definition")]
     Definition,
-    #[strum(serialize="partOfSpeech")]
+    #[strum(serialize="partofspeech")]
     PartOfSpeech,
 }
 
-// Attribute - type - TypeAttribute
+/// Attribute - type - a_type
 pub fn read_type_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<TypeAttribute>, MartifReaderError>{
     if attr.key.local_name().as_ref() == b"type" {
         let value = attr.unescape_value()?;
@@ -1556,18 +1776,36 @@ pub fn read_type_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
     } else { Ok(None) }
 }
 
-// Attribute - lang - LangAttribute
-pub fn read_lang_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<String>, MartifReaderError>{
-    if attr.key.local_name().as_ref() == b"lang" {
-        let value = attr.unescape_value()?;
-        Ok(Some(value.into_owned()))    } else { Ok(None) }
+// Attribute - lang - a_lang - LangAttribute
+#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+pub enum LangAttribute {
+    #[strum(serialize="en-us")]
+    EnUs,
+    #[strum(serialize="en-gb")]
+    EnGb,
+    #[strum(serialize="de-de")]
+    DeDe,
 }
 
-// Attribute - id - IdAttribute
+/// Attribute - lang - a_lang
+pub fn read_lang_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<LangAttribute>, MartifReaderError>{
+    if attr.key.local_name().as_ref() == b"lang" {
+        let value = attr.unescape_value()?;
+        let s = value.trim().to_lowercase();
+        match s.parse(){
+            Ok(value) => Ok(Some(value)),
+            Err(error) => Err(MartifReaderError::AttributeStrumParserError("lang", error, s)),
+        }
+    } else { Ok(None) }
+}
+
+/// Attribute - id - a_id
+/// Has 112158 unique values.
 pub fn read_id_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<String>, MartifReaderError>{
     if attr.key.local_name().as_ref() == b"id" {
         let value = attr.unescape_value()?;
-        Ok(Some(value.into_owned()))    } else { Ok(None) }
+        Ok(Some(value.into_owned()))
+    } else { Ok(None) }
 }
 
 

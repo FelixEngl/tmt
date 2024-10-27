@@ -13,7 +13,7 @@ mod converter;
 
 pub use converter::{RecognizedContentType};
 use crate::converter::{XML2CodeConverter};
-use crate::error::Error;
+use crate::error::{Error};
 
 /// Allows to import all types necessary for error handling
 
@@ -68,6 +68,7 @@ pub mod macro_impl {
             {
                 fn exec() -> Result<(), $crate::error::Error> {
                     use $crate::macro_impl::GenerateCodeCommandBuilder;
+                    use $crate::RecognizedContentType;
                     use $crate::macro_impl::GenerateCodeCommand;
                     use $crate::generate_code;
                     let mut builder = GenerateCodeCommandBuilder::default();
@@ -117,8 +118,8 @@ pub mod macro_impl {
             $builder.input($path_like);
             $crate::__private_generate_code!(__private($builder) $($tt)*);
         };
-        (__private($builder: ident) set_type: $k: literal to $v: ident, $($tt:tt)*) => {
-            $builder.mapping_entry($k, $crate::RecognizedContentType::$v);
+        (__private($builder: ident) set_type: $k: literal to $v: expr, $($tt:tt)*) => {
+            $builder.mapping_entry($k, $v);
             $crate::__private_generate_code!(__private($builder) $($tt)*);
         };
         (__private($builder: ident)) => {};
@@ -292,10 +293,10 @@ where
     if inputs.is_empty() {
         return Err(Error::NoInputFile)
     }
+    inputs.sort_by_key(|value| value.as_ref().to_string_lossy().into_owned());
+    let hash: [u8; HASH_LEN] = create_hash(inputs.as_slice())?;
 
-    let hash: Option<[u8; HASH_LEN]> = if !ignore_hash_test {
-        inputs.sort_by_key(|value| value.as_ref().to_string_lossy().into_owned());
-        let hash: [u8; HASH_LEN] = create_hash(inputs.as_slice())?;
+    if !ignore_hash_test {
         let old_hash: Option<[u8; HASH_LEN]> = read_hash(output.as_ref())?;
         if let Some(old_hash) = old_hash {
             if old_hash.eq(&hash) {
@@ -303,10 +304,7 @@ where
                 return Ok(())
             }
         }
-        Some(hash)
-    } else {
-        None
-    };
+    }
 
     let mut ct_success = 0;
     let mut result = XML2CodeConverter::default();
@@ -339,23 +337,14 @@ where
     if ct_success < inputs.len() {
         log::warn!("Not all files where processed!");
     }
-    let output_file = match File::options().write(true).truncate(true).create(true).open(&output) {
-        Ok(f) => {
-            f
-        }
-        Err(err) => {
-            log::error!("Was not able to create the output at {}: {err}", output.as_ref().to_string_lossy());
-            return Err(Error::OutputFile(err));
-        }
-    };
-    let mut writer = BufWriter::with_capacity(1024*128, output_file);
-    if let Some(hash) = hash {
-        let written = writer.write(hash.as_slice()).map_err(Error::CodeGen)?;
-        if written != hash.len() {
-            log::warn!("Failed to write the hash to the file!");
-        }
-        write!(&mut writer, "\n\n").map_err(Error::CodeGen)?;
+
+    let mut writer = Vec::new();
+    let written = writer.write(hash.as_slice()).map_err(Error::CodeGen)?;
+    if written != hash.len() {
+        log::warn!("Failed to write the hash to the file!");
     }
+    write!(&mut writer, "\n\n").map_err(Error::CodeGen)?;
+
     if let Some(mapping) = mappings {
         match result.generate_code(&mut writer, mapping) {
             Ok(_) => {}
@@ -374,6 +363,17 @@ where
         }
     }
 
+    let output_file = match File::options().write(true).truncate(true).create(true).open(&output) {
+        Ok(f) => {
+            f
+        }
+        Err(err) => {
+            log::error!("Was not able to create the output at {}: {err}", output.as_ref().to_string_lossy());
+            return Err(Error::OutputFile(err));
+        }
+    };
+    let mut file_writer = BufWriter::with_capacity(1024*128, output_file);
+    file_writer.write_all(writer.as_slice()).map_err(|v| Error::OutputFile(v))?;
     Ok(())
 }
 

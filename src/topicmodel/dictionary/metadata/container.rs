@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::direction::{Language, A, B};
 use crate::topicmodel::dictionary::metadata::{Metadata, MetadataMutRef, MetadataRef};
-use crate::topicmodel::dictionary::metadata::typesafe_interner::{DefaultDictionaryOriginStringInterner, DefaultTagStringInterner};
+use crate::toolkit::typesafe_interner::{DefaultDictionaryOriginStringInterner, DefaultTagStringInterner};
 use crate::topicmodel::vocabulary::Vocabulary;
 
 /// Contains the metadata for the dictionary

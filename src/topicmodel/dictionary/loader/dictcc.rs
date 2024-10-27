@@ -8,12 +8,12 @@ use nom::character::complete::{char, multispace0};
 use nom::combinator::{map, map_parser, map_res, opt, value};
 use nom::error::{FromExternalError, ParseError};
 use nom::IResult;
-use nom::multi::{many0, many1, separated_list0};
+use nom::multi::{many1, separated_list0};
 use nom::sequence::{delimited, pair, preceded, terminated};
 use strum::{Display, EnumString};
 use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
 use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, take_nested_bracket_delimited};
-use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartialWordType, WordType};
+use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartialWordType, PartOfSpeech};
 use crate::topicmodel::dictionary::word_infos::GrammaticalNumber;
 
 pub trait DictCCParserError<I>: ParseError<I> + FromExternalError<I, strum::ParseError>{}
@@ -120,7 +120,7 @@ pub enum SpecialInfo {
 }
 
 #[derive(Clone, Debug, Copy)]
-pub struct WordTypeInfo(pub Option<SpecialInfo>, pub WordType);
+pub struct WordTypeInfo(pub Option<SpecialInfo>, pub PartOfSpeech);
 
 impl Display for WordTypeInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -331,7 +331,7 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> std::io::Result<FunctionBasedL
 mod test {
     use nom::bytes::complete::is_not;
     use nom::IResult;
-    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, parse_word_type_info, read_dictionary};
+    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, read_dictionary};
     use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
 
     #[test]

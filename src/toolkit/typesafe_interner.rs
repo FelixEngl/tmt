@@ -1,7 +1,9 @@
 use std::fmt::{Debug, Formatter};
+use std::hash::BuildHasher;
 use std::marker::PhantomData;
 use serde::de::{Error, Visitor};
-use string_interner::{Symbol};
+use string_interner::{StringInterner, Symbol};
+use string_interner::backend::Backend;
 
 pub trait TypeSafeSymbol<S>: Symbol + From<S> where S: Symbol {}
 
@@ -134,7 +136,7 @@ macro_rules! create_interned_typesafe_symbol {
             }
 
 
-            impl<S> $crate::topicmodel::dictionary::metadata::typesafe_interner::TypeSafeSymbol<S> for $name<S> where S: Symbol {}
+            impl<S> $crate::toolkit::typesafe_interner::TypeSafeSymbol<S> for $name<S> where S: Symbol {}
 
 
 
@@ -152,7 +154,7 @@ macro_rules! create_interned_typesafe_symbol {
                 where
                     D: serde::Deserializer<'de>
                 {
-                    deserializer.deserialize_u16($crate::topicmodel::dictionary::metadata::typesafe_interner::SymbolVisitor::default())
+                    deserializer.deserialize_u16($crate::toolkit::typesafe_interner::SymbolVisitor::default())
                 }
             }
 
@@ -170,7 +172,7 @@ macro_rules! create_interned_typesafe_symbol {
                 where
                     D: serde::Deserializer<'de>
                 {
-                    deserializer.deserialize_u32($crate::topicmodel::dictionary::metadata::typesafe_interner::SymbolVisitor::default())
+                    deserializer.deserialize_u32($crate::toolkit::typesafe_interner::SymbolVisitor::default())
                 }
             }
 
@@ -188,7 +190,7 @@ macro_rules! create_interned_typesafe_symbol {
                 where
                     D: serde::Deserializer<'de>
                 {
-                    deserializer.deserialize_u64($crate::topicmodel::dictionary::metadata::typesafe_interner::SymbolVisitor::default())
+                    deserializer.deserialize_u64($crate::toolkit::typesafe_interner::SymbolVisitor::default())
                 }
             }
 
@@ -206,7 +208,7 @@ macro_rules! create_interned_typesafe_symbol {
                 where
                     D: serde::Deserializer<'de>
                 {
-                    deserializer.deserialize_u64($crate::topicmodel::dictionary::metadata::typesafe_interner::SymbolVisitor::default())
+                    deserializer.deserialize_u64($crate::toolkit::typesafe_interner::SymbolVisitor::default())
                 }
             }
 
@@ -225,4 +227,3 @@ create_interned_typesafe_symbol! {
     DictionaryOrigin,
     Tag
 }
-

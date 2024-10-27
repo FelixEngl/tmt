@@ -1,18 +1,58 @@
 //hash_signature:x3bpX862vVb0MkI0vyr9Sw==
 
-// Element - tbx - tbx
+/// Element - tbx - e_tbx
+/// Encounters: 1
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TbxElement {
-    pub xmlns_attribute: String,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     Dca: 1
+    ///```
     pub style_attribute: StyleAttribute,
-    #[builder(setter(strip_option), default)]
-    pub type_attribute: Option<String>,
-    #[builder(setter(strip_option), default)]
-    pub lang_attribute: Option<LangAttribute>,
-    #[builder(setter(strip_option), default)]
-    pub text_element: Option<TextElement>,
-    #[builder(setter(strip_option), default)]
-    pub tbx_header_element: Option<TbxHeaderElement>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     En: 1
+    ///```
+    pub lang_attribute: LangAttribute,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     urn:iso:std:iso:30042:ed-2: 1
+    ///```
+    pub xmlns_attribute: String,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     TbxIate: 1
+    ///```
+    pub type_attribute: TypeAttribute,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 1: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub text_element: TextElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 1: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub tbx_header_element: TbxHeaderElement,
+}
+
+impl TbxElementBuilder {
+    pub fn text_element(&mut self, value: TextElement){
+        assert!(self.text_element.is_none(), "text_element in TbxElement should be unset!");
+        self.text_element = Some(value);
+    }
+    pub fn tbx_header_element(&mut self, value: TbxHeaderElement){
+        assert!(self.tbx_header_element.is_none(), "tbx_header_element in TbxElement should be unset!");
+        self.tbx_header_element = Some(value);
+    }
 }
 
 pub struct TbxElementIterFunction;
@@ -53,20 +93,20 @@ pub fn read_tbx_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
     for attr in start.attributes() {
         match attr {
             Ok(attr) => {
-                if let Some(value) = read_xmlns_attribute(&attr)? {
-                    builder.xmlns_attribute(value);
-                    continue;
-                }
                 if let Some(value) = read_style_attribute(&attr)? {
                     builder.style_attribute(value);
                     continue;
                 }
-                if let Some(value) = read_type_attribute(&attr)? {
-                    builder.type_attribute(value);
-                    continue;
-                }
                 if let Some(value) = read_lang_attribute(&attr)? {
                     builder.lang_attribute(value);
+                    continue;
+                }
+                if let Some(value) = read_xmlns_attribute(&attr)? {
+                    builder.xmlns_attribute(value);
+                    continue;
+                }
+                if let Some(value) = read_type_attribute(&attr)? {
+                    builder.type_attribute(value);
                     continue;
                 }
             }
@@ -121,11 +161,28 @@ pub fn read_tbx_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
 }
 
 
-// Element - tbxHeader - tbxHeader
+/// Element - tbxHeader - e_tbxHeader
+/// Encounters: 1
+/// ```text
+///     Depth 1: 1..1
+///         - TbxElement (tbx, e_tbx): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TbxHeaderElement {
-    #[builder(setter(strip_option), default)]
-    pub file_desc_element: Option<FileDescElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 2: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub file_desc_element: FileDescElement,
+}
+
+impl TbxHeaderElementBuilder {
+    pub fn file_desc_element(&mut self, value: FileDescElement){
+        assert!(self.file_desc_element.is_none(), "file_desc_element in TbxHeaderElement should be unset!");
+        self.file_desc_element = Some(value);
+    }
 }
 
 pub struct TbxHeaderElementIterFunction;
@@ -203,13 +260,39 @@ pub fn read_tbx_header_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
 }
 
 
-// Element - fileDesc - fileDesc
+/// Element - fileDesc - e_fileDesc
+/// Encounters: 1
+/// ```text
+///     Depth 2: 1..1
+///         - TbxHeaderElement (tbxHeader, e_tbxHeader): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct FileDescElement {
-    #[builder(setter(strip_option), default)]
-    pub title_stmt_element: Option<TitleStmtElement>,
-    #[builder(setter(strip_option), default)]
-    pub source_desc_element: Option<SourceDescElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 3: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub source_desc_element: SourceDescElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 3: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub title_stmt_element: TitleStmtElement,
+}
+
+impl FileDescElementBuilder {
+    pub fn source_desc_element(&mut self, value: SourceDescElement){
+        assert!(self.source_desc_element.is_none(), "source_desc_element in FileDescElement should be unset!");
+        self.source_desc_element = Some(value);
+    }
+    pub fn title_stmt_element(&mut self, value: TitleStmtElement){
+        assert!(self.title_stmt_element.is_none(), "title_stmt_element in FileDescElement should be unset!");
+        self.title_stmt_element = Some(value);
+    }
 }
 
 pub struct FileDescElementIterFunction;
@@ -251,13 +334,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"titleStmt" => {
-                        let recognized = read_title_stmt_element(reader, start)?;
-                        builder.title_stmt_element(recognized);
-                    }
                     b"sourceDesc" => {
                         let recognized = read_source_desc_element(reader, start)?;
                         builder.source_desc_element(recognized);
+                    }
+                    b"titleStmt" => {
+                        let recognized = read_title_stmt_element(reader, start)?;
+                        builder.title_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -272,13 +355,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"titleStmt" => {
-                        let recognized = read_title_stmt_element(reader, value)?;
-                        builder.title_stmt_element(recognized);
-                    }
                     b"sourceDesc" => {
                         let recognized = read_source_desc_element(reader, value)?;
                         builder.source_desc_element(recognized);
+                    }
+                    b"titleStmt" => {
+                        let recognized = read_title_stmt_element(reader, value)?;
+                        builder.title_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -295,11 +378,28 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
 }
 
 
-// Element - titleStmt - titleStmt
+/// Element - titleStmt - e_titleStmt
+/// Encounters: 1
+/// ```text
+///     Depth 3: 1..1
+///         - FileDescElement (fileDesc, e_fileDesc): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TitleStmtElement {
-    #[builder(setter(strip_option), default)]
-    pub title_element: Option<TitleElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 4: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub title_element: TitleElement,
+}
+
+impl TitleStmtElementBuilder {
+    pub fn title_element(&mut self, value: TitleElement){
+        assert!(self.title_element.is_none(), "title_element in TitleStmtElement should be unset!");
+        self.title_element = Some(value);
+    }
 }
 
 pub struct TitleStmtElementIterFunction;
@@ -377,9 +477,15 @@ pub fn read_title_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
 }
 
 
-// Element - title - title
+/// Element - title - e_title
+/// Encounters: 1
+/// ```text
+///     Depth 4: 1..1
+///         - TitleStmtElement (titleStmt, e_titleStmt): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TitleElement {
+    /// Content-Count: Overall=1 Unique=1 
     pub content: String,
 }
 
@@ -442,11 +548,28 @@ pub fn read_title_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
 }
 
 
-// Element - sourceDesc - sourceDesc
+/// Element - sourceDesc - e_sourceDesc
+/// Encounters: 1
+/// ```text
+///     Depth 3: 1..1
+///         - FileDescElement (fileDesc, e_fileDesc): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct SourceDescElement {
-    #[builder(setter(strip_option), default)]
-    pub p_element: Option<PElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 4: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub p_element: PElement,
+}
+
+impl SourceDescElementBuilder {
+    pub fn p_element(&mut self, value: PElement){
+        assert!(self.p_element.is_none(), "p_element in SourceDescElement should be unset!");
+        self.p_element = Some(value);
+    }
 }
 
 pub struct SourceDescElementIterFunction;
@@ -524,9 +647,15 @@ pub fn read_source_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml:
 }
 
 
-// Element - p - p
+/// Element - p - e_p
+/// Encounters: 1
+/// ```text
+///     Depth 4: 1..1
+///         - SourceDescElement (sourceDesc, e_sourceDesc): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct PElement {
+    /// Content-Count: Overall=1 Unique=1 
     pub content: String,
 }
 
@@ -589,11 +718,28 @@ pub fn read_p_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::R
 }
 
 
-// Element - text - text
+/// Element - text - e_text
+/// Encounters: 1
+/// ```text
+///     Depth 1: 1..1
+///         - TbxElement (tbx, e_tbx): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TextElement {
-    #[builder(setter(strip_option), default)]
-    pub body_element: Option<BodyElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1
+    ///        - Depth 2: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub body_element: BodyElement,
+}
+
+impl TextElementBuilder {
+    pub fn body_element(&mut self, value: BodyElement){
+        assert!(self.body_element.is_none(), "body_element in TextElement should be unset!");
+        self.body_element = Some(value);
+    }
 }
 
 pub struct TextElementIterFunction;
@@ -671,9 +817,19 @@ pub fn read_text_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-// Element - body - body
+/// Element - body - e_body
+/// Encounters: 1
+/// ```text
+///     Depth 2: 1..1
+///         - TextElement (text, e_text): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct BodyElement {
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 816408
+    ///        - Depth 3: - 816408..816408
+    ///```
     #[builder(setter(custom), default)]
     pub concept_entry_elements: Vec<ConceptEntryElement>,
 }
@@ -760,14 +916,34 @@ pub fn read_body_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-// Element - conceptEntry - conceptEntry
+/// Element - conceptEntry - e_conceptEntry
+/// Encounters: 816408
+/// ```text
+///     Depth 3: 816408..816408
+///         - BodyElement (body, e_body): 816408..816408
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct ConceptEntryElement {
+    /// Meta Infos
+    /// ```text
+    /// Depth: 3
+    ///     This value has 816408 different values.
+    ///```
     pub id_attribute: u64,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1299397
+    ///        - Depth 4: - 1..2
+    ///```
     #[builder(setter(custom), default)]
     pub lang_sec_elements: Vec<LangSecElement>,
-    #[builder(setter(custom), default)]
-    pub descrip_element: Option<DescripElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2480673
+    ///        - Depth 4: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub descrip_element: DescripElement,
 }
 
 impl ConceptEntryElementBuilder {
@@ -777,7 +953,7 @@ impl ConceptEntryElementBuilder {
     }
     pub fn descrip_element(&mut self, value: DescripElement){
         assert!(self.descrip_element.is_none(), "descrip_element in ConceptEntryElement should be unset!");
-        self.descrip_element = Some(Some(value));
+        self.descrip_element = Some(value);
     }
 }
 
@@ -875,11 +1051,25 @@ pub fn read_concept_entry_element<'a, R: std::io::BufRead>(reader: &mut quick_xm
 }
 
 
-// Element - descrip - descrip
+/// Element - descrip - e_descrip
+/// Encounters: 2480673
+/// ```text
+///     Depth 4: 1..1
+///         - ConceptEntryElement (conceptEntry, e_conceptEntry): 1..1
+///     Depth 6: 1..1
+///         - TermSecElement (termSec, e_termSec): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct DescripElement {
-    #[builder(setter(strip_option), default)]
-    pub type_attribute: Option<String>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 4
+    ///     SubjectField: 816408
+    /// Depth: 6
+    ///     ReliabilityCode: 1664265
+    ///```
+    pub type_attribute: TypeAttribute,
+    /// Content-Count: Overall=2480673 Unique=29547 
     pub content: String,
 }
 
@@ -953,11 +1143,26 @@ pub fn read_descrip_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::rea
 }
 
 
-// Element - langSec - langSec
+/// Element - langSec - e_langSec
+/// Encounters: 1299397
+/// ```text
+///     Depth 4: 1..2
+///         - ConceptEntryElement (conceptEntry, e_conceptEntry): 1..2
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct LangSecElement {
-    #[builder(setter(strip_option), default)]
-    pub lang_attribute: Option<LangAttribute>,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 4
+    ///     De: 527703
+    ///     En: 771694
+    ///```
+    pub lang_attribute: LangAttribute,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1664265
+    ///        - Depth 5: - 1..32
+    ///```
     #[builder(setter(custom), default)]
     pub term_sec_elements: Vec<TermSecElement>,
 }
@@ -1055,15 +1260,35 @@ pub fn read_lang_sec_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
 }
 
 
-// Element - termSec - termSec
+/// Element - termSec - e_termSec
+/// Encounters: 1664265
+/// ```text
+///     Depth 5: 1..32
+///         - LangSecElement (langSec, e_langSec): 1..32
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TermSecElement {
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1670808
+    ///        - Depth 6: - 1..2
+    ///```
     #[builder(setter(custom), default)]
     pub term_note_elements: Vec<TermNoteElement>,
-    #[builder(setter(custom), default)]
-    pub term_element: Option<TermElement>,
-    #[builder(setter(custom), default)]
-    pub descrip_element: Option<DescripElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2480673
+    ///        - Depth 6: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub descrip_element: DescripElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1664265
+    ///        - Depth 6: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub term_element: TermElement,
 }
 
 impl TermSecElementBuilder {
@@ -1071,13 +1296,13 @@ impl TermSecElementBuilder {
         let targ = self.term_note_elements.get_or_insert_with(Default::default);
         targ.push(value);
     }
-    pub fn term_element(&mut self, value: TermElement){
-        assert!(self.term_element.is_none(), "term_element in TermSecElement should be unset!");
-        self.term_element = Some(Some(value));
-    }
     pub fn descrip_element(&mut self, value: DescripElement){
         assert!(self.descrip_element.is_none(), "descrip_element in TermSecElement should be unset!");
-        self.descrip_element = Some(Some(value));
+        self.descrip_element = Some(value);
+    }
+    pub fn term_element(&mut self, value: TermElement){
+        assert!(self.term_element.is_none(), "term_element in TermSecElement should be unset!");
+        self.term_element = Some(value);
     }
 }
 
@@ -1124,13 +1349,13 @@ pub fn read_term_sec_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
                         let recognized = read_term_note_element(reader, start)?;
                         builder.term_note_element(recognized);
                     }
-                    b"term" => {
-                        let recognized = read_term_element(reader, start)?;
-                        builder.term_element(recognized);
-                    }
                     b"descrip" => {
                         let recognized = read_descrip_element(reader, start)?;
                         builder.descrip_element(recognized);
+                    }
+                    b"term" => {
+                        let recognized = read_term_element(reader, start)?;
+                        builder.term_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1149,13 +1374,13 @@ pub fn read_term_sec_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
                         let recognized = read_term_note_element(reader, value)?;
                         builder.term_note_element(recognized);
                     }
-                    b"term" => {
-                        let recognized = read_term_element(reader, value)?;
-                        builder.term_element(recognized);
-                    }
                     b"descrip" => {
                         let recognized = read_descrip_element(reader, value)?;
                         builder.descrip_element(recognized);
+                    }
+                    b"term" => {
+                        let recognized = read_term_element(reader, value)?;
+                        builder.term_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1172,9 +1397,15 @@ pub fn read_term_sec_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
 }
 
 
-// Element - term - term
+/// Element - term - e_term
+/// Encounters: 1664265
+/// ```text
+///     Depth 6: 1..1
+///         - TermSecElement (termSec, e_termSec): 1..1
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TermElement {
+    /// Content-Count: Overall=1664265 Unique=1300781 
     pub content: String,
 }
 
@@ -1237,12 +1468,49 @@ pub fn read_term_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-// Element - termNote - termNote
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]
+pub enum ETermNoteElement {
+    #[strum(serialize="fullForm")]
+    FullForm,
+    #[strum(serialize="abbreviation")]
+    Abbreviation,
+    #[strum(serialize="phrase")]
+    Phrase,
+    #[strum(serialize="supersededTerm-admn-sts")]
+    SupersededTermAdmnSts,
+    #[strum(serialize="shortForm")]
+    ShortForm,
+    #[strum(serialize="deprecatedTerm-admn-sts")]
+    DeprecatedTermAdmnSts,
+    #[strum(serialize="admittedTerm-admn-sts")]
+    AdmittedTermAdmnSts,
+    #[strum(serialize="preferredTerm-admn-sts")]
+    PreferredTermAdmnSts,
+    #[strum(serialize="appellation")]
+    Appellation,
+    #[strum(serialize="formula")]
+    Formula,
+    #[strum(serialize="proposedTerm-admn-sts")]
+    ProposedTermAdmnSts,
+}
+
+/// Element - termNote - e_termNote
+/// Encounters: 1670808
+/// ```text
+///     Depth 6: 1..2
+///         - TermSecElement (termSec, e_termSec): 1..2
+/// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct TermNoteElement {
-    #[builder(setter(strip_option), default)]
-    pub type_attribute: Option<String>,
-    pub content: String,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 6
+    ///     AdministrativeStatus: 6543
+    ///     TermType: 1664265
+    ///```
+    pub type_attribute: TypeAttribute,
+    /// Content-Count: Overall=1670808 Unique=11 
+    pub content: ETermNoteElement,
 }
 
 pub struct TermNoteElementIterFunction;
@@ -1302,7 +1570,15 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
             }
             quick_xml::events::Event::Text(value) => {
                 let s_value = std::str::from_utf8(value.as_ref())?;
-                builder.content(s_value.to_string());
+                let s = s_value.trim();
+                match s.parse(){
+                    Ok(value) => {
+                        builder.content(value);
+                    }
+                    Err(error) => {
+                        return Err(TbxReaderError::ElementStrumParserError("termNote", error, s.to_string()));
+                    }
+                }
             }
             quick_xml::events::Event::Eof => {
                 break;
@@ -1315,21 +1591,41 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
 }
 
 
-// Attribute - type - TypeAttribute
-pub fn read_type_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<String>, TbxReaderError>{
-    if attr.key.local_name().as_ref() == b"type" {
-        let value = attr.unescape_value()?;
-        Ok(Some(value.into_owned()))    } else { Ok(None) }
+// Attribute - type - a_type - TypeAttribute
+#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+pub enum TypeAttribute {
+    #[strum(serialize="tbx-iate")]
+    TbxIate,
+    #[strum(serialize="subjectfield")]
+    SubjectField,
+    #[strum(serialize="termtype")]
+    TermType,
+    #[strum(serialize="administrativestatus")]
+    AdministrativeStatus,
+    #[strum(serialize="reliabilitycode")]
+    ReliabilityCode,
 }
 
-// Attribute - style - StyleAttribute
+/// Attribute - type - a_type
+pub fn read_type_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<TypeAttribute>, TbxReaderError>{
+    if attr.key.local_name().as_ref() == b"type" {
+        let value = attr.unescape_value()?;
+        let s = value.trim().to_lowercase();
+        match s.parse(){
+            Ok(value) => Ok(Some(value)),
+            Err(error) => Err(TbxReaderError::AttributeStrumParserError("type", error, s)),
+        }
+    } else { Ok(None) }
+}
+
+// Attribute - style - a_style - StyleAttribute
 #[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
 pub enum StyleAttribute {
     #[strum(serialize="dca")]
     Dca,
 }
 
-// Attribute - style - StyleAttribute
+/// Attribute - style - a_style
 pub fn read_style_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<StyleAttribute>, TbxReaderError>{
     if attr.key.local_name().as_ref() == b"style" {
         let value = attr.unescape_value()?;
@@ -1341,16 +1637,16 @@ pub fn read_style_attribute(attr: &quick_xml::events::attributes::Attribute) -> 
     } else { Ok(None) }
 }
 
-// Attribute - lang - LangAttribute
+// Attribute - lang - a_lang - LangAttribute
 #[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
 pub enum LangAttribute {
-    #[strum(serialize="de")]
-    De,
     #[strum(serialize="en")]
     En,
+    #[strum(serialize="de")]
+    De,
 }
 
-// Attribute - lang - LangAttribute
+/// Attribute - lang - a_lang
 pub fn read_lang_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<LangAttribute>, TbxReaderError>{
     if attr.key.local_name().as_ref() == b"lang" {
         let value = attr.unescape_value()?;
@@ -1362,14 +1658,20 @@ pub fn read_lang_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
     } else { Ok(None) }
 }
 
-// Attribute - xmlns - XmlnsAttribute
+/// Attribute - xmlns - a_xmlns
+///```text
+/// Values:
+///    urn:iso:std:iso:30042:ed-2
+///```
 pub fn read_xmlns_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<String>, TbxReaderError>{
     if attr.key.local_name().as_ref() == b"xmlns" {
         let value = attr.unescape_value()?;
-        Ok(Some(value.into_owned()))    } else { Ok(None) }
+        Ok(Some(value.into_owned()))
+    } else { Ok(None) }
 }
 
-// Attribute - id - IdAttribute
+/// Attribute - id - a_id
+/// Has 816408 unique values.
 pub fn read_id_attribute(attr: &quick_xml::events::attributes::Attribute) -> Result<Option<u64>, TbxReaderError>{
     if attr.key.local_name().as_ref() == b"id" {
         let value = attr.unescape_value()?;

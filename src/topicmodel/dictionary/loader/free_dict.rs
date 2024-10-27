@@ -1,50 +1,112 @@
 use std::fmt::Debug;
 use std::fs::File;
+use std::hash::BuildHasher;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::vec::IntoIter;
-use itertools::{ExactlyOneError, Itertools};
+use itertools::{Itertools};
+use string_interner::backend::Backend;
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::*;
+use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Register};
+// see https://tei-c.org/release/doc/tei-p5-doc/en/html/DI.html
 
 pub struct FreeDictReader<R> {
-    iter: iter::EntryElementIter<R>
+    iter: iter::EntryElementIter<R>,
 }
 
 pub struct FreeDictEntry {
     pub id: String,
-    pub entry: LangEntry
-}
-
-
-pub struct LangEntry {
     pub word: Word,
     pub translations: Vec<Translation>
 }
 
+
 pub struct Word {
     pub orth: String,
+    /// <abbr> (abbreviation) contains an abbreviation of any sort. [3.6.5 Abbreviations and Their Expansions]
     pub abbrev: Vec<String>,
+    /// An inflected form of a word has a changed spelling or ending that shows the way it is used in sentences: "Finds" and "found" are inflected forms of "find".
+    pub inflected: Vec<String>,
+    /// <domain> (domain of use) describes the most important social context in which the text was realized or for which it is intended, for example private vs. public, education, religion, etc. [16.2.1 The Text Description]
+    pub domains: Vec<Domain>,
+    pub gram: Option<GramaticHints>,
+    pub registers: Vec<Register>,
+    pub languages: Vec<Language>,
+}
+
+
+pub struct Synonym {
+    pub target_id: String,
+    pub word: String
 }
 
 pub struct Translation {
     pub word: String,
     pub lang: LangAttribute,
-    pub gender: Option<EGenElement>,
-    pub pos: Option<EPosElement>,
-    pub number: Option<ENumberElement>,
-    /// Kategorie der wörter
-    pub categories: Vec<String>,
-    /// Gemeinsames auftreten mit diesen wörtern
+    pub gram: Option<GramaticHints>,
+    /// In sociolinguistics, a register is a variety of language used for a particular purpose or particular communicative situation
+    pub registers: Vec<Register>,
+    pub abbrevs: Vec<String>,
+    pub domains: Vec<Domain>,
+    pub languages: Vec<Language>
+}
+
+pub struct GramaticHints {
+    // (gender) identifies the morphological gender of a lexical item, as given in the dictionary.
+    pub gender: Vec<GrammaticalGender>,
+    // (part of speech) indicates the part of speech assigned to a dictionary headword such as noun, verb, or adjective.
+    pub pos: Vec<PartOfSpeech>,
+    // (number) indicates grammatical number associated with a form, as given in a dictionary.
+    pub number: Vec<GrammaticalNumber>,
+    // (collocate) contains any sequence of words that co-occur with the headword with significant frequency.
     pub collocations: Vec<String>
 }
 
-fn vec_to_option_or_panic<T>(value: Vec<T>) -> Option<T> where T: Debug {
-    match value.len() {
-        0 => None,
-        1 => Some(value.into_iter().exactly_one().expect("This should never happen!")),
-        other => panic!("A value contains {other} not the expected one!")
+impl GramaticHints {
+    pub fn read_from(_id: &str, GramGrpElement{
+        // (gender) identifies the morphological gender of a lexical item, as given in the dictionary.
+        gen_elements,
+        // (collocate) contains any sequence of words that co-occur with the headword with significant frequency.
+        colloc_elements,
+        // (part of speech) indicates the part of speech assigned to a dictionary headword such as noun, verb, or adjective.
+        pos_elements,
+        // (subcategorization) contains subcategorization information (transitive/intransitive, countable/non-countable, etc.) [10.3.2 Grammatical Information]
+        subc_elements:_,
+        // (number) indicates grammatical number associated with a form, as given in a dictionary.
+        number_elements,
+        // (tense) indicates the grammatical tense associated with a given inflected form in a dictionary.
+        tns_element: _,
+        // (mood) contains information about the grammatical mood of verbs (e.g. indicative, subjunctive, imperative).
+        mood_element: _
+    }: GramGrpElement) -> Self {
+        Self {
+            gender: gen_elements.into_iter().map(|value| value.content.into()).collect(),
+            pos: pos_elements.into_iter().map(|value| value.content.into()).collect(),
+            number: number_elements.into_iter().map(|value| value.content.into()).collect(),
+            collocations: colloc_elements.into_iter().map(|value| value.content).collect()
+        }
     }
+}
+
+
+macro_rules! vec_to_option_or_panic {
+    ($vec: expr $(, $($tt:tt)*)?) => {
+        {
+            match $vec.len() {
+                0 => None,
+                1 => Some($vec.into_iter().exactly_one().expect("This should never happen!")),
+                other => panic!($($($tt)*)?)
+            }
+        }
+    };
+}
+
+macro_rules! replace_none_or_panic {
+    ($opt: expr, $value: expr $(, $($tt:tt)*)?) => {
+        if let Some(replaced) = $opt.replace($value) {
+            panic!($($($tt)*)?);
+        }
+    };
 }
 
 impl<R> Iterator for FreeDictReader<R> where R: BufRead {
@@ -52,155 +114,303 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next()?.map_err(FreeDictReaderError::Xml) {
+            // (entry) contains a single structured entry in any kind of lexical resource, such as a dictionary or lexicon.
             Ok(EntryElement{
                    id_attribute,
+                   // (form information group) groups all the information on the written and spoken
+                   // forms of one headword.
                    form_element,
+                   // (grammatical information) within an entry in a dictionary or a
+                   // terminological data file, contains grammatical information
+                   // relating to a term, word, or form.
                    gram_grp_element,
+                   // groups together all information relating to one word sense in a dictionary
+                   // entry, for example definitions, examples, and translation equivalents.
                    sense_element
                }) => {
+                let gram = if let Some(gram) = gram_grp_element {
+                    Some(GramaticHints::read_from(&id_attribute, gram))
+                } else {
+                    None
+                };
 
-                let form_element = form_element.expect("The top level form has to exist!");
                 let FormElement {
+                    // (orthographic form) gives the orthographic form of a dictionary headword.
                     orth_element,
+                    // (grammatical information group) groups morpho-syntactic information about a
+                    // lexical item, e.g. pos, gen, number, case, or iType (inflectional class).
                     gram_grp_element,
+                    // (form information group) groups all the information on the written and spoken
+                    // forms of one headword.
                     form_elements,
+                    // (usage) contains usage information in a dictionary entry.
                     usg_element,
+                    // classifies form as simple, compound, etc.
                     type_attribute
                 } = form_element;
-                let orth_element = orth_element.unwrap().content;
-                assert!(gram_grp_element.is_none(), "{id_attribute}: An lvl 1 orth has a gram_grp_element!");
-                assert!(type_attribute.is_none(), "{id_attribute}: An lvl 1 orth has a type_attribute!");
-                assert!(usg_element.is_none(), "{id_attribute}: An lvl 1 orth has a usg_element!");
+                let orth_element = orth_element.content;
+                assert!(type_attribute.is_none(), "{id_attribute}: A top level form has a type_attribute!");
+                assert!(gram_grp_element.is_none(), "{id_attribute}: A top level form has a gram_grp_element!");
 
                 let mut abbrev = Vec::new();
+                let mut inflected = Vec::new();
                 for form in form_elements {
                     match form.type_attribute.expect("Nested form needs a type!") {
                         TypeAttribute::Abbrev => {
-                            abbrev.push(form.orth_element.unwrap().content);
+                            abbrev.push(form.orth_element.content);
                         }
-                        other => panic!("{id_attribute}: The type attribute is {} but expected abbrev!", other)
+                        TypeAttribute::Infl => {
+                            inflected.push(form.orth_element.content);
+                        }
+                        _ => unreachable!()
                     }
                 }
 
-                let word = Word {
-                    orth: orth_element,
-                    abbrev
-                };
+                let mut domains = Vec::new();
+                let mut languages: Vec<Language> = Vec::new();
+                let mut registers = Vec::new();
+                if let Some(UsgElement {
+                    content,
+                    type_attribute
+                }) = usg_element {
+                    match type_attribute {
+                        TypeAttribute::Colloc => {
+                            // collocation given to show usage
+                        }
+                        TypeAttribute::Dom => {
+                            match content.parse() {
+                                Ok(value) => {
+                                    domains.push(value);
+                                }
+                                Err(value) => {
+                                    return Some(Err(FreeDictReaderError::Strum(value)))
+                                }
+                            }
+                        }
+                        TypeAttribute::Geo => {
+                            // geographic area r.g. schw., br. am.
+                        }
+                        TypeAttribute::Hint => {
+                            // unclassifiable piece of information to guide sense choice
+                        }
+                        TypeAttribute::Lang => {
+                            match content.parse() {
+                                Ok(value) => {
+                                    languages.push(value);
+                                }
+                                Err(value) => {
+                                    return Some(Err(FreeDictReaderError::Strum(value)))
+                                }
+                            }
+
+                        }
+                        TypeAttribute::Reg => {
+                            match content.parse() {
+                                Ok(value) => {
+                                    registers.push(value);
+                                }
+                                Err(value) => {
+                                    return Some(Err(FreeDictReaderError::Strum(value)))
+                                }
+                            }
+                            // Register is defined as the level of formality in language that's determined by the context in which it is spoken or written.
+                        }
+                        TypeAttribute::Style => {
+                            // style (figurative, literal, etc.)
+                        }
+                        TypeAttribute::Time => {
+                            // temporal, historical era (‘archaic’, ‘old’, etc.)
+                        }
+                        _ => unreachable!()
+                    }
+                }
+                if languages.len() > 1 {
+                    panic!("{id_attribute}: hHas multiple langs {languages:?}");
+                }
 
                 let mut translations = Vec::new();
-
-                if let Some(sense_element) = sense_element {
-                    for CitElement {
-                        gram_grp_element,
+                if let Some(
+                    SenseElement{
+                        // (note) contains a note or annotation.
+                        note_elements: _,
+                        // (usage) contains usage information in a dictionary entry.
                         usg_elements,
-                        type_attribute,
-                        orth_element,
+                        // (cited quotation) contains a quotation from some other document,
+                        // together with a bibliographic reference to its source.
+                        //
+                        // In a dictionary it may contain an example text with at least one
+                        // occurrence of the word form, used in the sense being described,
+                        // or a translation of the headword, or an example.
                         cit_elements,
-                        quote_element,
-                        ..
-                        //note_elements
-                    } in sense_element.cit_elements {
-                        let type_attribute = type_attribute.expect("A top level cit requires a type!");
+                        // (cross-reference phrase) contains a phrase, sentence, or icon referring the reader to some other location in this or another text.
+                        xr_elements
+                    }) = sense_element
+                {
+                    // Usage infos
+                    for UsgElement {
+                        content,
+                        type_attribute
+                    } in usg_elements {
                         match type_attribute {
-                            TypeAttribute::Trans => {
-                                if !cit_elements.is_empty() {
-                                    panic!("{id_attribute}: Hat a nested cit");
+                            TypeAttribute::Colloc => {
+                                // collocation given to show usage
+                            }
+                            TypeAttribute::Dom => {
+                                match content.parse() {
+                                    Ok(value) => {
+                                        domains.push(value);
+                                    }
+                                    Err(value) => {
+                                        return Some(Err(FreeDictReaderError::Strum(value)))
+                                    }
                                 }
+                            }
+                            TypeAttribute::Geo => {
+                                // geographic area r.g. schw., br. am.
+                            }
+                            TypeAttribute::Hint => {
+                                // unclassifiable piece of information to guide sense choice
+                            }
+                            TypeAttribute::Lang => {
+                                match content.parse() {
+                                    Ok(value) => {
+                                        languages.push(value);
+                                    }
+                                    Err(value) => {
+                                        return Some(Err(FreeDictReaderError::Strum(value)))
+                                    }
+                                }
+                            }
+                            TypeAttribute::Reg => {
+                                // Register is defined as the level of formality in language that's determined by the context in which it is spoken or written.
+                                match content.parse() {
+                                    Ok(value) => {
+                                        registers.push(value);
+                                    }
+                                    Err(value) => {
+                                        return Some(Err(FreeDictReaderError::Strum(value)))
+                                    }
+                                }
+                            }
+                            TypeAttribute::Style => {
+                                // style (figurative, literal, etc.)
+                            }
+                            TypeAttribute::Time => {
+                                // temporal, historical era (‘archaic’, ‘old’, etc.)
+                            }
+                            other => panic!("{id_attribute}: An usg_elements has the type {other}!")
+                        }
+                    }
 
-                                assert!(orth_element.is_none(), "{id_attribute}: Got an orth on level 1 cit!");
 
-                                let quote  = quote_element.expect("Expect a quote at top level!");
+                    for element in cit_elements {
+                        match element.type_attribute {
+                            TypeAttribute::Trans => {
 
-                                // let mut casual_usg = Vec::new();
-                                let mut categories = Vec::new();
-                                let mut collocations = Vec::new();
+                                fn handle_translation(
+                                    id_attribute: &str,
+                                    CitElement {
+                                        // (grammatical information) within an entry in a dictionary or a
+                                        // terminological data file, contains grammatical information
+                                        // relating to a term, word, or form.
+                                        gram_grp_element,
+                                        // (usage) contains usage information in a dictionary entry.
+                                        usg_elements,
+                                        type_attribute,
+                                        // (orthographic form) gives the orthographic form of a dictionary headword.
+                                        orth_element: _,
+                                        // (cited quotation) contains a quotation from some other document,
+                                        // together with a bibliographic reference to its source.
+                                        //
+                                        // In a dictionary it may contain an example text with at least one
+                                        // occurrence of the word form, used in the sense being described,
+                                        // or a translation of the headword, or an example.
+                                        cit_elements,
+                                        // (quotation) contains a phrase or passage attributed by the narrator or
+                                        // author to some agency external to the text.
+                                        quote_element,
+                                        note_elements: _
+                                    }: CitElement,
+                                ) -> Result<Translation, FreeDictReaderError> {
+                                    let mut abbrevs = Vec::new();
+                                    {
+                                        for CitElement {
+                                            orth_element,
+                                            type_attribute,
+                                            ..
+                                        } in cit_elements {
+                                            match type_attribute {
+                                                TypeAttribute::Abbrev => {
+                                                    assert!(orth_element.is_some(), "{id_attribute}: Nested cit abbrev has no orth!");
+                                                    abbrevs.push(orth_element.unwrap().content);
+                                                }
+                                                other => {
+                                                    panic!("{id_attribute}: Nested cit has unexpected type {other}")
+                                                }
+                                            }
+                                        }
+                                    }
 
-                                for usg in usg_elements {
-                                    if let Some(typ) = usg.type_attribute {
-                                        match typ {
+                                    let quote  = quote_element.expect("Expect a quote at top level!");
+
+                                    let mut registers = Vec::new();
+                                    let mut domains = Vec::new();
+                                    let mut languages = Vec::new();
+
+                                    for UsgElement {
+                                        content,
+                                        type_attribute
+                                    } in usg_elements {
+                                        match type_attribute {
                                             TypeAttribute::Reg => {
-                                                categories.push(usg.content);
-                                            }
-                                            TypeAttribute::Hint => {
-                                                // Gives some kind of hint about the translation.
-                                            }
-                                            TypeAttribute::Geo => {
-                                                // Things like british and american english.
+                                                registers.push(content.parse()?);
                                             }
                                             TypeAttribute::Colloc => {
-                                                collocations.push(usg.content)
+                                                // collocation given to show usage
                                             }
-                                            other => panic!("{id_attribute}: Did not expect an usg type with type {other} - {}!", usg.content)
+                                            TypeAttribute::Dom => {
+                                                domains.push(content.parse()?);
+                                            }
+                                            TypeAttribute::Geo => {
+                                                // geographic area r.g. schw., br. am.
+                                            }
+                                            TypeAttribute::Hint => {
+                                                // unclassifiable piece of information to guide sense choice
+                                            }
+                                            TypeAttribute::Lang => {
+                                                languages.push(content.parse()?);
+                                            }
+                                            TypeAttribute::Style => {
+                                                // style (figurative, literal, etc.)
+                                            }
+                                            TypeAttribute::Time => {
+                                                // temporal, historical era (‘archaic’, ‘old’, etc.)
+                                            }
+                                            other => panic!("{id_attribute}: Did not expect an usg type with type {other} - {}!", content)
                                         }
-                                    }  else {
-                                        panic!("{id_attribute}: Has casual usg");
+                                    }
+
+                                    Ok(
+                                        Translation {
+                                            word: quote.content,
+                                            lang: quote.lang_attribute,
+                                            registers,
+                                            gram: gram_grp_element.map(|value| GramaticHints::read_from(&id_attribute, value)),
+                                            abbrevs,
+                                            domains,
+                                            languages
+                                        }
+                                    )
+                                }
+                                match handle_translation(&id_attribute, element) {
+                                    Ok(value) => {
+                                        translations.push(value)
+                                    }
+                                    Err(value) => {
+                                        return Some(Err(value))
                                     }
                                 }
 
-                                let mut gender = None;
-                                let mut pos = None;
-                                let mut number = None;
-
-                                if let Some(
-                                    GramGrpElement{
-                                        gen_elements,
-                                        colloc_elements,
-                                        pos_elements,
-                                        subc_elements,
-                                        number_elements,
-                                        tns_element ,
-                                        ..
-                                        // mood_element
-                                    }
-                                ) = gram_grp_element {
-                                    assert!(tns_element.is_none(), "{id_attribute}: has a tns!?");
-                                    assert!(subc_elements.is_empty(), "{id_attribute}: has a subc elements!?");
-                                    assert!(colloc_elements.is_empty(), "{id_attribute}: has a colloc elements: {}", colloc_elements.into_iter().map(|value| value.content).join(", "));
-                                    if !gen_elements.is_empty() {
-                                        match gen_elements.into_iter().exactly_one() {
-                                            Ok(value) => {
-                                                let _ = gender.insert(value.content);
-                                            }
-                                            Err(err) => {
-                                                panic!("{id_attribute}: Why should there be more genders?? {}", err.count())
-                                            }
-                                        }
-                                    };
-                                    if !pos_elements.is_empty() {
-                                        match pos_elements.into_iter().exactly_one() {
-                                            Ok(value) => {
-                                                let _ = pos.insert(value.content);
-                                            }
-                                            Err(err) => {
-                                                panic!("{id_attribute}: Why should there be more positions?? {}", err.count())
-                                            }
-                                        }
-                                    }
-                                    if !number_elements.is_empty() {
-                                        match number_elements.into_iter().exactly_one() {
-                                            Ok(value) => {
-                                                let _ = number.insert(value.content);
-                                            }
-                                            Err(err) => {
-                                                panic!("{id_attribute}: Why should there be more numbers?? {}", err.count())
-                                            }
-                                        }
-                                    }
-                                };
-
-
-
-                                translations.push(
-                                    Translation {
-                                        word: quote.content,
-                                        lang: quote.lang_attribute.unwrap(),
-                                        gender,
-                                        categories,
-                                        pos,
-                                        number,
-                                        collocations
-                                    }
-                                )
                             }
                             TypeAttribute::Example => {}
                             other => {
@@ -208,15 +418,59 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                             }
                         }
                     }
+
+                    let mut synonyms = Vec::new();
+
+                    for XrElement{
+                        type_attribute,
+                        ref_elements
+                    } in xr_elements {
+                        match type_attribute {
+                            TypeAttribute::Syn => {
+                                for RefElement{
+                                    content,
+                                    target_attribute
+                                } in ref_elements {
+                                    if let Some(target_attribute) = target_attribute {
+                                        synonyms.push(
+                                            Synonym {
+                                                target_id: target_attribute.trim_start_matches('#').to_string(),
+                                                word: content
+                                            }
+                                        )
+                                    } else {
+                                        panic!("{id_attribute}: A synonym xr element is missing a reference!")
+                                    }
+                                }
+                            }
+                            TypeAttribute::See => {
+                                // We ignore the see hint!
+                            }
+                            other => {
+                                panic!("{id_attribute}: Top level xr element has unknown type attribuet: {other}")
+                            }
+                        }
+                    }
+
                 }
+
+
+
+                let word = Word {
+                    orth: orth_element,
+                    abbrev,
+                    inflected,
+                    domains,
+                    gram,
+                    registers,
+                    languages
+                };
 
 
                 Some(Ok(FreeDictEntry {
                     id: id_attribute,
-                    entry: LangEntry {
-                        word,
-                        translations
-                    }
+                    word,
+                    translations
                 }))
             }
             Err(err) => {
@@ -232,6 +486,8 @@ pub enum FreeDictReaderError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Xml(#[from] TeiReaderError),
+    #[error(transparent)]
+    Strum(#[from] strum::ParseError),
 }
 
 pub fn read_free_dict(path: impl AsRef<Path>) -> Result<FreeDictReader<BufReader<File>>, FreeDictReaderError> {
@@ -244,29 +500,18 @@ pub fn read_free_dict(path: impl AsRef<Path>) -> Result<FreeDictReader<BufReader
     let iter = iter_for_entry_element(r);
     Ok(
         FreeDictReader {
-            iter
+            iter,
         }
     )
 }
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::loader::free_dict::read_free_dict;
+    use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, Word, GramaticHints, FreeDictReader, Translation, FreeDictEntry};
 
     #[test]
     fn can_run(){
-
-
-        let mut reader = read_free_dict(
-            "dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei"
-        ).unwrap();
-
-        println!("{}", reader.count());
-
-        let mut reader = read_free_dict(
-            "dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei"
-        ).unwrap();
-
-        println!("{}", reader.count());
+        println!("{}", read_free_dict("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei").unwrap().map(|value| value.unwrap()).count());
+        println!("{}", read_free_dict("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei").unwrap().map(|value| value.unwrap()).count());
     }
 }

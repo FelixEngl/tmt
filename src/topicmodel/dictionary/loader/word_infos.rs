@@ -1,9 +1,51 @@
 use std::fmt::{Display, Formatter};
 use strum::{Display, EnumString};
+use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{EGenElement, ENumberElement, EPosElement, LangAttribute as FreeDictLangAttribute};
+use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+pub enum Language {
+    #[strum(to_string = "en", serialize = "english")]
+    English,
+    #[strum(to_string = "de", serialize = "german")]
+    German,
+    #[strum(to_string = "italian", serialize = "Ital.")]
+    Italian,
+    #[strum(to_string = "french", serialize = "French")]
+    French,
+    #[strum(to_string = "latin", serialize = "Lat.")]
+    Latin
+}
+
+impl From<FreeDictLangAttribute> for Language {
+    fn from(value: FreeDictLangAttribute) -> Self {
+        match value {
+            FreeDictLangAttribute::En => {
+                Language::English
+            }
+            FreeDictLangAttribute::De => {
+                Language::German
+            }
+        }
+    }
+}
+
+impl From<IateLangAttribute> for Language {
+    fn from(value: IateLangAttribute) -> Self {
+        match value {
+            IateLangAttribute::En => {
+                Language::English
+            }
+            IateLangAttribute::De => {
+                Language::German
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum WordInfo<T> {
-    Type(WordType),
+    Type(PartOfSpeech),
     Gender(GrammaticalGender),
     Number(GrammaticalNumber),
     Other(T)
@@ -54,8 +96,8 @@ impl<T> Display for WordInfo<T> where T: Display {
     }
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
-pub enum WordType {
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+pub enum PartOfSpeech {
     #[strum(to_string = "noun")]
     Noun,
     #[strum(to_string = "adj")]
@@ -81,10 +123,56 @@ pub enum WordType {
     #[strum(to_string="prefix")]
     Prefix,
     #[strum(to_string="suffix")]
-    Suffix
+    Suffix,
+    #[strum(to_string="num")]
+    Numeral,
+    #[strum(to_string="art")]
+    Article,
+    #[strum(to_string="ptcl")]
+    Particle,
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
+impl From<EPosElement> for PartOfSpeech {
+    fn from(value: EPosElement) -> Self {
+        match value {
+            EPosElement::N => {
+                Self::Noun
+            }
+            EPosElement::Adj => {
+                Self::Adjective
+            }
+            EPosElement::V => {
+                Self::Verb
+            }
+            EPosElement::Adv => {
+                Self::Adverb
+            }
+            EPosElement::Int => {
+                Self::Interjection
+            }
+            EPosElement::Prep => {
+                Self::Preposition
+            }
+            EPosElement::Num => {
+                Self::Numeral
+            }
+            EPosElement::Pron => {
+                Self::Pronoun
+            }
+            EPosElement::Conj => {
+                Self::Conjuction
+            }
+            EPosElement::Art => {
+                Self::Article
+            }
+            EPosElement::Ptcl => {
+                Self::Particle
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
 pub enum GrammaticalGender {
     #[strum(to_string = "f", serialize = "female", serialize = "f.")]
     Feminine,
@@ -94,7 +182,23 @@ pub enum GrammaticalGender {
     Neutral
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
+impl From<EGenElement> for GrammaticalGender {
+    fn from(value: EGenElement) -> Self {
+        match value {
+            EGenElement::Neut => {
+                GrammaticalGender::Neutral
+            }
+            EGenElement::Masc => {
+                GrammaticalGender::Masculine
+            }
+            EGenElement::Fem => {
+                GrammaticalGender::Feminine
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
 pub enum GrammaticalNumber {
     #[strum(to_string = "sg", serialize = "sg.")]
     Singular,
@@ -102,10 +206,164 @@ pub enum GrammaticalNumber {
     Plural
 }
 
+impl From<ENumberElement> for GrammaticalNumber {
+    fn from(value: ENumberElement) -> Self {
+        match value {
+            ENumberElement::Sg => {
+                Self::Singular
+            }
+            ENumberElement::Pl => {
+                Self::Plural
+            }
+        }
+    }
+}
+
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PartialWordType {
     Prefix,
     Suffix,
+}
+
+
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+pub enum Domain{
+    #[strum(to_string = "bot.", serialize = "bot")]
+    Bot,
+    #[strum(to_string = "hist.", serialize = "hist")]
+    Hist,
+    #[strum(to_string = "phil.", serialize = "phil")]
+    Phil,
+    #[strum(to_string = "chem.", serialize = "chem")]
+    Chem,
+    #[strum(to_string = "arch.", serialize = "arch")]
+    Arch,
+    #[strum(to_string = "transp.", serialize = "transp")]
+    Transp,
+    #[strum(to_string = "min.", serialize = "min")]
+    Min,
+    #[strum(to_string = "stud.", serialize = "stud")]
+    Stud,
+    #[strum(to_string = "cook.", serialize = "cook")]
+    Cook,
+    #[strum(to_string = "auto", serialize = "auto.")]
+    Auto,
+    #[strum(to_string = "meteo.", serialize = "meteo")]
+    Meteo,
+    #[strum(to_string = "art", serialize = "art.")]
+    Art,
+    #[strum(to_string = "lit.", serialize = "lit")]
+    Lit,
+    #[strum(to_string = "geogr.", serialize = "geogr")]
+    Geogr,
+    #[strum(to_string = "ling.", serialize = "ling")]
+    Ling,
+    #[strum(to_string = "telco.", serialize = "telco")]
+    Telco,
+    #[strum(to_string = "pharm.", serialize = "pharm")]
+    Pharm,
+    #[strum(to_string = "pol.", serialize = "pol")]
+    Pol,
+    #[strum(to_string = "psych.", serialize = "psych")]
+    Psych,
+    #[strum(to_string = "agr.", serialize = "agr")]
+    Agr,
+    #[strum(to_string = "math.", serialize = "math")]
+    Math,
+    #[strum(to_string = "statist.", serialize = "statist")]
+    Statist,
+    #[strum(to_string = "mus.", serialize = "mus")]
+    Mus,
+    #[strum(to_string = "sport", serialize = "sport.")]
+    Sport,
+    #[strum(to_string = "anat.", serialize = "anat")]
+    Anat,
+    #[strum(to_string = "astrol.", serialize = "astrol")]
+    Astrol,
+    #[strum(to_string = "naut.", serialize = "naut")]
+    Naut,
+    #[strum(to_string = "photo.", serialize = "photo")]
+    Photo,
+    #[strum(to_string = "envir.", serialize = "envir")]
+    Envir,
+    #[strum(to_string = "soc.", serialize = "soc")]
+    Soc,
+    #[strum(to_string = "electr.", serialize = "electr")]
+    Electr,
+    #[strum(to_string = "biol.", serialize = "biol")]
+    Biol,
+    #[strum(to_string = "constr.", serialize = "constr")]
+    Constr,
+    #[strum(to_string = "school", serialize = "school.")]
+    School,
+    #[strum(to_string = "aviat.", serialize = "aviat")]
+    Aviat,
+    #[strum(to_string = "fin.", serialize = "fin")]
+    Fin,
+    #[strum(to_string = "mach.", serialize = "mach")]
+    Mach,
+    #[strum(to_string = "archeol.", serialize = "archeol")]
+    Archeol,
+    #[strum(to_string = "TV", serialize = "TV.")]
+    Tv,
+    #[strum(to_string = "comp.", serialize = "comp")]
+    Comp,
+    #[strum(to_string = "relig.", serialize = "relig")]
+    Relig,
+    #[strum(to_string = "astron.", serialize = "astron")]
+    Astron,
+    #[strum(to_string = "phys.", serialize = "phys")]
+    Phys,
+    #[strum(to_string = "zool.", serialize = "zool")]
+    Zool,
+    #[strum(to_string = "print", serialize = "print.")]
+    Print,
+    #[strum(to_string = "econ.", serialize = "econ")]
+    Econ,
+    #[strum(to_string = "textil.", serialize = "textil")]
+    Textil,
+    #[strum(to_string = "biochem.", serialize = "biochem")]
+    Biochem,
+    #[strum(to_string = "geol.", serialize = "geol")]
+    Geol,
+    #[strum(to_string = "ornith.", serialize = "ornith")]
+    Ornith,
+    #[strum(to_string = "med.", serialize = "med")]
+    Med,
+    #[strum(to_string = "mil.", serialize = "mil")]
+    Mil,
+    #[strum(to_string = "insur.", serialize = "insur")]
+    Insur,
+}
+
+/// In sociolinguistics, a register is a variety of language used for a particular purpose or particular communicative situation
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+pub enum Register{
+    #[strum(to_string = "humor.", serialize = "humor")]
+    Humor,
+    #[strum(to_string = "vulg.", serialize = "vulg")]
+    Vulg,
+    #[strum(to_string = "techn.", serialize = "techn")]
+    Techn,
+    #[strum(to_string = "coll.", serialize = "coll")]
+    Coll,
+    #[strum(to_string = "geh.", serialize = "geh")]
+    Geh,
+    #[strum(to_string = "slang", serialize = "slang.")]
+    Slang,
+    #[strum(to_string = "iron.", serialize = "iron")]
+    Iron,
+    #[strum(to_string = "ugs.", serialize = "ugs")]
+    Ugs,
+    #[strum(to_string = "formal", serialize = "formal.")]
+    Formal,
+    #[strum(to_string = "euphem.", serialize = "euphem")]
+    Euphem,
+    #[strum(to_string = "literary", serialize = "literary.")]
+    Literary,
+    #[strum(to_string = "dialect", serialize = "dialect.")]
+    Dialect,
 }
 
 #[cfg(test)]

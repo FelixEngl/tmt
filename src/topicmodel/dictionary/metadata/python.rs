@@ -4,7 +4,7 @@ use itertools::Itertools;
 use pyo3::{pyclass, pymethods, FromPyObject, IntoPy, PyObject, Python};
 use crate::topicmodel::dictionary::metadata::container::MetadataContainer;
 use crate::topicmodel::dictionary::metadata::{Metadata, MetadataRef};
-use crate::topicmodel::dictionary::metadata::typesafe_interner::DefaultDictionaryOrigin;
+use crate::toolkit::typesafe_interner::DefaultDictionaryOrigin;
 use crate::topicmodel::vocabulary::{SearchableVocabulary, VocabularyMut};
 
 #[derive(Debug, FromPyObject, Clone)]

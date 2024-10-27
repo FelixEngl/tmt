@@ -18,7 +18,6 @@ mod metadata;
 mod conversions;
 mod references;
 mod python;
-mod typesafe_interner;
 
 pub use container::*;
 pub use metadata::*;

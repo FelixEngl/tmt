@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use crate::toolkit::once_lock_serializer::OnceLockDef;
-use crate::topicmodel::dictionary::metadata::typesafe_interner::{DefaultDictionaryOrigin, DefaultTag};
+use crate::toolkit::typesafe_interner::{DefaultDictionaryOrigin, DefaultTag};
 
 
 /// The container for the metadata

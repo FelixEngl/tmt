@@ -18,3 +18,4 @@ pub mod evalexpr;
 pub mod tupler;
 pub mod once_lock_serializer;
 pub mod with_ref_of;
+pub mod typesafe_interner;
