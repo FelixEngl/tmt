@@ -2,8 +2,9 @@ use std::fmt::{Display, Formatter};
 use strum::{Display, EnumString};
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{EGenElement, ENumberElement, EPosElement, LangAttribute as FreeDictLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
+use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute, ETermNoteElement};
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Language {
     #[strum(to_string = "en", serialize = "english")]
     English,
@@ -37,6 +38,19 @@ impl From<IateLangAttribute> for Language {
                 Language::English
             }
             IateLangAttribute::De => {
+                Language::German
+            }
+        }
+    }
+}
+
+impl From<MsTermsAttribute> for Language {
+    fn from(value: MsTermsAttribute) -> Self {
+        match value {
+            MsTermsAttribute::EnGb | MsTermsAttribute::EnUs => {
+                Language::English
+            }
+            MsTermsAttribute::DeDe => {
                 Language::German
             }
         }
@@ -130,6 +144,35 @@ pub enum PartOfSpeech {
     Article,
     #[strum(to_string="ptcl")]
     Particle,
+    #[strum(to_string="pnoun")]
+    ProperNoun,
+    #[strum(to_string="other", serialize = "misc")]
+    Other
+}
+
+impl From<ETermNoteElement> for PartOfSpeech {
+    fn from(value: ETermNoteElement) -> Self {
+        match value {
+            ETermNoteElement::Noun => {
+                Self::Noun
+            }
+            ETermNoteElement::Other => {
+                Self::Other
+            }
+            ETermNoteElement::Verb => {
+                Self::Verb
+            }
+            ETermNoteElement::ProperNoun => {
+                Self::ProperNoun
+            }
+            ETermNoteElement::Adjective => {
+                Self::Adjective
+            }
+            ETermNoteElement::Adverb => {
+                Self::Adverb
+            }
+        }
+    }
 }
 
 impl From<EPosElement> for PartOfSpeech {
@@ -228,7 +271,7 @@ pub enum PartialWordType {
 
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
-pub enum Domain{
+pub enum Domain {
     #[strum(to_string = "bot.", serialize = "bot")]
     Bot,
     #[strum(to_string = "hist.", serialize = "hist")]

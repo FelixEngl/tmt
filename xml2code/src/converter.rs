@@ -24,7 +24,7 @@ use std::io::BufRead;
 use std::ops::{AddAssign, Deref};
 use std::str::Utf8Error;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use strum::Display;
 use thiserror::Error;
 use regex::Regex;
@@ -708,7 +708,7 @@ impl CodeElement {
         let w = &mut s;
         match ty {
             Some(ContentType::Enum(ref value)) => {
-                write!(w, "#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, strum::Display, strum::EnumString)]\n")?;
+                write!(w, "#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]\n")?;
                 write!(w, "pub enum E{value} {{\n")?;
                 for value in self.texts.read().get().unwrap().iter().unique() {
                     write!(w, "    #[strum(serialize=\"{}\")]\n", value.trim())?;
@@ -1174,9 +1174,9 @@ fn get_name_as_str(start: &BytesStart, depth: usize, iter: usize) -> Result<Stri
 }
 
 fn create_enum_name(name: &str) -> String {
-    let regex = Regex::new("[^a-zA-Z0-9]").unwrap();
+    static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("[^a-zA-Z0-9]").unwrap());
     let name = name.trim();
-    let result = regex.replace_all(name, "_").to_case(Pascal);
+    let result = REGEX.replace_all(name, "_").to_case(Pascal);
     if result.starts_with(|c| matches!(c, 'a'..'z' | 'A'..'Z')) {
         result
     } else {
@@ -1254,7 +1254,7 @@ impl CodeAttribute {
         match &ty {
             ContentType::Enum(en) => {
                 write!(w, "// Attribute - {} - {} - {}\n", self.name, self.map_name(), name)?;
-                write!(w, "#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]\n")?;
+                write!(w, "#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]\n")?;
                 write!(w, "pub enum {en} {{\n")?;
                 for value in self.values.read().iter() {
                     write!(w, "    #[strum(serialize=\"{}\")]\n", value.trim().to_lowercase())?;

@@ -62,7 +62,6 @@ memchr = "2.7"
 #derive-where = "1.2"
 convert_case = "0"
 indexmap = "2.6"
-enumset = "1.1"
-
+tar = "0.4"
 [build-dependencies]
 xml2code = {path = "xml2code"}

@@ -1,10 +1,7 @@
 use std::fmt::Debug;
 use std::fs::File;
-use std::hash::BuildHasher;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use itertools::{Itertools};
-use string_interner::backend::Backend;
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::*;
 use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Register};
@@ -88,26 +85,6 @@ impl GramaticHints {
     }
 }
 
-
-macro_rules! vec_to_option_or_panic {
-    ($vec: expr $(, $($tt:tt)*)?) => {
-        {
-            match $vec.len() {
-                0 => None,
-                1 => Some($vec.into_iter().exactly_one().expect("This should never happen!")),
-                other => panic!($($($tt)*)?)
-            }
-        }
-    };
-}
-
-macro_rules! replace_none_or_panic {
-    ($opt: expr, $value: expr $(, $($tt:tt)*)?) => {
-        if let Some(replaced) = $opt.replace($value) {
-            panic!($($($tt)*)?);
-        }
-    };
-}
 
 impl<R> Iterator for FreeDictReader<R> where R: BufRead {
     type Item = Result<FreeDictEntry, FreeDictReaderError>;
@@ -306,7 +283,6 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     for element in cit_elements {
                         match element.type_attribute {
                             TypeAttribute::Trans => {
-
                                 fn handle_translation(
                                     id_attribute: &str,
                                     CitElement {
@@ -316,7 +292,8 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                                         gram_grp_element,
                                         // (usage) contains usage information in a dictionary entry.
                                         usg_elements,
-                                        type_attribute,
+                                        // Already used by the outer layer
+                                        type_attribute: _,
                                         // (orthographic form) gives the orthographic form of a dictionary headword.
                                         orth_element: _,
                                         // (cited quotation) contains a quotation from some other document,
@@ -412,7 +389,9 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                                 }
 
                             }
-                            TypeAttribute::Example => {}
+                            TypeAttribute::Example => {
+                                // We ignore examples.
+                            }
                             other => {
                                 panic!("{id_attribute}: Unknown syn on top level{}", other)
                             }
@@ -507,7 +486,7 @@ pub fn read_free_dict(path: impl AsRef<Path>) -> Result<FreeDictReader<BufReader
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, Word, GramaticHints, FreeDictReader, Translation, FreeDictEntry};
+    use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict};
 
     #[test]
     fn can_run(){

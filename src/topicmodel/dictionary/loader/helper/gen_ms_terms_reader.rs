@@ -1777,7 +1777,7 @@ pub fn read_type_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
 }
 
 // Attribute - lang - a_lang - LangAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display, strum::EnumString)]
 pub enum LangAttribute {
     #[strum(serialize="en-us")]
     EnUs,

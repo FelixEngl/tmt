@@ -9,7 +9,11 @@ pub mod dicts_info;
 mod iate_reader;
 mod ms_terms_reader;
 mod generalized_data;
+mod toolkit;
+mod muse;
 
-pub enum Dialect {
+
+
+pub struct NormalizedDictionaryEntry {
 
 }
