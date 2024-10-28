@@ -168,7 +168,7 @@ impl<T> Display for WordCategories<T> where T: Display {
 
 
 #[derive(Debug, Clone)]
-pub struct Entry<T>(pub WordEntry<T>, pub WordEntry<T>, Option<WordTypes>, Option<WordCategories<T>>);
+pub struct Entry<T>(pub WordEntry<T>, pub WordEntry<T>, pub Option<WordTypes>, pub Option<WordCategories<T>>);
 
 impl<T> Entry<T> {
     pub fn map<R, F: Fn(T) -> R>(self, mapper: F) -> Entry<R> {
@@ -348,6 +348,18 @@ mod test {
             "dictionaries/DictCC/dict.txt"
         ).unwrap();
         execute_test_read_for(value, 30, 0);
+    }
+
+    #[test]
+    fn can_read2(){
+        let value = read_dictionary(
+            "dictionaries/DictCC/dict.txt"
+        ).unwrap();
+        for val in value.take(10) {
+            if let Ok(val) = val {
+                println!("{val:?}")
+            }
+        }
     }
 
     #[test]

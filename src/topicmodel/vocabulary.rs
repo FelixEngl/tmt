@@ -430,6 +430,8 @@ impl<T> VocabularyMut<T> for Vocabulary<T> where T: Eq + Hash {
     fn add<V: Into<T>>(&mut self, value: V) -> usize {
         self.add_hash_ref(value.into().into())
     }
+
+
 }
 
 

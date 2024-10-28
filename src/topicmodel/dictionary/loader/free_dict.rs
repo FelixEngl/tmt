@@ -29,6 +29,7 @@ pub struct Word {
     pub gram: Option<GramaticHints>,
     pub registers: Vec<Register>,
     pub languages: Vec<Language>,
+    pub synonyms: Vec<Synonym>,
 }
 
 
@@ -204,7 +205,7 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                 if languages.len() > 1 {
                     panic!("{id_attribute}: hHas multiple langs {languages:?}");
                 }
-
+                let mut synonyms = Vec::new();
                 let mut translations = Vec::new();
                 if let Some(
                     SenseElement{
@@ -398,8 +399,6 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                         }
                     }
 
-                    let mut synonyms = Vec::new();
-
                     for XrElement{
                         type_attribute,
                         ref_elements
@@ -442,7 +441,8 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     domains,
                     gram,
                     registers,
-                    languages
+                    languages,
+                    synonyms
                 };
 
 
