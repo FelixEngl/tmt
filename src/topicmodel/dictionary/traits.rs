@@ -1,9 +1,9 @@
 use std::borrow::Borrow;
 use std::hash::Hash;
-use crate::topicmodel::dictionary::DictionaryWithMetaIter;
 use crate::topicmodel::dictionary::direction::{Direction, DirectionTuple, Language, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::{DictIter, DictIterImpl, DictLangIter};
-use crate::topicmodel::dictionary::metadata::MetadataContainer;
+use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
+use crate::topicmodel::dictionary::metadata::DictionaryWithMetaIter;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, VocabularyMut};
@@ -38,6 +38,7 @@ pub trait BasicDictionaryWithVocabulary<V>: BasicDictionary {
     fn voc_a(&self) -> &V;
 
     fn voc_b(&self) -> &V;
+
 }
 
 /// A dictionary with known vocabulary types.
@@ -175,6 +176,18 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
 pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
     fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint>;
 
+    fn insert_single_word<L: Language>(&mut self, word: impl Into<T>) -> usize{
+        self.insert_single_value::<L>(word.into())
+    }
+
+    fn insert_single_value<L: Language>(&mut self, word: T) -> usize {
+        self.insert_single_ref::<L>(HashRef::new(word))
+    }
+
+    fn insert_single_ref<L: Language>(&mut self, word: HashRef<T>) -> usize;
+    unsafe fn reserve_for_single_value<L: Language>(&mut self, word_id: usize);
+
+    unsafe fn insert_raw_values<D: Direction>(&mut self, word_id_a: usize, word_id_b: usize);
     fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize>;
 
     fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
@@ -199,11 +212,11 @@ pub trait FromVoc<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: B
 }
 
 
-pub trait BasicDictionaryWithMeta: BasicDictionary {
-    fn metadata(&self) -> &MetadataContainer;
-    fn metadata_mut(&mut self) -> &mut MetadataContainer;
+pub trait BasicDictionaryWithMeta<M: MetadataManager>: BasicDictionary {
+    fn metadata(&self) -> &M;
+    fn metadata_mut(&mut self) -> &mut M;
 
-    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self> {
+    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M> {
         DictionaryWithMetaIter::new(self)
     }
 }

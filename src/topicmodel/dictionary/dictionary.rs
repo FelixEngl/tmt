@@ -154,6 +154,7 @@ impl<T, V> BasicDictionaryWithVocabulary<V> for Dictionary<T, V> {
     fn voc_b(&self) -> &V {
         &self.voc_b
     }
+
 }
 
 impl<T, V> Dictionary<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
@@ -219,24 +220,42 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
         }
     }
 
-    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
-        let id_a = self.voc_a.add_hash_ref(word_a);
-        let id_b = self.voc_b.add_hash_ref(word_b);
+    fn insert_single_ref<L: Language>(&mut self, word: HashRef<T>) -> usize {
+        let word_id = if L::LANG.is_a() {
+            self.voc_a.add_hash_ref(word)
+        } else {
+            self.voc_b.add_hash_ref(word)
+        };
+        unsafe{self.reserve_for_single_value::<L>(word_id);}
+        word_id
+    }
+
+
+    unsafe fn reserve_for_single_value<L: Language>(&mut self, word_id: usize) {
+        if L::LANG.is_a() {
+            if self.map_a_to_b.len() <= word_id {
+                self.map_a_to_b.resize_with(word_id+1, || Vec::with_capacity(1));
+            }
+        } else {
+            if self.map_b_to_a.len() <= word_id {
+                self.map_b_to_a.resize_with(word_id+1, || Vec::with_capacity(1));
+            }
+        }
+    }
+
+    unsafe fn insert_raw_values<D: Direction>(&mut self, id_a: usize, id_b: usize) {
         if D::DIRECTION.is_a_to_b() {
             if let Some(found) = self.map_a_to_b.get_mut(id_a) {
                 if !found.contains(&id_b) {
                     found.push(id_b)
                 }
             } else {
-                while self.map_a_to_b.len() <= id_a {
-                    self.map_a_to_b.push(Vec::with_capacity(1));
+                if self.map_a_to_b.len() <= id_a {
+                    self.map_a_to_b.resize_with(id_a+1, || Vec::with_capacity(1));
                 }
                 unsafe {
                     self.map_a_to_b.get_unchecked_mut(id_a).push(id_b);
                 }
-            }
-            if !D::DIRECTION.is_b_to_a() {
-                return DirectionTuple::a_to_b(id_a, id_b);
             }
         }
         if D::DIRECTION.is_b_to_a() {
@@ -245,19 +264,21 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
                     found.push(id_a)
                 }
             } else {
-                while self.map_b_to_a.len() <= id_b {
-                    self.map_b_to_a.push(Vec::with_capacity(1));
+                if self.map_b_to_a.len() <= id_b {
+                    self.map_b_to_a.resize_with(id_b+1, || Vec::with_capacity(1));
                 }
                 unsafe {
                     self.map_b_to_a.get_unchecked_mut(id_b).push(id_a);
                 }
             }
-            if !D::DIRECTION.is_a_to_b() {
-                return DirectionTuple::b_to_a(id_a, id_b);
-            }
         }
+    }
 
-        DirectionTuple::invariant(id_a, id_b)
+    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
+        let id_a = self.voc_a.add_hash_ref(word_a);
+        let id_b = self.voc_b.add_hash_ref(word_b);
+        unsafe { self.insert_raw_values::<D>(id_a, id_b); }
+        DirectionTuple::new(id_a, id_b, D::DIRECTION)
     }
 }
 impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default{

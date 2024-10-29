@@ -1,21 +1,38 @@
 use std::fmt::{Display, Formatter};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
+use tinyset::Fits64;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{EGenElement, ENumberElement, EPosElement, LangAttribute as FreeDictLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute, ETermNoteElement};
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[repr(u64)]
 pub enum Language {
     #[strum(to_string = "en", serialize = "english")]
-    English,
+    English = 0,
     #[strum(to_string = "de", serialize = "german")]
-    German,
+    German = 1,
     #[strum(to_string = "italian", serialize = "Ital.")]
-    Italian,
+    Italian = 2,
     #[strum(to_string = "french", serialize = "French")]
-    French,
+    French = 3,
     #[strum(to_string = "latin", serialize = "Lat.")]
-    Latin
+    Latin = 4
+}
+
+impl Fits64 for Language {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        Language::try_from(x).unwrap()
+    }
+
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
 }
 
 impl From<FreeDictLangAttribute> for Language {
@@ -111,43 +128,58 @@ impl<T> Display for WordInfo<T> where T: Display {
 }
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[repr(u64)]
 pub enum PartOfSpeech {
     #[strum(to_string = "noun")]
-    Noun,
+    Noun = 0,
     #[strum(to_string = "adj")]
-    Adjective,
+    Adjective = 1,
     #[strum(to_string = "adv")]
-    Adverb,
+    Adverb = 2,
     #[strum(to_string = "verb")]
-    Verb,
+    Verb = 3,
     #[strum(to_string = "conj")]
-    Conjuction,
+    Conjuction = 4,
     #[strum(to_string = "pron")]
-    Pronoun,
+    Pronoun = 5,
     #[strum(to_string = "prep")]
-    Preposition,
+    Preposition = 6,
     #[strum(to_string = "det")]
-    Determiner,
+    Determiner = 7,
     #[strum(to_string = "int")]
-    Interjection,
+    Interjection = 8,
     #[strum(to_string="pres-p")]
-    PresentParticiple,
+    PresentParticiple = 9,
     #[strum(to_string="past-p")]
-    PastParticiple,
+    PastParticiple = 10,
     #[strum(to_string="prefix")]
-    Prefix,
+    Prefix = 11,
     #[strum(to_string="suffix")]
-    Suffix,
+    Suffix = 12,
     #[strum(to_string="num")]
-    Numeral,
+    Numeral = 13,
     #[strum(to_string="art")]
-    Article,
+    Article = 14,
     #[strum(to_string="ptcl")]
-    Particle,
+    Particle = 15,
     #[strum(to_string="pnoun")]
-    ProperNoun,
+    ProperNoun = 16,
     #[strum(to_string="other", serialize = "misc")]
-    Other
+    Other = 17,
+    #[strum(to_string="indart", serialize = "indefinite article")]
+    IndefiniteArticle = 18
+}
+
+impl Fits64 for PartOfSpeech {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        PartOfSpeech::try_from(x).unwrap()
+    }
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
 }
 
 impl From<ETermNoteElement> for PartOfSpeech {
@@ -216,13 +248,26 @@ impl From<EPosElement> for PartOfSpeech {
 }
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[repr(u64)]
 pub enum GrammaticalGender {
     #[strum(to_string = "f", serialize = "female", serialize = "f.")]
-    Feminine,
+    Feminine = 0,
     #[strum(to_string = "m", serialize = "male", serialize = "m.")]
-    Masculine,
+    Masculine = 1,
     #[strum(to_string = "n", serialize = "neutral", serialize = "n.")]
-    Neutral
+    Neutral = 2
+}
+
+impl Fits64 for GrammaticalGender {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        GrammaticalGender::try_from(x).unwrap()
+    }
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
 }
 
 impl From<EGenElement> for GrammaticalGender {
@@ -242,11 +287,24 @@ impl From<EGenElement> for GrammaticalGender {
 }
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[repr(u64)]
 pub enum GrammaticalNumber {
     #[strum(to_string = "sg", serialize = "sg.")]
-    Singular,
+    Singular = 0,
     #[strum(to_string = "pl", serialize = "pl.")]
-    Plural
+    Plural = 1
+}
+
+impl Fits64 for GrammaticalNumber {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        GrammaticalNumber::try_from(x).unwrap()
+    }
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
 }
 
 impl From<ENumberElement> for GrammaticalNumber {
@@ -263,151 +321,491 @@ impl From<ENumberElement> for GrammaticalNumber {
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub enum PartialWordType {
     Prefix,
     Suffix,
 }
 
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, strum::Display, strum::EnumString, Eq, PartialEq, Hash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
+#[repr(u64)]
 pub enum Domain {
-    #[strum(to_string = "bot.", serialize = "bot")]
-    Bot,
-    #[strum(to_string = "hist.", serialize = "hist")]
-    Hist,
-    #[strum(to_string = "phil.", serialize = "phil")]
-    Phil,
-    #[strum(to_string = "chem.", serialize = "chem")]
-    Chem,
-    #[strum(to_string = "arch.", serialize = "arch")]
-    Arch,
-    #[strum(to_string = "transp.", serialize = "transp")]
-    Transp,
-    #[strum(to_string = "min.", serialize = "min")]
-    Min,
-    #[strum(to_string = "stud.", serialize = "stud")]
-    Stud,
-    #[strum(to_string = "cook.", serialize = "cook")]
-    Cook,
-    #[strum(to_string = "auto", serialize = "auto.")]
-    Auto,
-    #[strum(to_string = "meteo.", serialize = "meteo")]
-    Meteo,
-    #[strum(to_string = "art", serialize = "art.")]
-    Art,
-    #[strum(to_string = "lit.", serialize = "lit")]
-    Lit,
-    #[strum(to_string = "geogr.", serialize = "geogr")]
-    Geogr,
-    #[strum(to_string = "ling.", serialize = "ling")]
-    Ling,
-    #[strum(to_string = "telco.", serialize = "telco")]
-    Telco,
-    #[strum(to_string = "pharm.", serialize = "pharm")]
-    Pharm,
-    #[strum(to_string = "pol.", serialize = "pol")]
-    Pol,
-    #[strum(to_string = "psych.", serialize = "psych")]
-    Psych,
-    #[strum(to_string = "agr.", serialize = "agr")]
-    Agr,
-    #[strum(to_string = "math.", serialize = "math")]
-    Math,
-    #[strum(to_string = "statist.", serialize = "statist")]
-    Statist,
-    #[strum(to_string = "mus.", serialize = "mus")]
-    Mus,
-    #[strum(to_string = "sport", serialize = "sport.")]
-    Sport,
-    #[strum(to_string = "anat.", serialize = "anat")]
-    Anat,
-    #[strum(to_string = "astrol.", serialize = "astrol")]
-    Astrol,
-    #[strum(to_string = "naut.", serialize = "naut")]
-    Naut,
-    #[strum(to_string = "photo.", serialize = "photo")]
-    Photo,
-    #[strum(to_string = "envir.", serialize = "envir")]
-    Envir,
-    #[strum(to_string = "soc.", serialize = "soc")]
-    Soc,
-    #[strum(to_string = "electr.", serialize = "electr")]
-    Electr,
-    #[strum(to_string = "biol.", serialize = "biol")]
-    Biol,
-    #[strum(to_string = "constr.", serialize = "constr")]
-    Constr,
-    #[strum(to_string = "school", serialize = "school.")]
-    School,
-    #[strum(to_string = "aviat.", serialize = "aviat")]
-    Aviat,
-    #[strum(to_string = "fin.", serialize = "fin")]
-    Fin,
-    #[strum(to_string = "mach.", serialize = "mach")]
-    Mach,
-    #[strum(to_string = "archeol.", serialize = "archeol")]
-    Archeol,
-    #[strum(to_string = "TV", serialize = "TV.")]
-    Tv,
-    #[strum(to_string = "comp.", serialize = "comp")]
-    Comp,
-    #[strum(to_string = "relig.", serialize = "relig")]
-    Relig,
-    #[strum(to_string = "astron.", serialize = "astron")]
-    Astron,
-    #[strum(to_string = "phys.", serialize = "phys")]
-    Phys,
-    #[strum(to_string = "zool.", serialize = "zool")]
-    Zool,
-    #[strum(to_string = "print", serialize = "print.")]
-    Print,
-    #[strum(to_string = "econ.", serialize = "econ")]
-    Econ,
-    #[strum(to_string = "textil.", serialize = "textil")]
-    Textil,
-    #[strum(to_string = "biochem.", serialize = "biochem")]
-    Biochem,
-    #[strum(to_string = "geol.", serialize = "geol")]
-    Geol,
-    #[strum(to_string = "ornith.", serialize = "ornith")]
-    Ornith,
-    #[strum(to_string = "med.", serialize = "med")]
-    Med,
-    #[strum(to_string = "mil.", serialize = "mil")]
-    Mil,
-    #[strum(to_string = "insur.", serialize = "insur")]
-    Insur,
+    /// Academic Disciplines / Wissenschaft
+    #[strum(to_string = "acad.", serialize = "ACAD.", serialize = "ACAD", serialize = "acad")]
+    Acad = 0,
+    /// Accounting / Buchführung
+    #[strum(to_string = "acc.", serialize = "ACC", serialize = "ACC.", serialize = "acc")]
+    Acc = 1,
+    /// (Public) Administration / (Öffentliche) Verwaltung
+    #[strum(to_string = "admin.", serialize = "ADMIN.", serialize = "ADMIN", serialize = "admin")]
+    Admin = 2,
+    /// Agriculture, Aquaculture / Agrarwirtschaft, Land- und Gewässerbewirtschaftung
+    #[strum(to_string = "agr.", serialize = "AGR.", serialize = "agr", serialize = "AGR")]
+    Agr = 3,
+    /// Human Anatomy / Humananatomie
+    #[strum(to_string = "anat.", serialize = "ANAT", serialize = "ANAT.", serialize = "anat")]
+    Anat = 4,
+    /// Archaeology / Archäologie
+    #[strum(to_string = "archaeo.", serialize = "archeol", serialize = "ARCHEOL.", serialize = "ARCHAEO.", serialize = "ARCHAEO", serialize = "ARCHEOL", serialize = "archaeo", serialize = "archeol.")]
+    Archaeo = 5,
+    /// Architecture / Architektur
+    #[strum(to_string = "archi.", serialize = "ARCHI", serialize = "arch", serialize = "ARCH.", serialize = "archi", serialize = "ARCHI.", serialize = "arch.", serialize = "ARCH")]
+    Archi = 6,
+    /// Historic Armour / Rüstungen, historische Schutzbekleidung
+    #[strum(to_string = "armour", serialize = "ARMOUR", serialize = "armour.", serialize = "ARMOUR.")]
+    Armour = 7,
+    /// Art / Kunst
+    #[strum(to_string = "art", serialize = "art.", serialize = "ART.", serialize = "ART")]
+    Art = 8,
+    /// Astrology / Astrologie
+    #[strum(to_string = "astrol.", serialize = "ASTROL", serialize = "ASTROL.", serialize = "astrol")]
+    Astrol = 9,
+    /// Astronomy / Astronomie
+    #[strum(to_string = "astron.", serialize = "ASTRON.", serialize = "astron", serialize = "ASTRON")]
+    Astron = 10,
+    /// Astronautics / Astronautik, Raumfahrt
+    #[strum(to_string = "astronau", serialize = "astronau.", serialize = "ASTRONAU.", serialize = "ASTRONAU")]
+    Astronau = 11,
+    /// Audiology / Audiologie, Akustik
+    #[strum(to_string = "audio", serialize = "AUDIO.", serialize = "AUDIO", serialize = "audio.")]
+    Audio = 12,
+    /// Automotive Engineering / Automobil- und Fahrzeugtechnik
+    #[strum(to_string = "automot.", serialize = "AUTO.", serialize = "AUTO", serialize = "auto", serialize = "AUTOMOT", serialize = "AUTOMOT.", serialize = "automot", serialize = "auto.")]
+    Automot = 13,
+    /// Aviation / Luftfahrt, Flugwesen
+    #[strum(to_string = "aviat.", serialize = "AVIAT.", serialize = "aviat", serialize = "AVIAT")]
+    Aviat = 14,
+    /// Biblical / Biblisch
+    #[strum(to_string = "bibl.", serialize = "bibl", serialize = "BIBL.", serialize = "BIBL")]
+    Bibl = 15,
+    /// Bicycle / Fahrrad
+    #[strum(to_string = "bike", serialize = "BIKE", serialize = "bike.", serialize = "BIKE.")]
+    Bike = 16,
+    /// Biochemistry / Biochemie
+    #[strum(to_string = "biochem.", serialize = "BIOCHEM.", serialize = "biochem", serialize = "BIOCHEM")]
+    Biochem = 17,
+    /// Biology / Biologie
+    #[strum(to_string = "biol.", serialize = "BIOL.", serialize = "BIOL", serialize = "biol")]
+    Biol = 18,
+    /// Biotechnology / Biotechnologie
+    #[strum(to_string = "biotech.", serialize = "biotech", serialize = "BIOTECH.", serialize = "BIOTECH")]
+    Biotech = 19,
+    /// Botany, Plants / Botanik, Pflanzen
+    #[strum(to_string = "bot.", serialize = "bot", serialize = "BOT.", serialize = "BOT")]
+    Bot = 20,
+    /// Brewing / Brauwesen
+    #[strum(to_string = "brew", serialize = "BREW.", serialize = "brew.", serialize = "BREW")]
+    Brew = 21,
+    /// Chemistry / Chemie
+    #[strum(to_string = "chem.", serialize = "chem", serialize = "CHEM", serialize = "CHEM.")]
+    Chem = 22,
+    /// Climbing, Mountaineering / Bergsteigerei
+    #[strum(to_string = "climbing", serialize = "CLIMBING.", serialize = "CLIMBING", serialize = "climbing.")]
+    Climbing = 23,
+    /// Clothing, Fashion / Bekleidung, Mode
+    #[strum(to_string = "cloth.", serialize = "cloth", serialize = "CLOTH", serialize = "CLOTH.")]
+    Cloth = 24,
+    /// Comics and Animated Cartoons / Comics und Zeichentrickfilme
+    #[strum(to_string = "comics", serialize = "comics.", serialize = "COMICS", serialize = "COMICS.")]
+    Comics = 25,
+    /// Commerce / Handel
+    #[strum(to_string = "comm.", serialize = "comm", serialize = "COMM", serialize = "COMM.")]
+    Comm = 26,
+    /// Computer Sciences / Informatik, IT
+    #[strum(to_string = "comp.", serialize = "COMP.", serialize = "COMP", serialize = "comp")]
+    Comp = 27,
+    /// Construction / Bauwesen
+    #[strum(to_string = "constr.", serialize = "CONSTR.", serialize = "constr", serialize = "CONSTR")]
+    Constr = 28,
+    /// Cooking
+    #[strum(to_string = "cook.", serialize = "COOK.", serialize = "COOK", serialize = "cook")]
+    Cook = 29,
+    /// Cosmetics & Body Care / Kosmetik und Körperpflege
+    #[strum(to_string = "cosmet.", serialize = "COSMET.", serialize = "COSMET", serialize = "cosmet")]
+    Cosmet = 30,
+    /// Currencies / Währungen
+    #[strum(to_string = "curr.", serialize = "CURR.", serialize = "curr", serialize = "CURR")]
+    Curr = 31,
+    /// Dance / Tanz
+    #[strum(to_string = "dance", serialize = "DANCE.", serialize = "dance.", serialize = "DANCE")]
+    Dance = 32,
+    /// Dental Medicine / Zahnmedizin
+    #[strum(to_string = "dent.", serialize = "DENT.", serialize = "DENT", serialize = "dent")]
+    Dent = 33,
+    /// Drugs / Drogen
+    #[strum(to_string = "drugs", serialize = "DRUGS.", serialize = "DRUGS", serialize = "drugs.")]
+    Drugs = 34,
+    /// Ecology, Environment / Ökologie, Umwelt
+    #[strum(to_string = "ecol.", serialize = "envir", serialize = "ENVIR.", serialize = "ecol", serialize = "ECOL", serialize = "ENVIR", serialize = "envir.", serialize = "ECOL.")]
+    Ecol = 35,
+    /// Economy / Wirtschaft, Ökonomie
+    #[strum(to_string = "econ.", serialize = "econ", serialize = "ECON.", serialize = "ECON")]
+    Econ = 36,
+    /// Education / Ausbildung
+    #[strum(to_string = "educ.", serialize = "EDUC", serialize = "EDUC.", serialize = "educ")]
+    Educ = 37,
+    /// Electrical Engin., Electronics / Elektrotechnik, Elektronik
+    #[strum(to_string = "electr.", serialize = "ELECTR.", serialize = "ELECTR", serialize = "electr")]
+    Electr = 38,
+    /// Engineering / Ingenieurwissenschaften
+    #[strum(to_string = "engin.", serialize = "ENGIN.", serialize = "engin", serialize = "ENGIN")]
+    Engin = 39,
+    /// Entomology / Entomologie, Insektenkunde
+    #[strum(to_string = "entom.", serialize = "entom", serialize = "ENTOM.", serialize = "ENTOM")]
+    Entom = 40,
+    /// Equestrianism, Horses / Reitsport, Pferde
+    #[strum(to_string = "equest.", serialize = "EQUEST.", serialize = "equest", serialize = "EQUEST")]
+    Equest = 41,
+    /// Esotericism / Esoterik
+    #[strum(to_string = "esot.", serialize = "ESOT.", serialize = "esot", serialize = "ESOT")]
+    Esot = 42,
+    /// Ethnology / Ethnologie
+    #[strum(to_string = "ethn.", serialize = "ETHN.", serialize = "ETHN", serialize = "ethn")]
+    Ethn = 43,
+    /// European Union / Europäische Union
+    #[strum(to_string = "EU", serialize = "eu", serialize = "EU.", serialize = "eu.")]
+    Eu = 44,
+    /// Fiction: Names and Titles in Literature, Film, TV, Arts / Fiktion: Namen und Titel in Literatur, Film, TV, Kunst
+    #[strum(to_string = "F", serialize = "F.", serialize = "f.", serialize = "f")]
+    F = 45,
+    /// Film / Film
+    #[strum(to_string = "film", serialize = "FILM", serialize = "film.", serialize = "FILM.")]
+    Film = 46,
+    /// Finance / Finanzwesen
+    #[strum(to_string = "fin.", serialize = "FIN.", serialize = "fin", serialize = "FIN")]
+    Fin = 47,
+    /// Firefighting & Rescue / Feuerwehr & Rettungsdienst
+    #[strum(to_string = "FireResc", serialize = "FIRERESC", serialize = "FireResc.", serialize = "FIRERESC.", serialize = "fireresc", serialize = "fireresc.")]
+    FireResc = 48,
+    /// Ichthyology, fish, fishing / Fischkunde, Fischen, Angelsport
+    #[strum(to_string = "fish", serialize = "fish.", serialize = "FISH.", serialize = "FISH")]
+    Fish = 49,
+    /// Foodstuffs Industry / Lebensmittelindustrie
+    #[strum(to_string = "FoodInd.", serialize = "FOODIND", serialize = "FOODIND.", serialize = "foodind.", serialize = "FoodInd", serialize = "foodind")]
+    FoodInd = 50,
+    /// Forestry / Forstwissenschaft, Forstwirtschaft
+    #[strum(to_string = "for.", serialize = "FOR.", serialize = "for", serialize = "FOR")]
+    For = 51,
+    /// Furniture / Möbel
+    #[strum(to_string = "furn.", serialize = "FURN", serialize = "furn", serialize = "FURN.")]
+    Furn = 52,
+    /// Games / Spiele
+    #[strum(to_string = "games", serialize = "GAMES.", serialize = "GAMES", serialize = "games.")]
+    Games = 53,
+    /// Gastronomy, Cooking / Gastronomie, Kochen
+    #[strum(to_string = "gastr.", serialize = "gastr", serialize = "GASTR", serialize = "GASTR.")]
+    Gastr = 54,
+    /// Geography / Geografie
+    #[strum(to_string = "geogr.", serialize = "geogr", serialize = "GEOGR", serialize = "GEOGR.")]
+    Geogr = 55,
+    /// Geology / Geologie
+    #[strum(to_string = "geol.", serialize = "GEOL.", serialize = "geol", serialize = "GEOL")]
+    Geol = 56,
+    /// Heraldry / Heraldik
+    #[strum(to_string = "herald.", serialize = "HERALD.", serialize = "herald", serialize = "HERALD")]
+    Herald = 57,
+    /// History / Historische Begriffe, Geschichte
+    #[strum(to_string = "hist.", serialize = "HIST", serialize = "HIST.", serialize = "hist")]
+    Hist = 58,
+    /// Horticulture / Gartenbau
+    #[strum(to_string = "hort.", serialize = "HORT.", serialize = "hort", serialize = "HORT")]
+    Hort = 59,
+    /// Hunting / Jagd
+    #[strum(to_string = "hunting", serialize = "HUNTING", serialize = "hunting.", serialize = "HUNTING.")]
+    Hunting = 60,
+    /// Hydrology & Hydrogeology / Hydrologie & Hydrogeologie
+    #[strum(to_string = "hydro.", serialize = "HYDRO", serialize = "hydro", serialize = "HYDRO.")]
+    Hydro = 61,
+    /// Idiom / Idiom, Redewendung
+    #[strum(to_string = "idiom", serialize = "idiom.", serialize = "IDIOM", serialize = "IDIOM.")]
+    Idiom = 62,
+    /// Industry / Industrie
+    #[strum(to_string = "ind.", serialize = "IND.", serialize = "ind", serialize = "IND")]
+    Ind = 63,
+    /// Insurance / Versicherungswesen
+    #[strum(to_string = "insur.", serialize = "INSUR", serialize = "insur", serialize = "INSUR.")]
+    Insur = 64,
+    /// Internet / Internet
+    #[strum(to_string = "Internet", serialize = "internet.", serialize = "Internet.", serialize = "INTERNET", serialize = "internet", serialize = "INTERNET.")]
+    Internet = 65,
+    /// Jobs, Employment Market / Berufe, Arbeitsmarkt
+    #[strum(to_string = "jobs", serialize = "JOBS.", serialize = "JOBS", serialize = "jobs.")]
+    Jobs = 66,
+    /// Journalism / Journalismus
+    #[strum(to_string = "journ.", serialize = "journ", serialize = "JOURN", serialize = "JOURN.")]
+    Journ = 67,
+    /// Law / Jura, Rechtswesen
+    #[strum(to_string = "law", serialize = "law.", serialize = "LAW.", serialize = "LAW")]
+    Law = 68,
+    /// Library Science / Bibliothekswissenschaft
+    #[strum(to_string = "libr.", serialize = "LIBR.", serialize = "LIBR", serialize = "libr")]
+    Libr = 69,
+    /// Linguistics / Linguistik, Sprachwissenschaft
+    #[strum(to_string = "ling.", serialize = "LING.", serialize = "ling", serialize = "LING")]
+    Ling = 70,
+    /// Literature / Literatur
+    #[strum(to_string = "lit.", serialize = "LIT.", serialize = "LIT", serialize = "lit")]
+    Lit = 71,
+    /// Machines
+    #[strum(to_string = "mach.", serialize = "MACH.", serialize = "mach", serialize = "MACH")]
+    Mach = 72,
+    /// Marketing, Advertising / Marketing, Werbung, Vertrieb und Handelswesen
+    #[strum(to_string = "market.", serialize = "MARKET", serialize = "market", serialize = "MARKET.")]
+    Market = 73,
+    /// Materials Science / Materialwissenschaft, Werkstoffkunde
+    #[strum(to_string = "material", serialize = "MATERIAL", serialize = "MATERIAL.", serialize = "material.")]
+    Material = 74,
+    /// Mathematics / Mathematik
+    #[strum(to_string = "math.", serialize = "MATH.", serialize = "math", serialize = "MATH")]
+    Math = 75,
+    /// Medicine / Medizin
+    #[strum(to_string = "med.", serialize = "MED.", serialize = "med", serialize = "MED")]
+    Med = 76,
+    /// Medical Engineering & Imaging / Medizintechnik
+    #[strum(to_string = "MedTech.", serialize = "MEDTECH.", serialize = "MEDTECH", serialize = "medtech", serialize = "medtech.", serialize = "MedTech")]
+    MedTech = 77,
+    /// Meteorology / Meteorologie
+    #[strum(to_string = "meteo.", serialize = "METEO.", serialize = "meteo", serialize = "METEO")]
+    Meteo = 78,
+    /// Military / Militärwesen
+    #[strum(to_string = "mil.", serialize = "MIL", serialize = "MIL.", serialize = "mil")]
+    Mil = 79,
+    /// Mineralogy / Mineralogie
+    #[strum(to_string = "mineral.", serialize = "mineral", serialize = "MINERAL.", serialize = "MINERAL")]
+    Mineral = 80,
+    /// Mining & Drilling / Bergbau & Bohrtechnik
+    #[strum(to_string = "mining", serialize = "ornith.", serialize = "ORNITH.", serialize = "ornith", serialize = "min.", serialize = "MIN.", serialize = "ORNITH", serialize = "MINING", serialize = "MIN", serialize = "mining.", serialize = "min", serialize = "MINING.")]
+    Mining = 81,
+    /// Music / Musik
+    #[strum(to_string = "mus.", serialize = "MUS.", serialize = "MUS", serialize = "mus")]
+    Mus = 82,
+    /// Mycology / Mykologie, Pilze
+    #[strum(to_string = "mycol.", serialize = "MYCOL.", serialize = "MYCOL", serialize = "mycol")]
+    Mycol = 83,
+    /// Mythology / Mythologie
+    #[strum(to_string = "myth.", serialize = "MYTH.", serialize = "myth", serialize = "MYTH")]
+    Myth = 84,
+    /// Names of Persons / Namenkunde (nur Personennamen)
+    #[strum(to_string = "name", serialize = "NAME", serialize = "name.", serialize = "NAME.")]
+    Name = 85,
+    /// Nautical Science / Nautik, Schifffahrtskunde
+    #[strum(to_string = "naut.", serialize = "NAUT", serialize = "naut", serialize = "NAUT.")]
+    Naut = 86,
+    /// Neologisms / Neologismen (Wortneubildungen)
+    #[strum(to_string = "neol.", serialize = "neol", serialize = "NEOL.", serialize = "NEOL")]
+    Neol = 87,
+    /// Nuclear Engineering / Nukleartechnik
+    #[strum(to_string = "nucl.", serialize = "NUCL", serialize = "nucl", serialize = "NUCL.")]
+    Nucl = 88,
+    /// Oenology / Önologie, Lehre vom Wein
+    #[strum(to_string = "oenol.", serialize = "OENOL.", serialize = "oenol", serialize = "OENOL")]
+    Oenol = 89,
+    /// Optics / Optik
+    #[strum(to_string = "optics", serialize = "OPTICS.", serialize = "optics.", serialize = "OPTICS")]
+    Optics = 90,
+    /// Ornithology / Ornithologie, Vogelkunde
+    #[strum(to_string = "orn.", serialize = "orn", serialize = "ORN.", serialize = "ORN")]
+    Orn = 91,
+    /// Pharmacy / Pharmazie
+    #[strum(to_string = "pharm.", serialize = "PHARM.", serialize = "pharm", serialize = "PHARM")]
+    Pharm = 92,
+    /// Philately / Philatelie, Briefmarkenkunde
+    #[strum(to_string = "philat.", serialize = "philat", serialize = "PHILAT", serialize = "PHILAT.")]
+    Philat = 93,
+    /// Philosophy / Philosophie
+    #[strum(to_string = "philos.", serialize = "phil.", serialize = "PHILOS", serialize = "phil", serialize = "PHIL", serialize = "PHIL.", serialize = "philos", serialize = "PHILOS.")]
+    Philos = 94,
+    /// Phonetics / Phonetik
+    #[strum(to_string = "phonet.", serialize = "PHONET.", serialize = "PHONET", serialize = "phonet")]
+    Phonet = 95,
+    /// Photography / Fotografie
+    #[strum(to_string = "photo.", serialize = "PHOTO", serialize = "photo", serialize = "PHOTO.")]
+    Photo = 96,
+    /// Physics / Physik
+    #[strum(to_string = "phys.", serialize = "PHYS.", serialize = "phys", serialize = "PHYS")]
+    Phys = 97,
+    /// Politics / Politik
+    #[strum(to_string = "pol.", serialize = "POL", serialize = "POL.", serialize = "pol")]
+    Pol = 98,
+    /// Print, Typography, Layout / Druck, Typografie, Layout
+    #[strum(to_string = "print", serialize = "print.", serialize = "PRINT.", serialize = "PRINT")]
+    Print = 99,
+    /// Proverb / Sprichwort
+    #[strum(to_string = "proverb", serialize = "PROVERB", serialize = "PROVERB.", serialize = "proverb.")]
+    Proverb = 100,
+    /// Psychology / Psychologie
+    #[strum(to_string = "psych.", serialize = "PSYCH.", serialize = "psych", serialize = "PSYCH")]
+    Psych = 101,
+    /// Publishing / Verlagswesen
+    #[strum(to_string = "publ.", serialize = "publ", serialize = "PUBL", serialize = "PUBL.")]
+    Publ = 102,
+    /// Quality Management / Qualitätsmanagement
+    #[strum(to_string = "QM", serialize = "qm.", serialize = "QM.", serialize = "qm")]
+    Qm = 103,
+    /// Quotation / Zitat
+    #[strum(to_string = "quote", serialize = "QUOTE", serialize = "QUOTE.", serialize = "quote.")]
+    Quote = 104,
+    /// Radio and Television / Radio und Fernsehen
+    #[strum(to_string = "RadioTV", serialize = "RADIOTV", serialize = "tv", serialize = "TV.", serialize = "RadioTV.", serialize = "RADIOTV.", serialize = "tv.", serialize = "radiotv", serialize = "TV", serialize = "radiotv.")]
+    RadioTv = 105,
+    /// Rail / Eisenbahn
+    #[strum(to_string = "rail", serialize = "RAIL.", serialize = "RAIL", serialize = "rail.")]
+    Rail = 106,
+    /// Real Estate / Immobilien
+    #[strum(to_string = "RealEst.", serialize = "REALEST.", serialize = "RealEst", serialize = "realest.", serialize = "realest", serialize = "REALEST")]
+    RealEst = 107,
+    /// Religion / Religion
+    #[strum(to_string = "relig.", serialize = "relig", serialize = "RELIG", serialize = "RELIG.")]
+    Relig = 108,
+    /// Rhetoric / Rhetorik
+    #[strum(to_string = "rhet.", serialize = "rhet", serialize = "RHET.", serialize = "RHET")]
+    Rhet = 109,
+    /// School/Schule
+    #[strum(to_string = "school", serialize = "SCHOOL.", serialize = "SCHOOL", serialize = "school.")]
+    School = 110,
+    /// Sociology / Soziologie
+    #[strum(to_string = "sociol.", serialize = "SOC", serialize = "SOC.", serialize = "SOCIOL.", serialize = "sociol", serialize = "soc", serialize = "SOCIOL", serialize = "soc.")]
+    Sociol = 111,
+    /// Specialized Term / Fachsprachlicher Ausdruck
+    #[strum(to_string = "spec.", serialize = "spec", serialize = "SPEC", serialize = "SPEC.")]
+    Spec = 112,
+    /// Sports / Sport
+    #[strum(to_string = "sports", serialize = "sport", serialize = "SPORT.", serialize = "SPORTS.", serialize = "SPORTS", serialize = "SPORT", serialize = "sport.", serialize = "sports.")]
+    Sports = 113,
+    /// Statistics / Statistik
+    #[strum(to_string = "stat.", serialize = "STAT", serialize = "STATIST.", serialize = "STAT.", serialize = "stat", serialize = "STATIST", serialize = "statist", serialize = "statist.")]
+    Stat = 114,
+    /// Stock Exchange / Börsenwesen
+    #[strum(to_string = "stocks", serialize = "STOCKS", serialize = "stocks.", serialize = "STOCKS.")]
+    Stocks = 115,
+    /// Studium
+    #[strum(to_string = "stud.", serialize = "STUD", serialize = "stud", serialize = "STUD.")]
+    Stud = 116,
+    /// Taxonomic terms for animals, plants and fungi (incl. varieties and breeds) / Taxonomische Bezeichnungen für Tiere, Pflanzen und Pilze (inkl. Zuchtformen und Rassen)
+    #[strum(to_string = "T", serialize = "t", serialize = "t.", serialize = "T.")]
+    T = 117,
+    /// Technology / Technik
+    #[strum(to_string = "tech.", serialize = "TECH", serialize = "tech", serialize = "TECH.")]
+    Tech = 118,
+    /// Telecommunications / Telekommunikation
+    #[strum(to_string = "telecom.", serialize = "TELCO", serialize = "TELECOM.", serialize = "TELECOM", serialize = "TELCO.", serialize = "telco", serialize = "telecom", serialize = "telco.")]
+    Telecom = 119,
+    /// Textiles, Textile Industry / Textilien, Textilindustrie
+    #[strum(to_string = "textil.", serialize = "TEXTIL", serialize = "textil", serialize = "TEXTIL.")]
+    Textil = 120,
+    /// Theatre / Theater
+    #[strum(to_string = "theatre", serialize = "THEATRE.", serialize = "theatre.", serialize = "THEATRE")]
+    Theatre = 121,
+    /// Tools / Werkzeuge
+    #[strum(to_string = "tools", serialize = "TOOLS.", serialize = "tools.", serialize = "TOOLS")]
+    Tools = 122,
+    /// Toys / Spielzeug
+    #[strum(to_string = "toys", serialize = "TOYS", serialize = "toys.", serialize = "TOYS.")]
+    Toys = 123,
+    /// Travellers vocabulary / Reise-Wortschatz
+    #[strum(to_string = "TrVocab.", serialize = "TrVocab", serialize = "trvocab.", serialize = "trvocab", serialize = "TRVOCAB", serialize = "TRVOCAB.")]
+    TrVocab = 124,
+    /// Traffic / Verkehrswesen
+    #[strum(to_string = "traffic", serialize = "TRAFFIC", serialize = "TRAFFIC.", serialize = "traffic.")]
+    Traffic = 125,
+    /// Transportation (Land Transport) / Transportwesen (Landtransport)
+    #[strum(to_string = "transp.", serialize = "TRANSP.", serialize = "TRANSP", serialize = "transp")]
+    Transp = 126,
+    /// Travel Industry / Touristik
+    #[strum(to_string = "travel", serialize = "travel.", serialize = "TRAVEL", serialize = "TRAVEL.")]
+    Travel = 127,
+    /// Units, Measures, Weights / Einheiten, Maße, Gewichte
+    #[strum(to_string = "unit", serialize = "UNIT", serialize = "UNIT.", serialize = "unit.")]
+    Unit = 128,
+    /// Urban Planning / Urbanistik, Stadtplanung
+    #[strum(to_string = "urban", serialize = "URBAN", serialize = "URBAN.", serialize = "urban.")]
+    Urban = 129,
+    /// UNESCO World Heritage / UNESCO-Welterbe
+    #[strum(to_string = "UWH", serialize = "uwh.", serialize = "uwh", serialize = "UWH.")]
+    Uwh = 130,
+    /// Veterinary Medicine / Veterinärmedizin
+    #[strum(to_string = "VetMed.", serialize = "vetmed.", serialize = "VetMed", serialize = "vetmed", serialize = "VETMED.", serialize = "VETMED")]
+    VetMed = 131,
+    /// Watches, Clocks / Uhren
+    #[strum(to_string = "watches", serialize = "WATCHES.", serialize = "WATCHES", serialize = "watches.")]
+    Watches = 132,
+    /// Weapons / Waffen
+    #[strum(to_string = "weapons", serialize = "weapons.", serialize = "WEAPONS", serialize = "WEAPONS.")]
+    Weapons = 133,
+    /// Zoology, Animals / Zoologie, Tierkunde
+    #[strum(to_string = "zool.", serialize = "ZOOL.", serialize = "ZOOL", serialize = "zool")]
+    Zool = 134,
 }
+
+impl tinyset::set64::Fits64 for Domain {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        Domain::try_from(x).unwrap()
+    }
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
+}
+
 
 /// In sociolinguistics, a register is a variety of language used for a particular purpose or particular communicative situation
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
-pub enum Register{
-    #[strum(to_string = "humor.", serialize = "humor")]
-    Humor,
+#[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[repr(u64)]
+pub enum Register {
+    #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.")]
+    Humor = 0,
     #[strum(to_string = "vulg.", serialize = "vulg")]
-    Vulg,
+    Vulg = 1,
     #[strum(to_string = "techn.", serialize = "techn")]
-    Techn,
+    Techn = 2,
     #[strum(to_string = "coll.", serialize = "coll")]
-    Coll,
+    Coll = 3,
+    /// Gehoben
     #[strum(to_string = "geh.", serialize = "geh")]
-    Geh,
+    Geh = 4,
     #[strum(to_string = "slang", serialize = "slang.")]
-    Slang,
+    Slang = 5,
     #[strum(to_string = "iron.", serialize = "iron")]
-    Iron,
+    Iron = 6,
     #[strum(to_string = "ugs.", serialize = "ugs")]
-    Ugs,
+    Ugs = 7,
     #[strum(to_string = "formal", serialize = "formal.")]
-    Formal,
+    Formal = 8,
     #[strum(to_string = "euphem.", serialize = "euphem")]
-    Euphem,
+    Euphem = 9,
     #[strum(to_string = "literary", serialize = "literary.")]
-    Literary,
+    Literary = 10,
     #[strum(to_string = "dialect", serialize = "dialect.")]
-    Dialect,
+    Dialect = 11,
+    /// DictCC
+    #[strum(to_string = "archaic", serialize = "veraltet", serialize = "veraltend")]
+    #[strum(serialize = "dated", serialize = "alt", serialize = "obs.")]
+    Archaic = 12,
+    /// DictCC
+    #[strum(to_string = "rare")]
+    Rare = 13,
+    /// DictCC - pejorativ (abwertend)
+    #[strum(to_string = "pej.")]
+    Pejorativ = 14,
 }
+
+impl Fits64 for Register {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        Register::try_from(x).unwrap()
+    }
+
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
+}
+
 
 #[cfg(test)]
 mod test {
@@ -417,6 +815,8 @@ mod test {
 
     #[test]
     fn can_map(){
+
+
         let other = vec![WordInfo::Other("value"), WordInfo::Gender(Feminine)];
         println!("{other:?}");
         let other = other.into_iter().map(|value| value.map(|x| x.to_string())).collect_vec();

@@ -32,7 +32,9 @@ use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, register_py_directions, DirectionKind, DirectionTuple, Invariant, Language, Translation};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter};
-use crate::topicmodel::dictionary::metadata::{register_py_metadata, SolvedMetadata};
+use crate::topicmodel::dictionary::metadata::{register_py_metadata, MetadataManager};
+use crate::topicmodel::dictionary::metadata::classic::ClassicMetadataManager;
+use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
@@ -344,7 +346,7 @@ impl Display for PyDictionaryEntry {
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyDictionary {
-    inner: DictionaryWithMeta<String, PyVocabulary>,
+    inner: DictionaryWithMeta<String, PyVocabulary, ClassicMetadataManager>,
 }
 
 #[pymethods]
@@ -569,7 +571,7 @@ impl PyDictionary {
 }
 
 impl Deref for PyDictionary {
-    type Target = DictionaryWithMeta<String, PyVocabulary>;
+    type Target = DictionaryWithMeta<String, PyVocabulary, ClassicMetadataManager>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -578,7 +580,7 @@ impl Deref for PyDictionary {
 
 #[pyclass]
 pub struct PyDictIter {
-    inner: DictionaryWithMetaIterator<DictionaryWithMeta<String, PyVocabulary>, String, PyVocabulary>,
+    inner: DictionaryWithMetaIterator<DictionaryWithMeta<String, PyVocabulary, ClassicMetadataManager>, String, PyVocabulary, ClassicMetadataManager>,
 }
 
 unsafe impl Send for PyDictIter{}
@@ -726,6 +728,18 @@ impl DictionaryMut<String, PyVocabulary> for PyDictionary {
     #[inline(always)]
     fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
         self.inner.set_language::<L>(value)
+    }
+
+    fn insert_single_ref<L: Language>(&mut self, word: HashRef<String>) -> usize {
+        self.inner.insert_single_ref::<L>(word)
+    }
+
+    unsafe fn reserve_for_single_value<L: Language>(&mut self, word_id: usize) {
+        self.inner.reserve_for_single_value::<L>(word_id)
+    }
+
+    unsafe fn insert_raw_values<D: Direction>(&mut self, word_id_a: usize, word_id_b: usize) {
+        self.inner.insert_raw_values::<D>(word_id_a, word_id_b)
     }
 
     #[inline(always)]

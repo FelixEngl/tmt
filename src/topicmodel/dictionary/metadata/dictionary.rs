@@ -5,68 +5,30 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, Translation, A, B};
-use crate::topicmodel::dictionary::iterators::{DictIter, DictionaryWithMetaIterator};
-use crate::topicmodel::dictionary::metadata::{MetadataContainer, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataRef, SolvedMetadata};
+use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
+use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
-
-pub struct DictionaryWithMetaIter<'a, D> where D: BasicDictionaryWithMeta + ?Sized {
-    dictionary_with_meta: &'a D,
-    iter: DictIter<'a>
-}
-
-impl<'a, D> DictionaryWithMetaIter<'a, D> where D: BasicDictionaryWithMeta + ?Sized {
-    pub fn new(dictionary_with_meta: &'a D) -> Self {
-        Self {
-            iter: dictionary_with_meta.iter(),
-            dictionary_with_meta
-        }
-    }
-}
-
-impl<'a, D> Iterator for DictionaryWithMetaIter<'a, D> where D: BasicDictionaryWithMeta {
-    type Item = DirectionTuple<(usize, Option<MetadataRef<'a>>), (usize, Option<MetadataRef<'a>>)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let DirectionTuple{a, b, direction} = self.iter.next()?;
-        Some(
-            match direction {
-                DirectionKind::AToB => {
-                    DirectionTuple::a_to_b(
-                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
-                    )
-                }
-                DirectionKind::BToA => {
-                    DirectionTuple::b_to_a(
-                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
-                    )
-                }
-                DirectionKind::Invariant => {
-                    DirectionTuple::invariant(
-                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
-                    )
-                }
-            }
-        )
-    }
-}
-
+use crate::topicmodel::dictionary::metadata::classic::{
+    ClassicMetadataManager,
+};
+use crate::topicmodel::reference::HashRef;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DictionaryWithMeta<T, V> {
+pub struct DictionaryWithMeta<T, V, C> {
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
     pub(crate) inner: Dictionary<T, V>,
-    pub(crate) metadata: MetadataContainer
+    #[serde(bound(serialize = "C: Serialize", deserialize = "C: Deserialize<'de>"))]
+    pub(crate) metadata: C
 }
 
-impl<T, V> DictionaryWithMeta<T, V> {
-    fn new(inner: Dictionary<T, V>, metadata: MetadataContainer) -> Self {
+impl<T, V, C> DictionaryWithMeta<T, V, C> {
+    fn new(inner: Dictionary<T, V>, metadata: C) -> Self {
         Self { inner, metadata }
     }
+}
+
+impl<T, V> DictionaryWithMeta<T, V, ClassicMetadataManager> {
 
     pub fn known_dictionaries(&self) -> Vec<&str> {
         self.metadata.dictionary_interner.iter().map(|value| value.1).collect_vec()
@@ -82,58 +44,56 @@ impl<T, V> DictionaryWithMeta<T, V> {
 }
 
 
-impl<T, V> DictionaryWithMeta<T, V> where V: From<Option<LanguageHint>>  {
+impl<T, V, M> DictionaryWithMeta<T, V, M> where V: From<Option<LanguageHint>>, M: Default  {
     pub fn new_with(language_a: Option<impl Into<LanguageHint>>, language_b: Option<impl Into<LanguageHint>>) -> Self {
         Self::new(
             Dictionary::new_with(language_a, language_b),
-            MetadataContainer::new()
+            M::default()
         )
     }
 }
 
-impl<T, V> DictionaryWithMeta<T, V> where V: BasicVocabulary<T> {
-    pub fn metadata_with_dict(&self) -> MetadataContainerWithDict<Self, T, V> where Self: Sized {
+impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T>, M: MetadataManager
+{
+    pub fn metadata_with_dict(&self) -> MetadataContainerWithDict<Self, T, V, M> where Self: Sized {
         MetadataContainerWithDict::wrap(self)
     }
 
-    pub fn metadata_with_dict_mut(&mut self) -> MetadataContainerWithDictMut<Self, T, V> where Self: Sized {
+    pub fn metadata_with_dict_mut(&mut self) -> MetadataContainerWithDictMut<Self, T, V, M> where Self: Sized {
         MetadataContainerWithDictMut::wrap(self)
     }
 }
-unsafe impl<T, V> Send for DictionaryWithMeta<T, V>{}
-unsafe impl<T, V> Sync for DictionaryWithMeta<T, V>{}
-impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + From<Option<LanguageHint>>, T: Hash + Eq  {
+unsafe impl<T, V, M> Send for DictionaryWithMeta<T, V, M>{}
+unsafe impl<T, V, M> Sync for DictionaryWithMeta<T, V, M>{}
+impl<T, V, M> DictionaryWithMeta<T, V, M>
+where
+    V: VocabularyMut<T> + From<Option<LanguageHint>>,
+    T: Hash + Eq,
+    M: MetadataManager
+{
 
-    fn insert_meta_for_create_subset<'a, L: Language>(&mut self, word_id: usize, metadata_ref: MetadataRef<'a>) {
-        let tags = metadata_ref.raw.subjects.get();
-        let dics = metadata_ref.raw.associated_dictionaries.get();
-        let unstemmed = metadata_ref.raw.unstemmed.get();
+    fn insert_meta_for_create_subset<'a, L: Language>(
+        &mut self,
+        word_id: usize,
+        metadata_ref: M::Reference<'a>
+    ) {
 
-        if tags.is_none() && dics.is_none() {
-            return;
-        }
-
-        let meta = self.metadata.get_or_init_meta::<L>(word_id).meta;
-
-        if let Some(dics) = dics {
-            unsafe { meta.add_all_associated_dictionaries(&dics) }
-        }
-        if let Some(tags) = tags {
-            unsafe { meta.add_all_subjects(&tags) }
-        }
-        if let Some(unstemmed) = unstemmed {
-            meta.add_all_unstemmed(unstemmed)
-        }
+        let mut meta = self.metadata.get_or_create_meta::<L>(word_id);
+        meta.update_with::<L>(metadata_ref)
     }
 
-    pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V> where F1: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef>) -> bool, F2: Fn(&DictionaryWithMeta<T, V>, usize, Option<&MetadataRef>) -> bool {
+    pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V, M>
+    where
+        F1: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool,
+        F2: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool
+    {
 
         let mut new = Self {
             inner: Dictionary::new_with(
                 self.inner.voc_a.language().cloned(),
                 self.inner.voc_b.language().cloned()
             ),
-            metadata: self.metadata.copy_keep_vocebulary()
+            metadata: self.metadata.copy_keep_vocabulary()
         };
         for DirectionTuple{
             a: (word_id_a, meta_a),
@@ -168,7 +128,12 @@ impl<T, V> DictionaryWithMeta<T, V> where V: VocabularyMut<T> + From<Option<Lang
     }
 }
 
-impl<T, V> FromVoc<T, V> for DictionaryWithMeta<T, V> where V: BasicVocabulary<T> + Default, T: Hash + Eq  {
+impl<T, V, M> FromVoc<T, V> for DictionaryWithMeta<T, V, M>
+where
+    V: BasicVocabulary<T> + Default,
+    T: Hash + Eq,
+    M: Default + MetadataManager
+{
     fn from_voc(voc_a: V, voc_b: V) -> Self {
         Self::new(
             Dictionary::from_voc(voc_a, voc_b),
@@ -185,12 +150,15 @@ impl<T, V> FromVoc<T, V> for DictionaryWithMeta<T, V> where V: BasicVocabulary<T
 }
 
 
-impl<T, V> Clone for DictionaryWithMeta<T, V> where V: Clone {
+impl<T, V, M> Clone for DictionaryWithMeta<T, V, M> where V: Clone, M: Clone {
     fn clone(&self) -> Self {
         Self::new(self.inner.clone(), self.metadata.clone())
     }
 }
-impl<T, V> BasicDictionary for DictionaryWithMeta<T, V> {
+impl<T, V, M> BasicDictionary for DictionaryWithMeta<T, V, M>
+where
+    M: MetadataManager
+{
     delegate::delegate! {
         to self.inner {
             fn map_a_to_b(&self) -> &Vec<Vec<usize>>;
@@ -209,16 +177,23 @@ impl<T, V> BasicDictionary for DictionaryWithMeta<T, V> {
         }
     }
 }
-impl<T, V> BasicDictionaryWithMeta for DictionaryWithMeta<T, V> where V: BasicVocabulary<T> {
-    fn metadata(&self) -> &MetadataContainer {
+impl<T, V, M> BasicDictionaryWithMeta<M> for DictionaryWithMeta<T, V, M>
+where
+    V: BasicVocabulary<T>,
+    M: MetadataManager
+{
+    fn metadata(&self) -> &M {
         &self.metadata
     }
 
-    fn metadata_mut(&mut self) -> &mut MetadataContainer {
+    fn metadata_mut(&mut self) -> &mut M {
         &mut self.metadata
     }
 }
-impl<T, V> BasicDictionaryWithVocabulary<V> for DictionaryWithMeta<T, V> {
+impl<T, V, M> BasicDictionaryWithVocabulary<V> for DictionaryWithMeta<T, V, M>
+where
+    M: MetadataManager
+{
     delegate::delegate! {
         to self.inner {
             fn voc_a(&self) -> &V;
@@ -226,15 +201,19 @@ impl<T, V> BasicDictionaryWithVocabulary<V> for DictionaryWithMeta<T, V> {
         }
     }
 }
-impl<T, V> DictionaryWithMeta<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
-    pub fn map<Q: Eq + Hash, Voc, F>(self, f: F) -> DictionaryWithMeta<Q, Voc> where F: for<'a> Fn(&'a T)-> Q, Voc: BasicVocabulary<Q> {
-        DictionaryWithMeta::<Q, Voc>::new(
+impl<T, V, M> DictionaryWithMeta<T, V, M> where T: Eq + Hash, V: MappableVocabulary<T>, M: Clone {
+    pub fn map<Q: Eq + Hash, Voc, F>(self, f: F) -> DictionaryWithMeta<Q, Voc, M> where F: for<'a> Fn(&'a T)-> Q, Voc: BasicVocabulary<Q> {
+        DictionaryWithMeta::<Q, Voc, M>::new(
             self.inner.map(&f),
             self.metadata.clone()
         )
     }
 }
-impl<T, V> DictionaryWithVocabulary<T, V> for  DictionaryWithMeta<T, V> where V: BasicVocabulary<T> {
+impl<T, V, M> DictionaryWithVocabulary<T, V> for  DictionaryWithMeta<T, V, M>
+where
+    V: BasicVocabulary<T>,
+    M: MetadataManager
+{
 
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         self.inner.can_translate_id::<D>(id)
@@ -270,20 +249,42 @@ impl<T, V> DictionaryWithVocabulary<T, V> for  DictionaryWithMeta<T, V> where V:
         self.inner.word_to_id::<D, _>(id)
     }
 }
-impl<T, V> DictionaryMut<T, V> for  DictionaryWithMeta<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
+impl<T, V, M> DictionaryMut<T, V> for  DictionaryWithMeta<T, V, M>
+where
+    T: Eq + Hash,
+    V: VocabularyMut<T>,
+    M: MetadataManager
+{
     fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
         self.inner.set_language::<L>(value)
+    }
+
+    fn insert_single_ref<L: Language>(&mut self, word: HashRef<T>) -> usize {
+        self.inner.insert_single_ref::<L>(word)
+    }
+
+    unsafe fn reserve_for_single_value<L: Language>(&mut self, word_id: usize) {
+        self.inner.reserve_for_single_value::<L>(word_id)
+    }
+
+    unsafe fn insert_raw_values<D: Direction>(&mut self, word_id_a: usize, word_id_b: usize) {
+        self.inner.insert_raw_values::<D>(word_id_a, word_id_b)
     }
 
     fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
         self.inner.insert_hash_ref::<D>(word_a, word_b)
     }
 }
-impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default{
+impl<T, V, M> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V, M>
+where
+    T: Eq + Hash,
+    V: VocabularyMut<T> + Default,
+    M: MetadataManager
+{
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
         let mut new_dict = DictionaryWithMeta::new(
             Default::default(),
-            self.metadata.copy_keep_vocebulary()
+            self.metadata.copy_keep_vocabulary()
         );
 
         for DirectionTuple{a, b, direction} in self.iter() {
@@ -333,7 +334,7 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
     fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
         let mut new_dict = DictionaryWithMeta::new(
             Default::default(),
-            self.metadata.copy_keep_vocebulary()
+            self.metadata.copy_keep_vocabulary()
         );
         for DirectionTuple{a, b, direction} in self.iter() {
             let a = self.id_to_word::<A>(a).unwrap();
@@ -382,7 +383,11 @@ impl<T, V> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V> where T: Eq 
     }
 }
 
-impl<T: Display, V: BasicVocabulary<T>> Display for DictionaryWithMeta<T, V> {
+impl<T: Display, V: BasicVocabulary<T>, M> Display for DictionaryWithMeta<T, V, M>
+where
+    M: MetadataManager,
+    for<'a> <M as MetadataManager>::Reference<'a>: Display
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.inner, f)?;
         write!(f, "\n------\n")?;
@@ -391,18 +396,28 @@ impl<T: Display, V: BasicVocabulary<T>> Display for DictionaryWithMeta<T, V> {
     }
 }
 
-impl<T, V> From<Dictionary<T, V>> for DictionaryWithMeta<T, V> {
+impl<T, V, M> From<Dictionary<T, V>> for DictionaryWithMeta<T, V, M>
+where M: Default
+{
     fn from(value: Dictionary<T, V>) -> Self {
         Self::new(
             value,
-            MetadataContainer::new()
+            M::default()
         )
     }
 }
 
-impl<T, V> IntoIterator for DictionaryWithMeta<T, V> where V: BasicVocabulary<T>, T: Hash + Eq {
-    type Item = DirectionTuple<(usize, HashRef<T>, Option<SolvedMetadata>), (usize, HashRef<T>, Option<SolvedMetadata>)>;
-    type IntoIter = DictionaryWithMetaIterator<DictionaryWithMeta<T, V>, T, V>;
+impl<T, V, M> IntoIterator for DictionaryWithMeta<T, V, M>
+where
+    V: BasicVocabulary<T>,
+    T: Hash + Eq,
+    M: MetadataManager
+{
+    type Item = DirectionTuple<
+        (usize, HashRef<T>, Option<M::SolvedMetadata>),
+        (usize, HashRef<T>, Option<M::SolvedMetadata>)
+    >;
+    type IntoIter = DictionaryWithMetaIterator<DictionaryWithMeta<T, V, M>, T, V, M>;
 
     fn into_iter(self) -> Self::IntoIter {
         DictionaryWithMetaIterator::new(self)

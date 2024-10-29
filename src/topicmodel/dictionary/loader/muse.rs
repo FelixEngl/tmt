@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Cursor, Read, Seek};
@@ -7,7 +7,7 @@ use std::path::Path;
 use flate2::bufread::GzDecoder;
 use itertools::Itertools;
 use thiserror::Error;
-use tar::{Archive, Entries, Entry};
+use tar::{Archive};
 
 #[derive(Debug, Error)]
 pub enum MuseError {
@@ -173,7 +173,7 @@ mod test {
 
     #[test]
     pub fn test(){
-        let mut value = read_from_archive(
+        let value = read_from_archive(
             r#"dictionaries/MUSE/dictionaries.tar.gz"#,
             |file| {
                 matches!(

@@ -2,10 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use itertools::Itertools;
 use pyo3::{pyclass, pymethods, FromPyObject, IntoPy, PyObject, Python};
-use crate::topicmodel::dictionary::metadata::container::MetadataContainer;
-use crate::topicmodel::dictionary::metadata::{Metadata, MetadataRef};
-use crate::toolkit::typesafe_interner::DefaultDictionaryOrigin;
-use crate::topicmodel::vocabulary::{SearchableVocabulary, VocabularyMut};
+use crate::topicmodel::dictionary::metadata::classic::reference::ClassicMetadataRef;
 
 #[derive(Debug, FromPyObject, Clone)]
 pub enum MetadataPyStateValues {
@@ -23,76 +20,6 @@ impl IntoPy<PyObject> for MetadataPyStateValues {
                 value.into_py(py)
             }
         }
-    }
-}
-
-
-
-pub struct MetadataMutRef<'a> {
-    pub(in crate::topicmodel::dictionary) meta: &'a mut Metadata,
-    // always outlifes meta
-    metadata_ref: *mut MetadataContainer
-}
-
-impl<'a> MetadataMutRef<'a> {
-    pub(in crate::topicmodel::dictionary) fn new(dict_ref: *mut MetadataContainer, meta: &'a mut Metadata) -> Self {
-        Self { meta, metadata_ref: dict_ref }
-    }
-
-    pub fn push_associated_dictionary(&mut self, dictionary: impl AsRef<str>) {
-        let interned = unsafe{&mut *self.metadata_ref }.get_dictionary_interner_mut().get_or_intern(dictionary);
-        unsafe {
-            self.meta.add_associated_dictionary(interned);
-        }
-    }
-
-    pub fn get_or_push_associated_dictionary(&mut self, dictionary: impl AsRef<str>) -> DefaultDictionaryOrigin {
-        let interned = unsafe{&mut *self.metadata_ref }.get_dictionary_interner_mut().get_or_intern(dictionary);
-        if self.meta.has_associated_dictionary(interned) {
-            return interned
-        }
-        unsafe{self.meta.add_associated_dictionary(interned)};
-        interned
-    }
-
-    pub fn push_subject(&mut self, tag: impl AsRef<str>) {
-        let interned = unsafe{&mut *self.metadata_ref }.get_tag_interner_mut().get_or_intern(tag);
-        unsafe {
-            self.meta.add_subject(interned);
-        }
-    }
-
-    pub fn push_unstemmed(&mut self, word: impl AsRef<str>)  {
-        let interned = unsafe{&mut *self.metadata_ref }.get_unstemmed_voc_mut().add(word.as_ref());
-        self.meta.add_unstemmed(interned);
-    }
-
-
-    pub fn get_or_push_unstemmed(&mut self, word: impl AsRef<str>) -> usize {
-        let reference = unsafe{&mut *self.metadata_ref }.get_unstemmed_voc_mut();
-        let word = word.as_ref();
-        match reference.get_id(word) {
-            None => {
-                let interned = reference.add(word.to_string());
-                self.meta.add_unstemmed(interned);
-                interned
-            }
-            Some(value) => {
-                value
-            }
-        }
-    }
-
-    pub fn push_unstemmed_with_origin(&mut self, word: impl AsRef<str>, origin: impl AsRef<str>) {
-        let word = self.get_or_push_unstemmed(word);
-        let origin = self.get_or_push_associated_dictionary(origin);
-        unsafe { self.meta.add_unstemmed_origin(word, origin) }
-    }
-
-    pub fn push_unstemmed_with_origins(&mut self, word: impl AsRef<str>, origins: &[impl AsRef<str>]) {
-        let word = self.get_or_push_unstemmed(word);
-        let origins = origins.iter().map(|value| self.get_or_push_associated_dictionary(value)).collect_vec();
-        unsafe { self.meta.add_all_unstemmed_origins(word, &origins) }
     }
 }
 
@@ -173,8 +100,8 @@ impl Display for SolvedMetadata {
     }
 }
 
-impl<'a> From<MetadataRef<'a>> for SolvedMetadata {
-    fn from(value: MetadataRef<'a>) -> Self {
+impl<'a> From<ClassicMetadataRef<'a>> for SolvedMetadata {
+    fn from(value: ClassicMetadataRef<'a>) -> Self {
         let associated_dictionaries: Option<Vec<String>> = value.associated_dictionaries().map(|value| value.iter().map(|value| value.to_string()).collect());
         let subjects: Option<Vec<String>> = value.subjects().map(|value| value.iter().map(|value| value.to_string()).collect());
         let unstemmed: Option<HashMap<String, Vec<String>>> = value.unstemmed().map(|value| value.iter().map(|(a, b)| (a.to_string(), b.iter().map(|v|v.to_string()).collect_vec())).collect());

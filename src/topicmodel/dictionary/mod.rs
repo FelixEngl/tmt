@@ -79,7 +79,9 @@ macro_rules! dict {
 mod test {
     use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
     use crate::topicmodel::dictionary::direction::{A, B, DirectionTuple, Invariant};
-    use crate::topicmodel::dictionary::metadata::SolvedMetadata;
+    use crate::topicmodel::dictionary::metadata::classic::ClassicMetadataManager;
+    use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
+    use crate::topicmodel::dictionary::metadata::MetadataManager;
     use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
 
     #[test]
@@ -116,9 +118,8 @@ mod test {
             "Motorflugzeug".to_string(),
         ]);
 
-        let mut dict = DictionaryWithMeta::from_voc(voc_a.clone(), voc_b.clone());
+        let mut dict: DictionaryWithMeta<_, _, ClassicMetadataManager> = DictionaryWithMeta::from_voc(voc_a.clone(), voc_b.clone());
         {
-            dict.metadata_with_dict_mut().reserve_meta();
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
@@ -141,44 +142,44 @@ mod test {
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("flyer").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airman").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
             let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
+            let mut meta_a = dict.metadata.get_or_create_meta::<A>(a);
             meta_a.push_associated_dictionary("DictE");
             drop(meta_a);
-            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_create_meta::<B>(b);
             meta_b.push_associated_dictionary("DictC");
             dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("wing").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
             let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
+            let mut meta_a = dict.metadata.get_or_create_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
-            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_create_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
             let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
+            let mut meta_a = dict.metadata.get_or_create_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictC");
             drop(meta_a);
-            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_create_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
             let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
+            let mut meta_a = dict.metadata.get_or_create_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
             drop(meta_a);
-            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_create_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictB");
             let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let mut meta_a = dict.metadata.get_or_init_meta::<A>(a);
+            let mut meta_a = dict.metadata.get_or_create_meta::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
-            let mut meta_b = dict.metadata.get_or_init_meta::<B>(b);
+            let mut meta_b = dict.metadata.get_or_create_meta::<B>(b);
             meta_b.push_associated_dictionary("DictA");
 
             drop(meta_b);
-            let mut meta_a = dict.metadata.get_or_init_meta::<A>(0);
+            let mut meta_a = dict.metadata.get_or_create_meta::<A>(0);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
         }

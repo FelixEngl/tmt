@@ -15,16 +15,18 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
+use std::cell::OnceCell;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "OnceLock")]
+#[repr(transparent)]
 pub struct OnceLockDef<T> {
     #[serde(bound(serialize = "T: Serialize + Clone", deserialize = "T: Deserialize<'de>"))]
-    #[serde(getter = "get_value_cloned")]
+    #[serde(getter = "get_value_once_lock_cloned")]
     value: Option<T>
 }
 
-fn get_value_cloned<T: Clone>(once_lock: &OnceLock<T>) -> Option<T> {
+fn get_value_once_lock_cloned<T: Clone>(once_lock: &OnceLock<T>) -> Option<T> {
     once_lock.get().cloned()
 }
 
@@ -36,6 +38,33 @@ impl<T> From<OnceLockDef<T>> for OnceLock<T> {
             }
             Some(value) => {
                 OnceLock::from(value)
+            }
+        }
+    }
+}
+
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "OnceCell")]
+#[repr(transparent)]
+pub struct OnceCellDef<T> {
+    #[serde(bound(serialize = "T: Serialize + Clone", deserialize = "T: Deserialize<'de>"))]
+    #[serde(getter = "get_value_once_cell_cloned")]
+    value: Option<T>
+}
+
+fn get_value_once_cell_cloned<T: Clone>(once_cell: &OnceCell<T>) -> Option<T> {
+    once_cell.get().cloned()
+}
+
+impl<T> From<OnceCellDef<T>> for OnceCell<T> {
+    fn from(value: OnceCellDef<T>) -> Self {
+        match value.value {
+            None => {
+                OnceCell::new()
+            }
+            Some(value) => {
+                OnceCell::from(value)
             }
         }
     }

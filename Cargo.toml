@@ -63,5 +63,7 @@ memchr = "2.7"
 convert_case = "0"
 indexmap = "2.6"
 tar = "0.4"
+tinyset = { version = "0.5.0", features = ["serde"] }
+
 [build-dependencies]
 xml2code = {path = "xml2code"}

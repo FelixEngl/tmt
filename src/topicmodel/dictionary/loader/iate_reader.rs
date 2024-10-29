@@ -1,10 +1,7 @@
-use std::borrow::Borrow;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use convert_case::Casing;
-use itertools::{Itertools};
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::toolkit::replace_none_or_panic;
 use crate::topicmodel::dictionary::word_infos::Language;
@@ -256,11 +253,10 @@ mod test {
 
     #[test]
     fn can_run(){
-        let mut reader = read_iate(
+        let reader = read_iate(
             "dictionaries/IATE/IATE_export.tbx"
         ).unwrap();
         let mut ct_1 = 0;
-        let mut ct_1_terms = 0;
         let mut ct_2 = 0;
         let mut one_langs = HashSet::new();
         for value in reader {

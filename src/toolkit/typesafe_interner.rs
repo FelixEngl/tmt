@@ -1,9 +1,7 @@
 use std::fmt::{Debug, Formatter};
-use std::hash::BuildHasher;
 use std::marker::PhantomData;
 use serde::de::{Error, Visitor};
-use string_interner::{StringInterner, Symbol};
-use string_interner::backend::Backend;
+use string_interner::{Symbol};
 
 pub trait TypeSafeSymbol<S>: Symbol + From<S> where S: Symbol {}
 
@@ -98,6 +96,21 @@ macro_rules! create_interned_typesafe_symbol {
                 #[inline(always)]
                 fn to_usize(self) -> usize {
                     self.0.to_usize()
+                }
+            }
+
+            impl<S> tinyset::set64::Fits64 for $name<S>
+            where
+                S: string_interner::Symbol,
+            {
+                #[inline(always)]
+                unsafe fn from_u64(x: u64) -> Self {
+                    S::try_from_usize(x as usize).map(|value| Self(value)).unwrap()
+                }
+
+                #[inline(always)]
+                fn to_u64(self) -> u64 {
+                    self.0.to_usize() as u64
                 }
             }
 
@@ -225,5 +238,8 @@ macro_rules! create_interned_typesafe_symbol {
 
 create_interned_typesafe_symbol! {
     DictionaryOrigin,
-    Tag
+    Tag,
+    Inflected,
+    Abbreviation,
+    UnalteredVoc
 }

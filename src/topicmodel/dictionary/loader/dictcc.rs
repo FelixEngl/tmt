@@ -16,12 +16,119 @@ use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, t
 use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartialWordType, PartOfSpeech};
 use crate::topicmodel::dictionary::word_infos::GrammaticalNumber;
 
+
+/*
+
+
+If you need more information than these guidelines can provide, please see the unofficial manual / FAQ document provided by Tomaquinaten at https://users.dict.cc/tomaquinaten/. It is not up to date anymore - if there are contradictions, please follow the guidelines.
+
+Abbreviations German
+{m}	der - männlich (Maskulinum)
+{f}	die - weiblich (Femininum)
+{n}	das - sächlich (Neutrum)
+{pl}	die - Mehrzahl (Plural)
+
+[österr.]	österreichisch
+[südd.]	süddeutsch
+[nordd.]	norddeutsch
+[ostd.]	ostdeutsch
+[schweiz.]	schweizerisch
+[regional]	regional gebräuchlich (landschaftlich)
+
+[alt]	alte Schreibweise (heute ungültig)
+[ugs.]	umgangssprachlich
+[fig.]	figurativ (in bildlichem, übertragenem Sinn)
+[auch fig.]	auch figurativ
+[Redewendung]	Redewendung
+[hum.]	humoristisch
+[pej.]	pejorativ (abwertend)
+[vulg.]	vulgär
+[veraltend]	außer Gebrauch kommend
+[veraltet]	nicht mehr gebräuchlich
+[geh.]	gehoben
+[Rsv.]	Rechtschreibvariante
+(weniger gebräuchlich)
+[indekl.]	indeklinabel
+
+jd.	jemand
+jds.	jemandes
+jdm.	jemandem
+jdn.	jemanden
+etw.	etwas
+jd./etw.	jemand/etwas
+jds./etw.	jemandes/etwas
+jdm./etw.	jemandem/etwas
+jdn./etw.	jemanden/etwas
+
+[Gen.]	Genitiv
+[Dat.]	Dativ
+[Akk.]	Akkusativ
+[+Gen.]	wird mit Genitiv gebraucht
+[+Dat.]	wird mit Dativ gebraucht
+[+Akk.]	wird mit Akkusativ gebraucht
+
+Abbreviations English
+to	for verbs
+[Br.]	(esp.) British English
+[Am.]	(esp.) American English
+
+[Aus.]	Australian English
+[NZ]	New Zealand English
+[Can.]	Canadian English
+[Scot.]	Scottish English
+[Irish]	Irish English
+[Ind.]	Indian English
+[S.Afr.]	South African English
+
+{pl}	to stress plural (nouns)
+{sg}	to stress singular (nouns)
+[attr.]	only before nouns
+[postpos.]	only after nouns
+[pred.]	only after verbs of being/becoming
+
+[coll.]	colloquial
+[fig.]	figurative
+[also fig.]	also figurative
+[idiom]	idiom
+[hum.]	humorous
+[pej.]	pejorative
+[vulg.]	vulgar
+[dated]	dated
+[archaic]	archaic
+[obs.]	obsolete
+[literary]	literary
+[spv.]	spelling variant (less common)
+[sl.]	slang
+
+sb.	somebody
+sb.'s	somebody's
+sth.	something
+sb./sth.	somebody/something
+
+Word Classes
+adj	 adjective
+adv	 adverb/adverbial
+noun	 noun
+verb	 verb (infinitive)
+pres-p	  present participle
+past-p	 past participle
+prep	 preposition/adpos.
+conj	 conjunction
+pron	 pronoun
+prefix	 prefix
+suffix	 suffix
+Assign all (and only those) word classes that are valid for both sides of the translation pair. forum
+Subjects
+see the subject list
+
+ */
+
 pub trait DictCCParserError<I>: ParseError<I> + FromExternalError<I, strum::ParseError>{}
 
 impl<T, I> DictCCParserError<I> for T where T:  ParseError<I> + FromExternalError<I, strum::ParseError>{}
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum WordEntryElement<T> {
     Word(T),
     PartialWord(T, PartialWordType),
@@ -135,7 +242,7 @@ impl Display for WordTypeInfo {
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]
-pub struct WordTypes(Vec<WordTypeInfo>);
+pub struct WordTypes(pub Vec<WordTypeInfo>);
 
 
 impl Display for WordTypes {
@@ -146,7 +253,7 @@ impl Display for WordTypes {
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]
-pub struct WordCategories<T>(Vec<T>);
+pub struct WordCategories<T>(pub Vec<T>);
 
 impl<T> WordCategories<T> {
     pub fn map<R, F: Fn(T) -> R>(self, mapper: F) -> WordCategories<R> {
@@ -329,10 +436,15 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> std::io::Result<FunctionBasedL
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+    use itertools::Itertools;
     use nom::bytes::complete::is_not;
     use nom::IResult;
-    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, read_dictionary};
+    use crate::topicmodel::dictionary::loader::dictcc;
+    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, read_dictionary, Entry, WordCategories, WordEntryElement};
     use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
+    use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, PartOfSpeech, PartialWordType, Register};
+    use crate::topicmodel::dictionary::word_infos::Register::Dialect;
 
     #[test]
     fn word_info_parser() {
@@ -350,16 +462,145 @@ mod test {
         execute_test_read_for(value, 30, 0);
     }
 
+    fn process_word_entry<S: AsRef<str> + Clone>(dictcc::WordEntry(lang_cont): dictcc::WordEntry<S>) -> Vec<WordEntryElement<S>> {
+        let mut gender = Vec::new();
+        let mut numeric = Vec::new();
+        let mut pos = Vec::new();
+        let mut register = Vec::new();
+        let mut abbrev = Vec::new();
+        let mut domain: Vec<Domain> = Vec::new();
+
+        let mut words = Vec::new();
+        let mut prefixes = Vec::new();
+        let mut postfixes = Vec::new();
+
+        let mut unprocessed = Vec::new();
+
+        let mut has_placeholder = false;
+
+        for value in lang_cont {
+            match value {
+                WordEntryElement::Word(value) => {
+                    words.push(value.as_ref().to_string())
+                }
+                WordEntryElement::PartialWord(a, b) => {
+                    match b {
+                        PartialWordType::Prefix => {
+                            prefixes.push(a.as_ref().to_string())
+                        }
+                        PartialWordType::Suffix => {
+                            postfixes.push(a.as_ref().to_string())
+                        }
+                    }
+                }
+                WordEntryElement::Gender(gend) => {
+                    gender.push(gend)
+                }
+                WordEntryElement::Number(number) => {
+                    numeric.push(number)
+                }
+                WordEntryElement::MetaInfo(v) => {
+                    match v.as_ref() {
+                        "prep+art" => {
+                            pos.push(PartOfSpeech::Preposition);
+                            pos.push(PartOfSpeech::Article);
+                        }
+                        "pron" | "adv" | "conj" | "indefinite article" => {
+                            pos.push(v.as_ref().parse().unwrap())
+                        }
+                        "ugs." => {
+                            register.push(Register::Ugs)
+                        }
+                        "usually pl" => {
+                            numeric.push(GrammaticalNumber::Plural)
+                        }
+                        "sg only" => {
+                            numeric.push(GrammaticalNumber::Singular)
+                        }
+                        "auch: f" => {
+                            gender.push(GrammaticalGender::Feminine)
+                        }
+                        "treated as either sg or pl" | "treated as sg. or pl." => {
+                            numeric.extend_from_slice(&[GrammaticalNumber::Singular, GrammaticalNumber::Plural])
+                        }
+                        _ => {}
+                    }
+                }
+                ref a @ WordEntryElement::Contextualisation(ref value) => {
+                    let s = value.as_ref();
+                    if let Ok(reg) = s.parse() {
+                        register.push(reg);
+                        continue
+                    }
+                    if let Ok(dom) = s.parse() {
+                        domain.push(dom);
+                        continue
+                    }
+                    if matches!(
+                            s,
+                            "österr." | "südd." | "nordd." | "ostd." | "schweiz." | "regional"
+                            | "Br." | "Am." | "Aus." | "NZ" | "Can." | "Scot." | "Irish"
+                            | "Ind." | "S.Afr."
+                        ) {
+                        register.push(Dialect);
+                        continue
+                    }
+                    unprocessed.push(a.clone())
+                }
+                WordEntryElement::Abbreviation(value) => {
+                    abbrev.push(value.as_ref().to_string())
+                }
+                x @ WordEntryElement::Combination(_) => {
+                    unprocessed.push(x)
+                }
+                WordEntryElement::Placeholder => {
+                    // Ignore placeholders
+                    has_placeholder = true;
+                }
+            }
+        }
+        unprocessed
+    }
+
     #[test]
     fn can_read2(){
         let value = read_dictionary(
             "dictionaries/DictCC/dict.txt"
         ).unwrap();
-        for val in value.take(10) {
-            if let Ok(val) = val {
-                println!("{val:?}")
+        let mut left_over = HashSet::new();
+        for val in value {
+            if let Ok(Entry(
+                          lang_a_cont,
+                          lang_b_cont,
+                          _word_types,
+                          categories2
+                      )) = val {
+                for value in process_word_entry(lang_a_cont) {
+                    left_over.insert(value);
+                }
+                for value in process_word_entry(lang_b_cont) {
+                    left_over.insert(value);
+                }
             }
         }
+        let mut cont = HashSet::new();
+        for value in left_over.into_iter() {
+            match value {
+                WordEntryElement::Word(_) => {}
+                WordEntryElement::PartialWord(_, _) => {}
+                WordEntryElement::Gender(_) => {}
+                WordEntryElement::Number(_) => {}
+                WordEntryElement::MetaInfo(_) => {}
+                WordEntryElement::Contextualisation(value) => {
+                    cont.insert(value);
+                }
+                WordEntryElement::Abbreviation(_) => {}
+                WordEntryElement::Combination(_) => {}
+                WordEntryElement::Placeholder => {}
+            }
+        }
+
+        println!("Left Over: \n{}", cont.into_iter().take(20).join(",\n"));
     }
 
     #[test]

@@ -12,7 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::iter::{Chain, Cloned, Enumerate, FlatMap, Map};
 use std::marker::PhantomData;
@@ -22,7 +22,7 @@ use strum::EnumIs;
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
-use crate::topicmodel::dictionary::metadata::SolvedMetadata;
+use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataReference};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::BasicVocabulary;
 
@@ -64,7 +64,7 @@ pub type DictIter<'a> = DictIterImpl<'a>;
 pub struct DictIterImpl<'a> {
     a_to_b: &'a Vec<Vec<usize>>,
     b_to_a: &'a Vec<Vec<usize>>,
-    used: HashMap<(usize, usize), ()>,
+    used: HashSet<(usize, usize)>,
     iter: Chain<ABIter<'a>, BAIter<'a>>,
 }
 
@@ -78,7 +78,7 @@ impl<'a> DictIterImpl<'a> {
         Self {
             a_to_b: dict.map_a_to_b(),
             b_to_a: dict.map_b_to_a(),
-            used: HashMap::new(),
+            used: HashSet::new(),
             iter
         }
     }
@@ -88,7 +88,7 @@ impl<'a> Iterator for DictIterImpl<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut tuple = self.iter.next()?;
-        while self.used.insert(tuple.value_tuple(), ()).is_some() {
+        while !self.used.insert(tuple.value_tuple()) {
             tuple = self.iter.next()?;
         }
         match &tuple.direction {
@@ -260,14 +260,26 @@ impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq 
 
 
 /// A dict iterator with metadata
-pub struct DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
-    inner: DictionaryIteratorImpl<T, V, D>
+pub struct DictionaryWithMetaIterator<D, T, V, M>
+where
+    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T>,
+    M: MetadataManager
+{
+    inner: DictionaryIteratorImpl<T, V, D>,
+    _meta: PhantomData<M>
 }
 
-impl<D, T, V> DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T>  {
+impl<D, T, V, M> DictionaryWithMetaIterator<D, T, V, M>
+where
+    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T>,
+    M: MetadataManager
+{
     pub fn new(inner: D) -> Self {
         Self {
-            inner: DictionaryIteratorImpl::new(inner)
+            inner: DictionaryIteratorImpl::new(inner),
+            _meta: PhantomData
         }
     }
 
@@ -276,8 +288,16 @@ impl<D, T, V> DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMe
     }
 }
 
-impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDictionaryWithMeta + DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
-    type Item = DirectionTuple<(usize, HashRef<T>, Option<SolvedMetadata>), (usize, HashRef<T>, Option<SolvedMetadata>)>;
+impl<D, T, V, M> Iterator for DictionaryWithMetaIterator<D, T, V, M>
+where
+    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T>,
+    M: MetadataManager
+{
+    type Item = DirectionTuple<
+        (usize, HashRef<T>, Option<M::SolvedMetadata>),
+        (usize, HashRef<T>, Option<M::SolvedMetadata>)
+    >;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next()?;
@@ -285,11 +305,11 @@ impl<D, T, V> Iterator for DictionaryWithMetaIterator<D, T, V> where D: BasicDic
         Some(
             next.map(
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(SolvedMetadata::from);
+                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(|value| value.into_solved());
                     (id, href, value)
                 },
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(SolvedMetadata::from);
+                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(|value| value.into_solved());
                     (id, href, value)
                 }
             )

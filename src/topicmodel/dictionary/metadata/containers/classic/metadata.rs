@@ -4,11 +4,12 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use crate::toolkit::once_lock_serializer::OnceLockDef;
 use crate::toolkit::typesafe_interner::{DefaultDictionaryOrigin, DefaultTag};
+use crate::topicmodel::dictionary::metadata::containers::Metadata as IMetadata;
 
 
 /// The container for the metadata
 #[derive(Debug, Clone, Default, Deserialize, Serialize, Eq)]
-pub struct Metadata {
+pub struct ClassicMetadata {
     #[serde(with = "OnceLockDef")]
     pub associated_dictionaries: OnceLock<HashSet<DefaultDictionaryOrigin>>,
     #[serde(with = "OnceLockDef")]
@@ -51,7 +52,10 @@ macro_rules! create_methods {
     };
 }
 
-impl Metadata {
+
+impl IMetadata for ClassicMetadata {}
+
+impl ClassicMetadata {
     create_methods! {
         self.associated_dictionaries(DefaultDictionaryOrigin) || associated_dictionary,
         self.subjects(DefaultTag) || subject
@@ -164,7 +168,7 @@ impl Metadata {
     }
 }
 
-impl PartialEq for Metadata {
+impl PartialEq for ClassicMetadata {
     fn eq(&self, other: &Self) -> bool {
         if let Some(associated_dictionaries) = self.associated_dictionaries.get() {
             if let Some(other_associated_dictionaries) = other.associated_dictionaries.get() {

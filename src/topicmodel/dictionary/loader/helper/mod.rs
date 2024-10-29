@@ -3,8 +3,6 @@ pub(super) mod gen_freedict_tei_reader;
 pub(super) mod gen_iate_tbx_reader;
 pub(super) mod gen_ms_terms_reader;
 
-pub use xml_reader::*;
-
 use std::fmt::{Display, Formatter};
 use std::ops::{Range, RangeFrom};
 use nom::error::{ParseError};

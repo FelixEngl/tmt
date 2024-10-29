@@ -6,7 +6,7 @@ use std::path::Path;
 use itertools::Itertools;
 use strum::Display;
 use thiserror::Error;
-use crate::topicmodel::dictionary::word_infos::{Language, PartOfSpeech};
+use crate::topicmodel::dictionary::word_infos::{PartOfSpeech};
 use crate::topicmodel::reference::HashRef;
 use super::helper::gen_ms_terms_reader::iter::TermEntryElementIter;
 use super::helper::gen_ms_terms_reader::*;

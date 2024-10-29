@@ -147,6 +147,7 @@ mod private {
 /// A direction for a translation
 #[allow(private_bounds)]
 pub trait Direction: private::Sealed {
+    type INVERSE: Direction;
     const DIRECTION: DirectionKind;
 }
 
@@ -155,20 +156,23 @@ pub trait Direction: private::Sealed {
 pub trait Translation: Direction + private::Sealed {}
 
 #[allow(private_bounds)]
-pub trait Language: Translation + Direction + private::Sealed{
+pub trait Language: Translation + Direction + private::Sealed {
+    type OPPOSITE: Language;
     const LANG: LanguageKind;
 }
 
 /// Language A
 pub struct A;
 impl private::Sealed for A{}
-impl Language for A{
+impl Language for A {
+    type OPPOSITE = B;
     const LANG: LanguageKind = LanguageKind::A;
 }
 
 /// A to B
 pub type AToB = A;
 impl Direction for AToB {
+    type INVERSE = BToA;
     const DIRECTION: DirectionKind = DirectionKind::AToB;
 }
 impl Translation for AToB {}
@@ -177,12 +181,14 @@ impl Translation for AToB {}
 pub struct B;
 impl private::Sealed for B{}
 impl Language for B {
+    type OPPOSITE = A;
     const LANG: LanguageKind = LanguageKind::B;
 }
 
 /// B to A
 pub type BToA = B;
 impl Direction for BToA {
+    type INVERSE = AToB;
     const DIRECTION: DirectionKind = DirectionKind::BToA;
 }
 impl Translation for BToA {}
@@ -192,6 +198,7 @@ impl Translation for BToA {}
 pub struct Invariant;
 impl private::Sealed for Invariant {}
 impl Direction for Invariant {
+    type INVERSE = Invariant;
     const DIRECTION: DirectionKind = DirectionKind::Invariant;
 }
 

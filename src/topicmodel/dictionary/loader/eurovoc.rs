@@ -44,6 +44,7 @@ impl<R> EuroVocReader<R> {
     }
 }
 
+
 impl<R> EuroVocReader<R> where R: Read {
     pub fn from_reader(reader: R) -> Self {
         Self::new(BufReader::new(reader))
@@ -65,6 +66,7 @@ impl<R> EuroVocReader<R> where R: Read {
                             in_record = true;
                         }
                         b"DESCRIPTEUR_ID" => {
+                            assert!(in_record, "Not in record!");
                             in_descriptor_id = true
                         }
                         b"UF" => {
@@ -83,7 +85,6 @@ impl<R> EuroVocReader<R> where R: Read {
                 Event::End(value) => {
                     match value.name().as_ref() {
                         b"RECORD" => {
-                            in_record = false;
                             break Some(
                                 EuroVocEntry {
                                     id: descriptor.unwrap_or_default(),
