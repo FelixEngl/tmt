@@ -42,6 +42,8 @@ pub enum TbxReaderError {
     #[error(transparent)]
     XmlError(#[from] quick_xml::Error),
     #[error(transparent)]
+    AttributeError(#[from] quick_xml::events::attributes::AttrError),
+    #[error(transparent)]
     Utf8(#[from] Utf8Error),
     #[error(transparent)]
     NumParse(#[from] ParseIntError),

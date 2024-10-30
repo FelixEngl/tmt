@@ -604,6 +604,35 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWi
 }
 
 
+pub fn process_entry<T: AsRef<str>>(
+    DingLanguageEntries(entries): DingLanguageEntries<T>
+){
+    for DingAlternativeEntries(word_entries) in entries {
+        for DingWordEntry(word_entry) in word_entries {
+            for word_entry_elements in word_entry {
+                match word_entry_elements {
+                    DingWordEntryElement::Word(value) => {}
+                    DingWordEntryElement::PartialWord(value, ptype) => {}
+                    DingWordEntryElement::AlternatingWords(alternating) => {}
+                    DingWordEntryElement::Category(category) => {
+
+                    }
+                    DingWordEntryElement::Contextualisation(contextualisation) => {}
+                    DingWordEntryElement::Info(info) => {}
+                    DingWordEntryElement::Abbreviation(abbrev) => {}
+                    DingWordEntryElement::AlternateNotation(a, b, c) => {}
+                    DingWordEntryElement::WordPlaceholder => {
+
+                    }
+                    DingWordEntryElement::InterchangeableWith => {
+
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod test {

@@ -295,8 +295,8 @@ where
     M: MetadataManager
 {
     type Item = DirectionTuple<
-        (usize, HashRef<T>, Option<M::SolvedMetadata>),
-        (usize, HashRef<T>, Option<M::SolvedMetadata>)
+        (usize, HashRef<T>, Option<M::ResolvedMetadata>),
+        (usize, HashRef<T>, Option<M::ResolvedMetadata>)
     >;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -305,11 +305,11 @@ where
         Some(
             next.map(
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(|value| value.into_solved());
+                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(|value| value.into_resolved());
                     (id, href, value)
                 },
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(|value| value.into_solved());
+                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(|value| value.into_resolved());
                     (id, href, value)
                 }
             )

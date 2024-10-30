@@ -1,21 +1,21 @@
-use std::borrow::Cow;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
-use itertools::{Either, Itertools, Position};
 use crate::tokenizer::Tokenizer;
-use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, Dictionary, DictionaryMut, DictionaryWithMeta};
-use crate::topicmodel::dictionary::constants::FREE_DICT;
-use crate::topicmodel::dictionary::direction::{AToB, Direction, Invariant, Language as DirLang, A, B};
-use crate::topicmodel::dictionary::loader::dictcc::WordEntryElement;
-use crate::topicmodel::dictionary::loader::free_dict::{GramaticHints, Translation};
+use crate::topicmodel::dictionary::constants::{DICT_CC, FREE_DICT};
+use crate::topicmodel::dictionary::direction::{Direction, Invariant, Language as DirLang, A, B};
+use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictReaderError, GramaticHints, Translation};
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataManager;
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
-use crate::topicmodel::dictionary::word_infos::Register::Dialect;
-use crate::topicmodel::reference::HashRef;
+use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
 use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
+use itertools::{Either, Itertools, Position};
+use std::borrow::Cow;
+use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
+use std::path::Path;
+use thiserror::Error;
+use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
+use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
+use crate::topicmodel::dictionary::metadata::loaded::reference_mut::LoadedMetadataMutRef;
 
 mod ding;
 mod dictcc;
@@ -133,6 +133,67 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             (Vec::with_capacity(0), Vec::with_capacity(0), Vec::with_capacity(0))
         }
     }
+    fn insert_single_word_inner<'a, D: Direction + DirLang>(&mut self, original: &str, value: Option<Either<Cow<'a, str>, (Cow<'a, str>, Cow<'a, str>)>>) -> usize {
+        match value {
+            None => {
+                self.dictionary.insert_single_word::<D>(original)
+            }
+            Some(Either::Left(value)) => {
+                self.dictionary.insert_single_word::<D>(value.as_ref())
+            }
+            Some(Either::Right((_, processed))) => {
+                self.dictionary.insert_single_word::<D>(processed.as_ref())
+            }
+        }
+    }
+    fn insert<'a, D: Direction + DirLang, L: DirLang>(&'a mut self, dict: &'static str, word: &str) -> (usize, LoadedMetadataMutRef<'a>) {
+        let preprocessed = if D::LANG.is_a() {
+            self.preprocessor.preprocess_word::<L>(dict, word)
+        } else {
+            self.preprocessor.preprocess_word::<L::OPPOSITE>(dict, word)
+        };
+
+        let orth_id = self.insert_single_word_inner::<D>(word, preprocessed);
+
+        (orth_id, if D::DIRECTION.is_a_to_b() {
+            self.dictionary.metadata.get_or_create_meta::<L>(orth_id)
+        } else {
+            self.dictionary.metadata.get_or_create_meta::<L::OPPOSITE>(orth_id)
+        })
+    }
+
+    pub fn finalize(self) -> DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager> {
+        self.dictionary
+    }
+
+
+    pub fn read_free_dict<D: DirLang + Direction>(&mut self, p: impl AsRef<Path>) -> Result<usize, (usize, Vec<FreeDictReaderError>)> {
+        let mut ct = 0;
+        let mut errors = Vec::new();
+        match read_free_dict(p) {
+            Ok(reader) => {
+                for value in reader {
+                    match value {
+                        Ok(value) => {
+                            self.process_free_dict_entry::<D>(value);
+                            ct += 1;
+                        }
+                        Err(err) => {
+                            errors.push(err);
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(ct)
+                } else {
+                    Err((ct, errors))
+                }
+            }
+            Err(err) => {
+                Err((0, vec![err]))
+            }
+        }
+    }
 
     pub fn process_free_dict_entry<D: Direction + DirLang>(&mut self, entry: free_dict::FreeDictEntry) {
         let free_dict::Word {
@@ -143,35 +204,14 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             gram,
             inflected,
             abbrev,
-            synonyms: _
+            synonyms
         } = entry.word;
 
         let orth_id = {
-            let preprocessed = if D::LANG.is_a() {
-                self.preprocessor.preprocess_word::<A>(FREE_DICT, &orth)
-            } else {
-                self.preprocessor.preprocess_word::<B>(FREE_DICT, &orth)
-            };
-
-            let orth_id = match preprocessed {
-                None => {
-                    self.dictionary.insert_single_word::<D>(&orth)
-                }
-                Some(Either::Left(value)) => {
-                    self.dictionary.insert_single_word::<D>(value.as_ref())
-                }
-                Some(Either::Right((_, processed))) => {
-                    self.dictionary.insert_single_word::<D>(processed.as_ref())
-                }
-            };
-
-
-            let mut meta_dict = self.dictionary.metadata_with_dict_mut();
-            let mut meta = if D::DIRECTION.is_a_to_b() {
-                meta_dict.get_or_create_meta::<A>(orth_id)
-            } else {
-                meta_dict.get_or_create_meta::<B>(orth_id)
-            };
+            let (orth_id, mut meta) = self.insert::<D, A>(
+                FREE_DICT,
+                &orth
+            );
             meta.add_single_to_unaltered_vocabulary(FREE_DICT, orth);
             meta.add_all_to_abbreviations(FREE_DICT, abbrev);
             meta.add_all_to_inflected(FREE_DICT, inflected);
@@ -183,6 +223,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             meta.add_all_to_pos(FREE_DICT, pos);
             meta.add_all_to_gender(FREE_DICT, gender);
             meta.add_all_to_number(FREE_DICT, number);
+            meta.add_all_to_synonyms(FREE_DICT, synonyms.into_iter().map(|value| value.word));
             orth_id
         };
 
@@ -196,31 +237,10 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             registers
         } in entry.translations {
             let word_id = {
-                let preprocessed = if D::DIRECTION.is_a_to_b() {
-                    self.preprocessor.preprocess_word::<B>(FREE_DICT, &word)
-                } else {
-                    self.preprocessor.preprocess_word::<A>(FREE_DICT, &word)
-                };
-
-                let word_id = match preprocessed {
-                    None => {
-                        self.dictionary.insert_single_word::<D::OPPOSITE>(&word)
-                    }
-                    Some(Either::Left(value)) => {
-                        self.dictionary.insert_single_word::<D::OPPOSITE>(value.as_ref())
-                    }
-                    Some(Either::Right((_, processed))) => {
-                        self.dictionary.insert_single_word::<D::OPPOSITE>(processed.as_ref())
-                    }
-                };
-                let mut meta_dict = self.dictionary.metadata_with_dict_mut();
-
-                let mut meta = if D::DIRECTION.is_a_to_b() {
-                    meta_dict.get_or_create_meta::<B>(word_id)
-                } else {
-                    meta_dict.get_or_create_meta::<A>(word_id)
-                };
-
+                let (word_id, mut meta) = self.insert::<D::OPPOSITE, B>(
+                    FREE_DICT,
+                    &word
+                );
                 meta.add_single_to_languages_default(lang.into());
                 meta.add_single_to_unaltered_vocabulary(FREE_DICT, word);
                 meta.add_all_to_abbreviations(FREE_DICT, abbrevs);
@@ -245,12 +265,36 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn process_dictcc<D: Direction + DirLang, V: AsRef<str>>(&mut self, dictcc::Entry(
-        dictcc::WordEntry(lang_a_cont),
-        dictcc::WordEntry(lang_b_cont),
-        word_types,
-        categories
-    ): dictcc::Entry<V>) {
+
+    pub fn read_dict_cc<D: DirLang + Direction>(&mut self, p: impl AsRef<Path>) -> Result<usize, (usize, Vec<LineReaderError<dictcc::Entry<String>>>)> {
+        match dictcc::read_dictionary(p) {
+            Ok(reader) => {
+                let mut ct = 0;
+                let mut errors = Vec::new();
+                for value in reader {
+                    match value {
+                        Ok(value) => {
+                            ct += 1;
+                            self.process_dictcc::<D, _>(value);
+                        }
+                        Err(err) => {
+                            errors.push(err.into());
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(ct)
+                } else {
+                    Err((ct, errors))
+                }
+            }
+            Err(err) => {
+                Err((0, vec![err.into()]))
+            }
+        }
+    }
+
+    pub fn process_dictcc<D: Direction + DirLang, V: AsRef<str> + Clone>(&mut self, dictcc::Entry(lang_a_cont, lang_b_cont, word_types, categories): dictcc::Entry<V>) {
         use crate::topicmodel::dictionary::loader::dictcc::{SpecialInfo, WordTypeInfo};
 
         let mut general_register = Vec::new();
@@ -276,103 +320,179 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             vec![]
         };
 
+        let a = process_word_entry(lang_a_cont, general_domains.as_slice(), general_pos.as_slice());
+        let b = process_word_entry(lang_b_cont, general_domains.as_slice(), general_pos.as_slice());
+        let words_a = a.create_all_word_constructs();
+        let words_b = b.create_all_word_constructs();
+        let mut id_a = Vec::with_capacity(words_a.len());
+        let mut id_b = Vec::with_capacity(words_b.len());
 
+        fn extend<V: AsRef<str>>(
+            meta: &mut LoadedMetadataMutRef,
+            unchanged: &str,
+            general_register: &[Register],
+            general_pos: &[PartOfSpeech],
+            general_domains: &[Domain],
+            result: &ProcessingResult<V>
+        ) {
+            meta.add_single_to_unaltered_vocabulary(DICT_CC, unchanged);
+            meta.add_all_to_domains(DICT_CC, general_domains.iter().copied().chain(result.domain.iter().copied()));
+            meta.add_all_to_pos(DICT_CC, general_pos.iter().copied().chain(result.pos.iter().copied()));
+            meta.add_all_to_registers(DICT_CC, general_register.iter().copied().chain(result.register.iter().copied()));
+            meta.add_all_to_gender(DICT_CC, result.gender.iter().copied());
+            meta.add_all_to_synonyms(DICT_CC, result.synonyms.iter());
+            meta.add_all_to_abbreviations(DICT_CC, result.abbrev.iter());
+        }
+
+        for value in words_a.into_iter() {
+            let word = value.into_iter().join(" ");
+            let (word_id, mut meta) = self.insert::<D, A>(DICT_CC, &word);
+            id_a.push(word_id);
+            extend(
+                &mut meta,
+                word.as_str(),
+                &general_register,
+                &general_pos,
+                &general_domains,
+                &a
+            )
+        }
+
+        for value in words_b.into_iter() {
+            let word = value.into_iter().join(" ");
+            let (word_id, mut meta) = self.insert::<D::OPPOSITE, B>(DICT_CC, &word);
+            id_b.push(word_id);
+            extend(
+                &mut meta,
+                word.as_str(),
+                &general_register,
+                &general_pos,
+                &general_domains,
+                &a
+            )
+        }
+
+        for (a, b) in id_a.into_iter().cartesian_product(id_b) {
+            unsafe {
+                if D::LANG.is_a() {
+                    self.dictionary.insert_raw_values::<Invariant>(a, b);
+                } else {
+                    self.dictionary.insert_raw_values::<Invariant>(b, a);
+                }
+            }
+        }
     }
 
 
-    pub fn finalize(self) -> DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager> {
-        self.dictionary
+    pub fn process_ding_dict<D: Direction + DirLang>(&mut self) {
+
     }
+}
+
+#[derive(Debug, Error)]
+pub enum LineReaderError<T: Debug> {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    LineError(#[from] LineDictionaryReaderError<DictionaryLineParserError<T>>)
 }
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+    use crate::topicmodel::dictionary::direction::{AToB, BToA};
+    use crate::topicmodel::dictionary::{UnifiedTranslationHelper};
     use std::fs::File;
     use std::io::{BufWriter, Write};
-    use fst::Set;
-    use itertools::Itertools;
-    use rust_stemmers::Algorithm;
-    use crate::tokenizer::TokenizerBuilder;
-    use crate::topicmodel::dictionary::direction::{AToB, BToA, DirectionTuple};
-    use crate::topicmodel::dictionary::loader::free_dict::read_free_dict;
-    use crate::topicmodel::dictionary::{BasicDictionary, SpecialPreprocessor, UnifiedTranslationHelper};
 
     #[test]
     pub fn test(){
         let dict_file = File::options().write(true).create(true).truncate(true).open("my_dict.json").unwrap();
-        let stopwords = serde_json::from_reader::<_, HashMap<String, Vec<String>>>(
-            File::open(r#"D:\Downloads\stopwords-iso.json"#).unwrap()
-        ).unwrap();
-        let mut words_en = stopwords.get("en").unwrap().clone();
-        words_en.sort();
+        // let stopwords = serde_json::from_reader::<_, HashMap<String, Vec<String>>>(
+        //     File::open(r#"D:\Downloads\stopwords-iso.json"#).unwrap()
+        // ).unwrap();
+        // let mut words_en = stopwords.get("en").unwrap().clone();
+        // words_en.sort();
+        //
+        // let mut words_de = stopwords.get("de").unwrap().clone();
+        // words_de.sort();
+        //
+        //
+        //
+        // let mut builder1 = TokenizerBuilder::default();
+        // builder1.stemmer(Some((Algorithm::English, false)));
+        // const SEPARATORS: [&str;5] = [" ", ", ", ". ", "?", "!"];
+        // builder1.separators(&SEPARATORS);
+        // let words_en = match Set::from_iter(words_en) {
+        //     Ok(words) => {words}
+        //     Err(value) => {panic!("No stopwords")}
+        // };
+        // builder1.stop_words(&words_en);
+        // builder1.unicode(true);
+        // builder1.lossy_normalization(true);
+        // let tokenizer1 = builder1.build();
+        //
+        //
+        // let mut builder2 = TokenizerBuilder::default();
+        // builder2.stemmer(Some((Algorithm::German, false)));
+        // builder2.separators(&SEPARATORS);
+        // let words_de = match Set::from_iter(words_de) {
+        //     Ok(words) => {words}
+        //     Err(value) => {panic!("No stopwords")}
+        // };
+        // builder2.stop_words(&words_de);
+        // builder2.unicode(true);
+        // builder2.lossy_normalization(true);
+        // let tokenizer2 = builder2.build();
+        //
+        // let spec = SpecialPreprocessor::new(tokenizer1, tokenizer2);
 
-        let mut words_de = stopwords.get("de").unwrap().clone();
-        words_de.sort();
+        let mut default = UnifiedTranslationHelper::default();
 
-
-
-        let mut builder1 = TokenizerBuilder::default();
-        builder1.stemmer(Some((Algorithm::English, false)));
-        const SEPARATORS: [&str;5] = [" ", ", ", ". ", "?", "!"];
-        builder1.separators(&SEPARATORS);
-        let words_en = match Set::from_iter(words_en) {
-            Ok(words) => {words}
-            Err(value) => {panic!("No stopwords")}
-        };
-        builder1.stop_words(&words_en);
-        builder1.unicode(true);
-        builder1.lossy_normalization(true);
-        let tokenizer1 = builder1.build();
-
-
-        let mut builder2 = TokenizerBuilder::default();
-        builder2.stemmer(Some((Algorithm::German, false)));
-        builder2.separators(&SEPARATORS);
-        let words_de = match Set::from_iter(words_de) {
-            Ok(words) => {words}
-            Err(value) => {panic!("No stopwords")}
-        };
-        builder2.stop_words(&words_de);
-        builder2.unicode(true);
-        builder2.lossy_normalization(true);
-        let tokenizer2 = builder2.build();
-
-        let spec = SpecialPreprocessor::new(tokenizer1, tokenizer2);
-
-        let mut default = UnifiedTranslationHelper::new(spec);
-        for value in read_free_dict("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei").unwrap().take(200) {
-            default.process_free_dict_entry::<AToB>(value.unwrap());
+        let x = default.read_free_dict::<AToB>("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei");
+        if let Err((a, b)) = x {
+            for value in b {
+                println!("{value}")
+            }
         }
-        for value in read_free_dict("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei").unwrap().take(200) {
-            default.process_free_dict_entry::<BToA>(value.unwrap());
+        let x = default.read_free_dict::<BToA>("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei");
+        if let Err((a, b)) = x {
+            for value in b {
+                println!("{value}")
+            }
         }
+        let x = default.read_dict_cc::<BToA>("dictionaries/DictCC/dict.txt");
+        if let Err((a, b)) = x {
+            for value in b {
+                println!("{value}")
+            }
+        }
+
         let data = default.finalize();
         let mut writer = BufWriter::new(dict_file);
         serde_json::to_writer_pretty(&mut writer, &data).unwrap();
         writer.flush().unwrap();
 
-        let number_of_entries = data.iter().unique_by(|value|{
-            (value.a, value.b)
-        }).count();
-
-        let x = number_of_entries / 100;
-
-        for a in data.into_iter().chunks(x).into_iter() {
-            let DirectionTuple {
-                a:(a_id, a_word, a_meta),
-                b:(b_id, b_word, b_meta),
-                direction
-            } = a.last().unwrap();
-            println!("{direction}: {a_word}");
-            if let Some(meta) = a_meta {
-                println!("{meta}");
-            }
-            println!("{direction}: {b_word}");
-            if let Some(meta) = b_meta {
-                println!("{meta}");
-            }
-            println!("\n----\n");
-        }
+        // let number_of_entries = data.iter().unique_by(|value|{
+        //     (value.a, value.b)
+        // }).count();
+        //
+        // let x = number_of_entries / 100;
+        //
+        // for a in data.into_iter().chunks(x).into_iter() {
+        //     let DirectionTuple {
+        //         a:(a_id, a_word, a_meta),
+        //         b:(b_id, b_word, b_meta),
+        //         direction
+        //     } = a.last().unwrap();
+        //     println!("{direction}: {a_word}");
+        //     if let Some(meta) = a_meta {
+        //         println!("{meta}");
+        //     }
+        //     println!("{direction}: {b_word}");
+        //     if let Some(meta) = b_meta {
+        //         println!("{meta}");
+        //     }
+        //     println!("\n----\n");
+        // }
     }
 }

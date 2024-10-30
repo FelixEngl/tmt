@@ -56,7 +56,7 @@ file-format = { version = "0", features = ["reader"] }
 whatlang = "0.16"
 indenter = { version = "0", features = ["std"] }
 const-str = "0.5"
-quick-xml = "0.36"
+quick-xml = { version = "0.37" }
 derive_builder = "0.20"
 memchr = "2.7"
 #derive-where = "1.2"
@@ -64,6 +64,7 @@ convert_case = "0"
 indexmap = "2.6"
 tar = "0.4"
 tinyset = { version = "0.5.0", features = ["serde"] }
+html-escape = "0.2.13"
 
 [build-dependencies]
 xml2code = {path = "xml2code"}

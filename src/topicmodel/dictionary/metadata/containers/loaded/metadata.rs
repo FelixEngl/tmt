@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use string_interner::Symbol;
-use crate::toolkit::typesafe_interner::{DefaultAbbreviation, DefaultDictionaryOrigin, DefaultInflected, DefaultUnalteredVoc};
+use crate::toolkit::typesafe_interner::{DefaultAbbreviation, DefaultDictionaryOrigin, DefaultInflected, DefaultSynonym, DefaultUnalteredVoc};
 use crate::topicmodel::dictionary::metadata::Metadata;
 use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Register};
 
@@ -95,7 +95,8 @@ impl_collect_all! {
     number: GrammaticalNumber,
     inflected: DefaultInflected,
     abbreviations: DefaultAbbreviation,
-    unaltered_vocabulary: DefaultUnalteredVoc
+    unaltered_vocabulary: DefaultUnalteredVoc,
+    synonyms: DefaultSynonym
 }
 
 impl Metadata for LoadedMetadata{}
@@ -120,7 +121,9 @@ pub struct AssociatedMetadata {
     #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
     abbreviations: tinyset::Set64<DefaultAbbreviation>,
     #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    unaltered_vocabulary: tinyset::Set64<DefaultUnalteredVoc>
+    unaltered_vocabulary: tinyset::Set64<DefaultUnalteredVoc>,
+    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
+    synonyms: tinyset::Set64<DefaultSynonym>,
 }
 
 impl AssociatedMetadata {
@@ -134,18 +137,20 @@ impl AssociatedMetadata {
         self.inflected.extend(other.inflected.iter());
         self.abbreviations.extend(other.abbreviations.iter());
         self.unaltered_vocabulary.extend(other.unaltered_vocabulary.iter());
+        self.synonyms.extend(other.synonyms.iter());
     }
 
     pub fn is_empty(&self) -> bool {
         self.languages.is_empty() &&
-        self.domains.is_empty() &&
-        self.registers.is_empty() &&
-        self.gender.is_empty() &&
-        self.pos.is_empty() &&
-        self.number.is_empty() &&
-        self.inflected.is_empty() &&
-        self.abbreviations.is_empty() &&
-        self.unaltered_vocabulary.is_empty()
+            self.domains.is_empty() &&
+            self.registers.is_empty() &&
+            self.gender.is_empty() &&
+            self.pos.is_empty() &&
+            self.number.is_empty() &&
+            self.inflected.is_empty() &&
+            self.abbreviations.is_empty() &&
+            self.unaltered_vocabulary.is_empty() &&
+            self.synonyms.is_empty()
     }
 
     pub fn languages(&self) -> &tinyset::Set64<Language> {
@@ -183,6 +188,10 @@ impl AssociatedMetadata {
     pub fn unaltered_vocabulary(&self) -> &tinyset::Set64<DefaultUnalteredVoc> {
         &self.unaltered_vocabulary
     }
+
+    pub fn synonyms(&self) -> &tinyset::Set64<DefaultSynonym> {
+        &self.synonyms
+    }
 }
 
 macro_rules! create_tinyset_impl {
@@ -212,7 +221,8 @@ create_tinyset_impl! {
     number: GrammaticalNumber,
     inflected: DefaultInflected,
     abbreviations: DefaultAbbreviation,
-    unaltered_vocabulary: DefaultUnalteredVoc
+    unaltered_vocabulary: DefaultUnalteredVoc,
+    synonyms: DefaultSynonym
 }
 
 

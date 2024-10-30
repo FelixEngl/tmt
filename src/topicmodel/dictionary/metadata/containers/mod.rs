@@ -11,7 +11,7 @@ use crate::topicmodel::dictionary::direction::Language;
 
 pub trait MetadataManager: Default + Clone {
     type Metadata: Sized + Metadata;
-    type SolvedMetadata: Sized + 'static;
+    type ResolvedMetadata: Sized + 'static;
     type Reference<'a>: MetadataReference<'a, Self> where Self: 'a;
     type MutReference<'a>: MetadataMutReference<'a, Self> where Self: 'a;
 
@@ -27,7 +27,6 @@ pub trait MetadataManager: Default + Clone {
 }
 
 pub trait Metadata: Clone + Default + Eq + PartialEq {
-
 }
 
 
@@ -38,12 +37,11 @@ pub trait MetadataReference<'a, M: MetadataManager>: Clone + Deref<Target: Metad
 
     fn into_owned(self) -> <M as MetadataManager>::Metadata;
 
-    fn into_solved(self) -> <M as MetadataManager>::SolvedMetadata;
+    fn into_resolved(self) -> <M as MetadataManager>::ResolvedMetadata;
 }
 
 pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadata> {
-    fn update_with<'b, L: Language>(&mut self, associated: <M as MetadataManager>::Reference<'b>);
-
+    fn update_with_reference<'b, L: Language>(&mut self, update: <M as MetadataManager>::Reference<'b>);
     fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <M as MetadataManager>::Metadata;
 
     fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut M;

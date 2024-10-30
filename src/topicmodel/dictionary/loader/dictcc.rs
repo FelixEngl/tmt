@@ -1,20 +1,22 @@
-use std::fmt::{Debug, Display, Formatter};
-use std::fs::File;
-use std::path::Path;
-use itertools::{Itertools};
+use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
+use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, take_nested_bracket_delimited};
+use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartOfSpeech, PartialWordType};
+use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalNumber, Register};
+use itertools::Itertools;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag, take_until};
 use nom::character::complete::{char, multispace0};
 use nom::combinator::{map, map_parser, map_res, opt, value};
 use nom::error::{FromExternalError, ParseError};
-use nom::IResult;
 use nom::multi::{many1, separated_list0};
 use nom::sequence::{delimited, pair, preceded, terminated};
-use strum::{Display, EnumString};
-use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
-use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, take_nested_bracket_delimited};
-use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartialWordType, PartOfSpeech};
-use crate::topicmodel::dictionary::word_infos::GrammaticalNumber;
+use nom::{IResult, InputTake};
+use regex::Regex;
+use std::fmt::{Debug, Display, Formatter};
+use std::fs::File;
+use std::path::Path;
+use std::sync::LazyLock;
+use strum::{Display, EnumIs, EnumString};
 
 
 /*
@@ -434,17 +436,336 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> std::io::Result<FunctionBasedL
     )
 }
 
+///
+/// let identifier = value.get(1);
+/// let first_name = &value[2];
+/// let alt_name = value.get(3);
+/// let optional_middle = value.get(4);
+/// let second_name = &value[5];
+/// let shortage = value.get(6);
+/// let third_name = value.get(7);
+/// let optional_end = value.get(8);
+pub static TAX_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?:(also|syn\.:|formerly:) )?([A-Z][a-z]*\.?)(?: */ *)?([A-Z][a-z]*\.?)?(?: ?\(([A-Z][a-z]*\.?)\))? ([a-z]+)(?:\s([a-z]+\.))?(?:\s([a-z]+))?(?: ?\(([a-z]+)\))?"#).unwrap()
+});
+
+pub static TAX_FAMILY_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?:(genus|family) )?([A-Z][a-z]*)"#).unwrap()
+});
+
+#[derive(Debug, EnumIs, Clone)]
+pub enum WordPatternElement<T> {
+    Word(T),
+    Prefix(T),
+    Suffix(T),
+    Combination(T),
+    Placeholder
+}
+
+impl<T> Display for WordPatternElement<T> where T: AsRef<str> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WordPatternElement::Word(value) => {
+                write!(f, "{}", html_escape::decode_html_entities(value))
+            }
+            WordPatternElement::Prefix(value) => {
+                write!(f, "{}", html_escape::decode_html_entities(value))
+            }
+            WordPatternElement::Suffix(value) => {
+                write!(f, "{}", html_escape::decode_html_entities(value))
+            }
+            WordPatternElement::Combination(value) => {
+                write!(f, "{}", html_escape::decode_html_entities(value))
+            }
+            WordPatternElement::Placeholder => {
+                write!(f, "…")
+            }
+        }
+    }
+}
+
+pub struct ProcessingResult<S> {
+    pub gender: Vec<GrammaticalGender>,
+    pub numeric: Vec<GrammaticalNumber>,
+    pub pos: Vec<PartOfSpeech>,
+    pub register: Vec<Register>,
+    pub abbrev: Vec<String>,
+    pub domain: Vec<Domain>,
+    pub synonyms: Vec<String>,
+    pub word_pattern: Vec<WordPatternElement<S>>,
+    pub latin_names: Vec<String>,
+    pub unclassified: Vec<WordEntryElement<S>>
+}
+
+impl<S> ProcessingResult<S> where S: Clone {
+    pub fn create_all_word_constructs(&self) -> Vec<Vec<WordPatternElement<S>>> {
+        let mut combinations = Vec::new();
+        combinations.push(vec![]);
+        for value in self.word_pattern.iter() {
+            match value {
+                x @ WordPatternElement::Combination(_) => {
+                    let mut new = Vec::with_capacity(combinations.len() * 2);
+                    for targ in combinations.into_iter() {
+                        let mut copy = targ.clone();
+                        copy.push(x.clone());
+                        new.push(copy);
+                        new.push(targ);
+                    }
+                    combinations = new;
+                }
+                other => {
+                    for targ in combinations.iter_mut() {
+                        targ.push(other.clone());
+                    }
+                }
+            }
+        }
+        combinations
+    }
+}
+
+pub fn process_word_entry<S: AsRef<str> + Clone>(
+    WordEntry(lang_cont): WordEntry<S>,
+    additional_domains: &[Domain],
+    additional_pos: &[PartOfSpeech]
+) -> ProcessingResult<S> {
+    let mut gender: Vec<GrammaticalGender> = Vec::new();
+    let mut numeric: Vec<GrammaticalNumber> = Vec::new();
+    let mut pos: Vec<PartOfSpeech> = Vec::new();
+    let mut register: Vec<Register> = Vec::new();
+    let mut abbrev: Vec<String> = Vec::new();
+    let mut domain: Vec<Domain> = Vec::new();
+    let mut synonyms: Vec<String> = Vec::new();
+    let mut word_pattern: Vec<WordPatternElement<S>> = Vec::new();
+    let mut latin_names: Vec<String> = Vec::new();
+    let mut unclassified: Vec<WordEntryElement<S>> = Vec::new();
+
+    for value in lang_cont {
+        match value {
+            WordEntryElement::Word(value) => {
+                word_pattern.push(WordPatternElement::Word(value));
+            }
+            WordEntryElement::PartialWord(a, b) => {
+                match b {
+                    PartialWordType::Prefix => {
+                        word_pattern.push(WordPatternElement::Prefix(a));
+                    }
+                    PartialWordType::Suffix => {
+                        word_pattern.push(WordPatternElement::Suffix(a));
+                    }
+                }
+            }
+            WordEntryElement::Gender(gend) => {
+                gender.push(gend)
+            }
+            WordEntryElement::Number(number) => {
+                numeric.push(number)
+            }
+            ref a @ WordEntryElement::MetaInfo(ref v) => {
+                match v.as_ref() {
+                    "prep+art" => {
+                        pos.push(PartOfSpeech::Preposition);
+                        pos.push(PartOfSpeech::Article);
+                    }
+                    "pron" | "adv" | "conj" | "indefinite article" => {
+                        pos.push(v.as_ref().parse().unwrap())
+                    }
+                    "ugs." => {
+                        register.push(Register::Coll)
+                    }
+                    "usually pl" => {
+                        numeric.push(GrammaticalNumber::Plural)
+                    }
+                    "sg only" => {
+                        numeric.push(GrammaticalNumber::Singular)
+                    }
+                    "auch: f" => {
+                        gender.push(GrammaticalGender::Feminine)
+                    }
+                    "treated as either sg or pl" | "treated as sg. or pl." => {
+                        numeric.extend_from_slice(&[GrammaticalNumber::Singular, GrammaticalNumber::Plural])
+                    }
+                    _ => {
+                        unclassified.push(a.clone());
+                    }
+                }
+            }
+            ref a @ WordEntryElement::Contextualisation(ref value) => {
+
+                fn parse_contextualisation(
+                    s: &str,
+                    register: &mut Vec<Register>,
+                    domain: &mut Vec<Domain>,
+                    synonyme: &mut Vec<String>,
+                    latin_names: &mut Vec<String>,
+                    additional_domains: &[Domain],
+                    additional_pos: &[PartOfSpeech]
+                ) -> bool {
+                    if let Ok(reg) = s.trim_end_matches(',').parse() {
+                        register.push(reg);
+                        return true;
+                    }
+                    if let Ok(dom) = s.trim_end_matches(',').parse() {
+                        domain.push(dom);
+                        return true;
+                    }
+                    if matches!(
+                            s,
+                            "österr." | "südd." | "nordd." | "ostd." | "schweiz." | "regional"
+                            | "Br." | "Am." | "Aus." | "NZ" | "Can." | "Scot." | "Irish"
+                            | "Ind." | "S.Afr." | "westösterr."
+                        ) {
+                        register.push(Register::Dialect);
+                        return true;
+                    }
+
+                    if s.starts_with("e.g.") || s.starts_with("z.B.") {
+                        // Beispieltexte
+                        return false
+                    }
+
+                    if s.starts_with("auch:") || s.starts_with("also:") || s.starts_with("syn.") {
+                        let synonym = s
+                            .trim_start_matches("auch:")
+                            .trim_start_matches("also:")
+                            .trim_start_matches("syn.:")
+                            .trim();
+                        if !synonym.is_empty() {
+                            synonyme.push(synonym.to_string());
+                            return true
+                        }
+                    }
+
+                    if s.contains(' ') {
+                        if additional_domains.contains(&Domain::T) && additional_pos.contains(&PartOfSpeech::Noun) {
+                            let mut family_and_genus = TAX_FAMILY_REGEX.captures_iter(s).peekable();
+                            if family_and_genus.peek().is_some() {
+                                for value in family_and_genus {
+                                    latin_names.push((&value[0]).to_string());
+                                    return true
+                                }
+                                return true
+                            }
+                            drop(family_and_genus);
+
+
+
+                            let matches = TAX_NAME_REGEX.captures_iter(s);
+                            let mut matches = matches.into_iter().peekable();
+                            let changed = matches.peek().is_some();
+                            for value in matches {
+                                // let identifier = value.get(1);
+                                let first_name = &value[2];
+                                let alt_name = value.get(3);
+                                let optional_middle = value.get(4);
+                                let second_name = &value[5];
+                                let sub_definition = value.get(6);
+                                let third_name = value.get(7);
+                                let optional_end = value.get(8);
+
+                                let mut entries = Vec::new();
+                                entries.push(first_name.to_string());
+                                if let Some(value) = alt_name {
+                                    entries.push(value.as_str().to_string());
+                                }
+                                if let Some(optional_middle) = optional_middle {
+                                    let mut collector = Vec::with_capacity(entries.len());
+                                    for value in entries.iter() {
+                                        let mut s = String::with_capacity(value.len() + optional_middle.as_str().len());
+                                        s.push_str(value.as_str());
+                                        s.push(' ');
+                                        s.push_str(optional_middle.as_str());
+                                        collector.push(s);
+                                    }
+                                    entries.extend(collector);
+                                }
+
+                                for value in entries.iter_mut() {
+                                    value.push(' ');
+                                    value.push_str(second_name);
+                                }
+                                if let Some(subs) = sub_definition {
+                                    for value in entries.iter_mut() {
+                                        value.push(' ');
+                                        value.push_str(subs.as_str());
+                                    }
+                                }
+                                if let Some(subs) = third_name {
+                                    for value in entries.iter_mut() {
+                                        value.push(' ');
+                                        value.push_str(subs.as_str());
+                                    }
+                                }
+                                if let Some(subs) = optional_end {
+                                    let mut collector = Vec::with_capacity(entries.len());
+                                    for value in entries.iter() {
+                                        let mut s = String::with_capacity(value.len() + subs.as_str().len());
+                                        s.push_str(value.as_str());
+                                        s.push(' ');
+                                        s.push_str(subs.as_str());
+                                        collector.push(s);
+                                    }
+                                    entries.extend(collector);
+                                }
+
+                                latin_names.extend(entries);
+                            }
+                            if changed {
+                                return true
+                            }
+                        }
+
+                        let mut found_something = false;
+                        for value in s.split(' ') {
+                            found_something |= parse_contextualisation(value, register, domain, synonyme, latin_names, additional_domains, additional_pos);
+                        }
+                        if found_something {
+                            return true
+                        }
+                    }
+                    false
+                }
+
+                if !parse_contextualisation(value.as_ref(), &mut register, &mut domain, &mut synonyms, &mut latin_names, additional_domains, additional_pos) {
+                    unclassified.push(a.clone())
+                }
+
+            }
+            WordEntryElement::Abbreviation(value) => {
+                abbrev.push(value.as_ref().to_string())
+            }
+            WordEntryElement::Combination(value) => {
+                word_pattern.push(WordPatternElement::Combination(value))
+            }
+            WordEntryElement::Placeholder => {
+                word_pattern.push(WordPatternElement::Placeholder)
+            }
+        }
+    }
+    ProcessingResult {
+        gender,
+        numeric,
+        pos,
+        register,
+        abbrev,
+        domain,
+        synonyms,
+        word_pattern,
+        latin_names,
+        unclassified
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
+    use crate::topicmodel::dictionary::loader::dictcc;
+    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, process_word_entry, read_dictionary, Entry, SpecialInfo, WordPatternElement, WordTypeInfo};
+    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
+    use crate::topicmodel::dictionary::word_infos::{Domain, Register};
     use itertools::Itertools;
     use nom::bytes::complete::is_not;
     use nom::IResult;
-    use crate::topicmodel::dictionary::loader::dictcc;
-    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, read_dictionary, Entry, WordCategories, WordEntryElement};
-    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
-    use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, PartOfSpeech, PartialWordType, Register};
-    use crate::topicmodel::dictionary::word_infos::Register::Dialect;
+    use rand::{seq::IteratorRandom, thread_rng};
 
     #[test]
     fn word_info_parser() {
@@ -462,145 +783,57 @@ mod test {
         execute_test_read_for(value, 30, 0);
     }
 
-    fn process_word_entry<S: AsRef<str> + Clone>(dictcc::WordEntry(lang_cont): dictcc::WordEntry<S>) -> Vec<WordEntryElement<S>> {
-        let mut gender = Vec::new();
-        let mut numeric = Vec::new();
-        let mut pos = Vec::new();
-        let mut register = Vec::new();
-        let mut abbrev = Vec::new();
-        let mut domain: Vec<Domain> = Vec::new();
 
-        let mut words = Vec::new();
-        let mut prefixes = Vec::new();
-        let mut postfixes = Vec::new();
 
-        let mut unprocessed = Vec::new();
 
-        let mut has_placeholder = false;
-
-        for value in lang_cont {
-            match value {
-                WordEntryElement::Word(value) => {
-                    words.push(value.as_ref().to_string())
-                }
-                WordEntryElement::PartialWord(a, b) => {
-                    match b {
-                        PartialWordType::Prefix => {
-                            prefixes.push(a.as_ref().to_string())
-                        }
-                        PartialWordType::Suffix => {
-                            postfixes.push(a.as_ref().to_string())
-                        }
-                    }
-                }
-                WordEntryElement::Gender(gend) => {
-                    gender.push(gend)
-                }
-                WordEntryElement::Number(number) => {
-                    numeric.push(number)
-                }
-                WordEntryElement::MetaInfo(v) => {
-                    match v.as_ref() {
-                        "prep+art" => {
-                            pos.push(PartOfSpeech::Preposition);
-                            pos.push(PartOfSpeech::Article);
-                        }
-                        "pron" | "adv" | "conj" | "indefinite article" => {
-                            pos.push(v.as_ref().parse().unwrap())
-                        }
-                        "ugs." => {
-                            register.push(Register::Ugs)
-                        }
-                        "usually pl" => {
-                            numeric.push(GrammaticalNumber::Plural)
-                        }
-                        "sg only" => {
-                            numeric.push(GrammaticalNumber::Singular)
-                        }
-                        "auch: f" => {
-                            gender.push(GrammaticalGender::Feminine)
-                        }
-                        "treated as either sg or pl" | "treated as sg. or pl." => {
-                            numeric.extend_from_slice(&[GrammaticalNumber::Singular, GrammaticalNumber::Plural])
-                        }
-                        _ => {}
-                    }
-                }
-                ref a @ WordEntryElement::Contextualisation(ref value) => {
-                    let s = value.as_ref();
-                    if let Ok(reg) = s.parse() {
-                        register.push(reg);
-                        continue
-                    }
-                    if let Ok(dom) = s.parse() {
-                        domain.push(dom);
-                        continue
-                    }
-                    if matches!(
-                            s,
-                            "österr." | "südd." | "nordd." | "ostd." | "schweiz." | "regional"
-                            | "Br." | "Am." | "Aus." | "NZ" | "Can." | "Scot." | "Irish"
-                            | "Ind." | "S.Afr."
-                        ) {
-                        register.push(Dialect);
-                        continue
-                    }
-                    unprocessed.push(a.clone())
-                }
-                WordEntryElement::Abbreviation(value) => {
-                    abbrev.push(value.as_ref().to_string())
-                }
-                x @ WordEntryElement::Combination(_) => {
-                    unprocessed.push(x)
-                }
-                WordEntryElement::Placeholder => {
-                    // Ignore placeholders
-                    has_placeholder = true;
-                }
-            }
-        }
-        unprocessed
-    }
 
     #[test]
     fn can_read2(){
         let value = read_dictionary(
             "dictionaries/DictCC/dict.txt"
         ).unwrap();
-        let mut left_over = HashSet::new();
-        for val in value {
+        for val in value.into_iter() {
             if let Ok(Entry(
                           lang_a_cont,
                           lang_b_cont,
-                          _word_types,
-                          categories2
+                          word_types,
+                          categories
                       )) = val {
-                for value in process_word_entry(lang_a_cont) {
-                    left_over.insert(value);
-                }
-                for value in process_word_entry(lang_b_cont) {
-                    left_over.insert(value);
-                }
-            }
-        }
-        let mut cont = HashSet::new();
-        for value in left_over.into_iter() {
-            match value {
-                WordEntryElement::Word(_) => {}
-                WordEntryElement::PartialWord(_, _) => {}
-                WordEntryElement::Gender(_) => {}
-                WordEntryElement::Number(_) => {}
-                WordEntryElement::MetaInfo(_) => {}
-                WordEntryElement::Contextualisation(value) => {
-                    cont.insert(value);
-                }
-                WordEntryElement::Abbreviation(_) => {}
-                WordEntryElement::Combination(_) => {}
-                WordEntryElement::Placeholder => {}
-            }
-        }
 
-        println!("Left Over: \n{}", cont.into_iter().take(20).join(",\n"));
+                let mut general_register = Vec::new();
+                let mut general_pos = Vec::new();
+                if let Some(dictcc::WordTypes(types)) = word_types {
+                    for WordTypeInfo(a, b) in types {
+                        general_pos.push(b);
+                        match a {
+                            None => {}
+                            Some(SpecialInfo::Archaic) => {
+                                general_register.push(Register::Archaic);
+                            }
+                            Some(SpecialInfo::Rare) => {
+                                general_register.push(Register::Rare);
+                            }
+                        }
+                    }
+                }
+
+                let general_domains = if let Some(dictcc::WordCategories(types)) = categories {
+                    types.into_iter().map(|value| value.parse::<Domain>().unwrap()).collect_vec()
+                } else {
+                    vec![]
+                };
+                let a = process_word_entry(lang_a_cont, general_domains.as_slice(), general_pos.as_slice());
+                if a.word_pattern.iter().any(|value| matches!(value, WordPatternElement::Prefix(_))) {
+                    println!("{:?}\n", a.word_pattern);
+                }
+                let a = process_word_entry(lang_b_cont, general_domains.as_slice(), general_pos.as_slice());
+                if a.word_pattern.iter().any(|value| matches!(value, WordPatternElement::Prefix(_))) {
+                    println!("{:?}\n", a.word_pattern);
+                    break
+                }
+
+            }
+        }
     }
 
     #[test]

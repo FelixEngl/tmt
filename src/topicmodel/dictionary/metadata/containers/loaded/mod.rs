@@ -1,10 +1,15 @@
-mod metadata;
-mod reference;
-mod reference_mut;
-mod python;
+pub mod metadata;
+pub mod reference;
+pub mod reference_mut;
+pub mod python;
+
+pub use metadata::*;
+pub use reference::*;
+pub use reference_mut::*;
+pub use python::*;
 
 use serde::{Deserialize, Serialize};
-use crate::toolkit::typesafe_interner::{DefaultAbbreviation, DefaultAbbreviationStringInterner, DefaultDictionaryOrigin, DefaultDictionaryOriginStringInterner, DefaultInflected, DefaultInflectedStringInterner, DefaultUnalteredVoc, DefaultUnalteredVocStringInterner};
+use crate::toolkit::typesafe_interner::{DefaultAbbreviation, DefaultAbbreviationStringInterner, DefaultDictionaryOrigin, DefaultDictionaryOriginStringInterner, DefaultInflected, DefaultInflectedStringInterner, DefaultSynonym, DefaultSynonymStringInterner, DefaultUnalteredVoc, DefaultUnalteredVocStringInterner};
 use crate::topicmodel::dictionary::direction::Language;
 use crate::topicmodel::dictionary::metadata::containers::loaded::metadata::LoadedMetadata;
 use crate::topicmodel::dictionary::metadata::containers::loaded::reference::LoadedMetadataRef;
@@ -19,7 +24,8 @@ pub struct LoadedMetadataManager {
     pub(in crate::topicmodel::dictionary) dictionary_interner: DefaultDictionaryOriginStringInterner,
     pub(in crate::topicmodel::dictionary) inflected_interner: DefaultInflectedStringInterner,
     pub(in crate::topicmodel::dictionary) abbrevitation_interner: DefaultAbbreviationStringInterner,
-    pub(in crate::topicmodel::dictionary) unaltered_voc_interner: DefaultUnalteredVocStringInterner
+    pub(in crate::topicmodel::dictionary) unaltered_voc_interner: DefaultUnalteredVocStringInterner,
+    pub(in crate::topicmodel::dictionary) synonyms_interner: DefaultSynonymStringInterner
 }
 
 impl LoadedMetadataManager {
@@ -38,6 +44,9 @@ impl LoadedMetadataManager {
     pub fn intern_abbreviations(&mut self, voc_entry: impl AsRef<str>) -> DefaultAbbreviation {
         self.abbrevitation_interner.get_or_intern(voc_entry)
     }
+    pub fn intern_synonyms(&mut self, voc_entry: impl AsRef<str>) -> DefaultSynonym {
+        self.synonyms_interner.get_or_intern(voc_entry)
+    }
 }
 
 impl Default for LoadedMetadataManager {
@@ -49,13 +58,14 @@ impl Default for LoadedMetadataManager {
             inflected_interner: DefaultInflectedStringInterner::new(),
             abbrevitation_interner: DefaultAbbreviationStringInterner::new(),
             unaltered_voc_interner: DefaultUnalteredVocStringInterner::new(),
+            synonyms_interner: DefaultSynonymStringInterner::new(),
         }
     }
 }
 
 impl MetadataManager for LoadedMetadataManager {
     type Metadata = LoadedMetadata;
-    type SolvedMetadata = SolvedLoadedMetadata;
+    type ResolvedMetadata = SolvedLoadedMetadata;
     type Reference<'a> = LoadedMetadataRef<'a> where Self: 'a;
     type MutReference<'a> = LoadedMetadataMutRef<'a> where Self: 'a;
 
@@ -75,6 +85,7 @@ impl MetadataManager for LoadedMetadataManager {
             inflected_interner: self.inflected_interner,
             dictionary_interner: self.dictionary_interner,
             unaltered_voc_interner: self.unaltered_voc_interner,
+            synonyms_interner: self.synonyms_interner,
         }
     }
 
@@ -136,7 +147,8 @@ impl MetadataManager for LoadedMetadataManager {
             dictionary_interner: self.dictionary_interner.clone(),
             meta_a: Default::default(),
             meta_b: Default::default(),
-            unaltered_voc_interner: self.unaltered_voc_interner.clone()
+            unaltered_voc_interner: self.unaltered_voc_interner.clone(),
+            synonyms_interner: self.synonyms_interner.clone()
         }
     }
 }

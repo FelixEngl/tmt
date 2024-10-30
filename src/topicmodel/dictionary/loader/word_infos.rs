@@ -577,7 +577,7 @@ pub enum Domain {
     #[strum(to_string = "mineral.", serialize = "mineral", serialize = "MINERAL.", serialize = "MINERAL")]
     Mineral = 80,
     /// Mining & Drilling / Bergbau & Bohrtechnik
-    #[strum(to_string = "mining", serialize = "ornith.", serialize = "ORNITH.", serialize = "ornith", serialize = "min.", serialize = "MIN.", serialize = "ORNITH", serialize = "MINING", serialize = "MIN", serialize = "mining.", serialize = "min", serialize = "MINING.")]
+    #[strum(to_string = "mining", serialize = "min.", serialize = "MIN.", serialize = "MINING", serialize = "MIN", serialize = "mining.", serialize = "min", serialize = "MINING.")]
     Mining = 81,
     /// Music / Musik
     #[strum(to_string = "mus.", serialize = "MUS.", serialize = "MUS", serialize = "mus")]
@@ -607,7 +607,7 @@ pub enum Domain {
     #[strum(to_string = "optics", serialize = "OPTICS.", serialize = "optics.", serialize = "OPTICS")]
     Optics = 90,
     /// Ornithology / Ornithologie, Vogelkunde
-    #[strum(to_string = "orn.", serialize = "orn", serialize = "ORN.", serialize = "ORN")]
+    #[strum(to_string = "orn.", serialize = "orn", serialize = "ORN.", serialize = "ORN", serialize = "ornith.", serialize = "ORNITH.", serialize = "ornith", serialize = "ORNITH")]
     Orn = 91,
     /// Pharmacy / Pharmazie
     #[strum(to_string = "pharm.", serialize = "PHARM.", serialize = "pharm", serialize = "PHARM")]
@@ -763,35 +763,45 @@ pub enum Register {
     Vulg = 1,
     #[strum(to_string = "techn.", serialize = "techn")]
     Techn = 2,
-    #[strum(to_string = "coll.", serialize = "coll")]
+    #[strum(to_string = "coll.", serialize = "coll", serialize = "ugs", serialize = "ugs.")]
     Coll = 3,
     /// Gehoben
     #[strum(to_string = "geh.", serialize = "geh")]
     Geh = 4,
-    #[strum(to_string = "slang", serialize = "slang.")]
+    #[strum(to_string = "slang", serialize = "slang.", serialize = "sl.")]
     Slang = 5,
     #[strum(to_string = "iron.", serialize = "iron")]
     Iron = 6,
-    #[strum(to_string = "ugs.", serialize = "ugs")]
-    Ugs = 7,
     #[strum(to_string = "formal", serialize = "formal.")]
-    Formal = 8,
+    Formal = 7,
     #[strum(to_string = "euphem.", serialize = "euphem")]
-    Euphem = 9,
+    Euphem = 8,
     #[strum(to_string = "literary", serialize = "literary.")]
-    Literary = 10,
+    Literary = 9,
     #[strum(to_string = "dialect", serialize = "dialect.")]
-    Dialect = 11,
+    Dialect = 10,
     /// DictCC
     #[strum(to_string = "archaic", serialize = "veraltet", serialize = "veraltend")]
     #[strum(serialize = "dated", serialize = "alt", serialize = "obs.")]
-    Archaic = 12,
+    #[strum(serialize = "altertümlich")]
+    Archaic = 11,
     /// DictCC
-    #[strum(to_string = "rare")]
-    Rare = 13,
-    /// DictCC - pejorativ (abwertend)
+    #[strum(to_string = "rare", serialize = "selten")]
+    Rare = 12,
+    /// DictCC -
     #[strum(to_string = "pej.")]
-    Pejorativ = 14,
+    Pejorativ = 13,
+    /// DictCC - also figurative
+    #[strum(to_string = "fig.")]
+    Figurative = 14,
+    #[strum(to_string = "also fig.", serialize = "auch fig.")]
+    AlsoFigurative = 15,
+    /// spelling variant (less common)
+    #[strum(to_string = "spv.", serialize = "Rsv.")]
+    SpellingVariant = 16,
+    /// official language; administration
+    #[strum(to_string = "adm.")]
+    Admin = 17,
 }
 
 impl Fits64 for Register {

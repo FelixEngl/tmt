@@ -20,11 +20,15 @@ pub struct FreeDictEntry {
 
 pub struct Word {
     pub orth: String,
-    /// <abbr> (abbreviation) contains an abbreviation of any sort. [3.6.5 Abbreviations and Their Expansions]
+    /// <abbr> (abbreviation) contains an abbreviation of any sort.
+    /// [3.6.5 Abbreviations and Their Expansions]
     pub abbrev: Vec<String>,
-    /// An inflected form of a word has a changed spelling or ending that shows the way it is used in sentences: "Finds" and "found" are inflected forms of "find".
+    /// An inflected form of a word has a changed spelling or ending that shows the way it is used
+    /// in sentences: "Finds" and "found" are inflected forms of "find".
     pub inflected: Vec<String>,
-    /// <domain> (domain of use) describes the most important social context in which the text was realized or for which it is intended, for example private vs. public, education, religion, etc. [16.2.1 The Text Description]
+    /// <domain> (domain of use) describes the most important social context in which the text was
+    /// realized or for which it is intended, for example private vs. public,
+    /// education, religion, etc. [16.2.1 The Text Description]
     pub domains: Vec<Domain>,
     pub gram: Option<GramaticHints>,
     pub registers: Vec<Register>,
@@ -431,9 +435,7 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     }
 
                 }
-
-
-
+                
                 let word = Word {
                     orth: orth_element,
                     abbrev,

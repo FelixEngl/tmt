@@ -36,22 +36,37 @@ impl SolvedMetadata {
     pub fn new(associated_dictionaries: Option<Vec<String>>, subjects: Option<Vec<String>>, unstemmed: Option<HashMap<String, Vec<String>>>) -> Self {
         Self { associated_dictionaries, subjects, unstemmed }
     }
+
+    pub fn associated_dictionaries(&self) -> &Option<Vec<String>> {
+        &self.associated_dictionaries
+    }
+
+    pub fn subjects(&self) -> &Option<Vec<String>> {
+        &self.subjects
+    }
+
+    pub fn unstemmed(&self) -> &Option<HashMap<String, Vec<String>>> {
+        &self.unstemmed
+    }
 }
 
 #[pymethods]
 impl SolvedMetadata {
     #[getter]
-    pub fn associated_dictionaries(&self) -> Option<Vec<String>> {
+    #[pyo3(name = "associated_dictionaries")]
+    pub fn associated_dictionaries_py(&self) -> Option<Vec<String>> {
         self.associated_dictionaries.clone()
     }
 
     #[getter]
-    pub fn subjects(&self) -> Option<Vec<String>> {
+    #[pyo3(name = "subjects")]
+    pub fn subjects_py(&self) -> Option<Vec<String>> {
         self.subjects.clone()
     }
 
     #[getter]
-    pub fn unstemmed(&self) -> Option<HashMap<String, Vec<String>>> {
+    #[pyo3(name = "unstemmed")]
+    pub fn unstemmed_py(&self) -> Option<HashMap<String, Vec<String>>> {
         self.unstemmed.clone()
     }
 

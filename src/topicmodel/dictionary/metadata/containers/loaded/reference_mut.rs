@@ -27,7 +27,7 @@ impl<'a> DerefMut for LoadedMetadataMutRef<'a> {
 }
 
 impl<'a> MetadataMutReference<'a, LoadedMetadataManager> for LoadedMetadataMutRef<'a> {
-    fn update_with<'b, L: Language>(&mut self, associated: <LoadedMetadataManager as MetadataManager>::Reference<'b>) {
+    fn update_with_reference<'b, L: Language>(&mut self, associated: <LoadedMetadataManager as MetadataManager>::Reference<'b>) {
         self.meta.update_with(associated.raw)
     }
 
@@ -128,7 +128,8 @@ impl_adders! {
     inderned:
     inflected,
     abbreviations,
-    unaltered_vocabulary
+    unaltered_vocabulary,
+    synonyms
 }
 
 

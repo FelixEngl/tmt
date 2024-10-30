@@ -241,5 +241,6 @@ create_interned_typesafe_symbol! {
     Tag,
     Inflected,
     Abbreviation,
-    UnalteredVoc
+    UnalteredVoc,
+    Synonym
 }

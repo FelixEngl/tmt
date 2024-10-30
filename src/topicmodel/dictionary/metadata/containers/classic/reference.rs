@@ -38,7 +38,7 @@ impl<'a> MetadataReference<'a, ClassicMetadataManager> for ClassicMetadataRef<'a
         self.raw.clone()
     }
 
-    fn into_solved(self) -> <ClassicMetadataManager as MetadataManager>::SolvedMetadata {
+    fn into_resolved(self) -> <ClassicMetadataManager as MetadataManager>::ResolvedMetadata {
         self.into()
     }
 }

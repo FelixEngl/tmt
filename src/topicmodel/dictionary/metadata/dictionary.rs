@@ -79,7 +79,7 @@ where
     ) {
 
         let mut meta = self.metadata.get_or_create_meta::<L>(word_id);
-        meta.update_with::<L>(metadata_ref)
+        meta.update_with_reference::<L>(metadata_ref)
     }
 
     pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V, M>
@@ -414,8 +414,8 @@ where
     M: MetadataManager
 {
     type Item = DirectionTuple<
-        (usize, HashRef<T>, Option<M::SolvedMetadata>),
-        (usize, HashRef<T>, Option<M::SolvedMetadata>)
+        (usize, HashRef<T>, Option<M::ResolvedMetadata>),
+        (usize, HashRef<T>, Option<M::ResolvedMetadata>)
     >;
     type IntoIter = DictionaryWithMetaIterator<DictionaryWithMeta<T, V, M>, T, V, M>;
 
