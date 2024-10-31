@@ -7,15 +7,15 @@ use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
 use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
-use itertools::{Either, Itertools, Position};
+use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
-use crate::topicmodel::dictionary::metadata::loaded::reference_mut::LoadedMetadataMutRef;
+use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
 
 mod ding;
 mod dictcc;
@@ -204,7 +204,11 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             gram,
             inflected,
             abbrev,
-            synonyms
+            synonyms,
+            regions,
+            colloc,
+            contextual,
+            see
         } = entry.word;
 
         let orth_id = {
@@ -212,7 +216,9 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 FREE_DICT,
                 &orth
             );
-            meta.add_single_to_unaltered_vocabulary(FREE_DICT, orth);
+            meta.add_single_to_unaltered_vocabulary(FREE_DICT, &orth);
+            meta.add_single_to_original_entry(FREE_DICT, orth);
+            meta.add_all_to_region(FREE_DICT, regions);
             meta.add_all_to_abbreviations(FREE_DICT, abbrev);
             meta.add_all_to_inflected(FREE_DICT, inflected);
             meta.add_all_to_domains(FREE_DICT, domains);
@@ -223,7 +229,36 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             meta.add_all_to_pos(FREE_DICT, pos);
             meta.add_all_to_gender(FREE_DICT, gender);
             meta.add_all_to_number(FREE_DICT, number);
-            meta.add_all_to_synonyms(FREE_DICT, synonyms.into_iter().map(|value| value.word));
+
+            meta.add_all_to_synonyms(FREE_DICT, synonyms.iter().map(|value| &value.word));
+            meta.add_all_to_contextual_informations(
+                FREE_DICT,
+                chain!(colloc, contextual)
+            );
+            meta.add_all_to_contextual_informations(
+                FREE_DICT,
+                see.iter().map(|value| &value.word)
+            );
+
+            meta.add_single_to_ids(FREE_DICT, entry.id);
+
+            for free_dict::Synonym {
+                target_id,
+                word
+            } in synonyms.into_iter() {
+                meta.add_single_to_synonyms(FREE_DICT, word);
+                meta.add_single_to_outgoing_ids(FREE_DICT, target_id);
+            }
+            for free_dict::See {
+                target_id,
+                word
+            } in see.into_iter() {
+                meta.add_single_to_look_at(FREE_DICT, word);
+                if let Some(target_id) = target_id {
+                    meta.add_single_to_outgoing_ids(FREE_DICT, target_id);
+                }
+            }
+
             orth_id
         };
 
@@ -234,7 +269,10 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             gram,
             lang,
             abbrevs,
-            registers
+            registers,
+            colloc,
+            contextual,
+            regions
         } in entry.translations {
             let word_id = {
                 let (word_id, mut meta) = self.insert::<D::OPPOSITE, B>(
@@ -242,7 +280,8 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                     &word
                 );
                 meta.add_single_to_languages_default(lang.into());
-                meta.add_single_to_unaltered_vocabulary(FREE_DICT, word);
+                meta.add_single_to_unaltered_vocabulary(FREE_DICT, &word);
+                meta.add_single_to_original_entry(FREE_DICT, word);
                 meta.add_all_to_abbreviations(FREE_DICT, abbrevs);
                 meta.add_all_to_domains(FREE_DICT, domains);
                 meta.add_all_to_languages(FREE_DICT, languages);
@@ -252,6 +291,11 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 meta.add_all_to_pos(FREE_DICT, pos);
                 meta.add_all_to_gender(FREE_DICT, gender);
                 meta.add_all_to_number(FREE_DICT, number);
+                meta.add_all_to_region(FREE_DICT, regions);
+                meta.add_all_to_contextual_informations(
+                    FREE_DICT,
+                    chain!(colloc, contextual)
+                );
                 word_id
             };
 
@@ -294,7 +338,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn process_dictcc<D: Direction + DirLang, V: AsRef<str> + Clone>(&mut self, dictcc::Entry(lang_a_cont, lang_b_cont, word_types, categories): dictcc::Entry<V>) {
+    pub fn process_dictcc<D: Direction + DirLang, V: AsRef<str> + Clone + Display>(&mut self, dictcc::Entry(lang_a_cont, lang_b_cont, word_types, categories): dictcc::Entry<V>) {
         use crate::topicmodel::dictionary::loader::dictcc::{SpecialInfo, WordTypeInfo};
 
         let mut general_register = Vec::new();
@@ -323,11 +367,12 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         let a = process_word_entry(lang_a_cont, general_domains.as_slice(), general_pos.as_slice());
         let b = process_word_entry(lang_b_cont, general_domains.as_slice(), general_pos.as_slice());
         let words_a = a.create_all_word_constructs();
+
         let words_b = b.create_all_word_constructs();
         let mut id_a = Vec::with_capacity(words_a.len());
         let mut id_b = Vec::with_capacity(words_b.len());
 
-        fn extend<V: AsRef<str>>(
+        fn extend<V: AsRef<str> + Display>(
             meta: &mut LoadedMetadataMutRef,
             unchanged: &str,
             general_register: &[Register],
@@ -336,12 +381,16 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             result: &ProcessingResult<V>
         ) {
             meta.add_single_to_unaltered_vocabulary(DICT_CC, unchanged);
+            meta.add_single_to_original_entry(DICT_CC, &result.reconstructed);
             meta.add_all_to_domains(DICT_CC, general_domains.iter().copied().chain(result.domain.iter().copied()));
             meta.add_all_to_pos(DICT_CC, general_pos.iter().copied().chain(result.pos.iter().copied()));
             meta.add_all_to_registers(DICT_CC, general_register.iter().copied().chain(result.register.iter().copied()));
+            meta.add_all_to_region(DICT_CC, result.regions.iter().copied());
             meta.add_all_to_gender(DICT_CC, result.gender.iter().copied());
             meta.add_all_to_synonyms(DICT_CC, result.synonyms.iter());
             meta.add_all_to_abbreviations(DICT_CC, result.abbrev.iter());
+            meta.add_all_to_contextual_informations(DICT_CC, result.contextualisation.iter().map(|v| v.to_string()));
+            meta.add_all_to_unclassified(DICT_CC, result.latin_names.iter());
         }
 
         for value in words_a.into_iter() {

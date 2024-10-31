@@ -5557,7 +5557,7 @@ pub fn read_when_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
 }
 
 // Attribute - type - a_type - TypeAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]
 pub enum TypeAttribute {
     #[strum(serialize="reg")]
     Reg,

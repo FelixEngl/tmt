@@ -2,8 +2,8 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
-use crate::toolkit::once_lock_serializer::OnceLockDef;
-use crate::toolkit::typesafe_interner::{DefaultDictionaryOrigin, DefaultTag};
+use crate::toolkit::once_serializer::OnceLockDef;
+use crate::toolkit::typesafe_interner::{DictionaryOriginSymbol, TagSymbol};
 use crate::topicmodel::dictionary::metadata::containers::Metadata as IMetadata;
 
 
@@ -11,12 +11,12 @@ use crate::topicmodel::dictionary::metadata::containers::Metadata as IMetadata;
 #[derive(Debug, Clone, Default, Deserialize, Serialize, Eq)]
 pub struct ClassicMetadata {
     #[serde(with = "OnceLockDef")]
-    pub associated_dictionaries: OnceLock<HashSet<DefaultDictionaryOrigin>>,
+    pub associated_dictionaries: OnceLock<HashSet<DictionaryOriginSymbol>>,
     #[serde(with = "OnceLockDef")]
     #[serde(alias = "meta_tags")]
-    pub subjects: OnceLock<HashSet<DefaultTag>>,
+    pub subjects: OnceLock<HashSet<TagSymbol>>,
     #[serde(with = "OnceLockDef")]
-    pub unstemmed: OnceLock<HashMap<usize, HashSet<DefaultDictionaryOrigin>>>,
+    pub unstemmed: OnceLock<HashMap<usize, HashSet<DictionaryOriginSymbol>>>,
 }
 
 macro_rules! create_methods {
@@ -57,12 +57,12 @@ impl IMetadata for ClassicMetadata {}
 
 impl ClassicMetadata {
     create_methods! {
-        self.associated_dictionaries(DefaultDictionaryOrigin) || associated_dictionary,
-        self.subjects(DefaultTag) || subject
+        self.associated_dictionaries(DictionaryOriginSymbol) || associated_dictionary,
+        self.subjects(TagSymbol) || subject
     }
 
 
-    pub fn add_all_unstemmed(&mut self, unstemmed_words: &HashMap<usize, HashSet<DefaultDictionaryOrigin>>) {
+    pub fn add_all_unstemmed(&mut self, unstemmed_words: &HashMap<usize, HashSet<DictionaryOriginSymbol>>) {
         if let Some(found) = self.unstemmed.get_mut() {
             for (word, v) in unstemmed_words.iter() {
                 match found.entry(*word) {
@@ -121,7 +121,7 @@ impl ClassicMetadata {
         }
     }
 
-    pub fn has_unstemmed_origin(&self, unstemmed_word: usize, origin: DefaultDictionaryOrigin) -> bool {
+    pub fn has_unstemmed_origin(&self, unstemmed_word: usize, origin: DictionaryOriginSymbol) -> bool {
         self.unstemmed
             .get()
             .is_some_and(|value|
@@ -129,7 +129,7 @@ impl ClassicMetadata {
             )
     }
 
-    pub unsafe fn add_unstemmed_origin(&mut self, unstemmed_word: usize, origin: DefaultDictionaryOrigin) {
+    pub unsafe fn add_unstemmed_origin(&mut self, unstemmed_word: usize, origin: DictionaryOriginSymbol) {
         if let Some(found) = self.unstemmed.get_mut() {
             match found.entry(unstemmed_word) {
                 Entry::Vacant(value) => {
@@ -150,7 +150,7 @@ impl ClassicMetadata {
         }
     }
 
-    pub unsafe fn add_all_unstemmed_origins(&mut self, unstemmed_word: usize, origins: &[DefaultDictionaryOrigin]) {
+    pub unsafe fn add_all_unstemmed_origins(&mut self, unstemmed_word: usize, origins: &[DictionaryOriginSymbol]) {
         if let Some(found) = self.unstemmed.get_mut() {
             match found.entry(unstemmed_word) {
                 Entry::Vacant(value) => {

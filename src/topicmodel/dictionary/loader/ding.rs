@@ -636,10 +636,13 @@ pub fn process_entry<T: AsRef<str>>(
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+    use itertools::Itertools;
     use nom::error::VerboseError;
     use nom::Finish;
-    use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
+    use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary, DingAlternativeEntries, DingWordEntry, DingWordEntryElement};
     use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
+    use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Region, Register, WordInfo};
 
     #[test]
     fn can_parse_alt(){
@@ -698,5 +701,187 @@ mod test {
     fn can_read_file(){
         let value = read_dictionary(".\\dictionaries\\ding\\de-en.txt").unwrap();
         execute_test_read_for(value, 0, 0);
+    }
+
+    #[test]
+    fn can_read_file2(){
+
+        fn try_parse_string<'a>(
+            s: &'a str,
+            language: &mut HashSet<Language>,
+            region: &mut HashSet<Region>,
+            pos: &mut HashSet<PartOfSpeech>,
+            gen: &mut HashSet<GrammaticalGender>,
+            num: &mut HashSet<GrammaticalNumber>,
+            dom: &mut HashSet<Domain>,
+            reg: &mut HashSet<Register>,
+        ) -> Option<Vec<&'a str>> {
+            let s = s.trim();
+            match s {
+                "Dt., Ös. veraltend" => {
+                    language.extend([Language::German]);
+                    region.extend([Region::AustrianGerman]);
+                    reg.extend([Register::Archaic]);
+                    return None
+                }
+                "Am., auch Br." => {
+                    region.extend([Region::AmericanEnglish, Region::BritishEnglish]);
+                    return None
+                }
+                _ => {}
+            }
+
+            if s.contains(|c| matches!(c, ' ' | '/' | ',')) {
+                let mut cont = Vec::new();
+                for value in s.split(|c| matches!(c, ' ' | '/' | ',')) {
+                    if let Some(fail) = try_parse_string(
+                        value.trim(),
+                        language,
+                        region,
+                        pos,
+                        gen,
+                        num,
+                        dom,
+                        reg
+                    ) {
+                        cont.extend(fail);
+                    }
+                }
+                if cont.is_empty() {
+                    None
+                } else {
+                    Some(cont)
+                }
+            }  else {
+                if let Ok(a) = s.parse() { language.insert(a); return None; }
+                if let Ok(a) = s.parse() { region.insert(a); return None; }
+                if let Ok(a) = s.parse() { pos.insert(a); return None; }
+                if let Ok(a) = s.parse() { gen.insert(a); return None; }
+                if let Ok(a) = s.parse() { num.insert(a); return None; }
+                if let Ok(a) = s.parse() { dom.insert(a); return None; }
+                if let Ok(a) = s.parse() { reg.insert(a); return None; }
+                Some(vec![s])
+            }
+        }
+
+        let mut language: HashSet<Language> = HashSet::new();
+        let mut region: HashSet<Region> = HashSet::new();
+        let mut pos: HashSet<PartOfSpeech> = HashSet::new();
+        let mut gen: HashSet<GrammaticalGender> = HashSet::new();
+        let mut num: HashSet<GrammaticalNumber> = HashSet::new();
+        let mut dom: HashSet<Domain> = HashSet::new();
+        let mut reg: HashSet<Register> = HashSet::new();
+        let mut other: HashSet<String> = HashSet::new();
+        // let mut abbreviation = Vec::new();
+
+
+        let value = read_dictionary(".\\dictionaries\\ding\\de-en.txt").unwrap();
+        for x in value {
+            if let Ok(x) = x {
+                for entries in [x.0, x.1] {
+                    for DingAlternativeEntries(word_entries) in entries.0 {
+                        for DingWordEntry(word_entry) in word_entries {
+                            for word_entry_elements in word_entry {
+                                match word_entry_elements {
+                                    DingWordEntryElement::Word(value) => {
+
+                                    }
+                                    DingWordEntryElement::PartialWord(value, ptype) => {
+
+                                    }
+                                    DingWordEntryElement::AlternatingWords(alternating) => {
+
+                                    }
+                                    DingWordEntryElement::Category(category) => {
+                                        if let Some(e) = try_parse_string(
+                                            &category,
+                                            &mut language,
+                                            &mut region,
+                                            &mut pos,
+                                            &mut gen,
+                                            &mut num,
+                                            &mut dom,
+                                            &mut reg,
+                                        ) {
+                                            other.insert(category);
+                                        }
+                                    }
+                                    DingWordEntryElement::Contextualisation(contextualisation) => {
+                                        if let Some(e) = try_parse_string(
+                                            &contextualisation,
+                                            &mut language,
+                                            &mut region,
+                                            &mut pos,
+                                            &mut gen,
+                                            &mut num,
+                                            &mut dom,
+                                            &mut reg,
+                                        ) {
+                                            other.insert(contextualisation);
+                                        }
+                                    }
+                                    DingWordEntryElement::Info(info) => {
+                                        match info {
+                                            WordInfo::Type(value) => {
+                                                pos.insert(value);
+                                            }
+                                            WordInfo::Gender(value) => {
+                                                gen.insert(value);
+                                            }
+                                            WordInfo::Number(value) => {
+                                                num.insert(value);
+                                            }
+                                            WordInfo::Other(value) => {
+                                                if let Some(e) = try_parse_string(
+                                                    &value,
+                                                    &mut language,
+                                                    &mut region,
+                                                    &mut pos,
+                                                    &mut gen,
+                                                    &mut num,
+                                                    &mut dom,
+                                                    &mut reg,
+                                                ) {
+                                                    other.insert(value);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    DingWordEntryElement::Abbreviation(abbrev) => {
+
+                                    }
+                                    DingWordEntryElement::AlternateNotation(a, b, c) => {
+
+                                    }
+                                    DingWordEntryElement::WordPlaceholder => {
+
+                                    }
+                                    DingWordEntryElement::InterchangeableWith => {
+
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        println!("language: {}", language.len());
+        println!("region: {}", region.len());
+        println!("pos: {}", pos.len());
+        println!("gen: {}", gen.len());
+        println!("num: {}", num.len());
+        println!("dom: {}", dom.len());
+        println!("reg: {}\n", reg.len());
+        println!("other: {}", other.len());
+
+        for value in other {
+            if value.contains("sing") | value.contains("sg"){
+                println!("{value}");
+            }
+        }
+
+        // println!("{}", other.iter().join("\n"))
     }
 }

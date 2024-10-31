@@ -13,13 +13,13 @@ use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAtt
 pub enum Language {
     #[strum(to_string = "en", serialize = "english")]
     English = 0,
-    #[strum(to_string = "de", serialize = "german")]
+    #[strum(to_string = "de", serialize = "german", serialize = "Dt.")]
     German = 1,
     #[strum(to_string = "italian", serialize = "Ital.")]
     Italian = 2,
-    #[strum(to_string = "french", serialize = "French")]
+    #[strum(to_string = "french", serialize = "French", serialize = "from French")]
     French = 3,
-    #[strum(to_string = "latin", serialize = "Lat.")]
+    #[strum(to_string = "latin", serialize = "Lat.", serialize = "lat.")]
     Latin = 4
 }
 
@@ -71,6 +71,155 @@ impl From<MsTermsAttribute> for Language {
                 Language::German
             }
         }
+    }
+}
+
+
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[repr(u64)]
+pub enum Region {
+    #[strum(to_string = "BE", serialize = "eBr.", serialize = "Br.", serialize = "BR.", serialize = "Br,")]
+    #[strum(serialize = "also Br.")]
+    BritishEnglish = 0,
+    #[strum(to_string = "AE", serialize = "eAm.", serialize = "Am.", serialize = "AM.", serialize = "Am .")]
+    #[strum(serialize = "mainly Am.")]
+    AmericanEnglish = 1,
+    #[strum(to_string = "Aus.", serialize = "Austr.")]
+    AustralianEnglish = 2,
+    #[strum(to_string = "NZ")]
+    NewZealandEnglish = 3,
+    #[strum(to_string = "Can.")]
+    CanadianEnglish = 4,
+    #[strum(to_string = "Irish", serialize = "Ir.", serialize = "Irl.")]
+    IrishEnglish = 5,
+    #[strum(to_string = "Ind.")]
+    IndianEnglish = 6,
+    #[strum(to_string = "S.Afr.", serialize = "South Africa")]
+    SouthAfricanEnglish = 7,
+    #[strum(to_string = "Scot.", serialize = "Sc.")]
+    ScottishEnglish = 8,
+    #[strum(to_string = "österr.", serialize = "Ös.")]
+    AustrianGerman = 9,
+    #[strum(to_string = "südd.", serialize = "Süddt.")]
+    SouthGerman = 10,
+    #[strum(to_string = "nordd.", serialize = "Norddt.")]
+    NorthGerman = 11,
+    #[strum(to_string = "ostd.", serialize = "Ostdt.")]
+    EastGerman = 12,
+    #[strum(to_string = "schweiz.", serialize = "Schw.")]
+    SwissGerman = 13,
+    #[strum(to_string = "regional")]
+    Regional = 14,
+    #[strum(to_string = "Mittelwestdt.")]
+    MiddleWestGerman = 15,
+    #[strum(to_string = "Südwestdt.")]
+    SouthWestGerman = 16,
+    #[strum(to_string = "Nordwestdt.")]
+    NorthWestGerman = 17,
+    #[strum(to_string = "BW", serialize = "Württemberg", serialize = "BW.")]
+    BadenWuerttembergGerman = 18,
+    #[strum(to_string = "Mittelostdt.")]
+    MiddleEastGerman = 19,
+    #[strum(to_string = "Südostdt.")]
+    SouthEastGerman = 20,
+    #[strum(to_string = "Nordostdt.")]
+    NorthEastGerman = 21,
+    #[strum(to_string = "Mitteldt.")]
+    MiddleGerman = 22,
+    #[strum(to_string = "Bayr.")]
+    BavarianGerman = 23,
+    #[strum(to_string = "Northern Irish")]
+    NorthernIrish = 24,
+    #[strum(to_string = "Oberdt.")]
+    UpperGerman = 25,
+    #[strum(to_string = "Ostös.")]
+    EastAustrianGerman = 26,
+    #[strum(to_string = "Berlin")]
+    BerlinGerman = 27,
+    #[strum(to_string = "Schwäb.", serialize = "Sachsen")]
+    SwabianGerman = 28,
+    #[strum(to_string = "Westös.")]
+    WestAustrianGerman = 29,
+    #[strum(to_string = "Wien")]
+    ViennaGerman = 30,
+    #[strum(to_string = "Tirol")]
+    TyrolGerman = 31,
+    #[strum(to_string = "Northern English")]
+    NorthEnglish = 32,
+    #[strum(to_string = "DDR")]
+    DDRGerman = 33,
+    #[strum(to_string = "Pfalz")]
+    PfalzGerman = 34,
+    #[strum(to_string = "Südtirol")]
+    SouthTyrolGerman = 35,
+    #[strum(to_string = "Ostmitteldt.")]
+    EastMiddleGerman = 36,
+    #[strum(to_string = "SE Asia")]
+    SouthEastAsianEnglish = 37,
+    #[strum(to_string = "Hessen")]
+    HesseGerman = 38,
+    #[strum(to_string = "Lux.")]
+    LuxenbourgGerman = 39,
+    #[strum(to_string = "Welch")]
+    WelchEnglish = 40,
+    #[strum(to_string = "Rheinl.")]
+    RhinelandPalatinateGerman = 41,
+    #[strum(to_string = "Sächs.")]
+    SaxonyGerman = 42,
+    #[strum(to_string = "Westdt.")]
+    WestGerman = 43,
+    #[strum(to_string = "Lie.")]
+    LiechtensteinGerman = 44,
+    #[strum(to_string = "Westfalen")]
+    WestphaliaGerman = 45,
+    #[strum(to_string = "Südostös.")]
+    SouthEastAustrianGerman = 46,
+    #[strum(to_string = "Nordostös.")]
+    NorthEastAustrianGerman = 47,
+    #[strum(to_string = "Nordwestös.")]
+    NorthWestAustrianGerman = 48,
+    #[strum(to_string = "Südwestös.")]
+    SouthWestAustrianGerman = 49,
+    #[strum(to_string = "Westschw.")]
+    WestSwissGerman = 50,
+    #[strum(to_string = "Nordirl.")]
+    NorthIrishEnglish = 51,
+    #[strum(to_string = "Mittelös.")]
+    MiddleAustrianGerman = 52,
+    #[strum(to_string = "Franken")]
+    FranconianGerman = 53,
+    #[strum(to_string = "Ostschw.")]
+    EastSwissGerman = 54
+}
+
+
+impl TryFrom<MsTermsAttribute> for Region {
+    type Error = ();
+
+    fn try_from(value: MsTermsAttribute) -> Result<Self, Self::Error> {
+        match value {
+            MsTermsAttribute::EnGb => {
+                Ok(Region::BritishEnglish)
+            }
+            MsTermsAttribute::EnUs => {
+                Ok(Region::AmericanEnglish)
+            }
+            _ => Err(())
+        }
+    }
+}
+
+
+impl Fits64 for Region {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        Region::try_from(x).unwrap()
+    }
+
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
     }
 }
 
@@ -135,19 +284,19 @@ pub enum PartOfSpeech {
     Noun = 0,
     #[strum(to_string = "adj")]
     Adjective = 1,
-    #[strum(to_string = "adv")]
+    #[strum(to_string = "adv", serialize = "adv.")]
     Adverb = 2,
-    #[strum(to_string = "verb")]
+    #[strum(to_string = "verb", serialize = "v")]
     Verb = 3,
     #[strum(to_string = "conj")]
     Conjuction = 4,
-    #[strum(to_string = "pron")]
+    #[strum(to_string = "pron", serialize = "ppron")]
     Pronoun = 5,
-    #[strum(to_string = "prep")]
+    #[strum(to_string = "prep", serialize = "prp")]
     Preposition = 6,
     #[strum(to_string = "det")]
     Determiner = 7,
-    #[strum(to_string = "int")]
+    #[strum(to_string = "int", serialize = "interj")]
     Interjection = 8,
     #[strum(to_string="pres-p")]
     PresentParticiple = 9,
@@ -161,14 +310,18 @@ pub enum PartOfSpeech {
     Numeral = 13,
     #[strum(to_string="art")]
     Article = 14,
-    #[strum(to_string="ptcl")]
+    #[strum(to_string="ptcl", serialize = "particle", serialize = "Partikel")]
     Particle = 15,
     #[strum(to_string="pnoun")]
     ProperNoun = 16,
     #[strum(to_string="other", serialize = "misc")]
     Other = 17,
     #[strum(to_string="indart", serialize = "indefinite article")]
-    IndefiniteArticle = 18
+    IndefiniteArticle = 18,
+    #[strum(to_string="pron interrog")]
+    InterrogativePronoun = 19,
+    #[strum(to_string="relativ.pron")]
+    RelativePronoun = 20
 }
 
 impl Fits64 for PartOfSpeech {
@@ -256,7 +409,9 @@ pub enum GrammaticalGender {
     #[strum(to_string = "m", serialize = "male", serialize = "m.")]
     Masculine = 1,
     #[strum(to_string = "n", serialize = "neutral", serialize = "n.")]
-    Neutral = 2
+    Neutral = 2,
+    #[strum(to_string = "not f")]
+    NotFeminine = 3
 }
 
 impl Fits64 for GrammaticalGender {
@@ -292,8 +447,19 @@ impl From<EGenElement> for GrammaticalGender {
 pub enum GrammaticalNumber {
     #[strum(to_string = "sg", serialize = "sg.")]
     Singular = 0,
-    #[strum(to_string = "pl", serialize = "pl.")]
-    Plural = 1
+    #[strum(to_string = "pl", serialize = "pl.", serialize = "plural", serialize = "Pluralwort")]
+    #[strum(serialize = "Pluralw")]
+    Plural = 1,
+    #[strum(to_string = "kein Singular", serialize = "no singular")]
+    NoSingular = 2,
+    #[strum(to_string = "kein Plural", serialize = "no plural", serialize = "keine Mehrzahl")]
+    NoPlural = 3,
+    #[strum(to_string = "usually pl")]
+    UsuallyPlural = 4,
+    #[strum(to_string = "sg only")]
+    SingularOnly = 5,
+    #[strum(to_string = "only plural")]
+    PluralOnly = 6,
 }
 
 impl Fits64 for GrammaticalNumber {
@@ -334,7 +500,7 @@ pub enum PartialWordType {
 #[repr(u64)]
 pub enum Domain {
     /// Academic Disciplines / Wissenschaft
-    #[strum(to_string = "acad.", serialize = "ACAD.", serialize = "ACAD", serialize = "acad")]
+    #[strum(to_string = "acad.", serialize = "ACAD.", serialize = "ACAD", serialize = "acad", serialize = "academic")]
     Acad = 0,
     /// Accounting / Buchführung
     #[strum(to_string = "acc.", serialize = "ACC", serialize = "ACC.", serialize = "acc")]
@@ -449,6 +615,7 @@ pub enum Domain {
     Educ = 37,
     /// Electrical Engin., Electronics / Elektrotechnik, Elektronik
     #[strum(to_string = "electr.", serialize = "ELECTR.", serialize = "ELECTR", serialize = "electr")]
+    #[strum(serialize = "elect.")]
     Electr = 38,
     /// Engineering / Ingenieurwissenschaften
     #[strum(to_string = "engin.", serialize = "ENGIN.", serialize = "engin", serialize = "ENGIN")]
@@ -515,12 +682,14 @@ pub enum Domain {
     Hort = 59,
     /// Hunting / Jagd
     #[strum(to_string = "hunting", serialize = "HUNTING", serialize = "hunting.", serialize = "HUNTING.")]
+    #[strum(serialize = "Jägersprache", serialize = "hunter's parlance", serialize = "hunters' parlance")]
     Hunting = 60,
     /// Hydrology & Hydrogeology / Hydrologie & Hydrogeologie
     #[strum(to_string = "hydro.", serialize = "HYDRO", serialize = "hydro", serialize = "HYDRO.")]
     Hydro = 61,
     /// Idiom / Idiom, Redewendung
-    #[strum(to_string = "idiom", serialize = "idiom.", serialize = "IDIOM", serialize = "IDIOM.")]
+    #[strum(to_string = "idiom", serialize = "idiom.", serialize = "IDIOM", serialize = "IDIOM.", serialize = "Redewendung")]
+    #[strum(serialize = "Sprw.")]
     Idiom = 62,
     /// Industry / Industrie
     #[strum(to_string = "ind.", serialize = "IND.", serialize = "ind", serialize = "IND")]
@@ -538,7 +707,7 @@ pub enum Domain {
     #[strum(to_string = "journ.", serialize = "journ", serialize = "JOURN", serialize = "JOURN.")]
     Journ = 67,
     /// Law / Jura, Rechtswesen
-    #[strum(to_string = "law", serialize = "law.", serialize = "LAW.", serialize = "LAW")]
+    #[strum(to_string = "law", serialize = "law.", serialize = "LAW.", serialize = "LAW", serialize = "jur.")]
     Law = 68,
     /// Library Science / Bibliothekswissenschaft
     #[strum(to_string = "libr.", serialize = "LIBR.", serialize = "LIBR", serialize = "libr")]
@@ -571,7 +740,8 @@ pub enum Domain {
     #[strum(to_string = "meteo.", serialize = "METEO.", serialize = "meteo", serialize = "METEO")]
     Meteo = 78,
     /// Military / Militärwesen
-    #[strum(to_string = "mil.", serialize = "MIL", serialize = "MIL.", serialize = "mil")]
+    #[strum(to_string = "mil.", serialize = "MIL", serialize = "MIL.", serialize = "mil", serialize = "Soldatensprache")]
+    #[strum(serialize = "milit.")]
     Mil = 79,
     /// Mineralogy / Mineralogie
     #[strum(to_string = "mineral.", serialize = "mineral", serialize = "MINERAL.", serialize = "MINERAL")]
@@ -584,6 +754,7 @@ pub enum Domain {
     Mus = 82,
     /// Mycology / Mykologie, Pilze
     #[strum(to_string = "mycol.", serialize = "MYCOL.", serialize = "MYCOL", serialize = "mycol")]
+    #[strum(serialize = "myc.")]
     Mycol = 83,
     /// Mythology / Mythologie
     #[strum(to_string = "myth.", serialize = "MYTH.", serialize = "myth", serialize = "MYTH")]
@@ -605,9 +776,11 @@ pub enum Domain {
     Oenol = 89,
     /// Optics / Optik
     #[strum(to_string = "optics", serialize = "OPTICS.", serialize = "optics.", serialize = "OPTICS")]
+    #[strum(serialize = "optical")]
     Optics = 90,
     /// Ornithology / Ornithologie, Vogelkunde
-    #[strum(to_string = "orn.", serialize = "orn", serialize = "ORN.", serialize = "ORN", serialize = "ornith.", serialize = "ORNITH.", serialize = "ornith", serialize = "ORNITH")]
+    #[strum(to_string = "orn.", serialize = "orn", serialize = "ORN.", serialize = "ORN")]
+    #[strum(serialize = "ornith.", serialize = "ORNITH.", serialize = "ornith", serialize = "ORNITH")]
     Orn = 91,
     /// Pharmacy / Pharmazie
     #[strum(to_string = "pharm.", serialize = "PHARM.", serialize = "pharm", serialize = "PHARM")]
@@ -635,6 +808,7 @@ pub enum Domain {
     Print = 99,
     /// Proverb / Sprichwort
     #[strum(to_string = "proverb", serialize = "PROVERB", serialize = "PROVERB.", serialize = "proverb.")]
+    #[strum(serialize = "prov.")]
     Proverb = 100,
     /// Psychology / Psychologie
     #[strum(to_string = "psych.", serialize = "PSYCH.", serialize = "psych", serialize = "PSYCH")]
@@ -738,6 +912,21 @@ pub enum Domain {
     /// Zoology, Animals / Zoologie, Tierkunde
     #[strum(to_string = "zool.", serialize = "ZOOL.", serialize = "ZOOL", serialize = "zool")]
     Zool = 134,
+    /// Kindersprache
+    #[strum(to_string = "children's speech", serialize = "Kindersprache")]
+    Child = 135,
+    /// Kindersprache
+    #[strum(to_string = "youth speech", serialize = "Jugendsprache")]
+    Youth = 136,
+    /// Wissenschaft
+    #[strum(to_string = "sci.")]
+    Science = 137,
+    /// Wissenschaft
+    #[strum(to_string = "poet.")]
+    Poetry = 138,
+    /// Wissenschaft
+    #[strum(to_string = "currency")]
+    Currency = 139
 }
 
 impl tinyset::set64::Fits64 for Domain {
@@ -757,22 +946,24 @@ impl tinyset::set64::Fits64 for Domain {
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum Register {
-    #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.")]
+    #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.", serialize = "hum")]
+    #[strum(serialize = "humor.")]
     Humor = 0,
-    #[strum(to_string = "vulg.", serialize = "vulg")]
+    #[strum(to_string = "vulg.", serialize = "vulg", serialize = "derb")]
     Vulg = 1,
     #[strum(to_string = "techn.", serialize = "techn")]
     Techn = 2,
     #[strum(to_string = "coll.", serialize = "coll", serialize = "ugs", serialize = "ugs.")]
+    #[strum(serialize = "ug")]
     Coll = 3,
     /// Gehoben
     #[strum(to_string = "geh.", serialize = "geh")]
     Geh = 4,
-    #[strum(to_string = "slang", serialize = "slang.", serialize = "sl.")]
+    #[strum(to_string = "slang", serialize = "slang.", serialize = "sl.", serialize = "jargon")]
     Slang = 5,
     #[strum(to_string = "iron.", serialize = "iron")]
     Iron = 6,
-    #[strum(to_string = "formal", serialize = "formal.")]
+    #[strum(to_string = "formal", serialize = "formal.", serialize = "formell")]
     Formal = 7,
     #[strum(to_string = "euphem.", serialize = "euphem")]
     Euphem = 8,
@@ -783,10 +974,12 @@ pub enum Register {
     /// DictCC
     #[strum(to_string = "archaic", serialize = "veraltet", serialize = "veraltend")]
     #[strum(serialize = "dated", serialize = "alt", serialize = "obs.")]
-    #[strum(serialize = "altertümlich")]
+    #[strum(serialize = "altertümlich", serialize = "veraltentd", serialize = "frühere Bezeichnung")]
+    #[strum(serialize = "ancient name", serialize = "becoming dated")]
+    #[strum(serialize = "altertümelnd", serialize = "slightly dated")]
     Archaic = 11,
     /// DictCC
-    #[strum(to_string = "rare", serialize = "selten")]
+    #[strum(to_string = "rare", serialize = "selten", serialize = "very rare")]
     Rare = 12,
     /// DictCC -
     #[strum(to_string = "pej.")]
@@ -802,6 +995,18 @@ pub enum Register {
     /// official language; administration
     #[strum(to_string = "adm.")]
     Admin = 17,
+    /// Übertragen: giftig -> virulently
+    #[strum(to_string = "übtr.")]
+    Transfer,
+    /// Netzjargon
+    #[strum(to_string = "Chat-Jargon", serialize = "internet slang", serialize = "chat jargon")]
+    NetJargon,
+    /// Informal
+    #[strum(to_string = "informell")]
+    Informal,
+    /// Informal
+    #[strum(to_string = "Mengenangabe")]
+    QuantityInformation
 }
 
 impl Fits64 for Register {

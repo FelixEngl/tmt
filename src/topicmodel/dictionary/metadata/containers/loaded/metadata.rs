@@ -1,228 +1,352 @@
-use serde::{Deserialize, Serialize};
-use string_interner::Symbol;
-use crate::toolkit::typesafe_interner::{DefaultAbbreviation, DefaultDictionaryOrigin, DefaultInflected, DefaultSynonym, DefaultUnalteredVoc};
-use crate::topicmodel::dictionary::metadata::Metadata;
-use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Register};
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-pub struct LoadedMetadata {
-    #[serde(skip_serializing_if = "AssociatedMetadata::is_empty", default)]
-    general_metadata: AssociatedMetadata,
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "empty_vec")]
-    associated_metadata: Vec<AssociatedMetadata>
-}
-
-fn empty_vec() -> Vec<AssociatedMetadata> {
-    Vec::with_capacity(0)
-}
-
-impl Default for LoadedMetadata {
-    fn default() -> Self {
-        Self::with_capacity(0)
-    }
-}
-
-impl LoadedMetadata {
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            general_metadata: AssociatedMetadata::default(),
-            associated_metadata: Vec::with_capacity(capacity)
-        }
-    }
-
-    pub fn get_general_metadata(&self) -> &AssociatedMetadata {
-        &self.general_metadata
-    }
-
-    pub fn get_mut_general_metadata(&mut self) -> &mut AssociatedMetadata {
-        &mut self.general_metadata
-    }
-
-    pub fn get_associated_metadata(&self, origin: DefaultDictionaryOrigin) -> Option<&AssociatedMetadata> {
-        self.associated_metadata.get(origin.to_usize())
-    }
-
-    pub fn get_mut_associated_metadata(&mut self, origin: DefaultDictionaryOrigin) -> Option<&mut AssociatedMetadata> {
-        self.associated_metadata.get_mut(origin.to_usize())
-    }
-
-    #[inline(always)]
-    fn get_or_create_impl(&mut self, origin: usize) -> &mut AssociatedMetadata {
-        if self.associated_metadata.len() <= origin {
-            self.associated_metadata.resize_with(origin + 1, AssociatedMetadata::default);
-        }
-        unsafe {self.associated_metadata.get_unchecked_mut(origin)}
-    }
-
-    pub fn get_or_create(&mut self, origin: DefaultDictionaryOrigin) -> &mut AssociatedMetadata {
-        self.get_or_create_impl(origin.to_usize())
-    }
-
-    pub fn update_with(&mut self, other: &LoadedMetadata) {
-        self.general_metadata.update_with(&other.general_metadata);
-        for (pos, value) in other.associated_metadata.iter().enumerate() {
-            self.get_or_create_impl(pos).update_with(value)
-        }
-    }
-}
 
 macro_rules! impl_collect_all {
-    (tinyset: $($ident:ident: $ty:ty),+) => {
+    ($($ident:ident: $ty:ty),+) => {
         impl LoadedMetadata {
             $(
                 paste::paste! {
                     pub fn [<collect_all_ $ident>](&self) -> tinyset::Set64<$ty> {
-                        let mut result = self.associated_metadata.iter().flat_map(|value| {
-                            value.$ident.iter()
-                        }).collect::<tinyset::Set64<_>>();
-                        result.extend(self.general_metadata.$ident.iter());
-                        result
+                        self.iter().flat_map(|value| {
+                            value.meta().$ident.iter()
+                        }).collect::<tinyset::Set64<_>>()
                     }
                 }
             )+
         }
     };
 }
+pub(super) use impl_collect_all;
 
 
-impl_collect_all! {
-    tinyset:
-    languages: Language,
-    domains: Domain,
-    registers: Register,
-    gender: GrammaticalGender,
-    pos: PartOfSpeech,
-    number: GrammaticalNumber,
-    inflected: DefaultInflected,
-    abbreviations: DefaultAbbreviation,
-    unaltered_vocabulary: DefaultUnalteredVoc,
-    synonyms: DefaultSynonym
-}
-
-impl Metadata for LoadedMetadata{}
 
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize, Eq, PartialEq)]
-pub struct AssociatedMetadata {
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    languages: tinyset::Set64<Language>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    domains: tinyset::Set64<Domain>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    registers: tinyset::Set64<Register>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    gender: tinyset::Set64<GrammaticalGender>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    pos: tinyset::Set64<PartOfSpeech>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    number: tinyset::Set64<GrammaticalNumber>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    inflected: tinyset::Set64<DefaultInflected>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    abbreviations: tinyset::Set64<DefaultAbbreviation>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    unaltered_vocabulary: tinyset::Set64<DefaultUnalteredVoc>,
-    #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
-    synonyms: tinyset::Set64<DefaultSynonym>,
-}
+macro_rules! impl_associated_metadata {
 
-impl AssociatedMetadata {
-    pub fn update_with(&mut self, other: &AssociatedMetadata) {
-        self.languages.extend(other.languages.iter());
-        self.domains.extend(other.domains.iter());
-        self.registers.extend(other.registers.iter());
-        self.gender.extend(other.gender.iter());
-        self.pos.extend(other.pos.iter());
-        self.number.extend(other.number.iter());
-        self.inflected.extend(other.inflected.iter());
-        self.abbreviations.extend(other.abbreviations.iter());
-        self.unaltered_vocabulary.extend(other.unaltered_vocabulary.iter());
-        self.synonyms.extend(other.synonyms.iter());
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.languages.is_empty() &&
-            self.domains.is_empty() &&
-            self.registers.is_empty() &&
-            self.gender.is_empty() &&
-            self.pos.is_empty() &&
-            self.number.is_empty() &&
-            self.inflected.is_empty() &&
-            self.abbreviations.is_empty() &&
-            self.unaltered_vocabulary.is_empty() &&
-            self.synonyms.is_empty()
-    }
-
-    pub fn languages(&self) -> &tinyset::Set64<Language> {
-        &self.languages
-    }
-
-    pub fn domains(&self) -> &tinyset::Set64<Domain> {
-        &self.domains
-    }
-
-    pub fn registers(&self) -> &tinyset::Set64<Register> {
-        &self.registers
-    }
-
-    pub fn gender(&self) -> &tinyset::Set64<GrammaticalGender> {
-        &self.gender
-    }
-
-    pub fn pos(&self) -> &tinyset::Set64<PartOfSpeech> {
-        &self.pos
-    }
-
-    pub fn number(&self) -> &tinyset::Set64<GrammaticalNumber> {
-        &self.number
-    }
-
-    pub fn inflected(&self) -> &tinyset::Set64<DefaultInflected> {
-        &self.inflected
-    }
-
-    pub fn abbreviations(&self) -> &tinyset::Set64<DefaultAbbreviation> {
-        &self.abbreviations
-    }
-
-    pub fn unaltered_vocabulary(&self) -> &tinyset::Set64<DefaultUnalteredVoc> {
-        &self.unaltered_vocabulary
-    }
-
-    pub fn synonyms(&self) -> &tinyset::Set64<DefaultSynonym> {
-        &self.synonyms
-    }
-}
-
-macro_rules! create_tinyset_impl {
-    ($($ident: ident: $ty: ty),+) => {
-        impl AssociatedMetadata {
+    (__is_empty $name: ident $($name2: ident)*) => {
+        pub fn is_empty(&self) -> bool {
+            self.$name.is_empty()
             $(
-                paste::paste! {
-                    pub fn [<add_single_to_ $ident>](&mut self, value: $ty) {
-                        self.$ident.insert(value);
-                    }
-                    pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=$ty>>(&mut self, values: I) {
-                        self.$ident.extend(values);
-                    }
+                && self.$name2.is_empty()
+            )*
+        }
+    };
+
+    ($($($doc: literal)? $name: ident: $typ: ty),+ $(,)?) => {
+        #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
+        pub struct AssociatedMetadata {
+            $(
+                $(#[doc=$doc])?
+                #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
+                $name: tinyset::Set64<$typ>,
+            )+
+        }
+
+        impl AssociatedMetadata {
+            pub fn update_with(&mut self, other: &AssociatedMetadata) {
+                $(
+                    self.$name.extend(other.$name.iter());
+                )+
+            }
+
+            $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_associated_metadata!{__is_empty $($name)+}
+
+            $(
+            fn $name(&self) -> &tinyset::Set64<$typ> {
+                &self.$name
+            }
+
+            paste::paste! {
+                pub fn [<add_single_to_ $name>](&mut self, value: $typ) {
+                    self.$name.insert(value);
                 }
+                pub fn [<add_all_to_ $name>]<I: IntoIterator<Item=$typ>>(&mut self, values: I) {
+                    self.$name.extend(values);
+                }
+            }
             )+
 
+        }
+
+        $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_collect_all! {
+            $($name: $typ),+
         }
     };
 }
 
-create_tinyset_impl! {
-    languages: Language,
-    domains: Domain,
-    registers: Register,
-    gender: GrammaticalGender,
-    pos: PartOfSpeech,
-    number: GrammaticalNumber,
-    inflected: DefaultInflected,
-    abbreviations: DefaultAbbreviation,
-    unaltered_vocabulary: DefaultUnalteredVoc,
-    synonyms: DefaultSynonym
+
+/*
+todo:
+- context: Feld für Context-Informationen
+- Feld für original Eintrag
+- region feld [auch brit-e und us-e]
+- id-feld für generische ids.
+ */
+
+pub(super) use impl_associated_metadata;
+
+macro_rules! create_metadata_impl {
+    ($($tt:tt)+) => {
+        #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
+        pub struct LoadedMetadata {
+            #[serde(skip_serializing_if = "LazyAssociatedMetadata::is_not_init", default)]
+            general_metadata: LazyAssociatedMetadata,
+            #[serde(skip_serializing_if = "Vec::is_empty", default = "empty_vec")]
+            associated_metadata: Vec<LazyAssociatedMetadata>,
+        }
+
+        fn empty_vec() -> Vec<LazyAssociatedMetadata> {
+            Vec::with_capacity(0)
+        }
+
+
+        #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq)]
+        #[repr(transparent)]
+        #[serde(transparent)]
+        struct LazyAssociatedMetadata {
+            #[serde(with = "crate::toolkit::once_serializer::OnceCellDef")]
+            inner: std::cell::OnceCell<AssociatedMetadata>
+        }
+
+        impl Default for LazyAssociatedMetadata {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl LazyAssociatedMetadata {
+            pub fn new() -> Self {
+                Self {
+                    inner: std::cell::OnceCell::new()
+                }
+            }
+
+            pub fn into_inner(self) -> std::cell::OnceCell<AssociatedMetadata> {
+                self.inner
+            }
+
+            #[inline(always)]
+            pub fn is_not_init(&self) -> bool {
+                self.inner.get().is_none()
+            }
+
+            #[inline(always)]
+            pub fn get_or_init(&self) -> &AssociatedMetadata {
+                self.inner.get_or_init(AssociatedMetadata::default)
+            }
+
+            #[inline(always)]
+            pub fn get_mut_or_init(&mut self) -> &mut AssociatedMetadata {
+                self.inner.get_or_init(AssociatedMetadata::default);
+                unsafe {self.inner.get_mut().unwrap_unchecked()}
+            }
+
+            #[inline(always)]
+            pub fn get(&self) -> Option<&AssociatedMetadata> {
+                self.inner.get()
+            }
+
+            #[inline(always)]
+            pub fn get_mut(&mut self) -> Option<&mut AssociatedMetadata> {
+                self.inner.get_mut()
+            }
+        }
+
+        impl PartialEq for LazyAssociatedMetadata {
+            fn eq(&self, other: &Self) -> bool {
+                self.inner.get() == other.inner.get()
+            }
+        }
+
+
+
+
+        impl Default for LoadedMetadata {
+            fn default() -> Self {
+                Self::with_capacity(0)
+            }
+        }
+
+        #[derive(Copy, Clone)]
+        pub enum MetadataWithOrigin<T> {
+            General(T),
+            Associated($crate::toolkit::typesafe_interner::DictionaryOriginSymbol, T)
+        }
+
+        impl<T> MetadataWithOrigin<T> where T: Copy {
+            pub fn origin(&self) -> Option<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol> {
+                match self {
+                    MetadataWithOrigin::General(_) => {
+                        None
+                    }
+                    MetadataWithOrigin::Associated(value, _) => {
+                        Some(*value)
+                    }
+                }
+            }
+
+            pub fn meta(&self) -> T {
+                match self {
+                    MetadataWithOrigin::General(value) => {
+                        *value
+                    }
+                    MetadataWithOrigin::Associated(_, value) => {
+                        *value
+                    }
+                }
+            }
+        }
+
+        pub struct Iter<'a> {
+            src: &'a LoadedMetadata,
+            general_metadata: bool,
+            pos: usize
+        }
+
+        impl<'a> Iter<'a> {
+            pub fn new(src: &'a LoadedMetadata) -> Self {
+                Self { src, general_metadata: false, pos: 0 }
+            }
+        }
+
+        impl<'a> Iterator for Iter<'a> {
+            type Item = MetadataWithOrigin<&'a AssociatedMetadata>;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                use string_interner::Symbol;
+
+                if self.general_metadata && self.pos == self.src.associated_metadata.len() {
+                    return None
+                }
+                if !self.general_metadata {
+                    self.general_metadata = true;
+                    if let Some(meta) = self.src.general_metadata.get() {
+                        return Some(MetadataWithOrigin::General(meta))
+                    }
+                }
+                for idx in self.pos..self.src.associated_metadata.len() {
+                    if let Some(targ) = self.src.associated_metadata.get(idx) {
+                        if let Some(meta) = targ.get() {
+                            self.pos = idx;
+                            return Some(MetadataWithOrigin::Associated(
+                                $crate::toolkit::typesafe_interner::DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
+                                meta
+                            ))
+                        }
+                    }
+                }
+                self.pos = self.src.associated_metadata.len();
+                None
+            }
+        }
+
+        pub struct IterMut<'a> {
+            src: &'a mut LoadedMetadata,
+            general_metadata: bool,
+            pos: usize
+        }
+
+        impl<'a> IterMut<'a> {
+            pub fn new(src: &'a mut LoadedMetadata) -> Self {
+                Self { src, general_metadata: false, pos: 0 }
+            }
+        }
+
+        impl<'a> Iterator for IterMut<'a> {
+            type Item = MetadataWithOrigin<&'a mut AssociatedMetadata>;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                use string_interner::Symbol;
+                if self.general_metadata && self.pos == self.src.associated_metadata.len() {
+                    return None
+                }
+                if !self.general_metadata {
+                    self.general_metadata = true;
+                    if let Some(meta) = self.src.general_metadata.get_mut() {
+                        return Some(MetadataWithOrigin::General(unsafe{std::mem::transmute(meta)}))
+                    }
+                }
+                let assoc: &'static mut Vec<LazyAssociatedMetadata> = unsafe{std::mem::transmute(&mut self.src.associated_metadata)};
+                for idx in self.pos..assoc.len() {
+                    if let Some(targ) = assoc.get_mut(idx) {
+                        if let Some(meta) = targ.get_mut() {
+                            self.pos = idx;
+                            return Some(MetadataWithOrigin::Associated(
+                                $crate::toolkit::typesafe_interner::DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
+                                unsafe{std::mem::transmute(meta)}
+                            ))
+                        }
+                    }
+                }
+                self.pos = assoc.len();
+                None
+            }
+        }
+
+        impl LoadedMetadata {
+            pub fn with_capacity(capacity: usize) -> Self {
+                Self {
+                    general_metadata: LazyAssociatedMetadata::new(),
+                    associated_metadata: Vec::with_capacity(capacity),
+                }
+            }
+
+            pub fn get_general_metadata(&self) -> &AssociatedMetadata {
+                self.general_metadata.get_or_init()
+            }
+
+            pub fn get_mut_general_metadata(&mut self) -> &mut AssociatedMetadata {
+                self.general_metadata.get_mut_or_init()
+            }
+
+            pub fn get_associated_metadata(&self, origin: $crate::toolkit::typesafe_interner::DictionaryOriginSymbol) -> Option<&AssociatedMetadata> {
+                use string_interner::Symbol;
+                self.associated_metadata.get(origin.to_usize())?.get()
+            }
+
+            pub fn get_mut_associated_metadata(&mut self, origin: $crate::toolkit::typesafe_interner::DictionaryOriginSymbol) -> Option<&mut AssociatedMetadata> {
+                use string_interner::Symbol;
+                self.associated_metadata.get_mut(origin.to_usize())?.get_mut()
+            }
+
+            #[inline(always)]
+            fn get_or_create_impl(&mut self, origin: usize) -> &mut AssociatedMetadata {
+                if self.associated_metadata.len() <= origin {
+                    self.associated_metadata.resize_with(origin + 1, LazyAssociatedMetadata::new);
+                }
+                unsafe {self.associated_metadata.get_unchecked_mut(origin)}.get_mut_or_init()
+            }
+
+            pub fn get_or_create(&mut self, origin: $crate::toolkit::typesafe_interner::DictionaryOriginSymbol) -> &mut AssociatedMetadata {
+                use string_interner::Symbol;
+                self.get_or_create_impl(origin.to_usize())
+            }
+
+            pub fn iter(&self) -> Iter {
+                Iter::new(self)
+            }
+
+            pub fn iter_mut(&mut self) -> IterMut {
+                IterMut::new(self)
+            }
+
+
+            pub fn update_with(&mut self, other: &LoadedMetadata) {
+                if let Some(targ) = other.general_metadata.get() {
+                    self.general_metadata.get_mut_or_init().update_with(targ);
+                }
+                for (origin, value) in other.associated_metadata.iter().enumerate() {
+                    if let Some(value) = value.get() {
+                        self.get_or_create_impl(origin).update_with(value)
+                    }
+                }
+            }
+
+        }
+
+        impl $crate::topicmodel::dictionary::metadata::Metadata for LoadedMetadata{}
+
+        $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_associated_metadata!($($tt)+);
+    };
 }
 
-
+pub(super) use create_metadata_impl;

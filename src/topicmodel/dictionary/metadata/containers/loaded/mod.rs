@@ -1,154 +1,131 @@
 pub mod metadata;
 pub mod reference;
 pub mod reference_mut;
-pub mod python;
+pub mod solved;
+pub mod manager;
 
-pub use metadata::*;
-pub use reference::*;
-pub use reference_mut::*;
-pub use python::*;
 
-use serde::{Deserialize, Serialize};
-use crate::toolkit::typesafe_interner::{DefaultAbbreviation, DefaultAbbreviationStringInterner, DefaultDictionaryOrigin, DefaultDictionaryOriginStringInterner, DefaultInflected, DefaultInflectedStringInterner, DefaultSynonym, DefaultSynonymStringInterner, DefaultUnalteredVoc, DefaultUnalteredVocStringInterner};
-use crate::topicmodel::dictionary::direction::Language;
-use crate::topicmodel::dictionary::metadata::containers::loaded::metadata::LoadedMetadata;
-use crate::topicmodel::dictionary::metadata::containers::loaded::reference::LoadedMetadataRef;
-use crate::topicmodel::dictionary::metadata::containers::loaded::reference_mut::LoadedMetadataMutRef;
-use crate::topicmodel::dictionary::metadata::loaded::python::SolvedLoadedMetadata;
-use crate::topicmodel::dictionary::metadata::MetadataManager;
+use tinyset::Set64;
+use crate::toolkit::typesafe_interner::*;
+use crate::topicmodel::dictionary::word_infos::*;
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct LoadedMetadataManager {
-    pub(in crate::topicmodel::dictionary) meta_a: Vec<LoadedMetadata>,
-    pub(in crate::topicmodel::dictionary) meta_b: Vec<LoadedMetadata>,
-    pub(in crate::topicmodel::dictionary) dictionary_interner: DefaultDictionaryOriginStringInterner,
-    pub(in crate::topicmodel::dictionary) inflected_interner: DefaultInflectedStringInterner,
-    pub(in crate::topicmodel::dictionary) abbrevitation_interner: DefaultAbbreviationStringInterner,
-    pub(in crate::topicmodel::dictionary) unaltered_voc_interner: DefaultUnalteredVocStringInterner,
-    pub(in crate::topicmodel::dictionary) synonyms_interner: DefaultSynonymStringInterner
+
+macro_rules! generate_field_code {
+    (
+        $(
+            $tt:tt {
+                $doc: literal $name: ident: $assoc_typ: ty | $cache_typ: ty | $resolved_typ: ty $( as $marker:tt {
+                    $interner_name: ident $(: $interner_type: ident)? => $interner_method: ident
+                })?
+            }
+        ),+
+        $(,)?
+    ) => {
+        $crate::topicmodel::dictionary::metadata::loaded::reference::create_ref_implementation!(
+            $($tt: $name $(, $interner_name)?: $cache_typ | $assoc_typ,)+
+        );
+        $crate::topicmodel::dictionary::metadata::loaded::reference_mut::create_mut_ref_implementation!(
+            $($tt: $name $(, $interner_method)?: $assoc_typ,)+
+        );
+        $crate::topicmodel::dictionary::metadata::loaded::manager::create_managed_implementation!(
+            $($($($interner_name: $interner_type => $interner_method: $assoc_typ,)?)?)+
+        );
+        $crate::topicmodel::dictionary::metadata::loaded::metadata::create_metadata_impl!(
+            $($doc $name: $assoc_typ,)+
+        );
+        $crate::topicmodel::dictionary::metadata::loaded::solved::create_solved_implementation!(
+            $($tt $(as $marker)?: $name: $resolved_typ,)+
+        );
+    };
 }
 
-impl LoadedMetadataManager {
-    pub fn intern_dictionary_origin_static(&mut self, voc_entry: &'static str) -> DefaultDictionaryOrigin {
-        self.dictionary_interner.get_or_intern_static(voc_entry)
-    }
-    pub fn intern_dictionary_origin(&mut self, voc_entry: impl AsRef<str>) -> DefaultDictionaryOrigin {
-        self.dictionary_interner.get_or_intern(voc_entry)
-    }
-    pub fn intern_unaltered_vocabulary(&mut self, voc_entry: impl AsRef<str>) -> DefaultUnalteredVoc {
-        self.unaltered_voc_interner.get_or_intern(voc_entry)
-    }
-    pub fn intern_inflected(&mut self, voc_entry: impl AsRef<str>) -> DefaultInflected {
-        self.inflected_interner.get_or_intern(voc_entry)
-    }
-    pub fn intern_abbreviations(&mut self, voc_entry: impl AsRef<str>) -> DefaultAbbreviation {
-        self.abbrevitation_interner.get_or_intern(voc_entry)
-    }
-    pub fn intern_synonyms(&mut self, voc_entry: impl AsRef<str>) -> DefaultSynonym {
-        self.synonyms_interner.get_or_intern(voc_entry)
-    }
-}
-
-impl Default for LoadedMetadataManager {
-    fn default() -> Self {
-        Self {
-            meta_a: Vec::new(),
-            meta_b: Vec::new(),
-            dictionary_interner: DefaultDictionaryOriginStringInterner::new(),
-            inflected_interner: DefaultInflectedStringInterner::new(),
-            abbrevitation_interner: DefaultAbbreviationStringInterner::new(),
-            unaltered_voc_interner: DefaultUnalteredVocStringInterner::new(),
-            synonyms_interner: DefaultSynonymStringInterner::new(),
+generate_field_code! {
+    set {
+        r#"Stores the languages of a word."#
+        languages: Language | Set64<Language> | Set64<Language>
+    },
+    set {
+        r#"Stores the domains of a word."#
+        domains: Domain | Set64<Domain> | Set64<Domain>
+    },
+    set {
+        r#"Stores the register of a word."#
+        registers: Register | Set64<Register> | Set64<Register>
+    },
+    set {
+        r#"Stores the gender of a word."#
+        gender: GrammaticalGender | Set64<GrammaticalGender> | Set64<GrammaticalGender>
+    },
+    set {
+        r#"Stores the pos of a word."#
+        pos: PartOfSpeech | Set64<PartOfSpeech> | Set64<PartOfSpeech>
+    },
+    set {
+        r#"Stores the regions of a word."#
+        region: Region | Set64<Region> | Set64<Region>
+    },
+    set {
+        r#"Stores the number of a word."#
+        number: GrammaticalNumber | Set64<GrammaticalNumber> | Set64<GrammaticalNumber>
+    },
+    interned {
+        r#"Stores the inflected value of a word."#
+        inflected: InflectedSymbol | (Set64<InflectedSymbol>, Vec<&'a str>) | Vec<String> as interned {
+            inflected_interner: DefaultInflectedStringInterner => intern_inflected
         }
-    }
-}
-
-impl MetadataManager for LoadedMetadataManager {
-    type Metadata = LoadedMetadata;
-    type ResolvedMetadata = SolvedLoadedMetadata;
-    type Reference<'a> = LoadedMetadataRef<'a> where Self: 'a;
-    type MutReference<'a> = LoadedMetadataMutRef<'a> where Self: 'a;
-
-    fn meta_a(&self) -> &[Self::Metadata] {
-        self.meta_a.as_slice()
-    }
-
-    fn meta_b(&self) -> &[Self::Metadata] {
-        self.meta_b.as_slice()
-    }
-
-    fn switch_languages(self) -> Self {
-        Self {
-            meta_a: self.meta_b,
-            meta_b: self.meta_a,
-            abbrevitation_interner: self.abbrevitation_interner,
-            inflected_interner: self.inflected_interner,
-            dictionary_interner: self.dictionary_interner,
-            unaltered_voc_interner: self.unaltered_voc_interner,
-            synonyms_interner: self.synonyms_interner,
+    },
+    interned {
+        r#"Stores the abbreviations value of a word."#
+        abbreviations: AbbreviationSymbol | (Set64<AbbreviationSymbol>, Vec<&'a str>) | Vec<String> as interned {
+            abbreviations_interner: DefaultAbbreviationStringInterner => intern_abbreviations
         }
-    }
-
-    fn get_meta<L: Language>(&self, word_id: usize) -> Option<&Self::Metadata> {
-        if L::LANG.is_a() {
-            self.meta_a.get(word_id)
-        } else {
-            self.meta_b.get(word_id)
+    },
+    interned {
+        r#"Stores the unaltered vocabulary value of a word."#
+        unaltered_vocabulary: UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>) | Vec<String> as interned {
+            unaltered_vocabulary_interner: DefaultUnalteredVocStringInterner => intern_unaltered_vocabulary
         }
-    }
-
-    fn get_meta_mut<'a, L: Language>(&'a mut self, word_id: usize) -> Option<Self::MutReference<'a>> {
-        let ptr = self as *mut Self;
-        let value = unsafe{&mut*ptr};
-        let result = if L::LANG.is_a() {
-            value.meta_a.get_mut(word_id)
-        } else {
-            value.meta_b.get_mut(word_id)
-        }?;
-        Some(LoadedMetadataMutRef::new(ptr, result))
-    }
-
-    fn get_or_create_meta<'a, L: Language>(&'a mut self, word_id: usize) -> Self::MutReference<'a> {
-        let ptr = self as *mut Self;
-
-        let targ = if L::LANG.is_a() {
-            &mut self.meta_a
-        } else {
-            &mut self.meta_b
-        };
-
-        if word_id >= targ.len() {
-            targ.resize(word_id + 1, LoadedMetadata::default())
+    },
+    interned {
+        r#"Stores the synonyms"#
+        synonyms: UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>) | Vec<String> as interned {
+            unaltered_vocabulary_interner => intern_unaltered_vocabulary
         }
-
-        unsafe{
-            LoadedMetadataMutRef::new(ptr, targ.get_unchecked_mut(word_id))
+    },
+    interned {
+        r#"Stores similar words"#
+        look_at: UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>) | Vec<String> as interned {
+            unaltered_vocabulary_interner => intern_unaltered_vocabulary
         }
-    }
-
-    fn get_meta_ref<'a, L: Language>(&'a self, word_id: usize) -> Option<Self::Reference<'a>> {
-        Some(LoadedMetadataRef::new(self.get_meta::<L>(word_id)?, self))
-    }
-
-    fn resize(&mut self, meta_a: usize, meta_b: usize) {
-        if meta_a > self.meta_a.len() {
-            self.meta_a.resize(meta_a, LoadedMetadata::default());
+    },
+    interned {
+        r#"Stores some kind of artificial id"#
+        ids: AnyIdSymbol | (Set64<AnyIdSymbol>, Vec<&'a str>) | Set64<AnyIdSymbol> as set {
+            ids_interner: DefaultAnyIdStringInterner => intern_ids
         }
-
-        if meta_b > self.meta_a.len() {
-            self.meta_b.resize(meta_b, LoadedMetadata::default());
+    },
+    interned {
+        r#"Stores outgoing ids"#
+        outgoing_ids: AnyIdSymbol | (Set64<AnyIdSymbol>, Vec<&'a str>) | Set64<AnyIdSymbol> as set {
+            ids_interner => intern_ids
         }
-    }
-
-    fn copy_keep_vocabulary(&self) -> Self {
-        Self {
-            abbrevitation_interner: self.abbrevitation_interner.clone(),
-            inflected_interner: self.inflected_interner.clone(),
-            dictionary_interner: self.dictionary_interner.clone(),
-            meta_a: Default::default(),
-            meta_b: Default::default(),
-            unaltered_voc_interner: self.unaltered_voc_interner.clone(),
-            synonyms_interner: self.synonyms_interner.clone()
+    },
+    interned {
+        r#"Stores the original entry. May contain multiple is some kind of merge action is done."#
+        original_entry: OriginalEntrySymbol | (Set64<OriginalEntrySymbol>, Vec<&'a str>) | Vec<String> as interned {
+            original_entry_interner: DefaultOriginalEntryStringInterner => intern_original_entry
         }
-    }
+    },
+    interned {
+        r#"Contextual information."#
+        contextual_informations: ContextualInformationSymbol | (Set64<ContextualInformationSymbol>, Vec<&'a str>) | Vec<String> as interned {
+            contextual_informations_interner: DefaultContextualInformationStringInterner => intern_contextual_informations
+        }
+    },
+    interned {
+        r#"Unclassified information."#
+        unclassified: UnclassifiedSymbol | (Set64<UnclassifiedSymbol>, Vec<&'a str>) | Vec<String> as interned {
+            unclassified_interner: DefaultUnclassifiedStringInterner => intern_unclassified
+        }
+    },
 }

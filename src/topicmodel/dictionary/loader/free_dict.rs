@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::*;
-use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Register};
+use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Region, Register};
 // see https://tei-c.org/release/doc/tei-p5-doc/en/html/DI.html
 
 pub struct FreeDictReader<R> {
@@ -34,11 +34,20 @@ pub struct Word {
     pub registers: Vec<Register>,
     pub languages: Vec<Language>,
     pub synonyms: Vec<Synonym>,
+    pub regions: Vec<Region>,
+    pub colloc: Vec<String>,
+    pub contextual: Vec<String>,
+    pub see: Vec<See>,
 }
 
 
 pub struct Synonym {
     pub target_id: String,
+    pub word: String
+}
+
+pub struct See {
+    pub target_id: Option<String>,
     pub word: String
 }
 
@@ -50,7 +59,10 @@ pub struct Translation {
     pub registers: Vec<Register>,
     pub abbrevs: Vec<String>,
     pub domains: Vec<Domain>,
-    pub languages: Vec<Language>
+    pub languages: Vec<Language>,
+    pub regions: Vec<Region>,
+    pub colloc: Vec<String>,
+    pub contextual: Vec<String>
 }
 
 pub struct GramaticHints {
@@ -95,9 +107,122 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
     type Item = Result<FreeDictEntry, FreeDictReaderError>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        fn parse_usg_element(
+            UsgElement {
+                content,
+                type_attribute
+            }: UsgElement,
+            registers: &mut Vec<Register>,
+            domains: &mut Vec<Domain>,
+            regions: &mut Vec<Region>,
+            languages: &mut Vec<Language>,
+            colloc: &mut Vec<String>,
+            contextual: &mut Vec<String>
+        ) -> Result<(), FreeDictReaderError> {
+            match type_attribute {
+                TypeAttribute::Reg => {
+                    registers.push(content.parse()?);
+                }
+                TypeAttribute::Colloc => {
+                    colloc.push(content);
+                    // collocation given to show usage
+                }
+                TypeAttribute::Dom => {
+                    domains.push(content.parse()?);
+                }
+                TypeAttribute::Geo => {
+                    if let Ok(lang) = content.parse::<Language>() {
+                        languages.push(lang);
+                        return Ok(())
+                    }
+                    // todo: wichtiges feld. Muss man speichern.
+                    // geographic area r.g. schw., br. am.
+                    match content.parse::<Region>() {
+                        Ok(value) => {
+                            regions.push(value);
+                        }
+                        Err(err) => {
+                            println!("geo {content}");
+                            return Err(err.into())
+                        }
+                    }
+
+
+                }
+                TypeAttribute::Hint => {
+                    // Wichtig!: übtr.
+                    // unclassifiable piece of information to guide sense choice
+                    if let Ok(p) = content.parse::<Domain>() {
+                        domains.push(p);
+                        return Ok(())
+                    }
+                    if let Ok(p) = content.parse::<Register>() {
+                        registers.push(p);
+                        return Ok(())
+                    }
+                    contextual.push(content);
+                }
+                TypeAttribute::Lang => {
+                    languages.push(content.parse()?);
+                }
+                TypeAttribute::Style => {
+                    if let Ok(p) = content.parse::<Domain>() {
+                        domains.push(p);
+                        return Ok(())
+                    }
+                    if let Ok(p) = content.parse::<Register>() {
+                        registers.push(p);
+                        return Ok(())
+                    }
+                    // todo: sowas wie register, domain
+                    // style (figurative, literal, etc.)
+                    contextual.push(content);
+                }
+                TypeAttribute::Time => {
+                    // temporal, historical era (‘archaic’, ‘old’, etc.)
+                    if let Ok(p) = content.parse::<Domain>() {
+                        domains.push(p);
+                        return Ok(())
+                    }
+                    if let Ok(p) = content.parse::<Register>() {
+                        registers.push(p);
+                        return Ok(())
+                    }
+                    contextual.push(content);
+                }
+                other => panic!("Did not expect an usg type with type {other} - {}!", content)
+            }
+            Ok(())
+        }
+
+        fn parse_usg_elements(
+            usg_elements: Vec<UsgElement>,
+            registers: &mut Vec<Register>,
+            domains: &mut Vec<Domain>,
+            regions: &mut Vec<Region>,
+            languages: &mut Vec<Language>,
+            colloc: &mut Vec<String>,
+            contextual: &mut Vec<String>
+        ) -> Result<(), FreeDictReaderError> {
+            for elem in usg_elements {
+                parse_usg_element(
+                    elem,
+                    registers,
+                    domains,
+                    regions,
+                    languages,
+                    colloc,
+                    contextual
+                )?
+            }
+            Ok(())
+        }
+
+
         match self.iter.next()?.map_err(FreeDictReaderError::Xml) {
             // (entry) contains a single structured entry in any kind of lexical resource, such as a dictionary or lexicon.
             Ok(EntryElement{
+                // todo: auch abspeichern
                    id_attribute,
                    // (form information group) groups all the information on the written and spoken
                    // forms of one headword.
@@ -148,68 +273,30 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     }
                 }
 
-                let mut domains = Vec::new();
-                let mut languages: Vec<Language> = Vec::new();
                 let mut registers = Vec::new();
-                if let Some(UsgElement {
-                    content,
-                    type_attribute
-                }) = usg_element {
-                    match type_attribute {
-                        TypeAttribute::Colloc => {
-                            // collocation given to show usage
-                        }
-                        TypeAttribute::Dom => {
-                            match content.parse() {
-                                Ok(value) => {
-                                    domains.push(value);
-                                }
-                                Err(value) => {
-                                    return Some(Err(FreeDictReaderError::Strum(value)))
-                                }
-                            }
-                        }
-                        TypeAttribute::Geo => {
-                            // geographic area r.g. schw., br. am.
-                        }
-                        TypeAttribute::Hint => {
-                            // unclassifiable piece of information to guide sense choice
-                        }
-                        TypeAttribute::Lang => {
-                            match content.parse() {
-                                Ok(value) => {
-                                    languages.push(value);
-                                }
-                                Err(value) => {
-                                    return Some(Err(FreeDictReaderError::Strum(value)))
-                                }
-                            }
+                let mut domains = Vec::new();
+                let mut regions = Vec::new();
+                let mut languages = Vec::new();
+                let mut colloc: Vec<String> = Vec::new();
+                let mut contextual: Vec<String> = Vec::new();
 
-                        }
-                        TypeAttribute::Reg => {
-                            match content.parse() {
-                                Ok(value) => {
-                                    registers.push(value);
-                                }
-                                Err(value) => {
-                                    return Some(Err(FreeDictReaderError::Strum(value)))
-                                }
-                            }
-                            // Register is defined as the level of formality in language that's determined by the context in which it is spoken or written.
-                        }
-                        TypeAttribute::Style => {
-                            // style (figurative, literal, etc.)
-                        }
-                        TypeAttribute::Time => {
-                            // temporal, historical era (‘archaic’, ‘old’, etc.)
-                        }
-                        _ => unreachable!()
-                    }
+
+                if let Some(usg_element) = usg_element {
+                    parse_usg_element(
+                        usg_element,
+                        &mut registers,
+                        &mut domains,
+                        &mut regions,
+                        &mut languages,
+                        &mut colloc,
+                        &mut contextual
+                    ).expect("Usg Parser had some errors.");
                 }
                 if languages.len() > 1 {
                     panic!("{id_attribute}: hHas multiple langs {languages:?}");
                 }
                 let mut synonyms = Vec::new();
+                let mut see = Vec::new();
                 let mut translations = Vec::new();
                 if let Some(
                     SenseElement{
@@ -229,61 +316,20 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     }) = sense_element
                 {
                     // Usage infos
-                    for UsgElement {
-                        content,
-                        type_attribute
-                    } in usg_elements {
-                        match type_attribute {
-                            TypeAttribute::Colloc => {
-                                // collocation given to show usage
-                            }
-                            TypeAttribute::Dom => {
-                                match content.parse() {
-                                    Ok(value) => {
-                                        domains.push(value);
-                                    }
-                                    Err(value) => {
-                                        return Some(Err(FreeDictReaderError::Strum(value)))
-                                    }
-                                }
-                            }
-                            TypeAttribute::Geo => {
-                                // geographic area r.g. schw., br. am.
-                            }
-                            TypeAttribute::Hint => {
-                                // unclassifiable piece of information to guide sense choice
-                            }
-                            TypeAttribute::Lang => {
-                                match content.parse() {
-                                    Ok(value) => {
-                                        languages.push(value);
-                                    }
-                                    Err(value) => {
-                                        return Some(Err(FreeDictReaderError::Strum(value)))
-                                    }
-                                }
-                            }
-                            TypeAttribute::Reg => {
-                                // Register is defined as the level of formality in language that's determined by the context in which it is spoken or written.
-                                match content.parse() {
-                                    Ok(value) => {
-                                        registers.push(value);
-                                    }
-                                    Err(value) => {
-                                        return Some(Err(FreeDictReaderError::Strum(value)))
-                                    }
-                                }
-                            }
-                            TypeAttribute::Style => {
-                                // style (figurative, literal, etc.)
-                            }
-                            TypeAttribute::Time => {
-                                // temporal, historical era (‘archaic’, ‘old’, etc.)
-                            }
-                            other => panic!("{id_attribute}: An usg_elements has the type {other}!")
+                    match parse_usg_elements(
+                        usg_elements,
+                        &mut registers,
+                        &mut domains,
+                        &mut regions,
+                        &mut languages,
+                        &mut colloc,
+                        &mut contextual
+                    ) {
+                        Err(err) => {
+                            panic!("{id_attribute}: {err}")
                         }
+                        _ => {}
                     }
-
 
                     for element in cit_elements {
                         match element.type_attribute {
@@ -299,6 +345,7 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                                         usg_elements,
                                         // Already used by the outer layer
                                         type_attribute: _,
+                                        // Not used on this level.
                                         // (orthographic form) gives the orthographic form of a dictionary headword.
                                         orth_element: _,
                                         // (cited quotation) contains a quotation from some other document,
@@ -337,40 +384,21 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
 
                                     let mut registers = Vec::new();
                                     let mut domains = Vec::new();
+                                    let mut regions = Vec::new();
                                     let mut languages = Vec::new();
+                                    let mut colloc: Vec<String> = Vec::new();
+                                    let mut contextual: Vec<String> = Vec::new();
 
-                                    for UsgElement {
-                                        content,
-                                        type_attribute
-                                    } in usg_elements {
-                                        match type_attribute {
-                                            TypeAttribute::Reg => {
-                                                registers.push(content.parse()?);
-                                            }
-                                            TypeAttribute::Colloc => {
-                                                // collocation given to show usage
-                                            }
-                                            TypeAttribute::Dom => {
-                                                domains.push(content.parse()?);
-                                            }
-                                            TypeAttribute::Geo => {
-                                                // geographic area r.g. schw., br. am.
-                                            }
-                                            TypeAttribute::Hint => {
-                                                // unclassifiable piece of information to guide sense choice
-                                            }
-                                            TypeAttribute::Lang => {
-                                                languages.push(content.parse()?);
-                                            }
-                                            TypeAttribute::Style => {
-                                                // style (figurative, literal, etc.)
-                                            }
-                                            TypeAttribute::Time => {
-                                                // temporal, historical era (‘archaic’, ‘old’, etc.)
-                                            }
-                                            other => panic!("{id_attribute}: Did not expect an usg type with type {other} - {}!", content)
-                                        }
-                                    }
+                                    parse_usg_elements(
+                                        usg_elements,
+                                        &mut registers,
+                                        &mut domains,
+                                        &mut regions,
+                                        &mut languages,
+                                        &mut colloc,
+                                        &mut contextual
+                                    )?;
+
 
                                     Ok(
                                         Translation {
@@ -380,7 +408,10 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                                             gram: gram_grp_element.map(|value| GramaticHints::read_from(&id_attribute, value)),
                                             abbrevs,
                                             domains,
-                                            languages
+                                            languages,
+                                            colloc,
+                                            contextual,
+                                            regions
                                         }
                                     )
                                 }
@@ -426,14 +457,32 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                                 }
                             }
                             TypeAttribute::See => {
-                                // We ignore the see hint!
+                                for RefElement{
+                                    content,
+                                    target_attribute
+                                } in ref_elements {
+                                    if let Some(target_attribute) = target_attribute {
+                                        see.push(
+                                            See {
+                                                target_id: Some(target_attribute.trim_start_matches('#').to_string()),
+                                                word: content
+                                            }
+                                        )
+                                    } else {
+                                        see.push(
+                                            See {
+                                                target_id: None,
+                                                word: content
+                                            }
+                                        )
+                                    }
+                                }
                             }
                             other => {
                                 panic!("{id_attribute}: Top level xr element has unknown type attribuet: {other}")
                             }
                         }
                     }
-
                 }
                 
                 let word = Word {
@@ -444,7 +493,11 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     gram,
                     registers,
                     languages,
-                    synonyms
+                    synonyms,
+                    see,
+                    colloc,
+                    contextual,
+                    regions
                 };
 
 
@@ -488,10 +541,50 @@ pub fn read_free_dict(path: impl AsRef<Path>) -> Result<FreeDictReader<BufReader
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+    use std::fs::File;
+    use std::io::BufReader;
     use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict};
+    use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{iter_for_usg_element, TypeAttribute};
+
+    #[test]
+    fn can_da(){
+        let r = quick_xml::reader::Reader::from_reader(
+            BufReader::with_capacity(
+                128*1024,
+                File::options().read(true).open("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei").unwrap()
+            )
+        );
+
+        let mut h = HashSet::new();
+        for value in iter_for_usg_element(r) {
+            let value = value.unwrap();
+            h.insert((value.type_attribute, value.content));
+        }
+
+        let r = quick_xml::reader::Reader::from_reader(
+            BufReader::with_capacity(
+                128*1024,
+                File::options().read(true).open("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei").unwrap()
+            )
+        );
+        for value in iter_for_usg_element(r) {
+            let value = value.unwrap();
+            h.insert((value.type_attribute, value.content));
+        }
+
+        for value in h.into_iter() {
+            if matches!(value.0, TypeAttribute::Geo) {
+                println!("{:?}", value);
+            }
+        }
+    }
 
     #[test]
     fn can_run(){
+
+
+
         println!("{}", read_free_dict("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei").unwrap().map(|value| value.unwrap()).count());
         println!("{}", read_free_dict("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei").unwrap().map(|value| value.unwrap()).count());
     }

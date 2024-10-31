@@ -19,11 +19,11 @@ pub mod for_test_only {
     use convert_case::Casing;
     use itertools::Itertools;
     use regex::Regex;
-    use serde::{Deserialize, Serialize};
-    use strum::{Display, EnumIter, EnumString, VariantArray};
+    use strum::{VariantArray};
+    use crate::topicmodel::dictionary::word_infos::Domain;
 
-
-    const DAT: &'static str = r#"
+    // Source: https://github.com/haukex/de-en-dict/blob/main/src/js/abbreviations.json
+    const DAT2: &'static str = r#"
     {
   "[Am.]": {
     "de": "Amerikanisches Englisch",
@@ -495,9 +495,15 @@ pub mod for_test_only {
   }
 }"#;
 
+    #[test]
     fn produce(){
-        let dat: HashMap<String, HashMap<String, String>> = serde_json::from_str(DAT).unwrap();
+        let dat: HashMap<String, HashMap<String, String>> = serde_json::from_str(DAT2).unwrap();
+        for v in dat.keys() {
+            if let Ok(_) = v.parse::<Domain>() {
+                println!("Domain: {v}")
+            }
 
+        }
     }
 
 
@@ -875,7 +881,7 @@ zool.	Zoology, Animals / Zoologie, Tierkunde	39299	688
         }
     }
 
-    pub fn create_enum_definition<I: IntoIterator<Item = EnumEntry<V>>, V: AsRef<str>>(
+    fn create_enum_definition<I: IntoIterator<Item = EnumEntry<V>>, V: AsRef<str>>(
         name: &str,
         iter: I,
         with_u64_repr: bool,

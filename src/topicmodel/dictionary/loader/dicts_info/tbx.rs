@@ -19,7 +19,7 @@ use quick_xml::events::Event;
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::HasLineInfo;
 
-struct TbxReader<R> {
+pub struct TbxReader<R> {
     reader: quick_xml::reader::Reader<R>,
     buffer: Vec<u8>,
     in_body: bool,
@@ -62,7 +62,7 @@ impl From<nom::Err<nom::error::Error<&str>>> for TbxReaderError {
 }
 
 #[derive(Debug, Clone)]
-struct TbxEntry {
+pub struct TbxEntry {
     term_id: Option<usize>,
     entries: HashMap<String, Vec<String>>
 }

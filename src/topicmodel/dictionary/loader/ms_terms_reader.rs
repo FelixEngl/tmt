@@ -6,7 +6,7 @@ use std::path::Path;
 use itertools::Itertools;
 use strum::Display;
 use thiserror::Error;
-use crate::topicmodel::dictionary::word_infos::{PartOfSpeech};
+use crate::topicmodel::dictionary::word_infos::{Language, PartOfSpeech, Region};
 use crate::topicmodel::reference::HashRef;
 use super::helper::gen_ms_terms_reader::iter::TermEntryElementIter;
 use super::helper::gen_ms_terms_reader::*;
@@ -60,7 +60,9 @@ impl MsTermsEntry {
 
 #[derive(Debug)]
 pub struct TermDefinition {
-    lang: LangAttribute,
+    // todo: Sicherstellen, das BE und US korrekt unterschieden werden
+    lang: Language,
+    region: Option<Region>,
     defintition: Vec<String>,
     terms: HashMap<HashRef<String>, Term>
 }
@@ -158,8 +160,11 @@ impl<R> Iterator for MSTermsReader<R> where R: BufRead {
                         panic!("Had a collision with {} in {entry_id}!", value.id)
                     }
                 }
+                let region = lang.try_into().ok();
+                let lang2 = lang.into();
                 if let Some(value) = terms.insert(lang, TermDefinition {
-                    lang,
+                    lang: lang2,
+                    region,
                     defintition: defintition.into_iter().collect_vec(),
                     terms: hash_map
                 }) {

@@ -1,7 +1,7 @@
 use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
 use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, take_nested_bracket_delimited};
 use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartOfSpeech, PartialWordType};
-use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalNumber, Register};
+use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalNumber, Region, Register};
 use itertools::Itertools;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag, take_until};
@@ -485,16 +485,18 @@ impl<T> Display for WordPatternElement<T> where T: AsRef<str> {
 }
 
 pub struct ProcessingResult<S> {
+    pub reconstructed: String,
     pub gender: Vec<GrammaticalGender>,
     pub numeric: Vec<GrammaticalNumber>,
     pub pos: Vec<PartOfSpeech>,
     pub register: Vec<Register>,
+    pub regions: Vec<Region>,
     pub abbrev: Vec<String>,
     pub domain: Vec<Domain>,
     pub synonyms: Vec<String>,
     pub word_pattern: Vec<WordPatternElement<S>>,
     pub latin_names: Vec<String>,
-    pub unclassified: Vec<WordEntryElement<S>>
+    pub contextualisation: Vec<WordEntryElement<S>>
 }
 
 impl<S> ProcessingResult<S> where S: Clone {
@@ -524,8 +526,8 @@ impl<S> ProcessingResult<S> where S: Clone {
     }
 }
 
-pub fn process_word_entry<S: AsRef<str> + Clone>(
-    WordEntry(lang_cont): WordEntry<S>,
+pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
+    entry: WordEntry<S>,
     additional_domains: &[Domain],
     additional_pos: &[PartOfSpeech]
 ) -> ProcessingResult<S> {
@@ -538,9 +540,11 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
     let mut synonyms: Vec<String> = Vec::new();
     let mut word_pattern: Vec<WordPatternElement<S>> = Vec::new();
     let mut latin_names: Vec<String> = Vec::new();
-    let mut unclassified: Vec<WordEntryElement<S>> = Vec::new();
+    let mut contextualisation: Vec<WordEntryElement<S>> = Vec::new();
+    let mut regions: Vec<Region> = Vec::new();
+    let mut reconstructed = entry.to_string();
 
-    for value in lang_cont {
+    for value in entry.0 {
         match value {
             WordEntryElement::Word(value) => {
                 word_pattern.push(WordPatternElement::Word(value));
@@ -574,10 +578,10 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
                         register.push(Register::Coll)
                     }
                     "usually pl" => {
-                        numeric.push(GrammaticalNumber::Plural)
+                        numeric.push(GrammaticalNumber::UsuallyPlural)
                     }
                     "sg only" => {
-                        numeric.push(GrammaticalNumber::Singular)
+                        numeric.push(GrammaticalNumber::SingularOnly)
                     }
                     "auch: f" => {
                         gender.push(GrammaticalGender::Feminine)
@@ -586,38 +590,38 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
                         numeric.extend_from_slice(&[GrammaticalNumber::Singular, GrammaticalNumber::Plural])
                     }
                     _ => {
-                        unclassified.push(a.clone());
+                        contextualisation.push(a.clone());
                     }
                 }
             }
             ref a @ WordEntryElement::Contextualisation(ref value) => {
-
+                // todo:
                 fn parse_contextualisation(
                     s: &str,
                     register: &mut Vec<Register>,
                     domain: &mut Vec<Domain>,
                     synonyme: &mut Vec<String>,
                     latin_names: &mut Vec<String>,
+                    regions: &mut Vec<Region>,
                     additional_domains: &[Domain],
                     additional_pos: &[PartOfSpeech]
                 ) -> bool {
-                    if let Ok(reg) = s.trim_end_matches(',').parse() {
-                        register.push(reg);
-                        return true;
+                    {
+                        let s = s.trim_end_matches(',');
+                        if let Ok(reg) = s.parse() {
+                            register.push(reg);
+                            return true;
+                        }
+                        if let Ok(dom) = s.parse() {
+                            domain.push(dom);
+                            return true;
+                        }
+                        if let Ok(reg) = s.parse(){
+                            regions.push(reg);
+                            return true
+                        }
                     }
-                    if let Ok(dom) = s.trim_end_matches(',').parse() {
-                        domain.push(dom);
-                        return true;
-                    }
-                    if matches!(
-                            s,
-                            "österr." | "südd." | "nordd." | "ostd." | "schweiz." | "regional"
-                            | "Br." | "Am." | "Aus." | "NZ" | "Can." | "Scot." | "Irish"
-                            | "Ind." | "S.Afr." | "westösterr."
-                        ) {
-                        register.push(Register::Dialect);
-                        return true;
-                    }
+
 
                     if s.starts_with("e.g.") || s.starts_with("z.B.") {
                         // Beispieltexte
@@ -647,8 +651,6 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
                                 return true
                             }
                             drop(family_and_genus);
-
-
 
                             let matches = TAX_NAME_REGEX.captures_iter(s);
                             let mut matches = matches.into_iter().peekable();
@@ -717,7 +719,16 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
 
                         let mut found_something = false;
                         for value in s.split(' ') {
-                            found_something |= parse_contextualisation(value, register, domain, synonyme, latin_names, additional_domains, additional_pos);
+                            found_something |= parse_contextualisation(
+                                value,
+                                register,
+                                domain,
+                                synonyme,
+                                latin_names,
+                                regions,
+                                additional_domains,
+                                additional_pos
+                            );
                         }
                         if found_something {
                             return true
@@ -726,8 +737,17 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
                     false
                 }
 
-                if !parse_contextualisation(value.as_ref(), &mut register, &mut domain, &mut synonyms, &mut latin_names, additional_domains, additional_pos) {
-                    unclassified.push(a.clone())
+                if !parse_contextualisation(
+                    value.as_ref(),
+                    &mut register,
+                    &mut domain,
+                    &mut synonyms,
+                    &mut latin_names,
+                    &mut regions,
+                    additional_domains,
+                    additional_pos
+                ) {
+                    contextualisation.push(a.clone())
                 }
 
             }
@@ -743,6 +763,7 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
         }
     }
     ProcessingResult {
+        reconstructed,
         gender,
         numeric,
         pos,
@@ -752,7 +773,8 @@ pub fn process_word_entry<S: AsRef<str> + Clone>(
         synonyms,
         word_pattern,
         latin_names,
-        unclassified
+        contextualisation,
+        regions
     }
 }
 

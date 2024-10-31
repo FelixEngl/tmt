@@ -1,0 +1,10 @@
+
+FreeDict:
+https://tei-c.org/release/doc/tei-p5-doc/en/html/DI.html
+https://github.com/freedict/fd-dictionaries/wiki/FreeDict-API#dictionary
+
+
+DictCC
+https://contribute.dict.cc/guidelines/
+https://www.dict.cc/subjects.php
+

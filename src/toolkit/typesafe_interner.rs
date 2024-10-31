@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
 use serde::de::{Error, Visitor};
 use string_interner::{Symbol};
@@ -60,7 +60,7 @@ impl<'de, S> Visitor<'de> for SymbolVisitor<S> where S: Symbol {
 
 #[macro_export]
 macro_rules! create_interned_typesafe_symbol {
-    ($($name: ident),+) => {
+    ($($name: ident),+ $(,)?) => {
         $(
             #[derive(Hash)]
             #[repr(transparent)]
@@ -148,6 +148,16 @@ macro_rules! create_interned_typesafe_symbol {
                 }
             }
 
+            impl<S> Display for $name<S>
+            where
+                S: string_interner::Symbol
+            {
+                fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                    write!(f, stringify!($name))?;
+                    write!(f, "{}", self.to_usize())
+                }
+            }
+
 
             impl<S> $crate::toolkit::typesafe_interner::TypeSafeSymbol<S> for $name<S> where S: Symbol {}
 
@@ -227,7 +237,7 @@ macro_rules! create_interned_typesafe_symbol {
 
 
             paste::paste!{
-                pub type [<Default $name>] = $name<string_interner::DefaultSymbol>;
+                pub type [<$name Symbol>] = $name<string_interner::DefaultSymbol>;
                 pub type [<$name Backend>]<S> = string_interner::backend::StringBackend<$name<S>>;
                 pub type [<Default $name Backend>] = [<$name Backend>]<string_interner::DefaultSymbol>;
                 pub type [<Default $name StringInterner>]<H = string_interner::DefaultHashBuilder> = string_interner::DefaultStringInterner<[<Default $name Backend>], H>;
@@ -236,11 +246,15 @@ macro_rules! create_interned_typesafe_symbol {
     };
 }
 
+
 create_interned_typesafe_symbol! {
     DictionaryOrigin,
     Tag,
     Inflected,
     Abbreviation,
     UnalteredVoc,
-    Synonym
+    OriginalEntry,
+    AnyId,
+    ContextualInformation,
+    Unclassified
 }

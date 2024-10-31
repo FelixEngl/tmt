@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 use itertools::Itertools;
-use crate::toolkit::typesafe_interner::DefaultDictionaryOrigin;
+use crate::toolkit::typesafe_interner::DictionaryOriginSymbol;
 use crate::topicmodel::dictionary::direction::Language;
 use crate::topicmodel::dictionary::metadata::containers::classic::metadata::ClassicMetadata;
 use crate::topicmodel::dictionary::metadata::containers::classic::ClassicMetadataManager;
@@ -70,7 +70,7 @@ impl<'a> ClassicMetadataMutRef<'a> {
         }
     }
 
-    pub fn get_or_push_associated_dictionary(&mut self, dictionary: impl AsRef<str>) -> DefaultDictionaryOrigin {
+    pub fn get_or_push_associated_dictionary(&mut self, dictionary: impl AsRef<str>) -> DictionaryOriginSymbol {
         let interned = unsafe{&mut *self.manager_ref }.get_dictionary_interner_mut().get_or_intern(dictionary);
         if self.meta.has_associated_dictionary(interned) {
             return interned
