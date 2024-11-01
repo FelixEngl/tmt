@@ -1,19 +1,19 @@
+use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
+use crate::topicmodel::dictionary::loader::helper::take_nested_bracket_delimited;
+use crate::topicmodel::dictionary::loader::word_infos::{PartialWordType, WordInfo};
+use itertools::{chain, Itertools};
+use nom::branch::alt;
+use nom::bytes::complete::{is_a, is_not, tag};
+use nom::character::complete::{char, multispace0, space0};
+use nom::combinator::{eof, map, not, opt, peek, recognize, value};
+use nom::error::ParseError;
+use nom::multi::many1;
+use nom::sequence::{delimited, pair, preceded, separated_pair, terminated, tuple};
+use nom::IResult;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::path::Path;
-use itertools::{chain, Itertools};
-use nom::combinator::{eof, map, not, opt, peek, recognize, value};
-use nom::error::{ParseError};
-use nom::{IResult};
-use nom::branch::alt;
-use nom::bytes::complete::{is_a, is_not, tag};
-use nom::character::complete::{multispace0, space0, char};
-use nom::multi::{many1};
-use nom::sequence::{delimited, pair, preceded, separated_pair, terminated, tuple};
-use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
-use crate::topicmodel::dictionary::loader::helper::{take_nested_bracket_delimited};
-use crate::topicmodel::dictionary::loader::word_infos::{PartialWordType, WordInfo};
 
 /// The single elements that make up an entry
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -272,7 +272,7 @@ impl<T> Display for DingEntry<T> where T: Display {
 fn parse_word_content<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, &'a str, E> {
     recognize(
         alt((
-            is_not("{[(< \t:;|…/>"),
+            is_not("{[(< \t:;|…/>\r\n"),
             recognize(pair(char(':'), not(char(':'))))
         ))
     )(s)
@@ -283,7 +283,7 @@ fn parse_word_content<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str
 fn parse_interchangeable<'a, E: ParseError<&'a str>>(s: &'a str) -> IResult<&'a str, DingWordEntryElement<&'a str>, E> {
     value(
         DingWordEntryElement::InterchangeableWith,
-        tag("<>")
+        alt((tag("<>"), tag("<->")))
     )(s)
 }
 
@@ -604,31 +604,512 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWi
 }
 
 
-pub fn process_entry<T: AsRef<str>>(
-    DingLanguageEntries(entries): DingLanguageEntries<T>
-){
-    for DingAlternativeEntries(word_entries) in entries {
-        for DingWordEntry(word_entry) in word_entries {
-            for word_entry_elements in word_entry {
-                match word_entry_elements {
-                    DingWordEntryElement::Word(value) => {}
-                    DingWordEntryElement::PartialWord(value, ptype) => {}
-                    DingWordEntryElement::AlternatingWords(alternating) => {}
-                    DingWordEntryElement::Category(category) => {
 
+
+pub mod entry_processing {
+    use crate::topicmodel::dictionary::loader::ding;
+    use crate::topicmodel::dictionary::loader::ding::{Abbreviation, DingAlternatingWord, DingAlternatingWordValue, DingWordEntry, DingWordEntryElement};
+    use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollection, LoadedMetadataCollectionBuilder};
+    use crate::topicmodel::dictionary::word_infos::*;
+    use itertools::Itertools;
+    use std::borrow::Cow;
+    use std::fmt::{Debug, Display};
+
+
+    pub fn process_translation_entry<T: AsRef<str> + Display>(ding::DingEntry(a, b): ding::DingEntry<T>) -> Translation<T> {
+        Translation {
+            a: process_single_entry(a),
+            b: process_single_entry(b)
+        }
+    }
+
+    fn try_parse_string<'a, T: AsRef<str>>(
+        s: &'a str,
+        builder: &mut LoadedMetadataCollectionBuilder<T>
+    ) -> Option<Vec<&'a str>> {
+        let s = s.trim();
+        match s {
+            "Dt., Ös. veraltend" => {
+                builder.push_languages(Language::German);
+                builder.push_regions(Region::AustrianGerman);
+                builder.push_registers(Register::Archaic);
+                return None
+            }
+            "Am., auch Br." => {
+                builder.extend_regions([Region::AmericanEnglish, Region::BritishEnglish]);
+                return None
+            }
+            _ => {}
+        }
+
+        if s.contains(|c| matches!(c, ' ' | '/' | ',')) {
+            let mut cont = Vec::new();
+            for value in s.split(|c| matches!(c, ' ' | '/' | ',')) {
+                if let Some(fail) = try_parse_string(
+                    value.trim(),
+                    builder
+                ) {
+                    cont.extend(fail);
+                }
+            }
+            if cont.is_empty() {
+                None
+            } else {
+                Some(cont)
+            }
+        }  else {
+            if let Ok(a) = s.parse() { builder.push_languages(a); return None; }
+            if let Ok(a) = s.parse() { builder.push_regions(a); return None; }
+            if let Ok(a) = s.parse() { builder.push_pos(a); return None; }
+            if let Ok(a) = s.parse() { builder.push_genders(a); return None; }
+            if let Ok(a) = s.parse() { builder.push_numbers(a); return None; }
+            if let Ok(a) = s.parse() { builder.push_domains(a); return None; }
+            if let Ok(a) = s.parse() { builder.push_registers(a); return None; }
+            Some(vec![s])
+        }
+    }
+
+    #[derive(Debug)]
+    pub enum WordElement<T> {
+        /// bla
+        Word(T),
+        /// bla...
+        Prefix(T),
+        /// ...bla
+        Suffix(T),
+        /// The following word can be interchanged with the previous word.
+        /// Example:
+        /// to put forward <> sth. -> to put forward, to put sth. forward, to put forward sth.
+        InterchangeableInstruction,
+        /// …
+        Placeholder,
+        /// The words can be interchanged, but one has to be put there
+        AlternatingWord(Vec<WordEntry<T>>),
+
+        /// The whole word can have a different spellings, stored in this entry.
+        DifferentSpelling {
+            words: Vec<T>,
+            abbrev: Option<Vec<T>>
+        }
+    }
+
+    pub struct Translation<T> {
+        pub a: Entries<T>,
+        pub b: Entries<T>
+    }
+
+    impl<T: AsRef<str> + Clone> Translation<T> {
+
+        /// Buildup:
+        /// 0.zip_eq(1)
+        ///
+        ///
+        /// ```text
+        /// Level 0:
+        /// Alternatives:
+        ///     Atomforscher {m}; Atomforscherin {f} | Atomforscher {pl}; Atomforscherinnen {pl} -- atomic scientist <nuclear scientist> | atomic scientist <nuclear scientist> s
+        ///     -> Atomforscher {m}; Atomforscherin {f} -- atomic scientist <nuclear scientist>
+        ///     -> Atomforscher {pl}; Atomforscherinnen {pl} -- atomic scientist <nuclear scientist> s
+        ///
+        /// Level 1:
+        /// Interchangeables:
+        ///     Atomforscher {m}; Atomforscherin {f} -- atomic scientist <nuclear scientist>
+        ///     -> Atomforscher {m} -- atomic scientist <nuclear scientist>
+        ///     -> Atomforscherin {f} -- atomic scientist <nuclear scientist>
+        ///     Atomforscher {pl}; Atomforscherinnen {pl} -- atomic scientist <nuclear scientist> s
+        ///     -> Atomforscher {pl} -- atomic scientist <nuclear scientist> s
+        ///     -> Atomforscherinnen {pl} -- atomic scientist <nuclear scientist> s
+        ///
+        /// Level 2:
+        /// Variants:
+        ///     atomic scientist <nuclear scientist>
+        ///     -> atomic scientist
+        ///     -> nuclear scientist
+        /// ```
+        pub fn create_alternatives(&self) -> (Vec<Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>>>, Vec<Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>>>) {
+            (self.a.create_alternatives(), self.b.create_alternatives())
+        }
+    }
+
+    /// Denotes a complete language entry, sonsists of multiple single entries.
+    pub struct Entries<T> {
+        pub complete_entry: String,
+        /// These translations are alternatives to each other and may have different meanings.
+        /// They do not share any kind of meta informations and are only related to each other in some way.
+        pub entries: Vec<AlternativeWords<T>>
+    }
+
+    impl<T: AsRef<str> + Clone> Entries<T> {
+        pub fn create_alternatives(&self) -> Vec<Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>>> {
+            self.entries.iter().map(|value| {
+                value.create_alternatives()
+            }).collect()
+        }
+    }
+
+
+    /// Multiple words with the same meaning but different translations.
+    pub struct AlternativeWords<T> {
+        pub single_entry: String,
+        /// The words are interchangeable for each other. Usually different ways to write the same word.
+        /// Like female and male versions.
+        /// Usually they share all meta informations except gender.
+        pub words: Vec<WordEntry<T>>
+    }
+
+    impl<T: AsRef<str> + Clone> AlternativeWords<T> {
+        pub fn create_alternatives(&self) -> Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>> {
+            let mut data = self.words.iter().map(|value| value.create_alternatives().into_iter().map(
+                |(value, meta)| {
+                    (value, meta.map(|value| value.as_ref().to_string()))
+                }
+            ).collect_vec()).collect_vec();
+            for value in data.iter_mut() {
+                let mut normalized_meta = LoadedMetadataCollectionBuilder::with_name(None);
+                for (_, b) in value.iter_mut() {
+                    if let Some(x) = b.peek_domains() {
+                        normalized_meta.extend_domains(x.into_iter().copied())
                     }
-                    DingWordEntryElement::Contextualisation(contextualisation) => {}
-                    DingWordEntryElement::Info(info) => {}
-                    DingWordEntryElement::Abbreviation(abbrev) => {}
-                    DingWordEntryElement::AlternateNotation(a, b, c) => {}
-                    DingWordEntryElement::WordPlaceholder => {
-
+                    if let Some(x) = b.peek_registers() {
+                        normalized_meta.extend_registers(x.into_iter().copied())
                     }
-                    DingWordEntryElement::InterchangeableWith => {
+                }
+                let build = normalized_meta.clone();
+                for (_, b) in value {
+                    let mut new = build.clone();
+                    new.update_fields_with_other(b);
+                    new.push_original_entry(self.single_entry.clone());
+                    *b = new;
+                    b.shrink();
+                }
+            }
+            data
+        }
+    }
 
+    #[derive(Debug)]
+    pub struct WordEntry<T> {
+        pub word_pattern_elements: Vec<WordElement<T>>,
+        pub metadata: LoadedMetadataCollection<T>
+    }
+
+    impl<T: AsRef<str> + Clone> WordEntry<T> {
+        fn create_interchange_entries<'a>(value_to_add: &Cow<'a, str>, targets: &[(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)]) -> Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)> {
+            let mut new_to_add = Vec::new();
+            for (words, meta) in targets.iter() {
+                let mut cp = words.clone();
+                let last = cp.pop().expect("There can't be an empty vec. Something went wrong!");
+                cp.push(value_to_add.clone());
+                cp.push(last);
+                new_to_add.push((cp, meta.clone()));
+            }
+            new_to_add
+        }
+
+        fn handle_add_word<'a>(
+            meta: &LoadedMetadataCollection<T>,
+            value_to_add: Cow<'a, str>,
+            output: &mut Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)>,
+            is_interchange: bool,
+        ) {
+            if output.is_empty() {
+                let mut builder = meta.clone().to_builder();
+                if is_interchange {
+                    log::warn!("Interchangeable found at start!");
+                }
+                output.push((vec![value_to_add], builder));
+            } else {
+                let additional = if is_interchange {
+                    Some(Self::create_interchange_entries(&value_to_add, output.as_slice()))
+                } else {
+                    None
+                };
+                for (words, _) in output.iter_mut() {
+                    words.push(value_to_add.clone());
+                }
+                if let Some(additional) = additional {
+                    output.extend(additional);
+                }
+            }
+        }
+
+        unsafe fn handle_containing_word<'a>(
+            meta: &LoadedMetadataCollection<T>,
+            value: &'a WordElement<T>,
+            word_patterns_and_meta: &mut Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)>,
+            has_interchange: bool,
+        ) {
+            match value {
+                WordElement::Word(value) => {
+                    Self::handle_add_word(
+                        meta,
+                        Cow::Borrowed(value.as_ref()),
+                        word_patterns_and_meta,
+                        has_interchange
+                    )
+                }
+                WordElement::Prefix(value) => {
+                    Self::handle_add_word(
+                        meta,
+                        Cow::Owned(format!("{}…", value.as_ref())),
+                        word_patterns_and_meta,
+                        has_interchange
+                    );
+                }
+                WordElement::Suffix(value) => {
+                    Self::handle_add_word(
+                        meta,
+                        Cow::Owned(format!("…{}", value.as_ref())),
+                        word_patterns_and_meta,
+                        has_interchange
+                    );
+                }
+                WordElement::Placeholder => {
+                    Self::handle_add_word(
+                        meta,
+                        Cow::Borrowed("…"),
+                        word_patterns_and_meta,
+                        has_interchange
+                    );
+                }
+                _ => unreachable!()
+            }
+        }
+
+        pub fn create_alternatives<'a>(&'a self) -> Vec<(String, LoadedMetadataCollectionBuilder<T>)> {
+            let mut word_patterns_and_meta: Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)> = Vec::new();
+            let mut iter = self.word_pattern_elements.iter();
+            let mut has_interchange = false;
+
+            while let Some(value) = iter.next() {
+                match value {
+                    WordElement::InterchangeableInstruction => {
+                        has_interchange = true;
+                    }
+                    WordElement::AlternatingWord(value) => {
+
+                        if word_patterns_and_meta.is_empty() {
+                            for entr in value {
+                                for (value, mut meta) in entr.create_alternatives() {
+                                    meta.update_fields_with(&self.metadata);
+                                    word_patterns_and_meta.push(
+                                        (
+                                            vec![Cow::Owned(value)],
+                                            meta
+                                        )
+                                    )
+                                }
+                            }
+                        } else {
+                            if has_interchange {
+
+                            }
+                            let entries = value.iter().map(|value| value.create_alternatives()).collect_vec();
+                            let new = Vec::with_capacity(word_patterns_and_meta.len() * entries.iter().map(|value| value.len()).sum::<usize>());
+                            let old = std::mem::replace(&mut word_patterns_and_meta, new);
+                            for words in entries {
+                                for (word, additional_meta) in words {
+                                    let word: Cow<'a, str> = Cow::Owned(word);
+                                    if has_interchange {
+                                        let mut to_add = Self::create_interchange_entries(
+                                            &word,
+                                            &old
+                                        );
+                                        for (_, m) in to_add.iter_mut(){
+                                            m.update_fields_with_other(&additional_meta);
+                                        }
+                                        word_patterns_and_meta.extend(to_add);
+                                    }
+                                    for (mut new, mut meta) in old.iter().cloned() {
+                                        new.push(word.clone());
+                                        meta.update_fields_with_other(&additional_meta);
+                                        word_patterns_and_meta.push((new, meta));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    WordElement::DifferentSpelling {
+                        abbrev,
+                        words: word
+                    } => {
+                        let value = Cow::Owned(word.iter().map(|v| v.as_ref()).join(" "));
+                        if let Some((_, meta)) = word_patterns_and_meta.last() {
+                            let mut meta = meta.clone();
+                            if let Some(abbrev) = abbrev {
+                                for v in abbrev {
+                                    meta.push_abbreviations(v.clone());
+                                }
+                            }
+                            word_patterns_and_meta.push((vec![value], meta))
+                        } else {
+                            let mut builder = self.metadata.clone().to_builder();
+                            if let Some(abbrev) = abbrev {
+                                for v in abbrev {
+                                    builder.push_abbreviations(v.clone());
+                                }
+                            }
+                            word_patterns_and_meta.push((vec![value], builder));
+                        }
+                    }
+                    other => {
+                        unsafe {
+                            Self::handle_containing_word(
+                                &self.metadata,
+                                other,
+                                &mut word_patterns_and_meta,
+                                has_interchange
+                            );
+                        }
+                        if has_interchange {
+                            has_interchange = false;
+                        }
                     }
                 }
             }
+
+            word_patterns_and_meta.into_iter().map(|(a, b)|{
+                (a.iter().map(|value| value.as_ref()).join(" "), b)
+            }).collect()
+        }
+    }
+
+
+
+
+    fn process_word_element<T: AsRef<str>>(content: DingWordEntryElement<T>, builder: &mut LoadedMetadataCollectionBuilder<T>) -> Option<WordElement<T>> {
+        match content {
+            DingWordEntryElement::Category(category) => {
+                if let Some(e) = try_parse_string(
+                    category.as_ref(),
+                    builder,
+                ) {
+                    builder.push_contextual_informations(category);
+                }
+                None
+            }
+            DingWordEntryElement::Contextualisation(contextualisation) => {
+                if let Some(e) = try_parse_string(
+                    contextualisation.as_ref(),
+                    builder,
+                ) {
+                    builder.push_contextual_informations(contextualisation);
+                }
+                None
+            }
+            DingWordEntryElement::Info(info) => {
+                match info {
+                    WordInfo::Type(value) => {
+                        builder.push_pos(value);
+                    }
+                    WordInfo::Gender(value) => {
+                        builder.push_genders(value);
+                    }
+                    WordInfo::Number(value) => {
+                        builder.push_numbers(value);
+                    }
+                    WordInfo::Other(value) => {
+                        if let Some(_) = try_parse_string(
+                            value.as_ref(),
+                            builder
+                        ) {
+                            builder.push_unclassified(value)
+                        }
+                    }
+                }
+                None
+            }
+            DingWordEntryElement::Abbreviation(Abbreviation(a, b)) => {
+                builder.push_abbreviations(a);
+                if let Some(b) = b {
+                    builder.extend_abbreviations(b);
+                }
+                None
+            }
+            DingWordEntryElement::Word(value) => {
+                Some(WordElement::Word(value))
+            }
+            DingWordEntryElement::PartialWord(value, t) => {
+                match t {
+                    PartialWordType::Prefix => {
+                        Some(WordElement::Prefix(value))
+                    }
+                    PartialWordType::Suffix => {
+                        Some(WordElement::Suffix(value))
+                    }
+                }
+            }
+            DingWordEntryElement::InterchangeableWith => {
+                Some(WordElement::InterchangeableInstruction)
+            }
+            DingWordEntryElement::AlternatingWords(DingAlternatingWord(alternating_words)) => {
+                let alts = alternating_words.into_iter().map(|DingAlternatingWordValue(alternative)| {
+                    let mut collected = LoadedMetadataCollectionBuilder::with_name(None);
+                    let data = alternative.into_iter().filter_map(|value| {
+                        process_word_element(value, &mut collected)
+                    }).collect_vec();
+                    WordEntry {
+                        word_pattern_elements: data,
+                        metadata: collected.build_consuming().unwrap()
+                    }
+                }).collect_vec();
+                Some(WordElement::AlternatingWord(alts))
+            }
+            DingWordEntryElement::WordPlaceholder => {
+                Some(WordElement::Placeholder)
+            }
+            DingWordEntryElement::AlternateNotation(a, b, c) => {
+                Some(WordElement::DifferentSpelling {
+                    words: if let Some(b) = b {
+                        let mut x = Vec::with_capacity(1 + b.len());
+                        x.push(a);
+                        x.extend(b);
+                        x
+                    } else {
+                        vec![a]
+                    },
+                    abbrev: c.map(|Abbreviation(a, b)|{
+                        if let Some(b) = b {
+                            let mut v = Vec::with_capacity(1 + b.len());
+                            v.push(a);
+                            v.extend(b);
+                            v
+                        } else {
+                            vec![a]
+                        }
+                    })
+                })
+            }
+
+        }
+    }
+
+    fn process_single_entry<T: AsRef<str> + Display>(dat: ding::DingLanguageEntries<T>) -> Entries<T> {
+        let original = format!("{dat}");
+        let result = dat.0.into_iter().map(
+            |word_entries| { //
+                let complete = format!("{word_entries}");
+                let result =  word_entries.0.into_iter().map(
+                    |DingWordEntry(entry_content)| {
+                        let mut builder = LoadedMetadataCollectionBuilder::with_name(None);
+                        let words = entry_content.into_iter().filter_map(
+                            |value| { process_word_element(value, &mut builder) }
+                        ).collect_vec();
+                        WordEntry {
+                            word_pattern_elements: words,
+                            metadata: builder.build_consuming().expect("This boulder should never fail!")
+                        }
+                    }
+                ).collect_vec();
+                AlternativeWords {
+                    single_entry: complete,
+                    words: result
+                }
+            }
+        ).collect_vec();
+        Entries {
+            complete_entry: original,
+            entries: result
         }
     }
 }
@@ -636,13 +1117,13 @@ pub fn process_entry<T: AsRef<str>>(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
     use itertools::Itertools;
+    use crate::topicmodel::dictionary::loader::ding::entry_processing::process_translation_entry;
+    use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
+    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
     use nom::error::VerboseError;
     use nom::Finish;
-    use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary, DingAlternativeEntries, DingWordEntry, DingWordEntryElement};
-    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
-    use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Region, Register, WordInfo};
+    use crate::topicmodel::dictionary::metadata::loaded::AssociatedMetadata;
 
     #[test]
     fn can_parse_alt(){
@@ -703,184 +1184,25 @@ mod test {
         execute_test_read_for(value, 0, 0);
     }
 
+
     #[test]
     fn can_read_file2(){
-
-        fn try_parse_string<'a>(
-            s: &'a str,
-            language: &mut HashSet<Language>,
-            region: &mut HashSet<Region>,
-            pos: &mut HashSet<PartOfSpeech>,
-            gen: &mut HashSet<GrammaticalGender>,
-            num: &mut HashSet<GrammaticalNumber>,
-            dom: &mut HashSet<Domain>,
-            reg: &mut HashSet<Register>,
-        ) -> Option<Vec<&'a str>> {
-            let s = s.trim();
-            match s {
-                "Dt., Ös. veraltend" => {
-                    language.extend([Language::German]);
-                    region.extend([Region::AustrianGerman]);
-                    reg.extend([Register::Archaic]);
-                    return None
-                }
-                "Am., auch Br." => {
-                    region.extend([Region::AmericanEnglish, Region::BritishEnglish]);
-                    return None
-                }
-                _ => {}
-            }
-
-            if s.contains(|c| matches!(c, ' ' | '/' | ',')) {
-                let mut cont = Vec::new();
-                for value in s.split(|c| matches!(c, ' ' | '/' | ',')) {
-                    if let Some(fail) = try_parse_string(
-                        value.trim(),
-                        language,
-                        region,
-                        pos,
-                        gen,
-                        num,
-                        dom,
-                        reg
-                    ) {
-                        cont.extend(fail);
-                    }
-                }
-                if cont.is_empty() {
-                    None
-                } else {
-                    Some(cont)
-                }
-            }  else {
-                if let Ok(a) = s.parse() { language.insert(a); return None; }
-                if let Ok(a) = s.parse() { region.insert(a); return None; }
-                if let Ok(a) = s.parse() { pos.insert(a); return None; }
-                if let Ok(a) = s.parse() { gen.insert(a); return None; }
-                if let Ok(a) = s.parse() { num.insert(a); return None; }
-                if let Ok(a) = s.parse() { dom.insert(a); return None; }
-                if let Ok(a) = s.parse() { reg.insert(a); return None; }
-                Some(vec![s])
-            }
-        }
-
-        let mut language: HashSet<Language> = HashSet::new();
-        let mut region: HashSet<Region> = HashSet::new();
-        let mut pos: HashSet<PartOfSpeech> = HashSet::new();
-        let mut gen: HashSet<GrammaticalGender> = HashSet::new();
-        let mut num: HashSet<GrammaticalNumber> = HashSet::new();
-        let mut dom: HashSet<Domain> = HashSet::new();
-        let mut reg: HashSet<Register> = HashSet::new();
-        let mut other: HashSet<String> = HashSet::new();
-        // let mut abbreviation = Vec::new();
-
-
         let value = read_dictionary(".\\dictionaries\\ding\\de-en.txt").unwrap();
-        for x in value {
-            if let Ok(x) = x {
-                for entries in [x.0, x.1] {
-                    for DingAlternativeEntries(word_entries) in entries.0 {
-                        for DingWordEntry(word_entry) in word_entries {
-                            for word_entry_elements in word_entry {
-                                match word_entry_elements {
-                                    DingWordEntryElement::Word(value) => {
-
-                                    }
-                                    DingWordEntryElement::PartialWord(value, ptype) => {
-
-                                    }
-                                    DingWordEntryElement::AlternatingWords(alternating) => {
-
-                                    }
-                                    DingWordEntryElement::Category(category) => {
-                                        if let Some(e) = try_parse_string(
-                                            &category,
-                                            &mut language,
-                                            &mut region,
-                                            &mut pos,
-                                            &mut gen,
-                                            &mut num,
-                                            &mut dom,
-                                            &mut reg,
-                                        ) {
-                                            other.insert(category);
-                                        }
-                                    }
-                                    DingWordEntryElement::Contextualisation(contextualisation) => {
-                                        if let Some(e) = try_parse_string(
-                                            &contextualisation,
-                                            &mut language,
-                                            &mut region,
-                                            &mut pos,
-                                            &mut gen,
-                                            &mut num,
-                                            &mut dom,
-                                            &mut reg,
-                                        ) {
-                                            other.insert(contextualisation);
-                                        }
-                                    }
-                                    DingWordEntryElement::Info(info) => {
-                                        match info {
-                                            WordInfo::Type(value) => {
-                                                pos.insert(value);
-                                            }
-                                            WordInfo::Gender(value) => {
-                                                gen.insert(value);
-                                            }
-                                            WordInfo::Number(value) => {
-                                                num.insert(value);
-                                            }
-                                            WordInfo::Other(value) => {
-                                                if let Some(e) = try_parse_string(
-                                                    &value,
-                                                    &mut language,
-                                                    &mut region,
-                                                    &mut pos,
-                                                    &mut gen,
-                                                    &mut num,
-                                                    &mut dom,
-                                                    &mut reg,
-                                                ) {
-                                                    other.insert(value);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    DingWordEntryElement::Abbreviation(abbrev) => {
-
-                                    }
-                                    DingWordEntryElement::AlternateNotation(a, b, c) => {
-
-                                    }
-                                    DingWordEntryElement::WordPlaceholder => {
-
-                                    }
-                                    DingWordEntryElement::InterchangeableWith => {
-
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        let mut diff = Vec::new();
+        for entry in value.filter_map(|value| value.ok()){
+            let is_atom = format!("{entry}") == "Atomforscher {m}; Atomforscherin {f} | Atomforscher {pl}; Atomforscherinnen {pl} :: atomic scientist <nuclear scientist> | atomic scientist <nuclear scientist> s";
+            if is_atom {
+                println!("{entry}");
+            }
+            let x = process_translation_entry(entry.clone());
+            let (a, b) = x.create_alternatives();
+            if a.len() != b.len() {
+                diff.push((a, b));
             }
         }
 
-        println!("language: {}", language.len());
-        println!("region: {}", region.len());
-        println!("pos: {}", pos.len());
-        println!("gen: {}", gen.len());
-        println!("num: {}", num.len());
-        println!("dom: {}", dom.len());
-        println!("reg: {}\n", reg.len());
-        println!("other: {}", other.len());
+        println!("{}", diff.len());
 
-        for value in other {
-            if value.contains("sing") | value.contains("sg"){
-                println!("{value}");
-            }
-        }
 
         // println!("{}", other.iter().join("\n"))
     }

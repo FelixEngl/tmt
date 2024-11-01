@@ -3,7 +3,7 @@ pub mod reference;
 pub mod reference_mut;
 pub mod solved;
 pub mod manager;
-
+pub mod collector;
 
 use tinyset::Set64;
 use crate::toolkit::typesafe_interner::*;
@@ -36,6 +36,9 @@ macro_rules! generate_field_code {
         $crate::topicmodel::dictionary::metadata::loaded::solved::create_solved_implementation!(
             $($tt $(as $marker)?: $name: $resolved_typ,)+
         );
+        crate::topicmodel::dictionary::metadata::loaded::collector::create_collector_implementation!(
+            $($tt: $name: $assoc_typ,)+
+        );
     };
 }
 
@@ -54,7 +57,7 @@ generate_field_code! {
     },
     set {
         r#"Stores the gender of a word."#
-        gender: GrammaticalGender | Set64<GrammaticalGender> | Set64<GrammaticalGender>
+        genders: GrammaticalGender | Set64<GrammaticalGender> | Set64<GrammaticalGender>
     },
     set {
         r#"Stores the pos of a word."#
@@ -62,11 +65,15 @@ generate_field_code! {
     },
     set {
         r#"Stores the regions of a word."#
-        region: Region | Set64<Region> | Set64<Region>
+        regions: Region | Set64<Region> | Set64<Region>
     },
     set {
         r#"Stores the number of a word."#
-        number: GrammaticalNumber | Set64<GrammaticalNumber> | Set64<GrammaticalNumber>
+        numbers: GrammaticalNumber | Set64<GrammaticalNumber> | Set64<GrammaticalNumber>
+    },
+    set {
+        r#"Stores an internal id, associating some words with each other."#
+        internal_ids: u64 | Set64<u64> | Set64<u64>
     },
     interned {
         r#"Stores the inflected value of a word."#

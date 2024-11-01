@@ -1,8 +1,8 @@
 use crate::tokenizer::Tokenizer;
-use crate::topicmodel::dictionary::constants::{DICT_CC, FREE_DICT};
+use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT};
 use crate::topicmodel::dictionary::direction::{Direction, Invariant, Language as DirLang, A, B};
 use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictReaderError, GramaticHints, Translation};
-use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataManager;
+use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBuilder, LoadedMetadataManager};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
@@ -12,8 +12,10 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
+use std::sync::atomic::AtomicU64;
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
+use crate::topicmodel::dictionary::loader::ding::DingEntry;
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
 
@@ -105,6 +107,7 @@ impl<'b> Preprocessor for SpecialPreprocessor<'b> {
 pub struct UnifiedTranslationHelper<P = DefaultPreprocessor> {
     dictionary: DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>,
     preprocessor: P,
+    ding_dict_id_provider: u64
 }
 
 impl Default for UnifiedTranslationHelper {
@@ -115,13 +118,20 @@ impl Default for UnifiedTranslationHelper {
 
 impl<P> UnifiedTranslationHelper<P> {
     pub fn new(preprocessor: P) -> Self {
-        Self { dictionary: DictionaryWithMeta::default(), preprocessor }
+        Self { dictionary: DictionaryWithMeta::default(), preprocessor, ding_dict_id_provider: 0 }
+    }
+
+    fn get_ding_id(&mut self) -> u64 {
+        let x = self.ding_dict_id_provider;
+        self.ding_dict_id_provider += 1;
+        x
     }
 }
 
 pub mod constants {
     pub const FREE_DICT: &'static str = "free_dict";
     pub const DICT_CC: &'static str = "dict_cc";
+    pub const DING: &'static str = "ding";
 }
 
 impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
@@ -218,7 +228,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             );
             meta.add_single_to_unaltered_vocabulary(FREE_DICT, &orth);
             meta.add_single_to_original_entry(FREE_DICT, orth);
-            meta.add_all_to_region(FREE_DICT, regions);
+            meta.add_all_to_regions(FREE_DICT, regions);
             meta.add_all_to_abbreviations(FREE_DICT, abbrev);
             meta.add_all_to_inflected(FREE_DICT, inflected);
             meta.add_all_to_domains(FREE_DICT, domains);
@@ -227,8 +237,8 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             let (pos, gender, number) =
                 Self::convert_optional_gram(gram);
             meta.add_all_to_pos(FREE_DICT, pos);
-            meta.add_all_to_gender(FREE_DICT, gender);
-            meta.add_all_to_number(FREE_DICT, number);
+            meta.add_all_to_genders(FREE_DICT, gender);
+            meta.add_all_to_numbers(FREE_DICT, number);
 
             meta.add_all_to_synonyms(FREE_DICT, synonyms.iter().map(|value| &value.word));
             meta.add_all_to_contextual_informations(
@@ -289,9 +299,9 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 let (pos, gender, number) =
                     Self::convert_optional_gram(gram);
                 meta.add_all_to_pos(FREE_DICT, pos);
-                meta.add_all_to_gender(FREE_DICT, gender);
-                meta.add_all_to_number(FREE_DICT, number);
-                meta.add_all_to_region(FREE_DICT, regions);
+                meta.add_all_to_genders(FREE_DICT, gender);
+                meta.add_all_to_numbers(FREE_DICT, number);
+                meta.add_all_to_regions(FREE_DICT, regions);
                 meta.add_all_to_contextual_informations(
                     FREE_DICT,
                     chain!(colloc, contextual)
@@ -385,8 +395,8 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             meta.add_all_to_domains(DICT_CC, general_domains.iter().copied().chain(result.domain.iter().copied()));
             meta.add_all_to_pos(DICT_CC, general_pos.iter().copied().chain(result.pos.iter().copied()));
             meta.add_all_to_registers(DICT_CC, general_register.iter().copied().chain(result.register.iter().copied()));
-            meta.add_all_to_region(DICT_CC, result.regions.iter().copied());
-            meta.add_all_to_gender(DICT_CC, result.gender.iter().copied());
+            meta.add_all_to_regions(DICT_CC, result.regions.iter().copied());
+            meta.add_all_to_genders(DICT_CC, result.gender.iter().copied());
             meta.add_all_to_synonyms(DICT_CC, result.synonyms.iter());
             meta.add_all_to_abbreviations(DICT_CC, result.abbrev.iter());
             meta.add_all_to_contextual_informations(DICT_CC, result.contextualisation.iter().map(|v| v.to_string()));
@@ -432,9 +442,78 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
+    pub fn read_ding_dict<D: DirLang + Direction>(&mut self, p: impl AsRef<Path>) -> Result<usize, (usize, Vec<LineDictionaryReaderError<DictionaryLineParserError<ding::DingEntry<String>>>>)> {
+        match ding::read_dictionary(p) {
+            Ok(value) => {
+                let mut errors = Vec::new();
+                let mut ct = 0;
+                for r in value {
+                    match r {
+                        Ok(value) => {
+                            if self.process_ding_dict::<D, _>(value).is_ok() {
+                                ct += 1usize;
+                            }
+                        }
+                        Err(err) => {
+                            errors.push(err);
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(ct)
+                } else {
+                    Err((ct, errors))
+                }
+            }
+            Err(err) => {
+                Err((0, vec![LineDictionaryReaderError::new(0, err.into())]))
+            }
+        }
+    }
 
-    pub fn process_ding_dict<D: Direction + DirLang>(&mut self) {
+    fn process_ding_interchangeable<D: Direction + DirLang, L: DirLang, V: AsRef<str> + Clone + Display>(
+        &mut self,
+        interchangeables: Vec<Vec<(String, LoadedMetadataCollectionBuilder<V>)>>
+    ) -> Vec<Vec<usize>> {
+        let mut ids = Vec::new();
+        let interchangeable_id = self.get_ding_id();
+        for value in interchangeables {
+            let mut ids2 = Vec::new();
+            let variant_id = self.get_ding_id();
+            for (variant, mut meta_data) in value {
+                let (word_id, mut meta) = self.insert::<D, L>(DING, &variant);
+                meta_data.dictionary_name(Some(DING));
+                meta_data.extend_internal_ids([interchangeable_id, variant_id]);
+                meta_data.build_consuming().unwrap().write_into(&mut meta);
+                ids2.push(word_id);
+            }
+            ids.push(ids2);
+        }
+        ids
+    }
 
+    pub fn process_ding_dict<D: Direction + DirLang, V: AsRef<str> + Clone + Display>(&mut self, entry: ding::DingEntry<V>) -> Result<(), ding::entry_processing::Translation<V>> {
+        let value = ding::entry_processing::process_translation_entry(entry);
+        let converted = value.create_alternatives();
+        if converted.0.len() != converted.1.len() {
+            return Err(value);
+        }
+        drop(value);
+        let (alternatives_a, alternatives_b) = converted;
+        for (interchangeables_a, interchangeables_b) in alternatives_a.into_iter().zip_eq(alternatives_b) {
+            let interchangeables_a = self.process_ding_interchangeable::<D, A, _>(interchangeables_a);
+            let interchangeables_b = self.process_ding_interchangeable::<D::OPPOSITE, B, _>(interchangeables_b);
+            for (a, b) in interchangeables_a.into_iter().flatten().cartesian_product(interchangeables_b.into_iter().flatten()) {
+                unsafe {
+                    if D::LANG.is_a() {
+                        self.dictionary.insert_raw_values::<Invariant>(a, b);
+                    } else {
+                        self.dictionary.insert_raw_values::<Invariant>(b, a);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -515,6 +594,7 @@ mod test {
                 println!("{value}")
             }
         }
+
 
         let data = default.finalize();
         let mut writer = BufWriter::new(dict_file);
