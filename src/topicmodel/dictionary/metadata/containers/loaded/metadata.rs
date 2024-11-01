@@ -5,10 +5,10 @@ macro_rules! impl_collect_all {
         impl LoadedMetadata {
             $(
                 paste::paste! {
-                    pub fn [<collect_all_ $ident>](&self) -> tinyset::Set64<$ty> {
-                        self.iter().flat_map(|value| {
-                            value.meta().$ident.iter()
-                        }).collect::<tinyset::Set64<_>>()
+                     pub fn [<collect_all_ $ident>](&self) -> std::collections::HashMap<Option<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol>, tinyset::Set64<$ty>> {
+                        self.iter().map(|value| {
+                            (value.origin(), value.meta().$ident.clone())
+                        }).collect()
                     }
                 }
             )+

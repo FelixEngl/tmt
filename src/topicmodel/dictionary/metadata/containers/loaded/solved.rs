@@ -1,34 +1,93 @@
 macro_rules! convert_into {
     (set: $value:ident => $name: ident: $resolved_type: ty) => {
         paste::paste! {
-            let $name: $resolved_type = $value.[<get_ $name>]().clone();
+            let $name = {
+                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
+                (data.default.clone(), data.mapped.iter().map(|(_, (k, v))|{
+                    (k.to_string(), v.clone())
+                }).collect())
+            };
         }
     };
     (interned as set: $value:ident => $name: ident: $resolved_type: ty) => {
         paste::paste! {
-            let $name: $resolved_type = $value.[<get_ $name _symbols>]().clone();
+            let $name = {
+                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
+                let def = data.default.as_ref().map(|(x, _)| x.clone());
+                let other = data.mapped.iter().map(|(_, (k, v))|{
+                    (k.to_string(), v.0.clone())
+                }).collect();
+                (def, other)
+            };
         }
     };
     (interned as interned: $value:ident => $name: ident: $resolved_type: ty) => {
         paste::paste! {
-            let $name: $resolved_type = $value.[<get_ $name _str>]().iter().map(|value| (*value).into()).collect::<$resolved_type>();
+            let $name = {
+                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
+                let def = data.default.as_ref().map(|(_, v)| v.iter().map(|x| x.to_string()).collect());
+                let other = data.mapped.iter().map(|(_, (k, v))|{
+                    (k.to_string(), v.1.iter().map(|x| x.to_string()).collect())
+                }).collect();
+                (def, other)
+            };
         }
     };
 
 }
+
 
 pub(super) use convert_into;
 
 
 macro_rules! convert_to_string_call {
     (interned as interned: $self:ident, $f: ident, $name: ident) => {
-        write!($f, ": {}, ", $self.$name.iter().join("\", \""))?;
+        if let Some(ref o) = $self.$name.0 {
+            write!(
+                $f,
+                ": {}, {};",
+                o.iter().join(", "),
+                $self.$name.1.iter().map(|(k, v)| format!("{k}: {}", v.iter().join("\", \""))).join("\", \"")
+            )?;
+        } else {
+            write!(
+                $f,
+                ": -!-, {};",
+                $self.$name.1.iter().map(|(k, v)| format!("{k}: {}", v.iter().join(", "))).join(", ")
+            )?;
+        }
     };
     (interned as set: $self:ident, $f: ident, $name: ident) => {
-        write!($f, ": {}, ", $self.$name.iter().join(", "))?;
+        if let Some(ref o) = $self.$name.0 {
+            write!(
+                $f,
+                ": {}, {};",
+                o.iter().join(", "),
+                $self.$name.1.iter().map(|(k, v)| format!("{k}: {}", v.iter().join(", "))).join(", ")
+            )?;
+        } else {
+            write!(
+                $f,
+                ": -!-, {};",
+                $self.$name.1.iter().map(|(k, v)| format!("{k}: {}", v.iter().join(", "))).join(", ")
+            )?;
+        }
     };
     (set: $self:ident, $f: ident, $name: ident) => {
-        write!($f, ": {}, ", $self.$name.iter().join(", "))?;
+        if let Some(ref o) = $self.$name.0 {
+            write!(
+                $f,
+                ": {}, {};",
+                o.iter().join(", "),
+                $self.$name.1.iter().map(|(k, v)| format!("{k}: {}", v.iter().join(", "))).join(", ")
+            )?;
+        } else {
+            write!(
+                $f,
+                ": -!-, {};",
+                $self.$name.1.iter().map(|(k, v)| format!("{k}: {}", v.iter().join(", "))).join(", ")
+            )?;
+        }
     };
 }
 pub(super) use convert_to_string_call;
@@ -37,13 +96,13 @@ macro_rules! create_solved_implementation {
     ($($tt:tt $(as $marker: tt)?: $name: ident: $resolved_type: ty),+ $(,)?) => {
         #[derive(Debug, Clone, Eq, PartialEq)]
         pub struct SolvedLoadedMetadata {
-            $($name: $resolved_type,
+            $($name: (Option<$resolved_type>, std::collections::HashMap<String, $resolved_type>),
             )+
         }
 
         impl SolvedLoadedMetadata {
             $(
-                pub fn $name(&self) -> &$resolved_type {
+                pub fn $name(&self) -> &(Option<$resolved_type>, std::collections::HashMap<String, $resolved_type>) {
                     &self.$name
                 }
             )+

@@ -5,11 +5,11 @@ use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictR
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBuilder, LoadedMetadataManager};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
-use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
 use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
@@ -116,6 +116,31 @@ impl Default for UnifiedTranslationHelper {
     }
 }
 
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct Len {
+    pub voc_a: usize,
+    pub voc_b: usize,
+    pub map_a_to_b: usize,
+    pub map_b_to_a: usize,
+}
+
+impl Len {
+    pub fn diff(&self, other: &Len) -> Self {
+        Self {
+            voc_a: self.voc_a.abs_diff(other.voc_a),
+            voc_b: self.voc_b.abs_diff(other.voc_b),
+            map_a_to_b: self.map_a_to_b.abs_diff(other.map_a_to_b),
+            map_b_to_a: self.map_b_to_a.abs_diff(other.map_b_to_a),
+        }
+    }
+}
+
+impl Display for Len {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
 impl<P> UnifiedTranslationHelper<P> {
     pub fn new(preprocessor: P) -> Self {
         Self { dictionary: DictionaryWithMeta::default(), preprocessor, ding_dict_id_provider: 0 }
@@ -125,6 +150,15 @@ impl<P> UnifiedTranslationHelper<P> {
         let x = self.ding_dict_id_provider;
         self.ding_dict_id_provider += 1;
         x
+    }
+
+    pub fn len(&self) -> Len {
+        Len {
+            voc_a: self.dictionary.voc_a().len(),
+            voc_b: self.dictionary.voc_b().len(),
+            map_a_to_b: self.dictionary.map_a_to_b().len(),
+            map_b_to_a: self.dictionary.map_b_to_a().len(),
+        }
     }
 }
 
@@ -582,18 +616,29 @@ mod test {
                 println!("{value}")
             }
         }
+        let mut current = default.len();
+        println!("{}", current);
+
         let x = default.read_free_dict::<BToA>("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei");
         if let Err((a, b)) = x {
             for value in b {
                 println!("{value}")
             }
         }
+        let new = default.len();
+        println!("{} delta: {}", new, current.diff(&new));
+        current = new;
+
         let x = default.read_dict_cc::<BToA>("dictionaries/DictCC/dict.txt");
         if let Err((a, b)) = x {
             for value in b {
                 println!("{value}")
             }
         }
+        let new = default.len();
+        println!("{} delta: {}", new, current.diff(&new));
+        current = new;
+
 
 
         let data = default.finalize();
@@ -601,27 +646,5 @@ mod test {
         serde_json::to_writer_pretty(&mut writer, &data).unwrap();
         writer.flush().unwrap();
 
-        // let number_of_entries = data.iter().unique_by(|value|{
-        //     (value.a, value.b)
-        // }).count();
-        //
-        // let x = number_of_entries / 100;
-        //
-        // for a in data.into_iter().chunks(x).into_iter() {
-        //     let DirectionTuple {
-        //         a:(a_id, a_word, a_meta),
-        //         b:(b_id, b_word, b_meta),
-        //         direction
-        //     } = a.last().unwrap();
-        //     println!("{direction}: {a_word}");
-        //     if let Some(meta) = a_meta {
-        //         println!("{meta}");
-        //     }
-        //     println!("{direction}: {b_word}");
-        //     if let Some(meta) = b_meta {
-        //         println!("{meta}");
-        //     }
-        //     println!("\n----\n");
-        // }
     }
 }

@@ -5,6 +5,7 @@ pub mod solved;
 pub mod manager;
 pub mod collector;
 
+use std::collections::HashMap;
 use tinyset::Set64;
 use crate::toolkit::typesafe_interner::*;
 use crate::topicmodel::dictionary::word_infos::*;
@@ -135,4 +136,12 @@ generate_field_code! {
             unclassified_interner: DefaultUnclassifiedStringInterner => intern_unclassified
         }
     },
+}
+
+impl LoadedMetadata {
+    pub fn lead_x(&self) -> HashMap<Option<DictionaryOriginSymbol>, tinyset::Set64<u64>> {
+        self.iter().map(|value| {
+            (value.origin(), value.meta().internal_ids.clone())
+        }).collect()
+    }
 }
