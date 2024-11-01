@@ -10,6 +10,13 @@ macro_rules! impl_collect_all {
                             (value.origin(), value.meta().$ident.clone())
                         }).collect()
                     }
+
+                    /// A hot vec encoding, mapping the index to DictionaryOriginSymbol
+                    pub fn [<all_raw_ $ident>](&self) -> (Option<tinyset::Set64<$ty>>, Vec<Option<tinyset::Set64<$ty>>>) {
+                         let a = self.general_metadata.get().map(|value| value.$ident.clone());
+                         let b = self.associated_metadata.iter().map(|value| value.get().map(|value| value.$ident.clone())).collect();
+                         (a, b)
+                    }
                 }
             )+
         }

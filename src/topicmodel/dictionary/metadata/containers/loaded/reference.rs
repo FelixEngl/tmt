@@ -3,28 +3,39 @@ macro_rules! create_cached_getter {
         paste::paste! {
             fn [<get_ $ident _impl>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a str>)> {
                 self.[<$ident>].get_or_init(|| {
-                    let set = self.raw.[<collect_all_ $ident>]();
-                    let mut def = None;
-                    let mut map: std::collections::HashMap<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol, _> = std::collections::HashMap::new();
-                    for (k, v) in set.into_iter() {
-                        let mut resolved: Vec<&'a str> = Vec::with_capacity(v.len());
-                        for value in v.iter() {
-                            resolved.push(
-                                self.manager_ref
-                                    .$interner_name
-                                    .resolve(value)
-                                    .expect("Encountered an unknown value!")
-                            )
-                        }
+                    let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
-                        if let Some(k) = k {
-                            map.insert(k, (unsafe {
-                                self.manager_ref.dictionary_interner.resolve_unchecked(k)
-                            }, (v, resolved)));
+                    let def = def.map(|value| {
+                        let resolved = value.iter().map(|v|{
+                            self.manager_ref
+                                 .$interner_name
+                                 .resolve(v)
+                                 .expect("Encountered an unknown value!")
+                        }).collect();
+                        (value, resolved)
+                    });
+
+                    let map = dat.into_iter().enumerate().map(|(k, v)|{
+                        let resolved = if let Some(v) = v {
+                            let resolved = v.iter().map(|v|{
+                                self.manager_ref
+                                     .$interner_name
+                                     .resolve(v)
+                                     .expect("Encountered an unknown value!")
+                            }).collect();
+                            Some((v, resolved))
                         } else {
-                            def = Some((v, resolved));
-                        }
-                    }
+                            None
+                        };
+
+                        use string_interner::Symbol;
+                        let x = $crate::toolkit::typesafe_interner::DictionaryOriginSymbol::try_from_usize(k).unwrap();
+                        let x = unsafe {
+                            self.manager_ref.dictionary_interner.resolve_unchecked(x)
+                        };
+                        (x, resolved)
+                    }).collect();
+
                     Storage {
                         default: def,
                         mapped: map
@@ -42,22 +53,21 @@ macro_rules! create_cached_getter {
         paste::paste! {
             pub fn [<get_ $ident>](&self) -> &Storage<'a, tinyset::Set64<$ty>> {
                 self.[<$ident>].get_or_init(|| {
-                    let dat = self.raw.[<collect_all_ $ident>]();
-                    let mut def = None;
-                    let mut map: std::collections::HashMap<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol, _> = std::collections::HashMap::new();
-                    for (k, v) in dat.into_iter(){
-                        if let Some(k) = k {
+                    use string_interner::Symbol;
+                    let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
-                            map.insert(k, (unsafe {
-                                self.manager_ref.dictionary_interner.resolve_unchecked(k)
-                            }, v));
-                        } else {
-                            def = Some(v);
-                        }
-                    }
+                    let dat = dat.into_iter().enumerate().map(|(k, v)|{
+                        let x = $crate::toolkit::typesafe_interner::DictionaryOriginSymbol::try_from_usize(k).unwrap();
+                        let x = unsafe {
+                            self.manager_ref.dictionary_interner.resolve_unchecked(x)
+                        };
+                        (x, v)
+                    }).collect();
+
+
                     Storage {
                         default: def,
-                        mapped: map
+                        mapped: dat
                     }
                 })
             }
@@ -67,7 +77,6 @@ macro_rules! create_cached_getter {
     () => {}
 }
 
-use std::collections::HashMap;
 pub(super) use create_cached_getter;
 
 macro_rules! create_ref_implementation {
@@ -75,7 +84,7 @@ macro_rules! create_ref_implementation {
         #[derive(Clone)]
         pub struct Storage<'a, T> {
             pub default: Option<T>,
-            pub mapped: HashMap<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol, (&'a str, T)>
+            pub mapped: Vec<(&'a str, Option<T>)>
         }
 
         #[derive(Clone)]

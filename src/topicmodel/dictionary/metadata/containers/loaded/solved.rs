@@ -3,9 +3,15 @@ macro_rules! convert_into {
         paste::paste! {
             let $name = {
                 let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
-                (data.default.clone(), data.mapped.iter().map(|(_, (k, v))|{
-                    (k.to_string(), v.clone())
-                }).collect())
+                let def = data.default.clone();
+                let other = data.mapped.iter().filter_map(|(k, v)|{
+                    if let Some(v) = v {
+                        Some((k.to_string(), v.clone()))
+                    } else {
+                        None
+                    }
+                }).collect();
+                (def, other)
             };
         }
     };
@@ -14,8 +20,12 @@ macro_rules! convert_into {
             let $name = {
                 let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
                 let def = data.default.as_ref().map(|(x, _)| x.clone());
-                let other = data.mapped.iter().map(|(_, (k, v))|{
-                    (k.to_string(), v.0.clone())
+                let other = data.mapped.iter().filter_map(|(k, v)|{
+                    if let Some(v) = v {
+                        Some((k.to_string(), v.0.clone()))
+                    } else {
+                        None
+                    }
                 }).collect();
                 (def, other)
             };
@@ -26,8 +36,12 @@ macro_rules! convert_into {
             let $name = {
                 let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
                 let def = data.default.as_ref().map(|(_, v)| v.iter().map(|x| x.to_string()).collect());
-                let other = data.mapped.iter().map(|(_, (k, v))|{
-                    (k.to_string(), v.1.iter().map(|x| x.to_string()).collect())
+                let other = data.mapped.iter().filter_map(|(k, v)|{
+                    if let Some(v) = v {
+                        Some((k.to_string(), v.1.iter().map(|x| x.to_string()).collect()))
+                    } else {
+                        None
+                    }
                 }).collect();
                 (def, other)
             };
