@@ -1,5 +1,5 @@
 use crate::tokenizer::Tokenizer;
-use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE};
+use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE, OMEGA};
 use crate::topicmodel::dictionary::direction::{Direction, Invariant, Language as DirLang, A, B};
 use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictReaderError, GramaticHints, Translation};
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBuilder, LoadedMetadataManager};
@@ -182,6 +182,7 @@ pub mod constants {
     pub const DICT_CC: &'static str = "dict_cc";
     pub const DING: &'static str = "ding";
     pub const IATE: &'static str = "iate";
+    pub const OMEGA: &'static str = "omega_wiki";
 }
 
 impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
@@ -706,6 +707,62 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
 
         Ok(())
+    }
+
+    fn process_omega_impl<D: Direction + DirLang, L: DirLang>(&mut self, dicts_info::omega_wiki::OmegaWikiWord {
+        word,
+        meta: meta_info
+    }: dicts_info::omega_wiki::OmegaWikiWord<String> ) -> usize {
+        let (id, mut meta) = if D::DIRECTION.is_a_to_b() {
+            if L::LANG.is_a() {
+                self.insert::<D, L>(OMEGA, &word)
+            } else {
+                self.insert::<D::OPPOSITE, L>(OMEGA, &word)
+            }
+        } else {
+            if L::LANG.is_a() {
+                self.insert::<D::OPPOSITE, L>(OMEGA, &word)
+            } else {
+                self.insert::<D, L>(OMEGA, &word)
+            }
+        };
+        if let Some(meta_info) = meta_info {
+            if let Ok(value) = meta_info.parse() {
+                meta.add_single_to_domains(OMEGA, value);
+            } else if let Ok(value) = meta_info.parse() {
+                meta.add_single_to_registers(OMEGA, value);
+            } else if let Ok(value) = meta_info.parse() {
+                meta.add_single_to_regions(OMEGA, value);
+            } else {
+                meta.add_single_to_contextual_informations(OMEGA, meta_info);
+            }
+        }
+        id
+    }
+
+    pub fn process_omega<D: Direction + DirLang>(&mut self, entry: dicts_info::omega_wiki::OptionalOmegaWikiEntry) {
+        if let Some(dicts_info::omega_wiki::OmegaWikiEntry{
+            lang_a,
+            lang_b
+        }) = entry.into_inner() {
+            let mut lang_a_ids = Vec::new();
+            let mut lang_b_ids = Vec::new();
+            for value in lang_a {
+                lang_a_ids.push(self.process_omega_impl::<D, A>(value));
+            }
+            for value in lang_b {
+                lang_b_ids.push(self.process_omega_impl::<D::OPPOSITE, B>(value));
+            }
+            for (a, b) in lang_a_ids.into_iter().cartesian_product(lang_b_ids) {
+                unsafe {
+                    if D::LANG.is_a() {
+                        self.dictionary.insert_raw_values::<Invariant>(a, b);
+                    } else {
+                        self.dictionary.insert_raw_values::<Invariant>(b, a);
+                    }
+                }
+            }
+        }
     }
 }
 
