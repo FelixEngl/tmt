@@ -116,6 +116,10 @@ macro_rules! create_struct {
                     )*
                 }
             }
+
+            fn dictionaries(&self) -> Vec<&str> {
+                self.dictionary_interner.iter().map(|value| value.1).collect()
+            }
         }
     };
 }

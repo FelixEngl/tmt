@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Python binding
-pyo3 = "0.21"
+pyo3 = { version = "0.22", features = ["default", "serde", "hashbrown", "either", "auto-initialize"] }
 itertools = "0.13"
 thiserror = "1.0"
 zip = "2"
@@ -65,6 +65,8 @@ indexmap = "2.6"
 tar = "0.4"
 tinyset = { version = "0.5.0", features = ["serde"] }
 html-escape = "0.2.13"
+pretty = "0"
+deranged = "0.3"
 
 [build-dependencies]
 xml2code = {path = "xml2code"}

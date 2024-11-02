@@ -17,23 +17,25 @@ use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResu
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
 use pyo3::exceptions::{PyKeyError, PyValueError};
-use pyo3::prelude::{PyModule, PyModuleMethods};
+use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::types::PyFunction;
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
 use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodContext, VotingResult};
 
 /// A voting model based on a python method.
-#[derive(Debug, Clone, FromPyObject)]
+#[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct PyVotingModel<'a> {
-    model: &'a PyAny
+    model: Bound<'a, PyAny>
 }
 
-impl<'a> PyVotingModel<'a> {
-    pub fn new(model: &'a PyFunction) -> Self {
-        Self{model}
+
+impl<'a> FromPyObject<'a> for PyVotingModel<'a> {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+        Ok(Self { model: ob.clone() })
     }
 }
+
 
 unsafe impl Send for PyVotingModel<'_> {}
 unsafe impl Sync for PyVotingModel<'_> {}
@@ -95,7 +97,8 @@ impl Into<Value> for PyExprValue {
 }
 
 impl<'a> FromPyObject<'a> for PyExprValue {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
         if ob.is_none() {
             Ok(PyExprValue::Empty)
         } else {

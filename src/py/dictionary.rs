@@ -29,7 +29,7 @@ use pyo3::types::{PyFunction};
 use serde::{Deserialize, Serialize};
 use crate::py::helpers::{LanguageHintValue};
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::{register_py_loader, BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{A, AToB, B, BToA, Direction, register_py_directions, DirectionKind, DirectionTuple, Invariant, Language, Translation};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator, DictIter};
 use crate::topicmodel::dictionary::metadata::{register_py_metadata, MetadataManager};
@@ -787,6 +787,7 @@ impl FromVoc<String, PyVocabulary> for PyDictionary {
 
 pub(crate) fn dictionary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_py_directions(m)?;
+    register_py_loader(m)?;
     register_py_metadata(m)?;
     m.add_class::<PyDictionaryEntry>()?;
     m.add_class::<PyDictionary>()?;

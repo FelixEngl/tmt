@@ -1,5 +1,5 @@
 use crate::tokenizer::Tokenizer;
-use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT};
+use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE};
 use crate::topicmodel::dictionary::direction::{Direction, Invariant, Language as DirLang, A, B};
 use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictReaderError, GramaticHints, Translation};
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBuilder, LoadedMetadataManager};
@@ -10,13 +10,16 @@ use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocab
 use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::io::BufReader;
 use std::path::Path;
-use std::sync::atomic::AtomicU64;
+use pyo3::{Bound, PyResult};
+use pyo3::prelude::{PyModule, PyModuleMethods};
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
-use crate::topicmodel::dictionary::loader::ding::DingEntry;
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
+use crate::topicmodel::dictionary::loader::iate_reader::{IateElement, IateReader, IateReaderError};
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
 
 mod ding;
@@ -32,6 +35,18 @@ mod ms_terms_reader;
 mod generalized_data;
 mod toolkit;
 mod muse;
+
+pub(crate) fn register_py_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<word_infos::Language>()?;
+    m.add_class::<word_infos::Region>()?;
+    m.add_class::<word_infos::PartOfSpeech>()?;
+    m.add_class::<word_infos::GrammaticalGender>()?;
+    m.add_class::<word_infos::GrammaticalNumber>()?;
+    m.add_class::<word_infos::Domain>()?;
+    m.add_class::<word_infos::Register>()?;
+    Ok(())
+}
+
 
 pub trait Preprocessor {
     fn preprocess_word<'a, D: DirLang>(&self, origin: &'static str, word: &'a str) -> Option<Either<Cow<'a, str>, (Cow<'a, str>, Cow<'a, str>)>>;
@@ -166,6 +181,7 @@ pub mod constants {
     pub const FREE_DICT: &'static str = "free_dict";
     pub const DICT_CC: &'static str = "dict_cc";
     pub const DING: &'static str = "ding";
+    pub const IATE: &'static str = "iate";
 }
 
 impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
@@ -517,6 +533,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             for (variant, mut meta_data) in value {
                 let (word_id, mut meta) = self.insert::<D, L>(DING, &variant);
                 meta_data.dictionary_name(Some(DING));
+                meta.add_single_to_unaltered_vocabulary(DING, &variant);
                 meta_data.extend_internal_ids([interchangeable_id, variant_id]);
                 meta_data.build_consuming().unwrap().write_into(&mut meta);
                 ids2.push(word_id);
@@ -549,6 +566,155 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
         Ok(())
     }
+
+    pub fn read_iate_dict<D: DirLang + Direction>(&mut self, p: impl AsRef<Path>, lang_a: Language, lang_b: Language) -> Result<usize, (usize, Vec<IateError>)> {
+        match iate_reader::read_iate(p) {
+            Ok(reader) => {
+                let mut errors = Vec::new();
+                let mut ct = 0usize;
+                for entry in reader {
+                    match entry {
+                        Ok(value) => {
+                            match self.process_iate::<D>(value, lang_a, lang_b) {
+                                Ok(_) => {
+                                    ct+=1;
+                                }
+                                Err(err) => {
+                                    errors.push(err);
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            errors.push(err.into());
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(ct)
+                } else {
+                    Err((ct, errors))
+                }
+            }
+            Err(err) => {
+                Err((0, vec![err.into()]))
+            }
+        }
+    }
+
+    pub fn process_iate<D: Direction + DirLang>(&mut self, element: iate_reader::IateElement, lang_a: Language, lang_b: Language) -> Result<(), IateError> {
+        let (id, contextual, domains, registers, mut words) = iate_reader::process_element(element);
+        let mut builder = LoadedMetadataCollectionBuilder::with_name(Some(IATE));
+        builder.extend_contextual_informations(contextual);
+        builder.extend_domains(domains);
+        builder.push_internal_ids(id);
+        builder.extend_registers(registers);
+        if let (Some(a), Some(b)) = (words.remove(&lang_a), words.remove(&lang_b)) {
+            let mut a_word = Vec::new();
+            let mut b_word = Vec::new();
+            let mut a_phrase = Vec::new();
+            let mut b_phrase = Vec::new();
+            {
+                let iate_reader::WordDefinition {
+                    words,
+                    phrases,
+                    abbrev,
+                    short_form,
+                    registers,
+                    // Ignored.
+                    realiabilities: _,
+                    unknown
+                } = a;
+                let mut builder = builder.clone();
+                builder.extend_registers(registers);
+                builder.extend_unclassified(unknown);
+                builder.extend_abbreviations(abbrev);
+                builder.extend_abbreviations(short_form);
+                builder.push_languages(lang_a);
+
+
+                for word in words {
+                    let (id, mut outp) = if D::DIRECTION.is_a_to_b() {
+                        self.insert::<D, A>(IATE, &word)
+                    } else {
+                        self.insert::<D::OPPOSITE, A>(IATE, &word)
+                    };
+                    a_word.push(id);
+                    builder.build().unwrap().write_into(&mut outp);
+                }
+                builder.push_contextual_informations("phrase".to_string());
+                for word in phrases {
+                    let (id, mut outp) = if D::DIRECTION.is_a_to_b() {
+                        self.insert::<D, A>(IATE, &word)
+                    } else {
+                        self.insert::<D::OPPOSITE, A>(IATE, &word)
+                    };
+                    a_phrase.push(id);
+                    builder.build().unwrap().write_into(&mut outp);
+                }
+            }
+            {
+                let iate_reader::WordDefinition {
+                    words,
+                    phrases,
+                    abbrev,
+                    short_form,
+                    registers,
+                    // Ignored.
+                    realiabilities: _,
+                    unknown
+                } = b;
+                let mut builder = builder.clone();
+                builder.extend_registers(registers);
+                builder.extend_unclassified(unknown);
+                builder.extend_abbreviations(abbrev);
+                builder.extend_abbreviations(short_form);
+                builder.push_languages(lang_b);
+
+                for word in words {
+                    let (id, mut outp) = if D::DIRECTION.is_a_to_b() {
+                        self.insert::<D::OPPOSITE, B>(IATE, &word)
+                    } else {
+                        self.insert::<D, B>(IATE, &word)
+                    };
+                    b_word.push(id);
+                    builder.build().unwrap().write_into(&mut outp);
+                }
+                builder.push_contextual_informations("phrase".to_string());
+                for word in phrases {
+                    let (id, mut outp) = if D::DIRECTION.is_a_to_b() {
+                        self.insert::<D::OPPOSITE, B>(IATE, &word)
+                    } else {
+                        self.insert::<D, B>(IATE, &word)
+                    };
+                    b_phrase.push(id);
+                    builder.build().unwrap().write_into(&mut outp);
+                }
+            }
+
+            a_word.extend(a_phrase);
+            b_word.extend(b_phrase);
+
+            for (a, b) in a_word.into_iter().cartesian_product(b_word) {
+                unsafe {
+                    if D::LANG.is_a() {
+                        self.dictionary.insert_raw_values::<Invariant>(a, b);
+                    } else {
+                        self.dictionary.insert_raw_values::<Invariant>(b, a);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum IateError {
+    #[error("Encountered unexpected language {0}")]
+    IllegalLanguage(Language),
+    #[error(transparent)]
+    IateReader(#[from] iate_reader::IateReaderError),
 }
 
 #[derive(Debug, Error)]
@@ -565,48 +731,11 @@ mod test {
     use crate::topicmodel::dictionary::{UnifiedTranslationHelper};
     use std::fs::File;
     use std::io::{BufWriter, Write};
+    use crate::topicmodel::dictionary::word_infos::Language;
 
     #[test]
     pub fn test(){
         let dict_file = File::options().write(true).create(true).truncate(true).open("my_dict.json").unwrap();
-        // let stopwords = serde_json::from_reader::<_, HashMap<String, Vec<String>>>(
-        //     File::open(r#"D:\Downloads\stopwords-iso.json"#).unwrap()
-        // ).unwrap();
-        // let mut words_en = stopwords.get("en").unwrap().clone();
-        // words_en.sort();
-        //
-        // let mut words_de = stopwords.get("de").unwrap().clone();
-        // words_de.sort();
-        //
-        //
-        //
-        // let mut builder1 = TokenizerBuilder::default();
-        // builder1.stemmer(Some((Algorithm::English, false)));
-        // const SEPARATORS: [&str;5] = [" ", ", ", ". ", "?", "!"];
-        // builder1.separators(&SEPARATORS);
-        // let words_en = match Set::from_iter(words_en) {
-        //     Ok(words) => {words}
-        //     Err(value) => {panic!("No stopwords")}
-        // };
-        // builder1.stop_words(&words_en);
-        // builder1.unicode(true);
-        // builder1.lossy_normalization(true);
-        // let tokenizer1 = builder1.build();
-        //
-        //
-        // let mut builder2 = TokenizerBuilder::default();
-        // builder2.stemmer(Some((Algorithm::German, false)));
-        // builder2.separators(&SEPARATORS);
-        // let words_de = match Set::from_iter(words_de) {
-        //     Ok(words) => {words}
-        //     Err(value) => {panic!("No stopwords")}
-        // };
-        // builder2.stop_words(&words_de);
-        // builder2.unicode(true);
-        // builder2.lossy_normalization(true);
-        // let tokenizer2 = builder2.build();
-        //
-        // let spec = SpecialPreprocessor::new(tokenizer1, tokenizer2);
 
         let mut default = UnifiedTranslationHelper::default();
 
@@ -630,6 +759,16 @@ mod test {
         current = new;
 
         let x = default.read_dict_cc::<BToA>("dictionaries/DictCC/dict.txt");
+        if let Err((a, b)) = x {
+            for value in b {
+                println!("{value}")
+            }
+        }
+        let new = default.len();
+        println!("{} delta: {}", new, current.diff(&new));
+        current = new;
+
+        let x = default.read_iate_dict::<AToB>("dictionaries/IATE/IATE_export.tbx", Language::English, Language::German);
         if let Err((a, b)) = x {
             for value in b {
                 println!("{value}")

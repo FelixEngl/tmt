@@ -129,6 +129,10 @@ impl MetadataManager for ClassicMetadataManager {
             meta_a: Default::default(),
         }
     }
+
+    fn dictionaries(&self) -> Vec<&str> {
+        self.dictionary_interner.iter().map(|value| value.1).collect()
+    }
 }
 
 impl ClassicMetadataManager {

@@ -1,10 +1,16 @@
+use std::cell::OnceCell;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::sync::{LazyLock, OnceLock};
+use aho_corasick::AhoCorasick;
 use thiserror::Error;
+use crate::define_aho_matcher;
+use crate::topicmodel::dictionary::loader::iate_reader;
 use crate::topicmodel::dictionary::loader::toolkit::replace_none_or_panic;
-use crate::topicmodel::dictionary::word_infos::Language;
+use crate::topicmodel::dictionary::word_infos::{Domain, Language, Register};
 use super::helper::gen_iate_tbx_reader::iter::ConceptEntryElementIter;
 use super::helper::gen_iate_tbx_reader::*;
 
@@ -14,23 +20,23 @@ pub struct IateReader<R> {
 
 #[derive(Debug, Clone)]
 pub struct IateElement {
-    id: u64,
-    subject: String,
-    terms: Vec<TermCollection>
+    pub id: u64,
+    pub subject: String,
+    pub terms: Vec<TermCollection>
 }
 
 #[derive(Debug, Clone)]
 pub struct TermCollection {
-    language: Language,
-    terms: Vec<Term>
+    pub language: Language,
+    pub terms: Vec<Term>
 }
 
 #[derive(Debug, Clone)]
 pub struct Term {
-    word: String,
-    reliability: Reliability,
-    term_type: Option<TermType>,
-    administrative_status: Option<AdministrativeStatus>,
+    pub word: String,
+    pub reliability: Reliability,
+    pub term_type: Option<TermType>,
+    pub administrative_status: Option<AdministrativeStatus>,
 }
 
 #[derive(Debug, Error)]
@@ -106,7 +112,7 @@ impl TryFrom<ETermNoteElement> for AdministrativeStatus {
 }
 
 
-#[derive(Debug, Copy, Clone, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
 #[repr(u8)]
 pub enum Reliability {
     /// Automatically assigned to terms entered by non-native speakers. Also, all lookup forms have
@@ -243,40 +249,176 @@ pub fn read_iate(path: impl AsRef<Path>) -> Result<IateReader<BufReader<File>>, 
     )
 }
 
+#[derive(Default)]
+pub struct WordDefinition {
+    pub words: Vec<String>,
+    pub phrases: Vec<String>,
+    pub abbrev: Vec<String>,
+    pub short_form: Vec<String>,
+    pub registers: Vec<Register>,
+    pub realiabilities: HashSet<Reliability>,
+    pub unknown: Vec<String>
+}
+
+pub fn process_element(
+    iate_reader::IateElement {
+        id,
+        subject,
+        terms
+    }: iate_reader::IateElement
+) -> (u64, Vec<String>, Vec<Domain>, Vec<Register>, HashMap<Language, WordDefinition>) {
+    let mut m = HashMap::new();
+    for iate_reader::TermCollection {
+        language,
+        terms
+    } in terms {
+        let mut wd = WordDefinition::default();
+        for iate_reader::Term {
+            administrative_status,
+            word,
+            term_type,
+            reliability
+        } in terms {
+            if let Some(term_type) = term_type {
+                match term_type {
+                    TermType::FullForm => {
+                        wd.words.push(word)
+                    }
+                    TermType::Abbreviation => {
+                        wd.abbrev.push(word);
+                    }
+                    TermType::Phrase => {
+                        wd.phrases.push(word)
+                    }
+                    TermType::ShortForm => {
+                        wd.short_form.push(word)
+                    }
+                    TermType::Appellation => {
+                        wd.phrases.push(word)
+                    }
+                    TermType::Formula => {
+                        // dropped
+                    }
+                }
+            } else {
+                wd.unknown.push(word);
+            }
+            if let Some(administrative_status) = administrative_status {
+                if let Ok(register) = administrative_status.try_into() {
+                    wd.registers.push(register);
+                }
+            }
+            wd.realiabilities.insert(reliability);
+        }
+        m.insert(language, wd);
+    }
+
+    let mut contextual = Vec::new();
+    let mut domain = Vec::new();
+    let mut register = Vec::new();
+
+    macro_rules! fallthrough {
+        (
+            for $i: ident do {
+                $($($pattern: literal),+ $(,)? => $e: expr);+ $(;)?
+            }
+        ) => {
+            {
+                let mut success = false;
+                $(
+                    {
+                        define_aho_matcher!(
+                            PATTERN as ascii_case_insensitive for: $($pattern,)+
+                        );
+                        if PATTERN.is_match(&$i) {
+                            success = true;
+                            $e;
+                        }
+                    }
+                )+
+                success
+            }
+        };
+    }
+
+
+    for value in subject.split(';').map(|value| value.trim().to_string()) {
+        fallthrough! {
+            for value do {
+                "language" => domain.push(Domain::Ling);
+                "technology", "engineering", "data", "computer",
+                "local area network", "information ", "engine" => register.push(Register::Techn);
+                "agricultural", "fodder-growing", "agriculture" => domain.push(Domain::Agr);
+                "law", "legal", "criminal", "crime", "offence", "right", "justice",
+                "Court", "contract" => domain.push(Domain::Law);
+                "mining" => domain.push(Domain::Mining);
+                "economic", "economy" => domain.push(Domain::Econ);
+                "ecosystem", "environment" => domain.push(Domain::Ecol);
+                "financial", "accounting", "payments", "banking", "financing", "budget",
+                "cost", "tax", "investment", "market", "VAT" => domain.push(Domain::Fin);
+                "dictionary" => domain.push(Domain::Ling);
+                "fishery", "fish" => domain.push(Domain::Fish);
+                "addiction", "health", "disease", "pharma", "gynaecology", "illness",
+                "medic" => domain.push(Domain::Med);
+                "minister", "politic", "organisation", "election" => domain.push(Domain::Pol);
+                "missile", "milit", "war ", " war"  => domain.push(Domain::Mil);
+                "weapon", "arms" => domain.push(Domain::Weapons);
+                "industry" => domain.push(Domain::Ind);
+                "food" => domain.push(Domain::FoodInd);
+                "veteri", "fish disease" => domain.push(Domain::VetMed);
+                "train", "road" => domain.push(Domain::Transp);
+                "building", "country road" => domain.push(Domain::Urban);
+                "concentration", "history", "National Socialism " => domain.push(Domain::Hist);
+                "educ", "universit" => domain.push(Domain::Educ);
+                "habitat", "insect" => domain.push(Domain::Biol);
+                "society", "demography" => domain.push(Domain::Sociol);
+                "research" => domain.push(Domain::Science);
+                "air " => domain.push(Domain::Aviat);
+                "transport" => domain.push(Domain::Transp);
+            }
+        };
+        contextual.push(value);
+    }
+
+    (
+        id,
+        contextual,
+        domain,
+        register,
+        m
+    )
+}
+
+
 
 
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
+    use std::fs::File;
+    use std::io::BufWriter;
     use itertools::Itertools;
-    use super::read_iate;
+    use super::{process_element, read_iate, TermType};
 
     #[test]
     fn can_run(){
         let reader = read_iate(
             "dictionaries/IATE/IATE_export.tbx"
         ).unwrap();
-        let mut ct_1 = 0;
-        let mut ct_2 = 0;
-        let mut one_langs = HashSet::new();
+        let mut data = HashSet::new();
         for value in reader {
             let value = value.unwrap();
-            let lang = value.terms.iter().map(|value| value.language).collect::<HashSet<_>>();
-            if lang.len() != 2 {
-                if lang.len() != 1 {
-                    println!("Found one with {}", lang.len());
-                    break
-                } else {
-                    ct_1 += 1;
-                    one_langs.extend(lang);
-                }
-            } else {
-                ct_2 += 1;
-            }
+            let (_, a, _, _, _) = process_element(value);
+            data.extend(a);
         }
-        println!("Found with only one: {}", ct_1);
-        println!("Found with only one: {}", one_langs.into_iter().join(", "));
-        println!("Found with two: {}", ct_2);
+        println!("Found with two: {}", data.len());
+        let mut w = BufWriter::new(File::options().write(true).truncate(true).create(true).open("view.txt").unwrap());
+        use std::io::Write;
+        write!(
+            &mut w,
+            "{}",
+            data.into_iter().join("\n")
+        ).unwrap();
 
        // let x =  reader.process_results(|value| {
        //      value.into_grouping_map_by(|value| { value.id }).fold_with(

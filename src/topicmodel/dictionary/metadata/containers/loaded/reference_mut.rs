@@ -141,7 +141,6 @@ macro_rules! create_mut_ref_implementation {
 
         impl<'a> LoadedMetadataMutRef<'a> {
 
-
             pub(in crate::topicmodel::dictionary) fn new(dict_ref: *mut $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager, meta: &'a mut $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata) -> Self {
                 Self { meta, manager_ref: dict_ref }
             }
@@ -154,6 +153,10 @@ macro_rules! create_mut_ref_implementation {
             pub fn add_dictionary(&mut self, name: impl AsRef<str>) -> $crate::toolkit::typesafe_interner::DictionaryOriginSymbol {
                 use $crate::topicmodel::dictionary::metadata::MetadataMutReference;
                 self.meta_container_mut().intern_dictionary_origin(name)
+            }
+
+            pub fn update_with_solved(&mut self, solved: &$crate::topicmodel::dictionary::metadata::containers::loaded::SolvedLoadedMetadata) {
+                solved.write_into(self);
             }
         }
 

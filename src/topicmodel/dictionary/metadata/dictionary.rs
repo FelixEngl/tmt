@@ -12,6 +12,8 @@ use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, Searcha
 use crate::topicmodel::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
+use crate::topicmodel::dictionary::metadata::domain_matrix::TopicMatrix;
+use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata, Iter, LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin, SolvedLoadedMetadata};
 use crate::topicmodel::reference::HashRef;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -30,16 +32,90 @@ impl<T, V, C> DictionaryWithMeta<T, V, C> {
 
 impl<T, V> DictionaryWithMeta<T, V, ClassicMetadataManager> {
 
-    pub fn known_dictionaries(&self) -> Vec<&str> {
-        self.metadata.dictionary_interner.iter().map(|value| value.1).collect_vec()
-    }
-
     pub fn subjects(&self) -> Vec<&str> {
         self.metadata.subject_interner.iter().map(|value| value.1).collect_vec()
     }
 
     pub fn unstemmed(&self) -> &Vocabulary<String> {
         &self.metadata.unstemmed_voc
+    }
+}
+
+
+
+pub enum CreateTopicMatrixMode<T=()> {
+    All,
+    OnlyDefault,
+    OnlyTargets(Vec<T>),
+    DefaultAndTargets(Vec<T>)
+}
+
+impl<T> CreateTopicMatrixMode<T> {
+    pub fn collects_default(&self) -> bool {
+        matches!(self, Self::All | Self::OnlyDefault | Self::DefaultAndTargets(_))
+    }
+}
+
+impl<T> CreateTopicMatrixMode<T> where T: PartialEq {
+    pub fn contains(&self, value: &T) -> bool {
+        match self {
+            CreateTopicMatrixMode::All => true,
+            CreateTopicMatrixMode::OnlyDefault => false,
+            CreateTopicMatrixMode::OnlyTargets(v) => v.contains(value),
+            CreateTopicMatrixMode::DefaultAndTargets(v) => v.contains(value),
+        }
+    }
+}
+
+impl<T, V> DictionaryWithMeta<T, V, LoadedMetadataManager> where V: BasicVocabulary<T> {
+    pub fn create_topic_matrix<'a, L: Language, S: AsRef<str>>(&'a self, mode: &CreateTopicMatrixMode<S>) -> TopicMatrix {
+
+        let mode = match mode {
+            CreateTopicMatrixMode::All => CreateTopicMatrixMode::All,
+            CreateTopicMatrixMode::OnlyDefault => CreateTopicMatrixMode::OnlyDefault,
+            CreateTopicMatrixMode::OnlyTargets(value) => {
+                CreateTopicMatrixMode::OnlyTargets(
+                    value.iter().filter_map(|value| {
+                        self.metadata.dictionary_interner.get(value.as_ref())
+                    }).collect_vec()
+                )
+            }
+            CreateTopicMatrixMode::DefaultAndTargets(value) => {
+                CreateTopicMatrixMode::OnlyTargets(
+                    value.iter().filter_map(|value| {
+                        self.metadata.dictionary_interner.get(value.as_ref())
+                    }).collect_vec()
+                )
+            }
+        };
+
+        let mut matrix: TopicMatrix;
+        let mut iter: std::slice::Iter<'a, LoadedMetadata>;
+
+        if L::LANG.is_a() {
+            matrix = TopicMatrix::with_capacity(self.voc_a().len());
+            iter = self.metadata.meta_a.iter();
+        } else {
+            matrix = TopicMatrix::with_capacity(self.voc_b().len());
+            iter = self.metadata.meta_b.iter();
+        }
+
+        for x in  iter {
+            let targ = matrix.create_next();
+            for value in x.iter() {
+                match value {
+                    MetadataWithOrigin::General(value) if mode.collects_default() => {
+                        targ.fill_by(value);
+                    }
+                    MetadataWithOrigin::Associated(origin, value) if mode.contains(&origin) => {
+                        targ.fill_by(value);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        matrix
     }
 }
 
@@ -61,6 +137,10 @@ impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T>, M: Metada
 
     pub fn metadata_with_dict_mut(&mut self) -> MetadataContainerWithDictMut<Self, T, V, M> where Self: Sized {
         MetadataContainerWithDictMut::wrap(self)
+    }
+
+    pub fn known_dictionaries(&self) -> Vec<&str> {
+        self.metadata.dictionaries()
     }
 }
 unsafe impl<T, V, M> Send for DictionaryWithMeta<T, V, M>{}

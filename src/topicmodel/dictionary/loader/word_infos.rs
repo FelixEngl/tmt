@@ -1,14 +1,19 @@
 use std::fmt::{Display, Formatter};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use strum::{Display, EnumCount, EnumString, IntoStaticStr};
 use tinyset::Fits64;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{EGenElement, ENumberElement, EPosElement, LangAttribute as FreeDictLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
+use crate::topicmodel::dictionary::loader::iate_reader::{AdministrativeStatus};
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute, ETermNoteElement};
+use crate::topicmodel::dictionary::metadata::domain_matrix::TopicMatrixIndex;
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[pyclass(name = "DictionaryLanguage", eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Language {
     #[strum(to_string = "en", serialize = "english")]
@@ -21,6 +26,17 @@ pub enum Language {
     French = 3,
     #[strum(to_string = "latin", serialize = "Lat.", serialize = "lat.")]
     Latin = 4
+}
+
+#[pymethods]
+impl Language {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
 }
 
 impl Fits64 for Language {
@@ -75,8 +91,10 @@ impl From<MsTermsAttribute> for Language {
 }
 
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Region {
     #[strum(to_string = "BE", serialize = "eBr.", serialize = "Br.", serialize = "BR.", serialize = "Br,")]
@@ -193,6 +211,17 @@ pub enum Region {
     EastSwissGerman = 54
 }
 
+#[pymethods]
+impl Region {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
+}
+
 
 impl TryFrom<MsTermsAttribute> for Region {
     type Error = ();
@@ -223,61 +252,11 @@ impl Fits64 for Region {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum WordInfo<T> {
-    Type(PartOfSpeech),
-    Gender(GrammaticalGender),
-    Number(GrammaticalNumber),
-    Other(T)
-}
 
-impl<T> From<T> for WordInfo<T> where T: AsRef<str> {
-    fn from(value: T) -> Self {
-        let s = value.as_ref();
-        if let Ok(value) = s.parse() {
-            WordInfo::Type(value)
-        } else if let Ok(value) = s.parse() {
-            WordInfo::Gender(value)
-        } else if let Ok(value) = s.parse() {
-            WordInfo::Number(value)
-        } else {
-            WordInfo::Other(value)
-        }
-    }
-}
-
-impl<T> WordInfo<T> {
-    pub fn map<R, F: FnOnce(T) -> R>(self, mapper: F) -> WordInfo<R> {
-        match self {
-            WordInfo::Other(value) => WordInfo::Other(mapper(value)),
-            WordInfo::Type(value) => WordInfo::Type(value),
-            WordInfo::Gender(value) => WordInfo::Gender(value),
-            WordInfo::Number(value) => WordInfo::Number(value),
-        }
-    }
-}
-
-impl<T> Display for WordInfo<T> where T: Display {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WordInfo::Type(value) => {
-                Display::fmt(value, f)
-            }
-            WordInfo::Gender(value) => {
-                Display::fmt(value, f)
-            }
-            WordInfo::Number(value) => {
-                Display::fmt(value, f)
-            }
-            WordInfo::Other(value) => {
-                Display::fmt(value, f)
-            }
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum PartOfSpeech {
     #[strum(to_string = "noun")]
@@ -322,6 +301,17 @@ pub enum PartOfSpeech {
     InterrogativePronoun = 19,
     #[strum(to_string="relativ.pron")]
     RelativePronoun = 20
+}
+
+#[pymethods]
+impl PartOfSpeech {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
 }
 
 impl Fits64 for PartOfSpeech {
@@ -400,8 +390,10 @@ impl From<EPosElement> for PartOfSpeech {
     }
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum GrammaticalGender {
     #[strum(to_string = "f", serialize = "female", serialize = "f.")]
@@ -412,6 +404,17 @@ pub enum GrammaticalGender {
     Neutral = 2,
     #[strum(to_string = "not f")]
     NotFeminine = 3
+}
+
+#[pymethods]
+impl GrammaticalGender {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
 }
 
 impl Fits64 for GrammaticalGender {
@@ -441,8 +444,10 @@ impl From<EGenElement> for GrammaticalGender {
     }
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum GrammaticalNumber {
     #[strum(to_string = "sg", serialize = "sg.")]
@@ -460,6 +465,17 @@ pub enum GrammaticalNumber {
     SingularOnly = 5,
     #[strum(to_string = "only plural")]
     PluralOnly = 6,
+}
+
+#[pymethods]
+impl GrammaticalNumber {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
 }
 
 impl Fits64 for GrammaticalNumber {
@@ -487,16 +503,11 @@ impl From<ENumberElement> for GrammaticalNumber {
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
-pub enum PartialWordType {
-    Prefix,
-    Suffix,
-}
 
-
-#[derive(Copy, Clone, Debug, strum::Display, strum::EnumString, Eq, PartialEq, Hash)]
-#[derive(serde::Serialize, serde::Deserialize)]
-#[derive(num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr, EnumCount)]
+#[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Domain {
     /// Academic Disciplines / Wissenschaft
@@ -929,6 +940,24 @@ pub enum Domain {
     Currency = 139
 }
 
+#[pymethods]
+impl Domain {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
+}
+
+impl TopicMatrixIndex for Domain {
+    #[inline(always)]
+    fn get(self) -> usize {
+        (self as u64) as usize
+    }
+}
+
 impl tinyset::set64::Fits64 for Domain {
     #[inline(always)]
     unsafe fn from_u64(x: u64) -> Self {
@@ -942,8 +971,10 @@ impl tinyset::set64::Fits64 for Domain {
 
 
 /// In sociolinguistics, a register is a variety of language used for a particular purpose or particular communicative situation
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr, EnumCount)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Register {
     #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.", serialize = "hum")]
@@ -997,16 +1028,36 @@ pub enum Register {
     Admin = 17,
     /// Übertragen: giftig -> virulently
     #[strum(to_string = "übtr.")]
-    Transfer,
+    Transfer = 18,
     /// Netzjargon
     #[strum(to_string = "Chat-Jargon", serialize = "internet slang", serialize = "chat jargon")]
-    NetJargon,
+    NetJargon = 19,
     /// Informal
     #[strum(to_string = "informell")]
-    Informal,
-    /// Informal
+    Informal = 20,
+    /// Quantity
     #[strum(to_string = "Mengenangabe")]
-    QuantityInformation
+    QuantityInformation = 21,
+    #[strum(to_string = "IATEPreferred")]
+    IATEPreferred = 22
+}
+
+#[pymethods]
+impl Register {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
+}
+
+impl TopicMatrixIndex for Register {
+    #[inline(always)]
+    fn get(self) -> usize {
+        Domain::COUNT + (self as u64) as usize
+    }
 }
 
 impl Fits64 for Register {
@@ -1019,6 +1070,86 @@ impl Fits64 for Register {
     fn to_u64(self) -> u64 {
         self.into()
     }
+}
+
+impl TryFrom<AdministrativeStatus> for Register {
+    type Error = AdministrativeStatus;
+
+    fn try_from(value: AdministrativeStatus) -> Result<Self, AdministrativeStatus> {
+        match value {
+            AdministrativeStatus::Obsolete | AdministrativeStatus::Deprecated => {
+                Ok(Self::Archaic)
+            }
+            AdministrativeStatus::Preferred => {
+                Ok(Self::IATEPreferred)
+            }
+            other => {
+                Err(other)
+            }
+        }
+    }
+}
+
+
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum WordInfo<T> {
+    Type(PartOfSpeech),
+    Gender(GrammaticalGender),
+    Number(GrammaticalNumber),
+    Other(T)
+}
+
+impl<T> From<T> for WordInfo<T> where T: AsRef<str> {
+    fn from(value: T) -> Self {
+        let s = value.as_ref();
+        if let Ok(value) = s.parse() {
+            WordInfo::Type(value)
+        } else if let Ok(value) = s.parse() {
+            WordInfo::Gender(value)
+        } else if let Ok(value) = s.parse() {
+            WordInfo::Number(value)
+        } else {
+            WordInfo::Other(value)
+        }
+    }
+}
+
+impl<T> WordInfo<T> {
+    pub fn map<R, F: FnOnce(T) -> R>(self, mapper: F) -> WordInfo<R> {
+        match self {
+            WordInfo::Other(value) => WordInfo::Other(mapper(value)),
+            WordInfo::Type(value) => WordInfo::Type(value),
+            WordInfo::Gender(value) => WordInfo::Gender(value),
+            WordInfo::Number(value) => WordInfo::Number(value),
+        }
+    }
+}
+
+impl<T> Display for WordInfo<T> where T: Display {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WordInfo::Type(value) => {
+                Display::fmt(value, f)
+            }
+            WordInfo::Gender(value) => {
+                Display::fmt(value, f)
+            }
+            WordInfo::Number(value) => {
+                Display::fmt(value, f)
+            }
+            WordInfo::Other(value) => {
+                Display::fmt(value, f)
+            }
+        }
+    }
+}
+
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
+pub enum PartialWordType {
+    Prefix,
+    Suffix,
 }
 
 

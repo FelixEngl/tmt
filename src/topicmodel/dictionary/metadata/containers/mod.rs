@@ -15,6 +15,7 @@ pub trait MetadataManager: Default + Clone {
     type Reference<'a>: MetadataReference<'a, Self> where Self: 'a;
     type MutReference<'a>: MetadataMutReference<'a, Self> where Self: 'a;
 
+
     fn meta_a(&self) -> &[Self::Metadata];
     fn meta_b(&self) -> &[Self::Metadata];
     fn switch_languages(self) -> Self;
@@ -24,6 +25,7 @@ pub trait MetadataManager: Default + Clone {
     fn get_meta_ref<'a, L: Language>(&'a self, word_id: usize) -> Option<Self::Reference<'a>>;
     fn resize(&mut self, meta_a: usize, meta_b: usize);
     fn copy_keep_vocabulary(&self) -> Self;
+    fn dictionaries(&self) -> Vec<&str>;
 }
 
 pub trait Metadata: Clone + Default + Eq + PartialEq {

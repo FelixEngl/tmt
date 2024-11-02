@@ -315,11 +315,20 @@ macro_rules! create_collector_implementation {
             }
         }
 
+        impl<'a, T: ToOwned> LoadedMetadataCollection<&'a T> {
+            pub fn into_owned(self) -> LoadedMetadataCollection<<T as ToOwned>::Owned> {
+                self.map(|value| value.to_owned())
+            }
+        }
+
+
+
+
         impl<T: std::hash::Hash + std::clone::Clone + std::cmp::Eq> LoadedMetadataCollectionBuilder<T> {
             pub fn shrink(&mut self) {
                 use itertools::Itertools;
                 $(
-                    self.$name = self.$name.take().map(|mut value| value.take().map(|mut value| value.into_iter().unique().collect()));
+                    self.$name = self.$name.take().map(|mut value| value.take().map(|value| value.into_iter().unique().collect()));
                 )+
             }
         }

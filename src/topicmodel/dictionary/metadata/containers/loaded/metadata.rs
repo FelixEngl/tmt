@@ -58,7 +58,7 @@ macro_rules! impl_associated_metadata {
             $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_associated_metadata!{__is_empty $($name)+}
 
             $(
-            fn $name(&self) -> &tinyset::Set64<$typ> {
+            pub fn $name(&self) -> &tinyset::Set64<$typ> {
                 &self.$name
             }
 

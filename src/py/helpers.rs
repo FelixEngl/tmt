@@ -21,7 +21,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use derive_more::{From, TryInto};
 use itertools::Itertools;
-use pyo3::{FromPyObject, IntoPy, PyAny, PyObject, Python};
+use pyo3::{Bound, FromPyObject, IntoPy, PyAny, PyObject, Python};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use crate::py::voting::PyVoting;
@@ -120,7 +120,7 @@ pub enum StrOrIntCatching<'a> {
     String(String),
     Int(usize),
     #[pyo3(transparent)]
-    CatchAll(&'a PyAny)
+    CatchAll(Bound<'a, PyAny>)
 }
 
 

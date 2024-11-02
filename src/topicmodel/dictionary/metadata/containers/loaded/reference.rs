@@ -134,6 +134,10 @@ macro_rules! create_ref_implementation {
 
         impl<'a> LoadedMetadataRef<'a> {
             $crate::topicmodel::dictionary::metadata::loaded::reference::create_cached_getter!($($tt: $name $(, $interner_name)?: $ty_sub,)*);
+
+            fn as_solved(&self) -> $crate::topicmodel::dictionary::metadata::loaded::SolvedLoadedMetadata {
+                $crate::topicmodel::dictionary::metadata::loaded::SolvedLoadedMetadata::create_from(self)
+            }
         }
     };
     () => {}

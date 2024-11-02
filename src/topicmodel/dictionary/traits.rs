@@ -117,6 +117,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         DictLangIter::<T, L, Self, V>::new(self)
     }
 
+
     /// Translate a value
     fn translate_value<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a HashRef<T>)>>
     where
