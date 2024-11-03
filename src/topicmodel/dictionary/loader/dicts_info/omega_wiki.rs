@@ -15,8 +15,8 @@ use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, O
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OmegaWikiWord<T> {
-    word: T,
-    meta: Option<T>
+    pub word: T,
+    pub meta: Option<T>
 }
 
 impl<T> OmegaWikiWord<T> {
@@ -44,8 +44,8 @@ impl<T> Display for OmegaWikiWord<T> where T: Display {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OmegaWikiEntry<T> {
-    lang_a: Vec<OmegaWikiWord<T>>,
-    lang_b: Vec<OmegaWikiWord<T>>
+    pub lang_a: Vec<OmegaWikiWord<T>>,
+    pub lang_b: Vec<OmegaWikiWord<T>>
 }
 
 impl<T> OmegaWikiEntry<T> {

@@ -98,6 +98,7 @@ pub struct PyDictionaryEntry {
 #[pymethods]
 impl PyDictionaryEntry {
     #[new]
+    #[pyo3(signature = (word_a, word_b, dictionary_a=None, dictionary_b=None, subject_a=None, subject_b=None, unstemmed_a=None, unstemmed_b=None))]
     pub fn new(
         word_a: String,
         word_b: String,
@@ -241,11 +242,13 @@ impl PyDictionaryEntry {
         Ok(())
     }
 
-
+    #[pyo3(signature = (word, unstemmed_meta=None))]
     pub fn set_unstemmed_word_a(&mut self, word: &str, unstemmed_meta: Option<&str>) -> PyResult<()> {
         self.set_unstemmed_word::<A>(word, unstemmed_meta);
         Ok(())
     }
+
+    #[pyo3(signature = (word, unstemmed_meta=None))]
     pub fn set_unstemmed_word_b(&mut self, word: &str, unstemmed_meta: Option<&str>) -> PyResult<()> {
         self.set_unstemmed_word::<B>(word, unstemmed_meta);
         Ok(())
@@ -352,6 +355,7 @@ pub struct PyDictionary {
 #[pymethods]
 impl PyDictionary {
     #[new]
+    #[pyo3(signature = (language_a=None, language_b=None))]
     pub fn new(language_a: Option<LanguageHintValue>, language_b: Option<LanguageHintValue>) -> Self {
         Self {
             inner: DictionaryWithMeta::new_with(
@@ -426,6 +430,7 @@ impl PyDictionary {
         )
     }
 
+    #[pyo3(signature = (word_a, word_b, dictionary_a=None, dictionary_b=None, meta_value_a=None, meta_value_b=None, unstemmed_a=None, unstemmed_b=None))]
     pub fn add_word_pair(
         &mut self,
         word_a: String,

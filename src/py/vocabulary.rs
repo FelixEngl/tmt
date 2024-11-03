@@ -48,6 +48,7 @@ impl PyVocabulary {
 #[pymethods]
 impl PyVocabulary {
     #[new]
+    #[pyo3(signature = (language=None, size=None))]
     pub fn new(language: Option<LanguageHintValue>, size: Option<ListOrInt>) -> Self {
         let language = language.map(|value| value.into());
 

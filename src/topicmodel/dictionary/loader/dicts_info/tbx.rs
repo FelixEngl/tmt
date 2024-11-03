@@ -168,8 +168,8 @@ impl<R> TbxReader<R> where R: BufRead {
                     }
                 }
                 Event::Text(t) if in_terms => {
-                    let s = std::str::from_utf8(t.as_bytes())?;
-                    let (left, extracted) = term_parser::<nom::error::Error<&str>>(s)?;
+                    let s = t.unescape()?;
+                    let (left, extracted) = term_parser::<nom::error::Error<&str>>(&s)?;
                     if left.is_empty() {
                         terms.extend(extracted.into_iter().map(|value| value.trim().to_string()))
                     } else if extracted.is_empty() {

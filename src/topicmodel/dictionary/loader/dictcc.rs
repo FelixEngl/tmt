@@ -10,7 +10,7 @@ use nom::combinator::{map, map_parser, map_res, opt, value};
 use nom::error::{FromExternalError, ParseError};
 use nom::multi::{many1, separated_list0};
 use nom::sequence::{delimited, pair, preceded, terminated};
-use nom::{IResult, InputTake};
+use nom::{IResult};
 use regex::Regex;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -542,7 +542,7 @@ pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
     let mut latin_names: Vec<String> = Vec::new();
     let mut contextualisation: Vec<WordEntryElement<S>> = Vec::new();
     let mut regions: Vec<Region> = Vec::new();
-    let mut reconstructed = entry.to_string();
+    let reconstructed = entry.to_string();
 
     for value in entry.0 {
         match value {
@@ -787,7 +787,6 @@ mod test {
     use itertools::Itertools;
     use nom::bytes::complete::is_not;
     use nom::IResult;
-    use rand::{seq::IteratorRandom, thread_rng};
 
     #[test]
     fn word_info_parser() {

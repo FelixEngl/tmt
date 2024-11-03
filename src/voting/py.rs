@@ -18,7 +18,6 @@ use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
-use pyo3::types::PyFunction;
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
 use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodContext, VotingResult};
 

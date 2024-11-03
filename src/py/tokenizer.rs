@@ -237,6 +237,7 @@ fn read_aligned_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: bool) -> 
 }
 
 #[pyfunction]
+#[pyo3(signature = (path, with_pickle=None))]
 pub fn read_aligned_articles(path: PathBuf, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleIter> {
     Ok(
         PyAlignedArticleIter::new(
@@ -367,6 +368,7 @@ fn read_aligned_parsed_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: Op
 
 
 #[pyfunction]
+#[pyo3(signature = (path, with_pickle=None))]
 pub fn read_aligned_parsed_articles(path: PathBuf, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleParsedIter> {
     Ok(
         PyAlignedArticleParsedIter::new(
@@ -379,6 +381,7 @@ pub fn read_aligned_parsed_articles(path: PathBuf, with_pickle: Option<bool>) ->
 type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
 #[pyfunction]
+#[pyo3(signature = (path, processor, with_pickle=None))]
 pub fn read_and_parse_aligned_articles(path: PathBuf, processor: PyAlignedArticleProcessor, with_pickle: Option<bool>) -> PyResult<PyParsedAlignedArticleIter>{
     let reader = read_aligned_articles_impl(path, with_pickle.unwrap_or_default()).map_err(|value| PyValueError::new_err(value.to_string()))?;
     let tokenizers = unsafe{processor.create_tokenizer_map()};
@@ -501,6 +504,7 @@ impl TokenCountFilter {
 #[pymethods]
 impl TokenCountFilter {
     #[new]
+    #[pyo3(signature = (min=None, max=None))]
     fn py_new(
         min: Option<usize>,
         max: Option<usize>,
@@ -610,6 +614,7 @@ pub struct StoreOptions {
 #[pymethods]
 impl StoreOptions {
     #[new]
+    #[pyo3(signature = (deflate_temp_files=None, delete_temp_files_immediately=None, compress_result=None, temp_folder=None, show_progress_after=None))]
     pub fn new(
         deflate_temp_files: Option<bool>,
         delete_temp_files_immediately: Option<bool>,
@@ -645,6 +650,7 @@ impl StoreOptions {
 
 
 #[pyfunction]
+#[pyo3(signature = (path_in, path_out, processor, filter=None, store_options=None, with_pickle=None))]
 pub fn read_and_parse_aligned_articles_into(
     path_in: PathBuf,
     path_out: PathBuf,
@@ -1018,6 +1024,7 @@ pub struct PyArticle(Article);
 #[pymethods]
 impl PyArticle {
     #[new]
+    #[pyo3(signature = (language_hint, content, categories=None, is_list=None))]
     fn new(language_hint: LanguageHintValue, content: String, categories: Option<Vec<usize>>, is_list: Option<bool>) -> Self {
         Self(Article::new(language_hint.into(), categories, Some(content), is_list.unwrap_or_default()))
     }
@@ -1344,6 +1351,7 @@ impl PyTokenizerBuilder {
         Self::default()
     }
 
+    #[pyo3(signature = (stemmer, smart=None))]
     fn stemmer<'py>(slf: Bound<'py, Self>, stemmer: PyStemmingAlgorithm, smart: Option<bool>) -> Bound<'py, Self> {
         slf.borrow_mut().stemmer = Some((stemmer, smart.unwrap_or_default()));
         slf
@@ -2077,6 +2085,7 @@ impl PyAhoCorasickBuilder {
     ///
     /// Note that the heuristics used for choosing which `PyAhoCorasickKind`
     /// may be changed in a semver compatible release.
+    #[pyo3(signature = (kind=None))]
     pub fn kind<'py>(slf: Bound<'py, Self>, kind: Option<PyAhoCorasickKind>) -> Bound<'py, Self> {
         slf.borrow_mut().0.kind(kind.map(Into::into));
         slf
@@ -2267,7 +2276,7 @@ map_enum!(
 );
 
 
-#[pyo3::pyclass]
+#[pyo3::pyclass(eq, eq_int, hash, frozen)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::Display)]
 #[derive(serde::Serialize, serde::Deserialize)]

@@ -123,6 +123,7 @@ pub struct PyVoting(InterpretedVoting);
 #[pymethods]
 impl PyVoting {
     #[staticmethod]
+    #[pyo3(signature = (value, registry=None))]
     pub fn parse(value: String, registry: Option<PyVotingRegistry>) -> PyResult<Self> {
         match parse::<Error<_>>(ParserInput::new(&value, registry.unwrap_or_default().registry())).finish() {
             Ok((_, parse_result)) => {

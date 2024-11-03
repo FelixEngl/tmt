@@ -13,7 +13,7 @@ use crate::topicmodel::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
 use crate::topicmodel::dictionary::metadata::domain_matrix::TopicMatrix;
-use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata, Iter, LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin, SolvedLoadedMetadata};
+use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin};
 use crate::topicmodel::reference::HashRef;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -90,7 +90,7 @@ impl<T, V> DictionaryWithMeta<T, V, LoadedMetadataManager> where V: BasicVocabul
         };
 
         let mut matrix: TopicMatrix;
-        let mut iter: std::slice::Iter<'a, LoadedMetadata>;
+        let iter: std::slice::Iter<'a, LoadedMetadata>;
 
         if L::LANG.is_a() {
             matrix = TopicMatrix::with_capacity(self.voc_a().len());
@@ -100,7 +100,7 @@ impl<T, V> DictionaryWithMeta<T, V, LoadedMetadataManager> where V: BasicVocabul
             iter = self.metadata.meta_b.iter();
         }
 
-        for x in  iter {
+        for x in iter {
             let targ = matrix.create_next();
             for value in x.iter() {
                 match value {

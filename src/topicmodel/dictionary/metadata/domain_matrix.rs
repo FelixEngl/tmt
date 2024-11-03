@@ -4,7 +4,7 @@ use std::vec::Drain;
 use itertools::Itertools;
 use pyo3::pyclass;
 use strum::EnumCount;
-use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata, LoadedMetadata};
+use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata};
 use crate::topicmodel::dictionary::word_infos::{Domain, Register};
 
 pub trait TopicMatrixIndex where Self: Sized + Copy {
@@ -97,11 +97,16 @@ impl Entry {
     }
 
     pub fn fill_by(&mut self, meta: &AssociatedMetadata) {
-        for x in meta.domains().iter() {
-            self.increment(x);
+        if let Some(meta) = meta.domains() {
+            for x in meta.iter() {
+                self.increment(x);
+            }
         }
-        for x in meta.registers().iter() {
-            self.increment(x);
+
+        if let Some(meta) = meta.registers() {
+            for x in meta.iter() {
+                self.increment(x);
+            }
         }
     }
 

@@ -504,7 +504,7 @@ impl CodeElement {
                     element_inner.add_attributes_raw(empty.attributes(), depth)?;
                 }
                 Event::Text(value) => {
-                    let target = std::str::from_utf8(value.as_ref())?.trim();
+                    let target = value.unescape()?.trim();
                     if !target.is_empty() {
                         self.add_text(target);
                     }
@@ -1047,7 +1047,7 @@ impl CodeElement {
         }
         if let Some(typ) = self.get_or_infer_type(map) {
             write!(w, "            quick_xml::events::Event::Text(value) => {{\n")?;
-            write!(w, "                let s_value = std::str::from_utf8(value.as_ref())?;\n")?;
+            write!(w, "                let s_value = value.unescape()?;\n")?;
             match typ {
                 ContentType::String => {
                     write!(w, "                builder.content(s_value.to_string());\n")?;

@@ -21,7 +21,7 @@ use strum::{Display, EnumIs, EnumString, IntoStaticStr};
 
 /// The language
 #[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
-#[pyclass]
+#[pyclass(eq, eq_int, hash, frozen)]
 pub enum LanguageKind {
     A,
     B
@@ -29,7 +29,7 @@ pub enum LanguageKind {
 
 /// The direction of the language
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
-#[pyclass]
+#[pyclass(eq, eq_int, hash, frozen)]
 pub enum DirectionKind {
     AToB,
     BToA,

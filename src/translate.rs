@@ -80,7 +80,7 @@ impl<'a, V> Clone for TranslateConfig<V> where V: VotingMethodMarker + Clone {
 /// Setting if to keep the original word from language A
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
 #[derive(AsRefStr, Display, EnumString)]
-#[pyclass]
+#[pyclass(eq, eq_int, hash, frozen)]
 pub enum KeepOriginalWord {
     Always,
     IfNoTranslation,

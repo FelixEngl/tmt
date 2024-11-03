@@ -6,20 +6,17 @@ use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBu
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
-use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary};
 use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
-use std::fs::File;
-use std::hash::{Hash, Hasher};
-use std::io::BufReader;
+use std::hash::{Hash};
 use std::path::Path;
 use pyo3::{Bound, PyResult};
 use pyo3::prelude::{PyModule, PyModuleMethods};
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
-use crate::topicmodel::dictionary::loader::iate_reader::{IateElement, IateReader, IateReaderError};
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
 
 mod ding;
@@ -797,7 +794,7 @@ mod test {
         let mut default = UnifiedTranslationHelper::default();
 
         let x = default.read_free_dict::<AToB>("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei");
-        if let Err((a, b)) = x {
+        if let Err((_, b)) = x {
             for value in b {
                 println!("{value}")
             }
@@ -806,34 +803,33 @@ mod test {
         println!("{}", current);
 
         let x = default.read_free_dict::<BToA>("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei");
-        if let Err((a, b)) = x {
+        if let Err((_, b)) = x {
             for value in b {
                 println!("{value}")
             }
         }
         let new = default.len();
         println!("{} delta: {}", new, current.diff(&new));
-        current = new;
 
+        current = new;
         let x = default.read_dict_cc::<BToA>("dictionaries/DictCC/dict.txt");
-        if let Err((a, b)) = x {
+        if let Err((_, b)) = x {
             for value in b {
                 println!("{value}")
             }
         }
         let new = default.len();
         println!("{} delta: {}", new, current.diff(&new));
-        current = new;
 
+        current = new;
         let x = default.read_iate_dict::<AToB>("dictionaries/IATE/IATE_export.tbx", Language::English, Language::German);
-        if let Err((a, b)) = x {
+        if let Err((_, b)) = x {
             for value in b {
                 println!("{value}")
             }
         }
         let new = default.len();
         println!("{} delta: {}", new, current.diff(&new));
-        current = new;
 
 
 

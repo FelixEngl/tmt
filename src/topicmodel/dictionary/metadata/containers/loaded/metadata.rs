@@ -1,32 +1,5 @@
 
 
-macro_rules! impl_collect_all {
-    ($($ident:ident: $ty:ty),+) => {
-        impl LoadedMetadata {
-            $(
-                paste::paste! {
-                     pub fn [<collect_all_ $ident>](&self) -> std::collections::HashMap<Option<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol>, tinyset::Set64<$ty>> {
-                        self.iter().map(|value| {
-                            (value.origin(), value.meta().$ident.clone())
-                        }).collect()
-                    }
-
-                    /// A hot vec encoding, mapping the index to DictionaryOriginSymbol
-                    pub fn [<all_raw_ $ident>](&self) -> (Option<tinyset::Set64<$ty>>, Vec<Option<tinyset::Set64<$ty>>>) {
-                         let a = self.general_metadata.get().map(|value| value.$ident.clone());
-                         let b = self.associated_metadata.iter().map(|value| value.get().map(|value| value.$ident.clone())).collect();
-                         (a, b)
-                    }
-                }
-            )+
-        }
-    };
-}
-pub(super) use impl_collect_all;
-
-
-
-
 macro_rules! impl_associated_metadata {
 
     (__is_empty $name: ident $($name2: ident)*) => {
@@ -39,8 +12,80 @@ macro_rules! impl_associated_metadata {
     };
 
     ($($($doc: literal)? $name: ident: $typ: ty),+ $(,)?) => {
-        #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
+
+        #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq)]
+        #[repr(transparent)]
+        #[serde(transparent)]
         pub struct AssociatedMetadata {
+            #[serde(with = "crate::toolkit::once_serializer::OnceCellDef")]
+            inner: std::cell::OnceCell<AssociatedMetadataImpl>
+        }
+
+        impl PartialEq for AssociatedMetadata {
+            fn eq(&self, other: &Self) -> bool {
+                self.inner.get() == other.inner.get()
+            }
+        }
+
+        impl AssociatedMetadata {
+            #[inline(always)]
+            fn get_or_init(&self) -> &AssociatedMetadataImpl {
+                self.inner.get_or_init(AssociatedMetadataImpl::default)
+            }
+
+            #[inline(always)]
+            fn get_mut_or_init(&mut self) -> &mut AssociatedMetadataImpl {
+                self.inner.get_or_init(AssociatedMetadataImpl::default);
+                unsafe {self.inner.get_mut().unwrap_unchecked()}
+            }
+
+            #[inline(always)]
+            pub fn get(&self) -> Option<&AssociatedMetadataImpl> {
+                self.inner.get()
+            }
+
+            #[inline(always)]
+            pub fn get_mut(&mut self) -> Option<&mut AssociatedMetadataImpl> {
+                self.inner.get_mut()
+            }
+
+            #[inline(always)]
+            pub fn is_empty(&self) -> bool {
+                self.inner.get().is_none_or(|value| value.is_empty())
+            }
+
+            #[inline(always)]
+            pub fn update_with(&mut self, other: &AssociatedMetadata) {
+               if let Some(targ) = self.inner.get_mut() {
+                   if let Some(other) = other.inner.get() {
+                       targ.update_with(other)
+                   }
+               }
+            }
+
+            $(
+
+            #[inline(always)]
+            pub fn $name(&self) -> Option<&tinyset::Set64<$typ>> {
+                Some(&self.inner.get()?.$name)
+            }
+
+            paste::paste! {
+                #[inline(always)]
+                pub fn [<add_single_to_ $name>](&mut self, value: $typ) {
+                    self.get_mut_or_init().$name.insert(value);
+                }
+
+                #[inline(always)]
+                pub fn [<add_all_to_ $name>]<I: IntoIterator<Item=$typ>>(&mut self, values: I) {
+                    self.get_mut_or_init().$name.extend(values);
+                }
+            }
+            )+
+        }
+
+        #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
+        pub struct AssociatedMetadataImpl {
             $(
                 $(#[doc=$doc])?
                 #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
@@ -48,8 +93,8 @@ macro_rules! impl_associated_metadata {
             )+
         }
 
-        impl AssociatedMetadata {
-            pub fn update_with(&mut self, other: &AssociatedMetadata) {
+        impl AssociatedMetadataImpl {
+            pub fn update_with(&mut self, other: &AssociatedMetadataImpl) {
                 $(
                     self.$name.extend(other.$name.iter());
                 )+
@@ -74,8 +119,23 @@ macro_rules! impl_associated_metadata {
 
         }
 
-        $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_collect_all! {
-            $($name: $typ),+
+        impl LoadedMetadata {
+            $(
+                paste::paste! {
+                     pub fn [<collect_all_ $name>](&self) -> std::collections::HashMap<Option<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol>, tinyset::Set64<$typ>> {
+                        self.iter().map(|value| {
+                            (value.origin(), value.meta().$name().cloned().unwrap_or_default())
+                        }).collect()
+                    }
+
+                    /// A hot vec encoding, mapping the index to DictionaryOriginSymbol
+                    pub fn [<all_raw_ $name>](&self) -> (Option<tinyset::Set64<$typ>>, Vec<Option<tinyset::Set64<$typ>>>) {
+                         let a = self.general_metadata.get().map(|value| value.$name().cloned()).flatten();
+                         let b = self.associated_metadata.iter().map(|value| value.get().map(|value| value.$name().cloned()).flatten()).collect();
+                         (a, b)
+                    }
+                }
+            )+
         }
     };
 }

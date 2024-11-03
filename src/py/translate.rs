@@ -48,6 +48,7 @@ pub struct PyTranslationConfig {
 #[pymethods]
 impl PyTranslationConfig {
     #[new]
+    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None))]
     pub fn new(
         epsilon: Option<f64>,
         threshold: Option<f64>,
@@ -124,6 +125,7 @@ impl PyTranslationConfig {
 }
 
 #[pyfunction]
+#[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
 pub fn translate_topic_model<'a>(
     topic_model: &PyTopicModel,
     dictionary: &PyDictionary,

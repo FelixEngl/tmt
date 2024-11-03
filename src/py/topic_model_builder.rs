@@ -73,6 +73,7 @@ impl PyTopicModelBuilder {
 #[pymethods]
 impl PyTopicModelBuilder {
     #[new]
+    #[pyo3(signature = (language=None))]
     pub fn new(language: Option<LanguageHintValue>) -> Self {
         Self {
             voc: Vocabulary::new(language.map(Into::into)),
@@ -88,6 +89,7 @@ impl PyTopicModelBuilder {
         self.set_frequency_impl(word_id, frequency);
     }
 
+    #[pyo3(signature = (topic_id, word, probability, frequency=None))]
     fn add_word(&mut self, topic_id: usize, word: String, probability: f64, frequency: Option<u64>) -> PyResult<()> {
         if !probability.is_normal() {
             return Err(PyValueError::new_err("The probability has to be a normal number!"))
@@ -100,14 +102,17 @@ impl PyTopicModelBuilder {
         Ok(())
     }
 
-
+    #[pyo3(signature = (doc_topic_distributions=None))]
     fn set_doc_topic_distributions(&mut self, doc_topic_distributions: Option<DocumentTo<TopicTo<Probability>>>) {
         self.doc_topic_distributions = doc_topic_distributions;
     }
+
+    #[pyo3(signature = (document_lengths=None))]
     fn set_document_lengths(&mut self, document_lengths: Option<DocumentTo<DocumentLength>>) {
         self.document_lengths = document_lengths;
     }
 
+    #[pyo3(signature = (unset_words_become_smallest=None, normalize=None))]
     fn build(
         &self,
         unset_words_become_smallest: Option<bool>,

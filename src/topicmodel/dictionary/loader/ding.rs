@@ -813,7 +813,7 @@ pub mod entry_processing {
             is_interchange: bool,
         ) {
             if output.is_empty() {
-                let mut builder = meta.clone().to_builder();
+                let builder = meta.clone().to_builder();
                 if is_interchange {
                     log::warn!("Interchangeable found at start!");
                 }
@@ -980,7 +980,7 @@ pub mod entry_processing {
     fn process_word_element<T: AsRef<str>>(content: DingWordEntryElement<T>, builder: &mut LoadedMetadataCollectionBuilder<T>) -> Option<WordElement<T>> {
         match content {
             DingWordEntryElement::Category(category) => {
-                if let Some(e) = try_parse_string(
+                if let Some(_) = try_parse_string(
                     category.as_ref(),
                     builder,
                 ) {
@@ -989,7 +989,7 @@ pub mod entry_processing {
                 None
             }
             DingWordEntryElement::Contextualisation(contextualisation) => {
-                if let Some(e) = try_parse_string(
+                if let Some(_) = try_parse_string(
                     contextualisation.as_ref(),
                     builder,
                 ) {
@@ -1117,13 +1117,11 @@ pub mod entry_processing {
 
 #[cfg(test)]
 mod test {
-    use itertools::Itertools;
     use crate::topicmodel::dictionary::loader::ding::entry_processing::process_translation_entry;
     use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
     use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
     use nom::error::VerboseError;
     use nom::Finish;
-    use crate::topicmodel::dictionary::metadata::loaded::AssociatedMetadata;
 
     #[test]
     fn can_parse_alt(){

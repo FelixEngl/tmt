@@ -46,8 +46,8 @@ impl VotingMethod for EmptyVotingMethod {
 }
 
 /// All possible buildin votings
-#[derive(Debug, Copy, Clone, EnumString, IntoStaticStr, Display, VariantArray, Serialize, Deserialize)]
-#[pyclass]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, EnumString, IntoStaticStr, Display, VariantArray, Serialize, Deserialize)]
+#[pyclass(eq, eq_int, hash, frozen)]
 pub enum BuildInVoting {
     OriginalScore,
     Voters,

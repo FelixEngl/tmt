@@ -978,7 +978,6 @@ impl tinyset::set64::Fits64 for Domain {
 #[repr(u64)]
 pub enum Register {
     #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.", serialize = "hum")]
-    #[strum(serialize = "humor.")]
     Humor = 0,
     #[strum(to_string = "vulg.", serialize = "vulg", serialize = "derb")]
     Vulg = 1,

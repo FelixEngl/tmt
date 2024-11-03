@@ -100,6 +100,7 @@ impl PyTopicModel {
         Ok(Self { inner: TopicModel::<_,PyVocabulary>::load(path, true)?.0 })
     }
 
+    #[pyo3(signature = (n=None))]
     fn show_top(&self, n: Option<usize>) -> PyResult<()> {
         if let Some(n) = n {
             self.inner.show(n)?
@@ -117,6 +118,7 @@ impl PyTopicModel {
         self.inner.to_string()
     }
 
+    #[pyo3(signature = (doc, alpha, gamma_threshold, minimum_probability=None, minimum_phi_value=None, per_word_topics=None))]
     fn get_doc_probability(
         &self,
         doc: Vec<String>,
@@ -252,6 +254,7 @@ impl PyTopicModel {
         self.inner.normalize().into()
     }
 
+    #[pyo3(signature = (language=None))]
     #[staticmethod]
     fn builder(language: Option<LanguageHintValue>) -> PyTopicModelBuilder {
         PyTopicModelBuilder::new(language)

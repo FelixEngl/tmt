@@ -1,11 +1,8 @@
-use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::sync::{LazyLock, OnceLock};
-use aho_corasick::AhoCorasick;
 use thiserror::Error;
 use crate::define_aho_matcher;
 use crate::topicmodel::dictionary::loader::iate_reader;
@@ -398,7 +395,7 @@ mod test {
     use std::fs::File;
     use std::io::BufWriter;
     use itertools::Itertools;
-    use super::{process_element, read_iate, TermType};
+    use super::{process_element, read_iate};
 
     #[test]
     fn can_run(){
