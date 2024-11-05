@@ -834,3 +834,9 @@ def read_and_parse_aligned_articles_into(
     """
     ...
 
+
+class MetaField:
+    Languages:
+
+
+class Metadata:

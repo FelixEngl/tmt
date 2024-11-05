@@ -17,14 +17,3 @@ pub mod containers;
 pub mod domain_matrix;
 
 pub use containers::*;
-
-use pyo3::{Bound, PyResult};
-use pyo3::prelude::{PyModule, PyModuleMethods};
-use crate::topicmodel::dictionary::metadata::loaded::register_loaded;
-
-pub(crate) fn register_py_metadata(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<classic::python::SolvedMetadata>()?;
-    register_loaded(m)?;
-    Ok(())
-}
-

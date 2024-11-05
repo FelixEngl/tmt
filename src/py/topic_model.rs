@@ -31,14 +31,16 @@ use crate::py::helpers::{LanguageHintValue};
 use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::PyVocabulary;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
-use crate::{topicmodel};
+use crate::{register_python, topicmodel};
+use crate::toolkit::special_python_values::{SingleOrVec};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, SingleOrList, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
+use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use crate::topicmodel::topic_model::meta::*;
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PyTopicModel {
@@ -51,13 +53,7 @@ impl PyTopicModel {
     }
 }
 
-
-#[derive(Debug, Clone, FromPyObject)]
-enum PlainTranslateArgs {
-    List(Vec<String>),
-    ListList(Vec<Vec<String>>),
-}
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTopicModel {
     #[new]
@@ -122,7 +118,7 @@ impl PyTopicModel {
     fn get_doc_probability(
         &self,
         doc: Vec<String>,
-        alpha: SingleOrList,
+        alpha: SingleOrVec<f64>,
         gamma_threshold: f64,
         minimum_probability: Option<f64>,
         minimum_phi_value: Option<f64>,
@@ -163,8 +159,8 @@ impl PyTopicModel {
         )
     }
 
-    fn translate_by_provided_word_lists(&self, language_hint: LanguageHintValue, word_lists: PlainTranslateArgs) -> PyResult<PyTopicModel> {
-        if let PlainTranslateArgs::ListList(ref word_lists) = word_lists {
+    fn translate_by_provided_word_lists(&self, language_hint: LanguageHintValue, word_lists: SingleOrVec<Vec<String>>) -> PyResult<PyTopicModel> {
+        if let Some(word_lists) = word_lists.as_vec() {
             if word_lists.len() != self.inner.topic_count() {
                 return Err(PyValueError::new_err(format!("Expected {} lists, but got {}", self.inner.topic_count(), word_lists.len())))
             }
@@ -178,7 +174,7 @@ impl PyTopicModel {
         let mut vocab_frequency: Vec<u64>;
 
         let voc = match word_lists {
-            PlainTranslateArgs::List(value) => {
+            SingleOrVec::Single(value) => {
                 let language_hint: LanguageHint = language_hint.into();
                 let voc = PyVocabulary::from(Vocabulary::from((Some(language_hint), value.clone())));
                 vocab_frequency = vec![0u64; voc.len()];
@@ -195,7 +191,7 @@ impl PyTopicModel {
                 }
                 voc
             }
-            PlainTranslateArgs::ListList(word_lists) => {
+            SingleOrVec::Vec(word_lists) => {
                 let mut voc = PyVocabulary::new(Some(language_hint), None);
                 let word_lists = word_lists.into_iter().map(|values| {
                     values.into_iter().map(|value| {
@@ -271,6 +267,7 @@ impl PyTopicModel {
         Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
     }
 }
+
 
 impl BasicTopicModel for PyTopicModel {
     delegate::delegate! {
@@ -409,15 +406,14 @@ impl From<ReadError<Infallible>> for PyErr {
 }
 
 
-pub(crate) fn topic_model_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyTopicModel>()?;
-    Ok(())
-}
+
+
+register_python!(struct PyTopicModel;);
 
 #[cfg(test)]
 mod test {
     use crate::py::helpers::LanguageHintValue;
-    use crate::py::topic_model::{PlainTranslateArgs, PyTopicModel};
+    use crate::py::topic_model::{PyTopicModel};
     use crate::py::vocabulary::PyVocabulary;
     use crate::topicmodel::topic_model::TopicModel;
     use crate::translate::test::create_test_data;
@@ -444,36 +440,34 @@ mod test {
         let model = PyTopicModel::wrap(model_a);
         let tranlation = model.translate_by_provided_word_lists(
             LanguageHintValue::Value("LA".to_string()),
-            PlainTranslateArgs::ListList(
+            vec![
                 vec![
-                    vec![
-                        "a".to_string(),
-                        "b".to_string(),
-                        "c".to_string(),
-                        "d".to_string(),
-                        "e".to_string(),
-                        "f".to_string(),
-                        "g".to_string(),
-                        "h".to_string(),
-                        "i".to_string(),
-                        "j".to_string(),
-                        "k".to_string(),
-                    ],
-                    vec![
-                        "xxx".to_string(),
-                        "b".to_string(),
-                        "yyy".to_string(),
-                        "d".to_string(),
-                        "e".to_string(),
-                        "f".to_string(),
-                        "zzz".to_string(),
-                        "h".to_string(),
-                        "i".to_string(),
-                        "j".to_string(),
-                        "k".to_string(),
-                    ]
+                    "a".to_string(),
+                    "b".to_string(),
+                    "c".to_string(),
+                    "d".to_string(),
+                    "e".to_string(),
+                    "f".to_string(),
+                    "g".to_string(),
+                    "h".to_string(),
+                    "i".to_string(),
+                    "j".to_string(),
+                    "k".to_string(),
+                ],
+                vec![
+                    "xxx".to_string(),
+                    "b".to_string(),
+                    "yyy".to_string(),
+                    "d".to_string(),
+                    "e".to_string(),
+                    "f".to_string(),
+                    "zzz".to_string(),
+                    "h".to_string(),
+                    "i".to_string(),
+                    "j".to_string(),
+                    "k".to_string(),
                 ]
-            )
+            ].into()
         );
 
         tranlation.unwrap().show_top(Some(20)).unwrap()

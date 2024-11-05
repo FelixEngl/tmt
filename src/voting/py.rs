@@ -12,12 +12,14 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap};
 use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, FloatType, IntType, Value};
 use itertools::Itertools;
-use pyo3::{Bound, FromPyObject, IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
+use pyo3::{Bound, FromPyObject, PyAny, pyclass, pymethods, PyResult, IntoPy, PyObject, Python};
 use pyo3::exceptions::{PyKeyError, PyValueError};
-use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
+use pyo3::prelude::{PyAnyMethods};
+use pyo3::types::PyFunction;
+use crate::{impl_py_stub, impl_py_type_def, register_python};
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
 use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodContext, VotingResult};
 
@@ -25,16 +27,31 @@ use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodContext, Vo
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct PyVotingModel<'a> {
-    model: Bound<'a, PyAny>
+    model: Bound<'a, PyFunction>
 }
-
 
 impl<'a> FromPyObject<'a> for PyVotingModel<'a> {
     fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
-        Ok(Self { model: ob.clone() })
+        Ok(Self { model: ob.downcast()?.clone() })
     }
 }
 
+impl_py_stub!(PyVotingModel<'_> {
+        output: {
+            let input_typ = PyContextWithMutableVariables::type_output();
+            let output_typ = PyExprValue::type_output();
+            let name = format!(
+                "typing.Callable[[{inp}, list[{inp}]], {out}]",
+                inp=input_typ.name,
+                out=output_typ.name
+            );
+            TypeInfo {
+                name,
+                import: input_typ.import
+            }
+        }
+    }
+);
 
 unsafe impl Send for PyVotingModel<'_> {}
 unsafe impl Sync for PyVotingModel<'_> {}
@@ -69,31 +86,26 @@ pub enum PyExprValue {
     Empty,
 }
 
-impl From<Value> for PyExprValue {
-    fn from(value: Value) -> Self {
-        match value {
-            Value::String(value) => {PyExprValue::String(value)}
-            Value::Float(value) => {PyExprValue::Float(value)}
-            Value::Int(value) => {PyExprValue::Int(value)}
-            Value::Boolean(value) => {PyExprValue::Boolean(value)}
-            Value::Tuple(value) => {PyExprValue::Tuple(value.into_iter().map(|value| value.into()).collect())}
-            Value::Empty => {PyExprValue::Empty}
+
+
+impl_py_type_def! {
+    PyExprValueSingle; {
+        output: {
+            builder()
+            .add_name("str | float | int | bool | None | list[PyExprValueSingle]")
+            .build_output()
+        }
+        input: {
+            builder()
+            .add_name("str | float | int | bool | None | typing.Sequence[PyExprValueSingle]")
+            .add_import("typing")
+            .build_input()
         }
     }
 }
 
-impl Into<Value> for PyExprValue {
-    fn into(self) -> Value {
-        match self {
-            PyExprValue::String(value) => {Value::String(value)}
-            PyExprValue::Float(value) => {Value::Float(value)}
-            PyExprValue::Int(value) => {Value::Int(value)}
-            PyExprValue::Boolean(value) => {Value::Boolean(value)}
-            PyExprValue::Tuple(value) => {Value::Tuple(value.into_iter().map(|value| value.into()).collect())}
-            PyExprValue::Empty => {Value::Empty}
-        }
-    }
-}
+
+impl_py_stub!(PyExprValue: PyExprValueSingle, Vec<PyExprValueSingle>);
 
 impl<'a> FromPyObject<'a> for PyExprValue {
 
@@ -147,9 +159,36 @@ impl IntoPy<PyObject> for PyExprValue {
 }
 
 
+impl From<Value> for PyExprValue {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::String(value) => {PyExprValue::String(value)}
+            Value::Float(value) => {PyExprValue::Float(value)}
+            Value::Int(value) => {PyExprValue::Int(value)}
+            Value::Boolean(value) => {PyExprValue::Boolean(value)}
+            Value::Tuple(value) => {PyExprValue::Tuple(value.into_iter().map(|value| value.into()).collect())}
+            Value::Empty => {PyExprValue::Empty}
+        }
+    }
+}
+
+impl Into<Value> for PyExprValue {
+    fn into(self) -> Value {
+        match self {
+            PyExprValue::String(value) => {Value::String(value)}
+            PyExprValue::Float(value) => {Value::Float(value)}
+            PyExprValue::Int(value) => {Value::Int(value)}
+            PyExprValue::Boolean(value) => {Value::Boolean(value)}
+            PyExprValue::Tuple(value) => {Value::Tuple(value.into_iter().map(|value| value.into()).collect())}
+            PyExprValue::Empty => {Value::Empty}
+        }
+    }
+}
+
 
 /// This is an unsafe reference to a VotingMethodContext.
 /// If a python user saves them outside of the method, there will be a memory error.
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Copy, Clone, Debug)]
 pub struct PyContextWithMutableVariables {
@@ -159,6 +198,7 @@ pub struct PyContextWithMutableVariables {
 unsafe impl Send for PyContextWithMutableVariables {}
 unsafe impl Sync for PyContextWithMutableVariables {}
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyContextWithMutableVariables {
     pub fn __getitem__(&self, item: &str) -> PyResult<PyExprValue> {
@@ -237,7 +277,7 @@ impl VotingMethodContext for PyContextWithMutableVariables {
     }
 }
 
-pub(crate) fn register_py_voting_filters(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyContextWithMutableVariables>()?;
-    Ok(())
+
+register_python! {
+    struct PyContextWithMutableVariables;
 }

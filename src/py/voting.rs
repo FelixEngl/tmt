@@ -16,16 +16,17 @@ use std::sync::Arc;
 use evalexpr::{Value};
 use nom::error::Error;
 use nom::Finish;
-use pyo3::{Bound, pyclass,  pymethods, PyResult};
+use pyo3::{pyclass,  pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
+use crate::register_python;
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse, InterpretedVoting};
 use crate::voting::registry::VotingRegistry;
-use crate::voting::{register_py_voting_buildin, VotingMethod, VotingMethodContext, VotingResult};
-use crate::voting::py::{PyContextWithMutableVariables, PyExprValue, register_py_voting_filters};
+use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
+use crate::voting::py::{PyContextWithMutableVariables, PyExprValue};
 use crate::voting::traits::VotingMethodMarker;
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default)]
 pub struct PyVotingRegistry {
@@ -38,6 +39,7 @@ impl PyVotingRegistry {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyVotingRegistry {
 
@@ -116,10 +118,12 @@ impl PyVotingRegistry {
 }
 
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug)]
 pub struct PyVoting(InterpretedVoting);
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyVoting {
     #[staticmethod]
@@ -164,11 +168,7 @@ impl<T> From<T> for PyVoting where T: Into<InterpretedVoting> {
 }
 
 
-
-pub(crate) fn voting_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyVoting>()?;
-    m.add_class::<PyVotingRegistry>()?;
-    register_py_voting_buildin(m)?;
-    register_py_voting_filters(m)?;
-    Ok(())
+register_python! {
+    struct PyVoting;
+    struct PyVotingRegistry;
 }

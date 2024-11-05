@@ -34,10 +34,10 @@ use crate::translate::LanguageOrigin::{Origin, Target};
 use crate::variable_names::*;
 use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
 use crate::voting::traits::VotingMethodMarker;
-use pyo3::{Bound, pyclass, pymethods, PyResult};
+use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::external_variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError, VariableProviderOut};
+use crate::register_python;
 use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::translate::TranslateError::IncompatibleLanguages;
@@ -78,9 +78,10 @@ impl<'a, V> Clone for TranslateConfig<V> where V: VotingMethodMarker + Clone {
 
 
 /// Setting if to keep the original word from language A
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
 #[derive(AsRefStr, Display, EnumString)]
-#[pyclass(eq, eq_int, hash, frozen)]
 pub enum KeepOriginalWord {
     Always,
     IfNoTranslation,
@@ -88,6 +89,7 @@ pub enum KeepOriginalWord {
     Never
 }
 
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl KeepOriginalWord {
     pub fn __str__(&self) -> String {
@@ -871,7 +873,11 @@ pub(crate) mod test {
     }
 }
 
-pub(crate) fn register_py_translate(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<KeepOriginalWord>()?;
-    Ok(())
+// pub(crate) fn register_py_translate(m: &Bound<'_, PyModule>) -> PyResult<()> {
+//     m.add_class::<KeepOriginalWord>()?;
+//     Ok(())
+// }
+
+register_python! {
+    enum KeepOriginalWord;
 }

@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! define_aho_matcher {
-    ($v: vis $name: ident for: $($pattern: literal),+ $(,)?) => {
+    ($v: vis static $name: ident = $($pattern: literal)|+ $(|)?) => {
         $v static $name: std::sync::LazyLock<aho_corasick::AhoCorasick> = std::sync::LazyLock::new(
             || {
                 const PATTERN: &'static [&'static str] = &[$($pattern,)+];
@@ -8,7 +8,7 @@ macro_rules! define_aho_matcher {
             }
         );
     };
-    ($v: vis $name: ident as ascii_case_insensitive for: $($pattern: literal),+ $(,)?) => {
+    ($v: vis static $name: ident = $($pattern: literal)|+ $(|)? as ascii_case_insensitive) => {
         $v static $name: std::sync::LazyLock<aho_corasick::AhoCorasick> = std::sync::LazyLock::new(
             || {
                 const PATTERN: &'static [&'static str] = &[$($pattern,)+];
@@ -16,7 +16,7 @@ macro_rules! define_aho_matcher {
             }
         );
     };
-    ($v: vis $name: ident for $b: block: $($pattern: literal),+ $(,)?) => {
+    ($v: vis static $name: ident = $b: block with $($pattern: literal)|+ $(|)?) => {
         $v static $name: std::sync::LazyLock<aho_corasick::AhoCorasick> = std::sync::LazyLock::new(
             || {
                 const PATTERN: &'static [&'static str] = &[$($pattern,)+];

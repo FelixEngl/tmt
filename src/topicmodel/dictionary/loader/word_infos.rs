@@ -9,11 +9,13 @@ use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAtt
 use crate::topicmodel::dictionary::loader::iate_reader::{AdministrativeStatus};
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute, ETermNoteElement};
 use crate::topicmodel::dictionary::metadata::domain_matrix::TopicMatrixIndex;
+use crate::topicmodel::dictionary::metadata::loaded::impl_try_from_as_unpack;
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(name = "DictionaryLanguage", eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[pyclass(name = "DictionaryLanguage", eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Language {
     #[strum(to_string = "en", serialize = "english")]
@@ -28,6 +30,11 @@ pub enum Language {
     Latin = 4
 }
 
+impl_try_from_as_unpack! {
+    Language => Language
+}
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl Language {
     fn __str__(&self) -> &'static str {
@@ -90,11 +97,11 @@ impl From<MsTermsAttribute> for Language {
     }
 }
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Region {
     #[strum(to_string = "BE", serialize = "eBr.", serialize = "Br.", serialize = "BR.", serialize = "Br,")]
@@ -211,6 +218,11 @@ pub enum Region {
     EastSwissGerman = 54
 }
 
+impl_try_from_as_unpack! {
+    Region => Region
+}
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl Region {
     fn __str__(&self) -> &'static str {
@@ -252,11 +264,11 @@ impl Fits64 for Region {
     }
 }
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum PartOfSpeech {
     #[strum(to_string = "noun")]
@@ -303,6 +315,11 @@ pub enum PartOfSpeech {
     RelativePronoun = 20
 }
 
+impl_try_from_as_unpack! {
+    PartOfSpeech => PartOfSpeech
+}
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PartOfSpeech {
     fn __str__(&self) -> &'static str {
@@ -390,10 +407,11 @@ impl From<EPosElement> for PartOfSpeech {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum GrammaticalGender {
     #[strum(to_string = "f", serialize = "female", serialize = "f.")]
@@ -406,6 +424,12 @@ pub enum GrammaticalGender {
     NotFeminine = 3
 }
 
+impl_try_from_as_unpack! {
+    GrammaticalGender => GrammaticalGender
+}
+
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl GrammaticalGender {
     fn __str__(&self) -> &'static str {
@@ -444,10 +468,11 @@ impl From<EGenElement> for GrammaticalGender {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum GrammaticalNumber {
     #[strum(to_string = "sg", serialize = "sg.")]
@@ -467,6 +492,12 @@ pub enum GrammaticalNumber {
     PluralOnly = 6,
 }
 
+impl_try_from_as_unpack! {
+    GrammaticalNumber => GrammaticalNumber
+}
+
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl GrammaticalNumber {
     fn __str__(&self) -> &'static str {
@@ -503,11 +534,11 @@ impl From<ENumberElement> for GrammaticalNumber {
 }
 
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr, EnumCount)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Domain {
     /// Academic Disciplines / Wissenschaft
@@ -940,6 +971,11 @@ pub enum Domain {
     Currency = 139
 }
 
+impl_try_from_as_unpack! {
+    Domain => Domain
+}
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl Domain {
     fn __str__(&self) -> &'static str {
@@ -958,7 +994,7 @@ impl TopicMatrixIndex for Domain {
     }
 }
 
-impl tinyset::set64::Fits64 for Domain {
+impl Fits64 for Domain {
     #[inline(always)]
     unsafe fn from_u64(x: u64) -> Self {
         Domain::try_from(x).unwrap()
@@ -971,10 +1007,11 @@ impl tinyset::set64::Fits64 for Domain {
 
 
 /// In sociolinguistics, a register is a variety of language used for a particular purpose or particular communicative situation
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr, EnumCount)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[pyclass(eq, eq_int, hash, frozen)]
 #[repr(u64)]
 pub enum Register {
     #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.", serialize = "hum")]
@@ -1041,6 +1078,11 @@ pub enum Register {
     IATEPreferred = 22
 }
 
+impl_try_from_as_unpack! {
+    Register => Register
+}
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl Register {
     fn __str__(&self) -> &'static str {
@@ -1098,6 +1140,8 @@ pub enum WordInfo<T> {
     Number(GrammaticalNumber),
     Other(T)
 }
+
+
 
 impl<T> From<T> for WordInfo<T> where T: AsRef<str> {
     fn from(value: T) -> Self {

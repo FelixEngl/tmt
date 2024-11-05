@@ -12,18 +12,18 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::error::Error;
-use std::fmt::Debug;
+use std::fmt::{Debug};
 use std::hash::Hash;
 use std::intrinsics::transmute;
 use std::str::FromStr;
 use std::sync::Arc;
 use derive_more::{From, TryInto};
 use itertools::Itertools;
-use pyo3::{Bound, FromPyObject, IntoPy, PyAny, PyObject, Python};
+use pyo3::{FromPyObject};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use crate::impl_py_stub;
 use crate::py::voting::PyVoting;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::translate::KeepOriginalWord;
@@ -39,17 +39,26 @@ pub trait HasPickleSupport {
     fn from_py_state(values: &HashMap<String, Self::FieldValue>) -> Result<Self, Self::Error> where Self: Sized;
 }
 
-#[derive(FromPyObject, Debug)]
+#[derive(Debug, Clone, FromPyObject)]
 pub enum ListOrInt {
     List(Vec<String>),
     Int(usize)
 }
 
-#[derive(FromPyObject, Debug, Eq, Hash)]
+impl_py_stub!(ListOrInt: Vec<String> {
+    name: "int",
+});
+
+#[derive(Debug, Eq, Hash, Clone, FromPyObject)]
 pub enum LanguageHintValue {
     Hint(LanguageHint),
     Value(String)
 }
+
+impl_py_stub!(LanguageHintValue : LanguageHint {
+    name: "str"
+});
+
 
 impl PartialEq for LanguageHintValue {
     fn eq(&self, other: &Self) -> bool {
@@ -87,12 +96,15 @@ impl Into<LanguageHint> for LanguageHintValue {
     }
 }
 
-
-#[derive(FromPyObject, Debug)]
+#[derive(Debug, Clone, FromPyObject)]
 pub enum KeepOriginalWordArg {
     String(String),
     Value(KeepOriginalWord)
 }
+
+impl_py_stub!(KeepOriginalWordArg: KeepOriginalWord {
+   name: "str"
+});
 
 impl TryInto<KeepOriginalWord> for KeepOriginalWordArg {
     type Error = <KeepOriginalWord as FromStr>::Err;
@@ -114,40 +126,11 @@ pub enum VotingArg<'a> {
     PyCallable(PyVotingModel<'a>),
 }
 
-
-#[derive(FromPyObject)]
-pub enum StrOrIntCatching<'a> {
-    String(String),
-    Int(usize),
-    #[pyo3(transparent)]
-    CatchAll(Bound<'a, PyAny>)
-}
-
-
-#[derive(Debug, Copy, Clone, FromPyObject, From, TryInto)]
-pub enum IntOrFloat {
-    Int(usize),
-    Float(f64)
-}
-
-#[derive(Debug, Clone, Error)]
-pub enum IntOrFloatPyStatsError {
-    #[error("The value for the field {0} is missing!")]
-    ValueMissing(&'static str),
-    #[error("Invalid value at {0} for {1:?}!")]
-    InvalidValueEncountered(&'static str, IntOrFloat)
-}
-
-
-
-impl IntoPy<PyObject> for IntOrFloat {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            IntOrFloat::Int(value) => {value.into_py(py)}
-            IntOrFloat::Float(value) => {value.into_py(py)}
-        }
+impl_py_stub!(
+    VotingArg<'_>: PyVoting, BuildInVoting, PyVotingModel<'_>  {
+        name: "str"
     }
-}
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "SerializableSpecialVec")]
@@ -213,8 +196,6 @@ impl From<SpecialVec> for SerializableSpecialVec {
     }
 }
 
-
-
 #[cfg(test)]
 mod special_vec_test {
     use super::SpecialVec;
@@ -227,30 +208,5 @@ mod special_vec_test {
 
         println!("{:?}", v.as_ref());
         println!("{:?}", r);
-    }
-}
-
-
-
-
-#[derive(Debug, Clone, FromPyObject)]
-pub enum StringSetOrList {
-    List(Vec<String>),
-    Set(HashSet<String>),
-}
-
-impl StringSetOrList {
-    pub fn to_vec(self) -> Vec<String> {
-        match self {
-            StringSetOrList::List(value) => {value}
-            StringSetOrList::Set(value) => {value.into_iter().collect_vec()}
-        }
-    }
-
-    pub fn to_hash_set(self) -> HashSet<String> {
-        match self {
-            StringSetOrList::List(value) => {value.into_iter().collect()}
-            StringSetOrList::Set(value) => {value}
-        }
     }
 }

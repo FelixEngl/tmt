@@ -78,7 +78,7 @@ macro_rules! dict {
 #[cfg(test)]
 mod test {
     use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
-    use crate::topicmodel::dictionary::direction::{A, B, DirectionTuple, Invariant};
+    use crate::topicmodel::dictionary::direction::{DirectionTuple, Invariant, A, B};
     use crate::topicmodel::dictionary::metadata::classic::ClassicMetadataManager;
     use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
     use crate::topicmodel::dictionary::metadata::MetadataManager;

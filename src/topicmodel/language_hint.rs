@@ -18,11 +18,12 @@ use std::fmt::{Display, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{Deref};
 use std::str::FromStr;
-use pyo3::{Bound, pyclass, pymethods, PyResult};
-use pyo3::prelude::{PyModule, PyModuleMethods};
+use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
+use crate::register_python;
 
 /// A hint for the language used.
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass(frozen)]
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -48,6 +49,7 @@ impl Hash for LanguageHint {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl LanguageHint {
 
@@ -63,7 +65,7 @@ impl LanguageHint {
     pub fn __hash__(&self) -> isize {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
-        return hasher.finish() as isize
+        hasher.finish() as isize
     }
 
     pub fn __repr__(&self) -> String {
@@ -113,9 +115,13 @@ impl Deref for LanguageHint {
     }
 }
 
-pub(crate) fn register_py_language_hint(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<LanguageHint>()?;
-    Ok(())
+// pub(crate) fn register_py_language_hint(m: &Bound<'_, PyModule>) -> PyResult<()> {
+//     m.add_class::<LanguageHint>()?;
+//     Ok(())
+// }
+
+register_python! {
+    struct LanguageHint;
 }
 
 #[cfg(test)]

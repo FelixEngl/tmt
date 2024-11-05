@@ -2,10 +2,17 @@ use std::fmt::{Display, Formatter};
 use std::ops::{Add, AddAssign, Deref, DerefMut, RangeBounds, Sub, SubAssign};
 use std::vec::Drain;
 use itertools::Itertools;
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 use strum::EnumCount;
-use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata};
+use crate::register_python;
+use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata, SolvedLoadedMetadata};
 use crate::topicmodel::dictionary::word_infos::{Domain, Register};
+
+
+register_python!(
+    struct TopicMatrix;
+    struct Entry;
+);
 
 pub trait TopicMatrixIndex where Self: Sized + Copy {
     fn get(self) -> usize;
@@ -27,20 +34,33 @@ pub struct TopicMatrix {
     matrix: Vec<Entry>
 }
 
+#[pymethods]
 impl TopicMatrix {
+    #[new]
+    #[pyo3(signature = (capacity=None), text_signature = "capacity: None | int = None")]
+    pub fn new_py(capacity: Option<usize>) -> Self {
+        if let Some(capacity) = capacity {
+            Self::with_capacity(capacity)
+        } else {
+            Self::new()
+        }
+    }
+}
+
+impl TopicMatrix {
+
     pub fn new() -> Self {
         Self {
             matrix: Vec::new()
         }
     }
 
-
-
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             matrix: Vec::with_capacity(capacity)
         }
     }
+
 
     pub fn create_next(&mut self) -> &mut Entry {
         self.matrix.push(Entry::new());
@@ -85,17 +105,44 @@ impl Display for TopicMatrix {
 
 
 
+#[pyclass]
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 #[repr(transparent)]
 pub struct Entry {
     inner: [i32; Domain::COUNT + Register::COUNT]
 }
 
+
+#[pymethods]
 impl Entry {
+    #[new]
     pub fn new() -> Self {
         Self{inner: [0; Domain::COUNT + Register::COUNT]}
     }
 
+    pub fn fill_with_meta(&mut self, meta: SolvedLoadedMetadata) {
+        {
+            let (a, b) = meta.domains();
+            if let Some(a) = a {
+                for x in a {
+                    let domain: Domain = x.clone().try_into().unwrap();
+                    self.increment(domain);
+                }
+            }
+            if let Some(b) = b {
+                for x in b.values().flat_map(|value| value.iter().cloned()) {
+                    let domain: Domain = x.clone().try_into().unwrap();
+                    self.increment(domain);
+                }
+            }
+        }
+
+        meta.registers();
+    }
+}
+
+
+impl Entry {
     pub fn fill_by(&mut self, meta: &AssociatedMetadata) {
         if let Some(meta) = meta.domains() {
             for x in meta.iter() {

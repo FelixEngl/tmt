@@ -22,24 +22,24 @@ pub struct TeiElement {
     ///        - Depth 1: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub text_element: TextElement,
+    pub tei_header_element: TeiHeaderElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 2
     ///        - Depth 1: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub tei_header_element: TeiHeaderElement,
+    pub text_element: TextElement,
 }
 
 impl TeiElementBuilder {
-    pub fn text_element(&mut self, value: TextElement){
-        assert!(self.text_element.is_none(), "text_element in TeiElement should be unset!");
-        self.text_element = Some(value);
-    }
     pub fn tei_header_element(&mut self, value: TeiHeaderElement){
         assert!(self.tei_header_element.is_none(), "tei_header_element in TeiElement should be unset!");
         self.tei_header_element = Some(value);
+    }
+    pub fn text_element(&mut self, value: TextElement){
+        assert!(self.text_element.is_none(), "text_element in TeiElement should be unset!");
+        self.text_element = Some(value);
     }
 }
 
@@ -97,13 +97,13 @@ pub fn read_tei_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"text" => {
-                        let recognized = read_text_element(reader, start)?;
-                        builder.text_element(recognized);
-                    }
                     b"teiHeader" => {
                         let recognized = read_tei_header_element(reader, start)?;
                         builder.tei_header_element(recognized);
+                    }
+                    b"text" => {
+                        let recognized = read_text_element(reader, start)?;
+                        builder.text_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -118,13 +118,13 @@ pub fn read_tei_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"text" => {
-                        let recognized = read_text_element(reader, value)?;
-                        builder.text_element(recognized);
-                    }
                     b"teiHeader" => {
                         let recognized = read_tei_header_element(reader, value)?;
                         builder.tei_header_element(recognized);
+                    }
+                    b"text" => {
+                        let recognized = read_text_element(reader, value)?;
+                        builder.text_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -161,14 +161,14 @@ pub struct TeiHeaderElement {
     ///        - Depth 2: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub encoding_desc_element: EncodingDescElement,
+    pub file_desc_element: FileDescElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 2
     ///        - Depth 2: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub file_desc_element: FileDescElement,
+    pub encoding_desc_element: EncodingDescElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 2
@@ -179,13 +179,13 @@ pub struct TeiHeaderElement {
 }
 
 impl TeiHeaderElementBuilder {
-    pub fn encoding_desc_element(&mut self, value: EncodingDescElement){
-        assert!(self.encoding_desc_element.is_none(), "encoding_desc_element in TeiHeaderElement should be unset!");
-        self.encoding_desc_element = Some(value);
-    }
     pub fn file_desc_element(&mut self, value: FileDescElement){
         assert!(self.file_desc_element.is_none(), "file_desc_element in TeiHeaderElement should be unset!");
         self.file_desc_element = Some(value);
+    }
+    pub fn encoding_desc_element(&mut self, value: EncodingDescElement){
+        assert!(self.encoding_desc_element.is_none(), "encoding_desc_element in TeiHeaderElement should be unset!");
+        self.encoding_desc_element = Some(value);
     }
     pub fn revision_desc_element(&mut self, value: RevisionDescElement){
         assert!(self.revision_desc_element.is_none(), "revision_desc_element in TeiHeaderElement should be unset!");
@@ -243,13 +243,13 @@ pub fn read_tei_header_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"encodingDesc" => {
-                        let recognized = read_encoding_desc_element(reader, start)?;
-                        builder.encoding_desc_element(recognized);
-                    }
                     b"fileDesc" => {
                         let recognized = read_file_desc_element(reader, start)?;
                         builder.file_desc_element(recognized);
+                    }
+                    b"encodingDesc" => {
+                        let recognized = read_encoding_desc_element(reader, start)?;
+                        builder.encoding_desc_element(recognized);
                     }
                     b"revisionDesc" => {
                         let recognized = read_revision_desc_element(reader, start)?;
@@ -268,13 +268,13 @@ pub fn read_tei_header_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"encodingDesc" => {
-                        let recognized = read_encoding_desc_element(reader, value)?;
-                        builder.encoding_desc_element(recognized);
-                    }
                     b"fileDesc" => {
                         let recognized = read_file_desc_element(reader, value)?;
                         builder.file_desc_element(recognized);
+                    }
+                    b"encodingDesc" => {
+                        let recognized = read_encoding_desc_element(reader, value)?;
+                        builder.encoding_desc_element(recognized);
                     }
                     b"revisionDesc" => {
                         let recognized = read_revision_desc_element(reader, value)?;
@@ -316,7 +316,7 @@ pub struct FileDescElement {
     ///        - Depth 3: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub edition_stmt_element: EditionStmtElement,
+    pub title_stmt_element: TitleStmtElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 2
@@ -330,6 +330,13 @@ pub struct FileDescElement {
     ///        - Depth 3: - 1..1
     ///```
     #[builder(setter(custom))]
+    pub notes_stmt_element: NotesStmtElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 3: - 1..1
+    ///```
+    #[builder(setter(custom))]
     pub source_desc_element: SourceDescElement,
     ///Multiplicity:
     ///```text
@@ -337,14 +344,7 @@ pub struct FileDescElement {
     ///        - Depth 3: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub title_stmt_element: TitleStmtElement,
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 2
-    ///        - Depth 3: - 1..1
-    ///```
-    #[builder(setter(custom))]
-    pub notes_stmt_element: NotesStmtElement,
+    pub edition_stmt_element: EditionStmtElement,
 }
 
 impl FileDescElementBuilder {
@@ -352,25 +352,25 @@ impl FileDescElementBuilder {
         assert!(self.extent_element.is_none(), "extent_element in FileDescElement should be unset!");
         self.extent_element = Some(value);
     }
-    pub fn edition_stmt_element(&mut self, value: EditionStmtElement){
-        assert!(self.edition_stmt_element.is_none(), "edition_stmt_element in FileDescElement should be unset!");
-        self.edition_stmt_element = Some(value);
+    pub fn title_stmt_element(&mut self, value: TitleStmtElement){
+        assert!(self.title_stmt_element.is_none(), "title_stmt_element in FileDescElement should be unset!");
+        self.title_stmt_element = Some(value);
     }
     pub fn publication_stmt_element(&mut self, value: PublicationStmtElement){
         assert!(self.publication_stmt_element.is_none(), "publication_stmt_element in FileDescElement should be unset!");
         self.publication_stmt_element = Some(value);
     }
+    pub fn notes_stmt_element(&mut self, value: NotesStmtElement){
+        assert!(self.notes_stmt_element.is_none(), "notes_stmt_element in FileDescElement should be unset!");
+        self.notes_stmt_element = Some(value);
+    }
     pub fn source_desc_element(&mut self, value: SourceDescElement){
         assert!(self.source_desc_element.is_none(), "source_desc_element in FileDescElement should be unset!");
         self.source_desc_element = Some(value);
     }
-    pub fn title_stmt_element(&mut self, value: TitleStmtElement){
-        assert!(self.title_stmt_element.is_none(), "title_stmt_element in FileDescElement should be unset!");
-        self.title_stmt_element = Some(value);
-    }
-    pub fn notes_stmt_element(&mut self, value: NotesStmtElement){
-        assert!(self.notes_stmt_element.is_none(), "notes_stmt_element in FileDescElement should be unset!");
-        self.notes_stmt_element = Some(value);
+    pub fn edition_stmt_element(&mut self, value: EditionStmtElement){
+        assert!(self.edition_stmt_element.is_none(), "edition_stmt_element in FileDescElement should be unset!");
+        self.edition_stmt_element = Some(value);
     }
 }
 
@@ -417,25 +417,25 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
                         let recognized = read_extent_element(reader, start)?;
                         builder.extent_element(recognized);
                     }
-                    b"editionStmt" => {
-                        let recognized = read_edition_stmt_element(reader, start)?;
-                        builder.edition_stmt_element(recognized);
+                    b"titleStmt" => {
+                        let recognized = read_title_stmt_element(reader, start)?;
+                        builder.title_stmt_element(recognized);
                     }
                     b"publicationStmt" => {
                         let recognized = read_publication_stmt_element(reader, start)?;
                         builder.publication_stmt_element(recognized);
                     }
+                    b"notesStmt" => {
+                        let recognized = read_notes_stmt_element(reader, start)?;
+                        builder.notes_stmt_element(recognized);
+                    }
                     b"sourceDesc" => {
                         let recognized = read_source_desc_element(reader, start)?;
                         builder.source_desc_element(recognized);
                     }
-                    b"titleStmt" => {
-                        let recognized = read_title_stmt_element(reader, start)?;
-                        builder.title_stmt_element(recognized);
-                    }
-                    b"notesStmt" => {
-                        let recognized = read_notes_stmt_element(reader, start)?;
-                        builder.notes_stmt_element(recognized);
+                    b"editionStmt" => {
+                        let recognized = read_edition_stmt_element(reader, start)?;
+                        builder.edition_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -454,25 +454,25 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
                         let recognized = read_extent_element(reader, value)?;
                         builder.extent_element(recognized);
                     }
-                    b"editionStmt" => {
-                        let recognized = read_edition_stmt_element(reader, value)?;
-                        builder.edition_stmt_element(recognized);
+                    b"titleStmt" => {
+                        let recognized = read_title_stmt_element(reader, value)?;
+                        builder.title_stmt_element(recognized);
                     }
                     b"publicationStmt" => {
                         let recognized = read_publication_stmt_element(reader, value)?;
                         builder.publication_stmt_element(recognized);
                     }
+                    b"notesStmt" => {
+                        let recognized = read_notes_stmt_element(reader, value)?;
+                        builder.notes_stmt_element(recognized);
+                    }
                     b"sourceDesc" => {
                         let recognized = read_source_desc_element(reader, value)?;
                         builder.source_desc_element(recognized);
                     }
-                    b"titleStmt" => {
-                        let recognized = read_title_stmt_element(reader, value)?;
-                        builder.title_stmt_element(recognized);
-                    }
-                    b"notesStmt" => {
-                        let recognized = read_notes_stmt_element(reader, value)?;
-                        builder.notes_stmt_element(recognized);
+                    b"editionStmt" => {
+                        let recognized = read_edition_stmt_element(reader, value)?;
+                        builder.edition_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -510,6 +510,13 @@ pub struct TitleStmtElement {
     ///        - Depth 4: - 1..1
     ///```
     #[builder(setter(custom))]
+    pub resp_stmt_element: RespStmtElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 4: - 1..1
+    ///```
+    #[builder(setter(custom))]
     pub editor_element: EditorElement,
     ///Multiplicity:
     ///```text
@@ -518,19 +525,16 @@ pub struct TitleStmtElement {
     ///```
     #[builder(setter(custom))]
     pub author_element: AuthorElement,
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 2
-    ///        - Depth 4: - 1..1
-    ///```
-    #[builder(setter(custom))]
-    pub resp_stmt_element: RespStmtElement,
 }
 
 impl TitleStmtElementBuilder {
     pub fn title_element(&mut self, value: TitleElement){
         assert!(self.title_element.is_none(), "title_element in TitleStmtElement should be unset!");
         self.title_element = Some(value);
+    }
+    pub fn resp_stmt_element(&mut self, value: RespStmtElement){
+        assert!(self.resp_stmt_element.is_none(), "resp_stmt_element in TitleStmtElement should be unset!");
+        self.resp_stmt_element = Some(value);
     }
     pub fn editor_element(&mut self, value: EditorElement){
         assert!(self.editor_element.is_none(), "editor_element in TitleStmtElement should be unset!");
@@ -539,10 +543,6 @@ impl TitleStmtElementBuilder {
     pub fn author_element(&mut self, value: AuthorElement){
         assert!(self.author_element.is_none(), "author_element in TitleStmtElement should be unset!");
         self.author_element = Some(value);
-    }
-    pub fn resp_stmt_element(&mut self, value: RespStmtElement){
-        assert!(self.resp_stmt_element.is_none(), "resp_stmt_element in TitleStmtElement should be unset!");
-        self.resp_stmt_element = Some(value);
     }
 }
 
@@ -589,6 +589,10 @@ pub fn read_title_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
                         let recognized = read_title_element(reader, start)?;
                         builder.title_element(recognized);
                     }
+                    b"respStmt" => {
+                        let recognized = read_resp_stmt_element(reader, start)?;
+                        builder.resp_stmt_element(recognized);
+                    }
                     b"editor" => {
                         let recognized = read_editor_element(reader, start)?;
                         builder.editor_element(recognized);
@@ -596,10 +600,6 @@ pub fn read_title_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
                     b"author" => {
                         let recognized = read_author_element(reader, start)?;
                         builder.author_element(recognized);
-                    }
-                    b"respStmt" => {
-                        let recognized = read_resp_stmt_element(reader, start)?;
-                        builder.resp_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -618,6 +618,10 @@ pub fn read_title_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
                         let recognized = read_title_element(reader, value)?;
                         builder.title_element(recognized);
                     }
+                    b"respStmt" => {
+                        let recognized = read_resp_stmt_element(reader, value)?;
+                        builder.resp_stmt_element(recognized);
+                    }
                     b"editor" => {
                         let recognized = read_editor_element(reader, value)?;
                         builder.editor_element(recognized);
@@ -625,10 +629,6 @@ pub fn read_title_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::
                     b"author" => {
                         let recognized = read_author_element(reader, value)?;
                         builder.author_element(recognized);
-                    }
-                    b"respStmt" => {
-                        let recognized = read_resp_stmt_element(reader, value)?;
-                        builder.resp_stmt_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -702,7 +702,7 @@ pub fn read_title_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -773,7 +773,7 @@ pub fn read_author_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -844,7 +844,7 @@ pub fn read_editor_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -868,28 +868,28 @@ pub fn read_editor_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
 pub struct RespStmtElement {
     ///Multiplicity:
     ///```text
-    ///    Encounters: 2
-    ///        - Depth 5: - 1..1
-    ///```
-    #[builder(setter(custom))]
-    pub resp_element: RespElement,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 10
     ///        - Depth 5: - 1..1
     ///```
     #[builder(setter(custom))]
     pub name_element: NameElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 2
+    ///        - Depth 5: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub resp_element: RespElement,
 }
 
 impl RespStmtElementBuilder {
-    pub fn resp_element(&mut self, value: RespElement){
-        assert!(self.resp_element.is_none(), "resp_element in RespStmtElement should be unset!");
-        self.resp_element = Some(value);
-    }
     pub fn name_element(&mut self, value: NameElement){
         assert!(self.name_element.is_none(), "name_element in RespStmtElement should be unset!");
         self.name_element = Some(value);
+    }
+    pub fn resp_element(&mut self, value: RespElement){
+        assert!(self.resp_element.is_none(), "resp_element in RespStmtElement should be unset!");
+        self.resp_element = Some(value);
     }
 }
 
@@ -932,13 +932,13 @@ pub fn read_resp_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"resp" => {
-                        let recognized = read_resp_element(reader, start)?;
-                        builder.resp_element(recognized);
-                    }
                     b"name" => {
                         let recognized = read_name_element(reader, start)?;
                         builder.name_element(recognized);
+                    }
+                    b"resp" => {
+                        let recognized = read_resp_element(reader, start)?;
+                        builder.resp_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -953,13 +953,13 @@ pub fn read_resp_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"resp" => {
-                        let recognized = read_resp_element(reader, value)?;
-                        builder.resp_element(recognized);
-                    }
                     b"name" => {
                         let recognized = read_name_element(reader, value)?;
                         builder.name_element(recognized);
+                    }
+                    b"resp" => {
+                        let recognized = read_resp_element(reader, value)?;
+                        builder.resp_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -976,7 +976,7 @@ pub fn read_resp_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum ERespElement {
     #[strum(serialize="Maintainer")]
     Maintainer,
@@ -1039,7 +1039,7 @@ pub fn read_resp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -1120,7 +1120,7 @@ pub fn read_name_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1290,7 +1290,7 @@ pub fn read_edition_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::rea
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1361,7 +1361,7 @@ pub fn read_extent_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1392,6 +1392,13 @@ pub struct PublicationStmtElement {
     pub publisher_element: PublisherElement,
     ///Multiplicity:
     ///```text
+    ///    Encounters: 2
+    ///        - Depth 4: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub availability_element: AvailabilityElement,
+    ///Multiplicity:
+    ///```text
     ///    Encounters: 10
     ///        - Depth 4: - 1..1
     ///```
@@ -1404,19 +1411,16 @@ pub struct PublicationStmtElement {
     ///```
     #[builder(setter(custom))]
     pub pub_place_element: PubPlaceElement,
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 2
-    ///        - Depth 4: - 1..1
-    ///```
-    #[builder(setter(custom))]
-    pub availability_element: AvailabilityElement,
 }
 
 impl PublicationStmtElementBuilder {
     pub fn publisher_element(&mut self, value: PublisherElement){
         assert!(self.publisher_element.is_none(), "publisher_element in PublicationStmtElement should be unset!");
         self.publisher_element = Some(value);
+    }
+    pub fn availability_element(&mut self, value: AvailabilityElement){
+        assert!(self.availability_element.is_none(), "availability_element in PublicationStmtElement should be unset!");
+        self.availability_element = Some(value);
     }
     pub fn date_element(&mut self, value: DateElement){
         assert!(self.date_element.is_none(), "date_element in PublicationStmtElement should be unset!");
@@ -1425,10 +1429,6 @@ impl PublicationStmtElementBuilder {
     pub fn pub_place_element(&mut self, value: PubPlaceElement){
         assert!(self.pub_place_element.is_none(), "pub_place_element in PublicationStmtElement should be unset!");
         self.pub_place_element = Some(value);
-    }
-    pub fn availability_element(&mut self, value: AvailabilityElement){
-        assert!(self.availability_element.is_none(), "availability_element in PublicationStmtElement should be unset!");
-        self.availability_element = Some(value);
     }
 }
 
@@ -1475,6 +1475,10 @@ pub fn read_publication_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick
                         let recognized = read_publisher_element(reader, start)?;
                         builder.publisher_element(recognized);
                     }
+                    b"availability" => {
+                        let recognized = read_availability_element(reader, start)?;
+                        builder.availability_element(recognized);
+                    }
                     b"date" => {
                         let recognized = read_date_element(reader, start)?;
                         builder.date_element(recognized);
@@ -1482,10 +1486,6 @@ pub fn read_publication_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick
                     b"pubPlace" => {
                         let recognized = read_pub_place_element(reader, start)?;
                         builder.pub_place_element(recognized);
-                    }
-                    b"availability" => {
-                        let recognized = read_availability_element(reader, start)?;
-                        builder.availability_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1504,6 +1504,10 @@ pub fn read_publication_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick
                         let recognized = read_publisher_element(reader, value)?;
                         builder.publisher_element(recognized);
                     }
+                    b"availability" => {
+                        let recognized = read_availability_element(reader, value)?;
+                        builder.availability_element(recognized);
+                    }
                     b"date" => {
                         let recognized = read_date_element(reader, value)?;
                         builder.date_element(recognized);
@@ -1511,10 +1515,6 @@ pub fn read_publication_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick
                     b"pubPlace" => {
                         let recognized = read_pub_place_element(reader, value)?;
                         builder.pub_place_element(recognized);
-                    }
-                    b"availability" => {
-                        let recognized = read_availability_element(reader, value)?;
-                        builder.availability_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1531,7 +1531,7 @@ pub fn read_publication_stmt_element<'a, R: std::io::BufRead>(reader: &mut quick
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum EPublisherElement {
     #[strum(serialize="FreeDict")]
     FreeDict,
@@ -1594,7 +1594,7 @@ pub fn read_publisher_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -1736,21 +1736,13 @@ pub fn read_availability_element<'a, R: std::io::BufRead>(reader: &mut quick_xml
 /// Encounters: 20
 /// ```text
 ///     Depth 4: 1..4
-///         - ProjectDescElement (projectDesc, e_projectDesc): 1..1
 ///         - SourceDescElement (sourceDesc, e_sourceDesc): 4..4
+///         - ProjectDescElement (projectDesc, e_projectDesc): 1..1
 ///     Depth 5: 5..5
 ///         - AvailabilityElement (availability, e_availability): 5..5
 /// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct PElement {
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 4105612
-    ///        - Depth 5: - 0..2
-    ///        - Depth 6: - 0..2
-    ///```
-    #[builder(setter(custom), default)]
-    pub ref_elements: Vec<RefElement>,
     ///Multiplicity:
     ///```text
     ///    Encounters: 2
@@ -1759,6 +1751,14 @@ pub struct PElement {
     ///```
     #[builder(setter(custom), default)]
     pub ptr_element: Option<PtrElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 4105612
+    ///        - Depth 5: - 0..2
+    ///        - Depth 6: - 0..2
+    ///```
+    #[builder(setter(custom), default)]
+    pub ref_elements: Vec<RefElement>,
     /// Content-Count: Overall=38 Unique=17 
     /// Content-Count: Overall=38 Unique=17 
     #[builder(setter(strip_option), default)]
@@ -1766,13 +1766,13 @@ pub struct PElement {
 }
 
 impl PElementBuilder {
-    pub fn ref_element(&mut self, value: RefElement){
-        let targ = self.ref_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
     pub fn ptr_element(&mut self, value: PtrElement){
         assert!(self.ptr_element.is_none(), "ptr_element in PElement should be unset!");
         self.ptr_element = Some(Some(value));
+    }
+    pub fn ref_element(&mut self, value: RefElement){
+        let targ = self.ref_elements.get_or_insert_with(Default::default);
+        targ.push(value);
     }
 }
 
@@ -1815,13 +1815,13 @@ pub fn read_p_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::R
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"ref" => {
-                        let recognized = read_ref_element(reader, start)?;
-                        builder.ref_element(recognized);
-                    }
                     b"ptr" => {
                         let recognized = read_ptr_element(reader, start)?;
                         builder.ptr_element(recognized);
+                    }
+                    b"ref" => {
+                        let recognized = read_ref_element(reader, start)?;
+                        builder.ref_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1836,20 +1836,20 @@ pub fn read_p_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::R
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"ref" => {
-                        let recognized = read_ref_element(reader, value)?;
-                        builder.ref_element(recognized);
-                    }
                     b"ptr" => {
                         let recognized = read_ptr_element(reader, value)?;
                         builder.ptr_element(recognized);
+                    }
+                    b"ref" => {
+                        let recognized = read_ref_element(reader, value)?;
+                        builder.ref_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
                 break;
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1870,8 +1870,8 @@ pub fn read_p_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::R
 ///         - PElement (p, e_p): 0..2
 ///         - PubPlaceElement (pubPlace, e_pubPlace): 1..1
 ///     Depth 6: 0..196
-///         - XrElement (xr, e_xr): 1..196
 ///         - PElement (p, e_p): 0..2
+///         - XrElement (xr, e_xr): 1..196
 /// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct RefElement {
@@ -1887,7 +1887,7 @@ pub struct RefElement {
     ///```
     #[builder(setter(strip_option), default)]
     pub target_attribute: Option<String>,
-    /// Content-Count: Overall=4105612 Unique=599727 
+    /// Content-Count: Overall=4105612 Unique=599726 
     pub content: String,
 }
 
@@ -1947,7 +1947,7 @@ pub fn read_ref_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -2038,7 +2038,7 @@ pub fn read_date_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -2333,7 +2333,7 @@ pub fn read_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -2838,21 +2838,21 @@ pub struct ChangeElement {
     /// Meta Infos
     /// ```text
     /// Depth: 3
-    ///     2020-09-11: 2
-    ///     2020-10-14: 2
-    ///     2020-10-28: 2
-    ///     2022-04-15: 2
-    ///```
-    pub when_attribute: String,
-    /// Meta Infos
-    /// ```text
-    /// Depth: 3
     ///     1.8.1-fd0.1: 2
     ///     1.8.1-fd0.2: 2
     ///     1.8.1-fd0.2.1: 2
     ///     1.9-fd1: 2
     ///```
     pub n_attribute: String,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 3
+    ///     2020-09-11: 2
+    ///     2020-10-14: 2
+    ///     2020-10-28: 2
+    ///     2022-04-15: 2
+    ///```
+    pub when_attribute: String,
     /// Meta Infos
     /// ```text
     /// Depth: 3
@@ -2913,12 +2913,12 @@ pub fn read_change_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
     for attr in start.attributes() {
         match attr {
             Ok(attr) => {
-                if let Some(value) = read_when_attribute(&attr)? {
-                    builder.when_attribute(value);
-                    continue;
-                }
                 if let Some(value) = read_n_attribute(&attr)? {
                     builder.n_attribute(value);
+                    continue;
+                }
+                if let Some(value) = read_when_attribute(&attr)? {
+                    builder.when_attribute(value);
                     continue;
                 }
                 if let Some(value) = read_who_attribute(&attr)? {
@@ -2985,28 +2985,28 @@ pub struct ListElement {
     pub type_attribute: TypeAttribute,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 8
-    ///        - Depth 5: - 1..1
-    ///```
-    #[builder(setter(custom))]
-    pub head_element: HeadElement,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 26
     ///        - Depth 5: - 1..5
     ///```
     #[builder(setter(custom), default)]
     pub item_elements: Vec<ItemElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 8
+    ///        - Depth 5: - 1..1
+    ///```
+    #[builder(setter(custom))]
+    pub head_element: HeadElement,
 }
 
 impl ListElementBuilder {
-    pub fn head_element(&mut self, value: HeadElement){
-        assert!(self.head_element.is_none(), "head_element in ListElement should be unset!");
-        self.head_element = Some(value);
-    }
     pub fn item_element(&mut self, value: ItemElement){
         let targ = self.item_elements.get_or_insert_with(Default::default);
         targ.push(value);
+    }
+    pub fn head_element(&mut self, value: HeadElement){
+        assert!(self.head_element.is_none(), "head_element in ListElement should be unset!");
+        self.head_element = Some(value);
     }
 }
 
@@ -3060,13 +3060,13 @@ pub fn read_list_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"head" => {
-                        let recognized = read_head_element(reader, start)?;
-                        builder.head_element(recognized);
-                    }
                     b"item" => {
                         let recognized = read_item_element(reader, start)?;
                         builder.item_element(recognized);
+                    }
+                    b"head" => {
+                        let recognized = read_head_element(reader, start)?;
+                        builder.head_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -3081,13 +3081,13 @@ pub fn read_list_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"head" => {
-                        let recognized = read_head_element(reader, value)?;
-                        builder.head_element(recognized);
-                    }
                     b"item" => {
                         let recognized = read_item_element(reader, value)?;
                         builder.item_element(recognized);
+                    }
+                    b"head" => {
+                        let recognized = read_head_element(reader, value)?;
+                        builder.head_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -3118,14 +3118,14 @@ pub struct HeadElement {
     ///        - Depth 6: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub date_element: DateElement,
+    pub name_element: NameElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 10
     ///        - Depth 6: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub name_element: NameElement,
+    pub date_element: DateElement,
     /// Content-Count: Overall=24 Unique=6 
     /// Content-Count: Overall=24 Unique=6 
     #[builder(setter(strip_option), default)]
@@ -3133,13 +3133,13 @@ pub struct HeadElement {
 }
 
 impl HeadElementBuilder {
-    pub fn date_element(&mut self, value: DateElement){
-        assert!(self.date_element.is_none(), "date_element in HeadElement should be unset!");
-        self.date_element = Some(value);
-    }
     pub fn name_element(&mut self, value: NameElement){
         assert!(self.name_element.is_none(), "name_element in HeadElement should be unset!");
         self.name_element = Some(value);
+    }
+    pub fn date_element(&mut self, value: DateElement){
+        assert!(self.date_element.is_none(), "date_element in HeadElement should be unset!");
+        self.date_element = Some(value);
     }
 }
 
@@ -3182,13 +3182,13 @@ pub fn read_head_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"date" => {
-                        let recognized = read_date_element(reader, start)?;
-                        builder.date_element(recognized);
-                    }
                     b"name" => {
                         let recognized = read_name_element(reader, start)?;
                         builder.name_element(recognized);
+                    }
+                    b"date" => {
+                        let recognized = read_date_element(reader, start)?;
+                        builder.date_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -3203,20 +3203,20 @@ pub fn read_head_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"date" => {
-                        let recognized = read_date_element(reader, value)?;
-                        builder.date_element(recognized);
-                    }
                     b"name" => {
                         let recognized = read_name_element(reader, value)?;
                         builder.name_element(recognized);
+                    }
+                    b"date" => {
+                        let recognized = read_date_element(reader, value)?;
+                        builder.date_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
                 break;
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -3287,7 +3287,7 @@ pub fn read_item_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -3533,18 +3533,18 @@ pub struct EntryElement {
     pub id_attribute: String,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 977826
-    ///        - Depth 4: - 0..1
-    ///```
-    #[builder(setter(custom), default)]
-    pub sense_element: Option<SenseElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 1443175
     ///        - Depth 4: - 0..1
     ///```
     #[builder(setter(custom), default)]
     pub gram_grp_element: Option<GramGrpElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 977826
+    ///        - Depth 4: - 0..1
+    ///```
+    #[builder(setter(custom), default)]
+    pub sense_element: Option<SenseElement>,
     ///Multiplicity:
     ///```text
     ///    Encounters: 984207
@@ -3555,13 +3555,13 @@ pub struct EntryElement {
 }
 
 impl EntryElementBuilder {
-    pub fn sense_element(&mut self, value: SenseElement){
-        assert!(self.sense_element.is_none(), "sense_element in EntryElement should be unset!");
-        self.sense_element = Some(Some(value));
-    }
     pub fn gram_grp_element(&mut self, value: GramGrpElement){
         assert!(self.gram_grp_element.is_none(), "gram_grp_element in EntryElement should be unset!");
         self.gram_grp_element = Some(Some(value));
+    }
+    pub fn sense_element(&mut self, value: SenseElement){
+        assert!(self.sense_element.is_none(), "sense_element in EntryElement should be unset!");
+        self.sense_element = Some(Some(value));
     }
     pub fn form_element(&mut self, value: FormElement){
         assert!(self.form_element.is_none(), "form_element in EntryElement should be unset!");
@@ -3619,13 +3619,13 @@ pub fn read_entry_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"sense" => {
-                        let recognized = read_sense_element(reader, start)?;
-                        builder.sense_element(recognized);
-                    }
                     b"gramGrp" => {
                         let recognized = read_gram_grp_element(reader, start)?;
                         builder.gram_grp_element(recognized);
+                    }
+                    b"sense" => {
+                        let recognized = read_sense_element(reader, start)?;
+                        builder.sense_element(recognized);
                     }
                     b"form" => {
                         let recognized = read_form_element(reader, start)?;
@@ -3644,13 +3644,13 @@ pub fn read_entry_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"sense" => {
-                        let recognized = read_sense_element(reader, value)?;
-                        builder.sense_element(recognized);
-                    }
                     b"gramGrp" => {
                         let recognized = read_gram_grp_element(reader, value)?;
                         builder.gram_grp_element(recognized);
+                    }
+                    b"sense" => {
+                        let recognized = read_sense_element(reader, value)?;
+                        builder.sense_element(recognized);
                     }
                     b"form" => {
                         let recognized = read_form_element(reader, value)?;
@@ -3701,20 +3701,20 @@ pub struct FormElement {
     pub orth_element: OrthElement,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 984207
-    ///        - Depth 5: - 0..6
-    ///        - Depth 6: - 0..0
-    ///```
-    #[builder(setter(custom), default)]
-    pub form_elements: Vec<FormElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 1443175
     ///        - Depth 5: - 0..0
     ///        - Depth 6: - 0..1
     ///```
     #[builder(setter(custom), default)]
     pub gram_grp_element: Option<GramGrpElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 984207
+    ///        - Depth 5: - 0..6
+    ///        - Depth 6: - 0..0
+    ///```
+    #[builder(setter(custom), default)]
+    pub form_elements: Vec<FormElement>,
     ///Multiplicity:
     ///```text
     ///    Encounters: 406396
@@ -3730,13 +3730,13 @@ impl FormElementBuilder {
         assert!(self.orth_element.is_none(), "orth_element in FormElement should be unset!");
         self.orth_element = Some(value);
     }
-    pub fn form_element(&mut self, value: FormElement){
-        let targ = self.form_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
     pub fn gram_grp_element(&mut self, value: GramGrpElement){
         assert!(self.gram_grp_element.is_none(), "gram_grp_element in FormElement should be unset!");
         self.gram_grp_element = Some(Some(value));
+    }
+    pub fn form_element(&mut self, value: FormElement){
+        let targ = self.form_elements.get_or_insert_with(Default::default);
+        targ.push(value);
     }
     pub fn usg_element(&mut self, value: UsgElement){
         assert!(self.usg_element.is_none(), "usg_element in FormElement should be unset!");
@@ -3798,13 +3798,13 @@ pub fn read_form_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                         let recognized = read_orth_element(reader, start)?;
                         builder.orth_element(recognized);
                     }
-                    b"form" => {
-                        let recognized = read_form_element(reader, start)?;
-                        builder.form_element(recognized);
-                    }
                     b"gramGrp" => {
                         let recognized = read_gram_grp_element(reader, start)?;
                         builder.gram_grp_element(recognized);
+                    }
+                    b"form" => {
+                        let recognized = read_form_element(reader, start)?;
+                        builder.form_element(recognized);
                     }
                     b"usg" => {
                         let recognized = read_usg_element(reader, start)?;
@@ -3827,13 +3827,13 @@ pub fn read_form_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                         let recognized = read_orth_element(reader, value)?;
                         builder.orth_element(recognized);
                     }
-                    b"form" => {
-                        let recognized = read_form_element(reader, value)?;
-                        builder.form_element(recognized);
-                    }
                     b"gramGrp" => {
                         let recognized = read_gram_grp_element(reader, value)?;
                         builder.gram_grp_element(recognized);
+                    }
+                    b"form" => {
+                        let recognized = read_form_element(reader, value)?;
+                        builder.form_element(recognized);
                     }
                     b"usg" => {
                         let recognized = read_usg_element(reader, value)?;
@@ -3860,14 +3860,14 @@ pub fn read_form_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 ///     Depth 5: 1..1
 ///         - FormElement (form, e_form): 1..1
 ///     Depth 6: 0..1
-///         - CitElement (cit, e_cit): 0..0
 ///         - FormElement (form, e_form): 1..1
+///         - CitElement (cit, e_cit): 0..0
 ///     Depth 7: 0..1
 ///         - CitElement (cit, e_cit): 0..1
 /// ```
 #[derive(Debug, Clone, derive_builder::Builder)]
 pub struct OrthElement {
-    /// Content-Count: Overall=992001 Unique=754047 
+    /// Content-Count: Overall=992001 Unique=754046 
     pub content: String,
 }
 
@@ -3916,7 +3916,7 @@ pub fn read_orth_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -3947,38 +3947,6 @@ pub fn read_orth_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 pub struct GramGrpElement {
     ///Multiplicity:
     ///```text
-    ///    Encounters: 738
-    ///        - Depth 5: - 0..0
-    ///        - Depth 7: - 0..1
-    ///```
-    #[builder(setter(custom), default)]
-    pub mood_element: Option<MoodElement>,
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 996
-    ///        - Depth 5: - 0..3
-    ///        - Depth 7: - 0..3
-    ///```
-    #[builder(setter(custom), default)]
-    pub colloc_elements: Vec<CollocElement>,
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 427675
-    ///        - Depth 5: - 0..2
-    ///        - Depth 7: - 0..1
-    ///```
-    #[builder(setter(custom), default)]
-    pub number_elements: Vec<NumberElement>,
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 888668
-    ///        - Depth 5: - 0..2
-    ///        - Depth 7: - 0..2
-    ///```
-    #[builder(setter(custom), default)]
-    pub pos_elements: Vec<PosElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 563197
     ///        - Depth 5: - 0..3
     ///        - Depth 7: - 0..3
@@ -4001,25 +3969,41 @@ pub struct GramGrpElement {
     ///```
     #[builder(setter(custom), default)]
     pub tns_element: Option<TnsElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 738
+    ///        - Depth 5: - 0..0
+    ///        - Depth 7: - 0..1
+    ///```
+    #[builder(setter(custom), default)]
+    pub mood_element: Option<MoodElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 427675
+    ///        - Depth 5: - 0..2
+    ///        - Depth 7: - 0..1
+    ///```
+    #[builder(setter(custom), default)]
+    pub number_elements: Vec<NumberElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 888668
+    ///        - Depth 5: - 0..2
+    ///        - Depth 7: - 0..2
+    ///```
+    #[builder(setter(custom), default)]
+    pub pos_elements: Vec<PosElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 996
+    ///        - Depth 5: - 0..3
+    ///        - Depth 7: - 0..3
+    ///```
+    #[builder(setter(custom), default)]
+    pub colloc_elements: Vec<CollocElement>,
 }
 
 impl GramGrpElementBuilder {
-    pub fn mood_element(&mut self, value: MoodElement){
-        assert!(self.mood_element.is_none(), "mood_element in GramGrpElement should be unset!");
-        self.mood_element = Some(Some(value));
-    }
-    pub fn colloc_element(&mut self, value: CollocElement){
-        let targ = self.colloc_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
-    pub fn number_element(&mut self, value: NumberElement){
-        let targ = self.number_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
-    pub fn pos_element(&mut self, value: PosElement){
-        let targ = self.pos_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
     pub fn gen_element(&mut self, value: GenElement){
         let targ = self.gen_elements.get_or_insert_with(Default::default);
         targ.push(value);
@@ -4031,6 +4015,22 @@ impl GramGrpElementBuilder {
     pub fn tns_element(&mut self, value: TnsElement){
         assert!(self.tns_element.is_none(), "tns_element in GramGrpElement should be unset!");
         self.tns_element = Some(Some(value));
+    }
+    pub fn mood_element(&mut self, value: MoodElement){
+        assert!(self.mood_element.is_none(), "mood_element in GramGrpElement should be unset!");
+        self.mood_element = Some(Some(value));
+    }
+    pub fn number_element(&mut self, value: NumberElement){
+        let targ = self.number_elements.get_or_insert_with(Default::default);
+        targ.push(value);
+    }
+    pub fn pos_element(&mut self, value: PosElement){
+        let targ = self.pos_elements.get_or_insert_with(Default::default);
+        targ.push(value);
+    }
+    pub fn colloc_element(&mut self, value: CollocElement){
+        let targ = self.colloc_elements.get_or_insert_with(Default::default);
+        targ.push(value);
     }
 }
 
@@ -4073,22 +4073,6 @@ pub fn read_gram_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"mood" => {
-                        let recognized = read_mood_element(reader, start)?;
-                        builder.mood_element(recognized);
-                    }
-                    b"colloc" => {
-                        let recognized = read_colloc_element(reader, start)?;
-                        builder.colloc_element(recognized);
-                    }
-                    b"number" => {
-                        let recognized = read_number_element(reader, start)?;
-                        builder.number_element(recognized);
-                    }
-                    b"pos" => {
-                        let recognized = read_pos_element(reader, start)?;
-                        builder.pos_element(recognized);
-                    }
                     b"gen" => {
                         let recognized = read_gen_element(reader, start)?;
                         builder.gen_element(recognized);
@@ -4100,6 +4084,22 @@ pub fn read_gram_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
                     b"tns" => {
                         let recognized = read_tns_element(reader, start)?;
                         builder.tns_element(recognized);
+                    }
+                    b"mood" => {
+                        let recognized = read_mood_element(reader, start)?;
+                        builder.mood_element(recognized);
+                    }
+                    b"number" => {
+                        let recognized = read_number_element(reader, start)?;
+                        builder.number_element(recognized);
+                    }
+                    b"pos" => {
+                        let recognized = read_pos_element(reader, start)?;
+                        builder.pos_element(recognized);
+                    }
+                    b"colloc" => {
+                        let recognized = read_colloc_element(reader, start)?;
+                        builder.colloc_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -4114,22 +4114,6 @@ pub fn read_gram_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"mood" => {
-                        let recognized = read_mood_element(reader, value)?;
-                        builder.mood_element(recognized);
-                    }
-                    b"colloc" => {
-                        let recognized = read_colloc_element(reader, value)?;
-                        builder.colloc_element(recognized);
-                    }
-                    b"number" => {
-                        let recognized = read_number_element(reader, value)?;
-                        builder.number_element(recognized);
-                    }
-                    b"pos" => {
-                        let recognized = read_pos_element(reader, value)?;
-                        builder.pos_element(recognized);
-                    }
                     b"gen" => {
                         let recognized = read_gen_element(reader, value)?;
                         builder.gen_element(recognized);
@@ -4141,6 +4125,22 @@ pub fn read_gram_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
                     b"tns" => {
                         let recognized = read_tns_element(reader, value)?;
                         builder.tns_element(recognized);
+                    }
+                    b"mood" => {
+                        let recognized = read_mood_element(reader, value)?;
+                        builder.mood_element(recognized);
+                    }
+                    b"number" => {
+                        let recognized = read_number_element(reader, value)?;
+                        builder.number_element(recognized);
+                    }
+                    b"pos" => {
+                        let recognized = read_pos_element(reader, value)?;
+                        builder.pos_element(recognized);
+                    }
+                    b"colloc" => {
+                        let recognized = read_colloc_element(reader, value)?;
+                        builder.colloc_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -4157,7 +4157,7 @@ pub fn read_gram_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum EGenElement {
     #[strum(serialize="neut")]
     Neut,
@@ -4226,7 +4226,7 @@ pub fn read_gen_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -4248,7 +4248,7 @@ pub fn read_gen_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum EPosElement {
     #[strum(serialize="n")]
     N,
@@ -4333,7 +4333,7 @@ pub fn read_pos_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -4355,7 +4355,7 @@ pub fn read_pos_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum ENumberElement {
     #[strum(serialize="sg")]
     Sg,
@@ -4422,7 +4422,7 @@ pub fn read_number_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -4461,13 +4461,6 @@ pub struct SenseElement {
     pub xr_elements: Vec<XrElement>,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 1815674
-    ///        - Depth 5: - 0..56
-    ///```
-    #[builder(setter(custom), default)]
-    pub cit_elements: Vec<CitElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 196167
     ///        - Depth 5: - 0..4
     ///```
@@ -4480,15 +4473,18 @@ pub struct SenseElement {
     ///```
     #[builder(setter(custom), default)]
     pub usg_elements: Vec<UsgElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1815674
+    ///        - Depth 5: - 0..56
+    ///```
+    #[builder(setter(custom), default)]
+    pub cit_elements: Vec<CitElement>,
 }
 
 impl SenseElementBuilder {
     pub fn xr_element(&mut self, value: XrElement){
         let targ = self.xr_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
-    pub fn cit_element(&mut self, value: CitElement){
-        let targ = self.cit_elements.get_or_insert_with(Default::default);
         targ.push(value);
     }
     pub fn note_element(&mut self, value: NoteElement){
@@ -4497,6 +4493,10 @@ impl SenseElementBuilder {
     }
     pub fn usg_element(&mut self, value: UsgElement){
         let targ = self.usg_elements.get_or_insert_with(Default::default);
+        targ.push(value);
+    }
+    pub fn cit_element(&mut self, value: CitElement){
+        let targ = self.cit_elements.get_or_insert_with(Default::default);
         targ.push(value);
     }
 }
@@ -4544,10 +4544,6 @@ pub fn read_sense_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                         let recognized = read_xr_element(reader, start)?;
                         builder.xr_element(recognized);
                     }
-                    b"cit" => {
-                        let recognized = read_cit_element(reader, start)?;
-                        builder.cit_element(recognized);
-                    }
                     b"note" => {
                         let recognized = read_note_element(reader, start)?;
                         builder.note_element(recognized);
@@ -4555,6 +4551,10 @@ pub fn read_sense_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                     b"usg" => {
                         let recognized = read_usg_element(reader, start)?;
                         builder.usg_element(recognized);
+                    }
+                    b"cit" => {
+                        let recognized = read_cit_element(reader, start)?;
+                        builder.cit_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -4573,10 +4573,6 @@ pub fn read_sense_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                         let recognized = read_xr_element(reader, value)?;
                         builder.xr_element(recognized);
                     }
-                    b"cit" => {
-                        let recognized = read_cit_element(reader, value)?;
-                        builder.cit_element(recognized);
-                    }
                     b"note" => {
                         let recognized = read_note_element(reader, value)?;
                         builder.note_element(recognized);
@@ -4584,6 +4580,10 @@ pub fn read_sense_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                     b"usg" => {
                         let recognized = read_usg_element(reader, value)?;
                         builder.usg_element(recognized);
+                    }
+                    b"cit" => {
+                        let recognized = read_cit_element(reader, value)?;
+                        builder.cit_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -4624,28 +4624,12 @@ pub struct CitElement {
     pub type_attribute: TypeAttribute,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 196167
-    ///        - Depth 6: - 0..4
-    ///        - Depth 7: - 0..0
-    ///```
-    #[builder(setter(custom), default)]
-    pub note_elements: Vec<NoteElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 1807880
     ///        - Depth 6: - 1..1
     ///        - Depth 7: - 0..1
     ///```
     #[builder(setter(custom), default)]
     pub quote_element: Option<QuoteElement>,
-    ///Multiplicity:
-    ///```text
-    ///    Encounters: 992001
-    ///        - Depth 6: - 0..0
-    ///        - Depth 7: - 0..1
-    ///```
-    #[builder(setter(custom), default)]
-    pub orth_element: Option<OrthElement>,
     ///Multiplicity:
     ///```text
     ///    Encounters: 1815674
@@ -4656,12 +4640,12 @@ pub struct CitElement {
     pub cit_elements: Vec<CitElement>,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 406396
-    ///        - Depth 6: - 0..6
-    ///        - Depth 7: - 0..0
+    ///    Encounters: 992001
+    ///        - Depth 6: - 0..0
+    ///        - Depth 7: - 0..1
     ///```
     #[builder(setter(custom), default)]
-    pub usg_elements: Vec<UsgElement>,
+    pub orth_element: Option<OrthElement>,
     ///Multiplicity:
     ///```text
     ///    Encounters: 1443175
@@ -4670,32 +4654,48 @@ pub struct CitElement {
     ///```
     #[builder(setter(custom), default)]
     pub gram_grp_element: Option<GramGrpElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 406396
+    ///        - Depth 6: - 0..6
+    ///        - Depth 7: - 0..0
+    ///```
+    #[builder(setter(custom), default)]
+    pub usg_elements: Vec<UsgElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 196167
+    ///        - Depth 6: - 0..4
+    ///        - Depth 7: - 0..0
+    ///```
+    #[builder(setter(custom), default)]
+    pub note_elements: Vec<NoteElement>,
 }
 
 impl CitElementBuilder {
-    pub fn note_element(&mut self, value: NoteElement){
-        let targ = self.note_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
     pub fn quote_element(&mut self, value: QuoteElement){
         assert!(self.quote_element.is_none(), "quote_element in CitElement should be unset!");
         self.quote_element = Some(Some(value));
-    }
-    pub fn orth_element(&mut self, value: OrthElement){
-        assert!(self.orth_element.is_none(), "orth_element in CitElement should be unset!");
-        self.orth_element = Some(Some(value));
     }
     pub fn cit_element(&mut self, value: CitElement){
         let targ = self.cit_elements.get_or_insert_with(Default::default);
         targ.push(value);
     }
-    pub fn usg_element(&mut self, value: UsgElement){
-        let targ = self.usg_elements.get_or_insert_with(Default::default);
-        targ.push(value);
+    pub fn orth_element(&mut self, value: OrthElement){
+        assert!(self.orth_element.is_none(), "orth_element in CitElement should be unset!");
+        self.orth_element = Some(Some(value));
     }
     pub fn gram_grp_element(&mut self, value: GramGrpElement){
         assert!(self.gram_grp_element.is_none(), "gram_grp_element in CitElement should be unset!");
         self.gram_grp_element = Some(Some(value));
+    }
+    pub fn usg_element(&mut self, value: UsgElement){
+        let targ = self.usg_elements.get_or_insert_with(Default::default);
+        targ.push(value);
+    }
+    pub fn note_element(&mut self, value: NoteElement){
+        let targ = self.note_elements.get_or_insert_with(Default::default);
+        targ.push(value);
     }
 }
 
@@ -4749,29 +4749,29 @@ pub fn read_cit_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"note" => {
-                        let recognized = read_note_element(reader, start)?;
-                        builder.note_element(recognized);
-                    }
                     b"quote" => {
                         let recognized = read_quote_element(reader, start)?;
                         builder.quote_element(recognized);
-                    }
-                    b"orth" => {
-                        let recognized = read_orth_element(reader, start)?;
-                        builder.orth_element(recognized);
                     }
                     b"cit" => {
                         let recognized = read_cit_element(reader, start)?;
                         builder.cit_element(recognized);
                     }
-                    b"usg" => {
-                        let recognized = read_usg_element(reader, start)?;
-                        builder.usg_element(recognized);
+                    b"orth" => {
+                        let recognized = read_orth_element(reader, start)?;
+                        builder.orth_element(recognized);
                     }
                     b"gramGrp" => {
                         let recognized = read_gram_grp_element(reader, start)?;
                         builder.gram_grp_element(recognized);
+                    }
+                    b"usg" => {
+                        let recognized = read_usg_element(reader, start)?;
+                        builder.usg_element(recognized);
+                    }
+                    b"note" => {
+                        let recognized = read_note_element(reader, start)?;
+                        builder.note_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -4786,29 +4786,29 @@ pub fn read_cit_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"note" => {
-                        let recognized = read_note_element(reader, value)?;
-                        builder.note_element(recognized);
-                    }
                     b"quote" => {
                         let recognized = read_quote_element(reader, value)?;
                         builder.quote_element(recognized);
-                    }
-                    b"orth" => {
-                        let recognized = read_orth_element(reader, value)?;
-                        builder.orth_element(recognized);
                     }
                     b"cit" => {
                         let recognized = read_cit_element(reader, value)?;
                         builder.cit_element(recognized);
                     }
-                    b"usg" => {
-                        let recognized = read_usg_element(reader, value)?;
-                        builder.usg_element(recognized);
+                    b"orth" => {
+                        let recognized = read_orth_element(reader, value)?;
+                        builder.orth_element(recognized);
                     }
                     b"gramGrp" => {
                         let recognized = read_gram_grp_element(reader, value)?;
                         builder.gram_grp_element(recognized);
+                    }
+                    b"usg" => {
+                        let recognized = read_usg_element(reader, value)?;
+                        builder.usg_element(recognized);
+                    }
+                    b"note" => {
+                        let recognized = read_note_element(reader, value)?;
+                        builder.note_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -4845,7 +4845,7 @@ pub struct QuoteElement {
     ///     En: 50894
     ///```
     pub lang_attribute: LangAttribute,
-    /// Content-Count: Overall=1807880 Unique=840067 
+    /// Content-Count: Overall=1807880 Unique=840066 
     pub content: String,
 }
 
@@ -4905,7 +4905,7 @@ pub fn read_quote_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -5132,7 +5132,7 @@ pub fn read_usg_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -5205,7 +5205,7 @@ pub fn read_subc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -5278,7 +5278,7 @@ pub fn read_colloc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -5292,7 +5292,7 @@ pub fn read_colloc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum ETnsElement {
     #[strum(serialize="past")]
     Past,
@@ -5359,7 +5359,7 @@ pub fn read_tns_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -5381,7 +5381,7 @@ pub fn read_tns_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum EMoodElement {
     #[strum(serialize="indicative")]
     Indicative,
@@ -5446,7 +5446,7 @@ pub fn read_mood_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -5493,12 +5493,12 @@ pub fn read_version_attribute(attr: &quick_xml::events::attributes::Attribute) -
 }
 
 // Attribute - lang - a_lang - LangAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum LangAttribute {
-    #[strum(serialize="en")]
-    En,
     #[strum(serialize="de")]
     De,
+    #[strum(serialize="en")]
+    En,
 }
 
 /// Attribute - lang - a_lang
@@ -5514,7 +5514,7 @@ pub fn read_lang_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
 }
 
 // Attribute - status - a_status - StatusAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum StatusAttribute {
     #[strum(serialize="free")]
     Free,
@@ -5557,40 +5557,40 @@ pub fn read_when_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
 }
 
 // Attribute - type - a_type - TypeAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum TypeAttribute {
-    #[strum(serialize="reg")]
-    Reg,
-    #[strum(serialize="status")]
-    Status,
-    #[strum(serialize="syn")]
-    Syn,
-    #[strum(serialize="time")]
-    Time,
-    #[strum(serialize="dom")]
-    Dom,
-    #[strum(serialize="abbrev")]
-    Abbrev,
-    #[strum(serialize="colloc")]
-    Colloc,
-    #[strum(serialize="style")]
-    Style,
     #[strum(serialize="trans")]
     Trans,
+    #[strum(serialize="syn")]
+    Syn,
+    #[strum(serialize="style")]
+    Style,
+    #[strum(serialize="dom")]
+    Dom,
+    #[strum(serialize="colloc")]
+    Colloc,
     #[strum(serialize="see")]
     See,
-    #[strum(serialize="bulleted")]
-    Bulleted,
-    #[strum(serialize="lang")]
-    Lang,
-    #[strum(serialize="example")]
-    Example,
     #[strum(serialize="geo")]
     Geo,
-    #[strum(serialize="infl")]
-    Infl,
+    #[strum(serialize="status")]
+    Status,
     #[strum(serialize="hint")]
     Hint,
+    #[strum(serialize="bulleted")]
+    Bulleted,
+    #[strum(serialize="example")]
+    Example,
+    #[strum(serialize="infl")]
+    Infl,
+    #[strum(serialize="lang")]
+    Lang,
+    #[strum(serialize="time")]
+    Time,
+    #[strum(serialize="reg")]
+    Reg,
+    #[strum(serialize="abbrev")]
+    Abbrev,
 }
 
 /// Attribute - type - a_type

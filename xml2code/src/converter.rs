@@ -504,9 +504,10 @@ impl CodeElement {
                     element_inner.add_attributes_raw(empty.attributes(), depth)?;
                 }
                 Event::Text(value) => {
-                    let target = value.unescape()?.trim();
-                    if !target.is_empty() {
-                        self.add_text(target);
+                    let target = value.unescape()?;
+                    let trimmed = target.trim();
+                    if !trimmed.is_empty() {
+                        self.add_text(trimmed);
                     }
                 }
                 Event::Eof => {

@@ -36,13 +36,12 @@ use approx::relative_eq;
 
 use flate2::Compression;
 use itertools::{Itertools, multiunzip, multizip};
-use pyo3::{FromPyObject};
 use rand::thread_rng;
 use rand_distr::Distribution;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::toolkit::normal_number::IsNormalNumber;
-
+use crate::toolkit::special_python_values::{SingleOrVec};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::enums::ReadError::NotFinishedError;
 use crate::topicmodel::traits::{ToParseableString};
@@ -982,36 +981,16 @@ pub enum WordIdOrUnknown<T> {
     Unknown(T)
 }
 
-#[derive(FromPyObject)]
-pub enum SingleOrList {
-    Single(f64),
-    List(Vec<f64>)
-}
-
-impl From<f64> for SingleOrList {
-    fn from(value: f64) -> Self {
-        SingleOrList::Single(value)
-    }
-}
-
-
-impl From<Vec<f64>> for SingleOrList {
-    fn from(value: Vec<f64>) -> Self {
-        SingleOrList::List(value)
-    }
-}
-
-
 /// Allows to inference probabilities for documents by a topic model.
 pub struct TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
     topic_model: &'a Model,
-    alpha: SingleOrList,
+    alpha: SingleOrVec<f64>,
     gamma_threshold: f64,
     _word_type: PhantomData<(T, V)>
 }
 
 impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where Model: TopicModelWithVocabulary<T, V>, V: BasicVocabulary<T> {
-    pub fn new(topic_model: &'a Model, alpha: SingleOrList, gamma_threshold: f64) -> Self {
+    pub fn new(topic_model: &'a Model, alpha: SingleOrVec<f64>, gamma_threshold: f64) -> Self {
         Self { topic_model, alpha, gamma_threshold, _word_type: PhantomData }
     }
 }
@@ -1093,20 +1072,18 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
             dot(exp_e_log_theta_d, exp_e_log_beta_d).map(|value| value + f64::EPSILON).collect_vec()
         }
 
-        fn calculate_gamma_d(alpha: &SingleOrList, exp_e_log_theta_d: &Vec<f64>, exp_e_log_beta_d: &Vec<Vec<f64>>, counts: &Vec<usize>, phinorm: &Vec<f64>) -> Vec<f64> {
+        fn calculate_gamma_d(alpha: &SingleOrVec<f64>, exp_e_log_theta_d: &Vec<f64>, exp_e_log_beta_d: &Vec<Vec<f64>>, counts: &Vec<usize>, phinorm: &Vec<f64>) -> Vec<f64> {
             let a = counts.iter().zip_eq(phinorm.iter()).map(|(ct, phi)| *ct as f64 / phi).collect_vec();
             let b = transpose(exp_e_log_beta_d).collect_vec();
 
             match alpha {
-                SingleOrList::Single(alpha) => {
+                SingleOrVec::Single(alpha) => {
                     dot(&a, &b).zip_eq(exp_e_log_theta_d.iter()).map(|(dot, theta)| dot * theta + alpha).collect()
                 }
-                SingleOrList::List(value) => {
+                SingleOrVec::Vec(value) => {
                     dot(&a, &b).zip_eq(exp_e_log_theta_d.iter()).zip(value.iter()).map(|((dot, theta), alpha)| dot * theta + alpha).collect()
                 }
             }
-
-
         }
 
         fn calculate_stats<'a>(exp_e_log_theta_d: &'a Vec<f64>, counts: &Vec<usize>, phinorm: &Vec<f64>) -> Map<Iter<'a, f64>, impl FnMut(&'a f64) -> Vec<f64> + 'a> {
@@ -1220,7 +1197,6 @@ mod test {
     use itertools::{assert_equal, Itertools};
     use crate::topicmodel::enums::TopicModelVersion;
     use crate::topicmodel::topic_model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
-    use crate::topicmodel::topic_model::SingleOrList::Single;
     use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary, VocabularyMut};
 
 
@@ -1320,7 +1296,7 @@ mod test {
         ).unwrap().0;
         println!("{}", (std::time::Instant::now() - before).as_secs());
         // model.show_10().unwrap();
-        let infer = TopicModelInferencer::new(&model, Single(0.001), 0.1);
+        let infer = TopicModelInferencer::new(&model, 0.001.into(), 0.1);
         let inferred = infer.get_doc_probability_for_default(vec!["hello".to_string(), "religion".to_string()], true);
         println!("{:?}", inferred.0);
     }

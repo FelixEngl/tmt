@@ -7,15 +7,15 @@ pub struct MartifElement {
     /// Meta Infos
     /// ```text
     /// Depth: 0
-    ///     Tbx: 2
-    ///```
-    pub type_attribute: TypeAttribute,
-    /// Meta Infos
-    /// ```text
-    /// Depth: 0
     ///     EnUs: 2
     ///```
     pub lang_attribute: LangAttribute,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     Tbx: 2
+    ///```
+    pub type_attribute: TypeAttribute,
     ///Multiplicity:
     ///```text
     ///    Encounters: 2
@@ -81,12 +81,12 @@ pub fn read_martif_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::read
     for attr in start.attributes() {
         match attr {
             Ok(attr) => {
-                if let Some(value) = read_type_attribute(&attr)? {
-                    builder.type_attribute(value);
-                    continue;
-                }
                 if let Some(value) = read_lang_attribute(&attr)? {
                     builder.lang_attribute(value);
+                    continue;
+                }
+                if let Some(value) = read_type_attribute(&attr)? {
+                    builder.type_attribute(value);
                     continue;
                 }
             }
@@ -254,24 +254,24 @@ pub struct FileDescElement {
     ///        - Depth 3: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub source_desc_element: SourceDescElement,
+    pub title_stmt_element: TitleStmtElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 2
     ///        - Depth 3: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub title_stmt_element: TitleStmtElement,
+    pub source_desc_element: SourceDescElement,
 }
 
 impl FileDescElementBuilder {
-    pub fn source_desc_element(&mut self, value: SourceDescElement){
-        assert!(self.source_desc_element.is_none(), "source_desc_element in FileDescElement should be unset!");
-        self.source_desc_element = Some(value);
-    }
     pub fn title_stmt_element(&mut self, value: TitleStmtElement){
         assert!(self.title_stmt_element.is_none(), "title_stmt_element in FileDescElement should be unset!");
         self.title_stmt_element = Some(value);
+    }
+    pub fn source_desc_element(&mut self, value: SourceDescElement){
+        assert!(self.source_desc_element.is_none(), "source_desc_element in FileDescElement should be unset!");
+        self.source_desc_element = Some(value);
     }
 }
 
@@ -314,13 +314,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"sourceDesc" => {
-                        let recognized = read_source_desc_element(reader, start)?;
-                        builder.source_desc_element(recognized);
-                    }
                     b"titleStmt" => {
                         let recognized = read_title_stmt_element(reader, start)?;
                         builder.title_stmt_element(recognized);
+                    }
+                    b"sourceDesc" => {
+                        let recognized = read_source_desc_element(reader, start)?;
+                        builder.source_desc_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -335,13 +335,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"sourceDesc" => {
-                        let recognized = read_source_desc_element(reader, value)?;
-                        builder.source_desc_element(recognized);
-                    }
                     b"titleStmt" => {
                         let recognized = read_title_stmt_element(reader, value)?;
                         builder.title_stmt_element(recognized);
+                    }
+                    b"sourceDesc" => {
+                        let recognized = read_source_desc_element(reader, value)?;
+                        builder.source_desc_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -514,7 +514,7 @@ pub fn read_title_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -684,7 +684,7 @@ pub fn read_p_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::R
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1030,28 +1030,28 @@ pub struct LangSetElement {
     pub lang_attribute: LangAttribute,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 81535
-    ///        - Depth 5: - 1..7
-    ///```
-    #[builder(setter(custom), default)]
-    pub ntig_elements: Vec<NtigElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 40246
     ///        - Depth 5: - 0..1
     ///```
     #[builder(setter(custom), default)]
     pub descrip_grp_element: Option<DescripGrpElement>,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 81535
+    ///        - Depth 5: - 1..7
+    ///```
+    #[builder(setter(custom), default)]
+    pub ntig_elements: Vec<NtigElement>,
 }
 
 impl LangSetElementBuilder {
-    pub fn ntig_element(&mut self, value: NtigElement){
-        let targ = self.ntig_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
     pub fn descrip_grp_element(&mut self, value: DescripGrpElement){
         assert!(self.descrip_grp_element.is_none(), "descrip_grp_element in LangSetElement should be unset!");
         self.descrip_grp_element = Some(Some(value));
+    }
+    pub fn ntig_element(&mut self, value: NtigElement){
+        let targ = self.ntig_elements.get_or_insert_with(Default::default);
+        targ.push(value);
     }
 }
 
@@ -1105,13 +1105,13 @@ pub fn read_lang_set_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"ntig" => {
-                        let recognized = read_ntig_element(reader, start)?;
-                        builder.ntig_element(recognized);
-                    }
                     b"descripGrp" => {
                         let recognized = read_descrip_grp_element(reader, start)?;
                         builder.descrip_grp_element(recognized);
+                    }
+                    b"ntig" => {
+                        let recognized = read_ntig_element(reader, start)?;
+                        builder.ntig_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1126,13 +1126,13 @@ pub fn read_lang_set_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"ntig" => {
-                        let recognized = read_ntig_element(reader, value)?;
-                        builder.ntig_element(recognized);
-                    }
                     b"descripGrp" => {
                         let recognized = read_descrip_grp_element(reader, value)?;
                         builder.descrip_grp_element(recognized);
+                    }
+                    b"ntig" => {
+                        let recognized = read_ntig_element(reader, value)?;
+                        builder.ntig_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1322,7 +1322,7 @@ pub fn read_descrip_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::rea
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1449,24 +1449,24 @@ pub struct TermGrpElement {
     ///        - Depth 7: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub term_note_element: TermNoteElement,
+    pub term_element: TermElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 81535
     ///        - Depth 7: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub term_element: TermElement,
+    pub term_note_element: TermNoteElement,
 }
 
 impl TermGrpElementBuilder {
-    pub fn term_note_element(&mut self, value: TermNoteElement){
-        assert!(self.term_note_element.is_none(), "term_note_element in TermGrpElement should be unset!");
-        self.term_note_element = Some(value);
-    }
     pub fn term_element(&mut self, value: TermElement){
         assert!(self.term_element.is_none(), "term_element in TermGrpElement should be unset!");
         self.term_element = Some(value);
+    }
+    pub fn term_note_element(&mut self, value: TermNoteElement){
+        assert!(self.term_note_element.is_none(), "term_note_element in TermGrpElement should be unset!");
+        self.term_note_element = Some(value);
     }
 }
 
@@ -1509,13 +1509,13 @@ pub fn read_term_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"termNote" => {
-                        let recognized = read_term_note_element(reader, start)?;
-                        builder.term_note_element(recognized);
-                    }
                     b"term" => {
                         let recognized = read_term_element(reader, start)?;
                         builder.term_element(recognized);
+                    }
+                    b"termNote" => {
+                        let recognized = read_term_note_element(reader, start)?;
+                        builder.term_note_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1530,13 +1530,13 @@ pub fn read_term_grp_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"termNote" => {
-                        let recognized = read_term_note_element(reader, value)?;
-                        builder.term_note_element(recognized);
-                    }
                     b"term" => {
                         let recognized = read_term_element(reader, value)?;
                         builder.term_element(recognized);
+                    }
+                    b"termNote" => {
+                        let recognized = read_term_note_element(reader, value)?;
+                        builder.term_note_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1627,7 +1627,7 @@ pub fn read_term_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1641,7 +1641,7 @@ pub fn read_term_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum ETermNoteElement {
     #[strum(serialize="Noun")]
     Noun,
@@ -1731,7 +1731,7 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -1754,14 +1754,14 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
 
 
 // Attribute - type - a_type - TypeAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum TypeAttribute {
-    #[strum(serialize="tbx")]
-    Tbx,
-    #[strum(serialize="definition")]
-    Definition,
     #[strum(serialize="partofspeech")]
     PartOfSpeech,
+    #[strum(serialize="definition")]
+    Definition,
+    #[strum(serialize="tbx")]
+    Tbx,
 }
 
 /// Attribute - type - a_type
@@ -1777,14 +1777,14 @@ pub fn read_type_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
 }
 
 // Attribute - lang - a_lang - LangAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum LangAttribute {
     #[strum(serialize="en-us")]
     EnUs,
-    #[strum(serialize="en-gb")]
-    EnGb,
     #[strum(serialize="de-de")]
     DeDe,
+    #[strum(serialize="en-gb")]
+    EnGb,
 }
 
 /// Attribute - lang - a_lang

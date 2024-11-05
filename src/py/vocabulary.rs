@@ -21,18 +21,18 @@ use std::ops::{Deref, DerefMut, Range};
 use std::path::{PathBuf};
 use std::slice::Iter;
 use std::vec::IntoIter;
-use pyo3::{Bound, pyclass, pyfunction, pymethods, PyRef, PyResult, wrap_pyfunction};
+use pyo3::{pyclass, pyfunction, pymethods, PyRef, PyResult};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::dictionary::{PyDictionary};
 use crate::py::helpers::{LanguageHintValue, ListOrInt};
+use crate::register_python;
 use crate::topicmodel::create_topic_model_specific_dictionary as create_topic_model_specific_dictionary_impl;
-use crate::topicmodel::language_hint::{LanguageHint, register_py_language_hint};
+use crate::topicmodel::language_hint::{LanguageHint};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyVocabulary {
@@ -45,6 +45,7 @@ impl PyVocabulary {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyVocabulary {
     #[new]
@@ -306,6 +307,7 @@ impl From<Option<LanguageHint>> for  PyVocabulary {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyVocIter {
@@ -321,6 +323,7 @@ impl PyVocIter {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyVocIter {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -332,18 +335,19 @@ impl PyVocIter {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 pub fn create_topic_model_specific_dictionary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
     create_topic_model_specific_dictionary_impl(dictionary, vocabulary)
 }
 
-pub(crate) fn vocabulary_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyVocabulary>()?;
-    m.add_class::<PyVocIter>()?;
-    register_py_language_hint(m)?;
-    m.add_function(wrap_pyfunction!(create_topic_model_specific_dictionary, m)?)?;
-    Ok(())
+
+register_python! {
+    struct PyVocabulary;
+    struct PyVocIter;
+    fn create_topic_model_specific_dictionary;
 }
+
 
 #[cfg(test)]
 mod test {

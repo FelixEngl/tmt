@@ -14,22 +14,26 @@
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash};
-use pyo3::prelude::{PyModule, PyModuleMethods};
-use pyo3::{Bound, pyclass, PyResult};
+use pyo3::{pyclass};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs, EnumString, IntoStaticStr};
+use crate::register_python;
 
 /// The language
-#[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
+#[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
 pub enum LanguageKind {
     A,
     B
 }
 
 /// The direction of the language
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
 pub enum DirectionKind {
     AToB,
     BToA,
@@ -203,8 +207,7 @@ impl Direction for Invariant {
 }
 
 
-pub(crate) fn register_py_directions(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<DirectionKind>()?;
-    m.add_class::<LanguageKind>()?;
-    Ok(())
+register_python! {
+    enum DirectionKind;
+    enum LanguageKind;
 }

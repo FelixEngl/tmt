@@ -1,5 +1,5 @@
 macro_rules! create_adders {
-    (interned: $ident:ident, $interner_method: ident: $ty:ty, $($tt:tt)*) => {
+    (interned: $ident:ident, $interner_name:ident, $interner_method: ident: $ty:ty, $($tt:tt)*) => {
         impl<'a> LoadedMetadataMutRef<'a> {
             paste::paste! {
                 pub fn [<add_single_to_ $ident _default>](&mut self, value: impl AsRef<str>) {
@@ -52,6 +52,32 @@ macro_rules! create_adders {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_all_to_ $ident _by_dict>](name, values)
                 }
+
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I) -> Result<(), WrongResolvedValueError> {
+                    use crate::topicmodel::dictionary::metadata::containers::MetadataMutReference;
+                    let data = values
+                        .into_iter()
+                        .map(|value| value.resolve_with_interner(&mut self.meta_container_mut().$interner_name))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    self.meta
+                        .get_mut_general_metadata()
+                        .[<add_all_to_ $ident>](data);
+                    Ok(())
+                }
+
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> Result<(), WrongResolvedValueError> {
+                    use crate::topicmodel::dictionary::metadata::containers::MetadataMutReference;
+                    let data = values
+                        .into_iter()
+                        .map(|value| value.resolve_with_interner(&mut self.meta_container_mut().$interner_name))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let name = self.add_dictionary(dictionary_name);
+                    self.meta
+                        .get_or_create(name)
+                        .[<add_all_to_ $ident>](data);
+                    Ok(())
+                }
             }
         }
 
@@ -90,6 +116,21 @@ macro_rules! create_adders {
                 pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: impl AsRef<str>, values: I) {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_all_to_ $ident _by_dict>](name, values)
+                }
+
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I) -> Result<(), WrongResolvedValueError> {
+                    let data = values.into_iter().cloned().map(TryInto::try_into).collect::<Result<Vec<_>, _>>()?;
+                    self.[<add_all_to_ $ident _default>](data);
+                    Ok(())
+                }
+
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> Result<(), WrongResolvedValueError> {
+                    let data = values.into_iter().cloned().map(TryInto::try_into).collect::<Result<Vec<_>, _>>()?;
+                    let name = self.add_dictionary(dictionary_name);
+                    self.meta
+                        .get_or_create(name)
+                        .[<add_all_to_ $ident>](data);
+                    Ok(())
                 }
             }
         }
@@ -155,8 +196,8 @@ macro_rules! create_mut_ref_implementation {
                 self.meta_container_mut().intern_dictionary_origin(name)
             }
 
-            pub fn update_with_solved(&mut self, solved: &$crate::topicmodel::dictionary::metadata::containers::loaded::SolvedLoadedMetadata) {
-                solved.write_into(self);
+            pub fn update_with_solved(&mut self, solved: &$crate::topicmodel::dictionary::metadata::containers::loaded::SolvedLoadedMetadata) -> Result<(), WrongResolvedValueError> {
+                solved.write_into(self)
             }
         }
 

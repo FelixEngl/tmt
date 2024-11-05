@@ -16,10 +16,10 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
 use evalexpr::{Value};
-use pyo3::{Bound, pyclass, PyErr, pymethods, PyResult};
+use pyo3::{pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::external_variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
+use crate::register_python;
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::topic_model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
 use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
@@ -31,6 +31,7 @@ impl From<VariableProviderError> for PyErr {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone, Default)]
 pub struct PyVariableProvider {
@@ -42,7 +43,7 @@ pub struct PyVariableProvider {
     per_topic_per_word_b: HashMap<usize, HashMap<String, Vec<(String, Value)>>>,
 }
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyVariableProvider {
 
@@ -184,7 +185,6 @@ impl AsVariableProvider<String> for PyVariableProvider {
     }
 }
 
-pub(crate) fn variable_provider_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyVariableProvider>()?;
-    Ok(())
+register_python! {
+    struct PyVariableProvider;
 }

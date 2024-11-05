@@ -19,10 +19,17 @@ use pyo3::{pyclass, pymethods, PyResult};
 use crate::py::helpers::LanguageHintValue;
 use crate::py::topic_model::PyTopicModel;
 use crate::py::vocabulary::PyVocabulary;
+use crate::register_python;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::topicmodel::topic_model::{DocumentLength, DocumentTo, Probability, TopicModel, TopicTo, WordFrequency, WordTo};
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
+
+register_python! {
+    struct PyTopicModelBuilder;
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default)]
 pub struct PyTopicModelBuilder {
@@ -70,6 +77,7 @@ impl PyTopicModelBuilder {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTopicModelBuilder {
     #[new]

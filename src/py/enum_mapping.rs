@@ -16,6 +16,7 @@ use thiserror::Error;
 
 macro_rules! map_enum {
     (impl $dst: ident for $src: ident {$($variant: ident),+}) => {
+        #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
         #[pyo3::pyclass(eq, eq_int, hash, frozen)]
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
         #[derive(strum::EnumString, strum::IntoStaticStr, strum::Display)]
@@ -42,6 +43,7 @@ macro_rules! map_enum {
     };
 
     (impl $dst: ident for non_exhaustive $src: ident {$($variant: ident),+}) => {
+        #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
         #[pyo3::pyclass(eq, eq_int, hash, frozen)]
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
         #[derive(strum::EnumString, strum::IntoStaticStr, strum::Display)]

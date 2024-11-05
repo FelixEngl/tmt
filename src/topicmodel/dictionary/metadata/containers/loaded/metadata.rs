@@ -13,6 +13,14 @@ macro_rules! impl_associated_metadata {
 
     ($($($doc: literal)? $name: ident: $typ: ty),+ $(,)?) => {
 
+
+        paste::paste! {
+            $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_general_metadata!(
+                $($name, [<$name:camel>], $typ;)+
+            );
+        }
+
+
         #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq)]
         #[repr(transparent)]
         #[serde(transparent)]
@@ -49,6 +57,8 @@ macro_rules! impl_associated_metadata {
                 self.inner.get_mut()
             }
 
+            // Returns true if the underlying element is either unintitialized or it is initialized
+            // but does not conatin any values.
             #[inline(always)]
             pub fn is_empty(&self) -> bool {
                 self.inner.get().is_none_or(|value| value.is_empty())
@@ -65,17 +75,20 @@ macro_rules! impl_associated_metadata {
 
             $(
 
+            /// Get the values of the field
             #[inline(always)]
             pub fn $name(&self) -> Option<&tinyset::Set64<$typ>> {
                 Some(&self.inner.get()?.$name)
             }
 
             paste::paste! {
+                /// Adds a single value to the specified field
                 #[inline(always)]
                 pub fn [<add_single_to_ $name>](&mut self, value: $typ) {
                     self.get_mut_or_init().$name.insert(value);
                 }
 
+                /// Adds all values to the specified field
                 #[inline(always)]
                 pub fn [<add_all_to_ $name>]<I: IntoIterator<Item=$typ>>(&mut self, values: I) {
                     self.get_mut_or_init().$name.extend(values);
@@ -119,16 +132,12 @@ macro_rules! impl_associated_metadata {
 
         }
 
+
+
         impl LoadedMetadata {
             $(
                 paste::paste! {
-                     pub fn [<collect_all_ $name>](&self) -> std::collections::HashMap<Option<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol>, tinyset::Set64<$typ>> {
-                        self.iter().map(|value| {
-                            (value.origin(), value.meta().$name().cloned().unwrap_or_default())
-                        }).collect()
-                    }
-
-                    /// A hot vec encoding, mapping the index to DictionaryOriginSymbol
+                    /// Get all values of a specific field.
                     pub fn [<all_raw_ $name>](&self) -> (Option<tinyset::Set64<$typ>>, Vec<Option<tinyset::Set64<$typ>>>) {
                          let a = self.general_metadata.get().map(|value| value.$name().cloned()).flatten();
                          let b = self.associated_metadata.iter().map(|value| value.get().map(|value| value.$name().cloned()).flatten()).collect();
@@ -136,6 +145,7 @@ macro_rules! impl_associated_metadata {
                     }
                 }
             )+
+
         }
     };
 }
@@ -150,6 +160,121 @@ todo:
  */
 
 pub(super) use impl_associated_metadata;
+
+
+macro_rules! impl_general_metadata {
+    ($($normal_name:ident, $enum_var_name: ident, $typ: ty);+ $(;)?) => {
+
+        #[derive(Clone, Copy, Hash, Eq, PartialEq, Debug)]
+        pub enum GeneralMetadataEntry<'a> {
+            $($enum_var_name(&'a tinyset::Set64<$typ>),
+            )+
+        }
+
+        #[derive(Clone, Hash, Eq, PartialEq, Debug, serde::Deserialize, serde::Serialize)]
+        pub enum GeneralMetadata {
+            $($enum_var_name(Option<tinyset::Set64<$typ>>, Vec<Option<tinyset::Set64<$typ>>>),
+            )+
+        }
+
+        impl GeneralMetadata {
+            $(
+            fn $normal_name(default: Option<tinyset::Set64<$typ>>, dicts: Vec<Option<tinyset::Set64<$typ>>>) -> GeneralMetadata {
+                GeneralMetadata::$enum_var_name(default, dicts)
+            }
+            )+
+
+            pub fn get_default(&self) -> Option<GeneralMetadataEntry> {
+                match self {
+                    $(
+                    GeneralMetadata::$enum_var_name(Some(default), _) => {
+                        Some(GeneralMetadataEntry::$enum_var_name(default))
+                    }
+                    )+
+                    _ => None
+                }
+            }
+
+            pub fn get_dicts(&self) -> Vec<Option<GeneralMetadataEntry>> {
+                match self {
+                    $(
+                    GeneralMetadata::$enum_var_name(_, value) => {
+                        value
+                        .iter()
+                        .map(|value| value.as_ref().map(GeneralMetadataEntry::$enum_var_name))
+                        .collect()
+                    }
+                    )+
+                }
+            }
+
+            pub fn get_for_dict<S: string_interner::Symbol>(&self, idx: S) -> Option<GeneralMetadataEntry> {
+                match self {
+                    $(
+                    GeneralMetadata::$enum_var_name(_, value) => {
+                        value
+                        .get(idx.to_usize())?
+                        .as_ref()
+                        .map(GeneralMetadataEntry::$enum_var_name)
+                    }
+                    )+
+                }
+            }
+        }
+
+        impl LoadedMetadata {
+            pub fn all_fields(&self) -> enum_map::EnumMap<MetaField, GeneralMetadata> {
+                enum_map::enum_map! {
+                    $(
+                        MetaField::$enum_var_name => GeneralMetadata::$normal_name(
+                            self.general_metadata.get().map(|value| value.$normal_name().cloned()).flatten(),
+                            self.associated_metadata.iter().map(|value| value.get().map(|value| value.$normal_name().cloned()).flatten()).collect()
+                        ),
+                    )+
+                }
+            }
+
+            pub fn field(&self, field: MetaField) -> GeneralMetadata {
+                match field {
+                    $(
+                        MetaField::$enum_var_name => GeneralMetadata::$normal_name(
+                            self.general_metadata.get().map(|value| value.$normal_name().cloned()).flatten(),
+                            self.associated_metadata.iter().map(|value| value.get().map(|value| value.$normal_name().cloned()).flatten()).collect()
+                        ),
+                    )+
+                }
+            }
+
+            /// set dict to None for default
+            pub fn single_field_value<S: string_interner::Symbol>(&self, field: MetaField, dict: Option<S>) -> Option<GeneralMetadataEntry> {
+                match field {
+                    $(
+                        MetaField::$enum_var_name => {
+                            if let Some(dict) = dict {
+                                self
+                                .associated_metadata
+                                .get(dict.to_usize())?
+                                .get()
+                                .map(
+                                    |value|
+                                    value
+                                    .$normal_name()
+                                    .map(GeneralMetadataEntry::$enum_var_name)
+                                )
+                                .flatten()
+                            } else {
+                                self.general_metadata.get()?.$normal_name().map(GeneralMetadataEntry::$enum_var_name)
+                            }
+                        }
+                    )+
+                }
+            }
+        }
+
+    };
+}
+
+pub(super) use impl_general_metadata;
 
 macro_rules! create_metadata_impl {
     ($($tt:tt)+) => {
@@ -223,9 +348,6 @@ macro_rules! create_metadata_impl {
                 self.inner.get() == other.inner.get()
             }
         }
-
-
-
 
         impl Default for LoadedMetadata {
             fn default() -> Self {

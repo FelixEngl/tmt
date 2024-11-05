@@ -25,11 +25,11 @@ use crate::voting::aggregations::AggregationKind::{AvgOf, GAvgOf, SumOf};
 use crate::voting::display::{DisplayTree, IndentWriter};
 use crate::voting::traits::{LimitableVotingMethodMarker, RootVotingMethodMarker};
 use crate::voting::VotingExpressionError::{Eval, NoValue};
-use pyo3::{Bound, pyclass, pymethods, PyResult};
+use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::{PyModule, PyModuleMethods};
 use serde::{Deserialize, Serialize};
 use crate::py::voting::PyVoting;
+use crate::register_python;
 use crate::voting::parser::InterpretedVoting::Limited;
 use crate::voting::py::{PyContextWithMutableVariables, PyExprValue};
 
@@ -41,13 +41,14 @@ impl VotingMethodMarker for EmptyVotingMethod {}
 
 impl VotingMethod for EmptyVotingMethod {
     fn execute<A, B>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
-        return Err(NoValue)
+        Err(NoValue)
     }
 }
 
 /// All possible buildin votings
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, EnumString, IntoStaticStr, Display, VariantArray, Serialize, Deserialize)]
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, EnumString, IntoStaticStr, Display, VariantArray, Serialize, Deserialize)]
 pub enum BuildInVoting {
     OriginalScore,
     Voters,
@@ -69,6 +70,8 @@ pub enum BuildInVoting {
     PCombSum
 }
 
+// TODO: Causes Panic
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl BuildInVoting {
     pub fn limit(&self, limit: usize) -> PyResult<PyVoting> {
@@ -94,7 +97,7 @@ impl BuildInVoting {
 
     #[staticmethod]
     #[pyo3(name="from_string")]
-    pub fn from_string_py(s: &str) -> PyResult<Self> {
+    pub fn from_string_py(s: &str) -> PyResult<BuildInVoting> {
         s.try_into().map_err(|value: strum::ParseError| PyValueError::new_err(value.to_string()))
     }
 
@@ -319,7 +322,7 @@ impl DisplayTree for BuildInVoting {
     }
 }
 
-pub(crate) fn register_py_voting_buildin(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<BuildInVoting>()?;
-    Ok(())
+
+register_python! {
+    enum BuildInVoting;
 }

@@ -11,5 +11,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
 [tool.maturin]
+python-source = "python"
+module-name = "ldatranslate.main_mod"
 features = ["pyo3/extension-module"]

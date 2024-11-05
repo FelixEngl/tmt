@@ -36,9 +36,8 @@ use fst::raw::Fst;
 use thiserror::Error;
 use fst::Set;
 use itertools::Itertools;
-use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pyfunction, pymethods, PyObject, PyRef, PyResult, Python, wrap_pyfunction};
+use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pyfunction, pymethods, PyObject, PyRef, PyResult, Python};
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
-use pyo3::prelude::{PyModule, PyModuleMethods};
 use rayon::prelude::*;
 use rust_stemmers::{Algorithm};
 use serde::{Deserialize, Serialize};
@@ -50,13 +49,18 @@ use zip::{ZipArchive, ZipWriter};
 use zip::read::ZipFile;
 use zip::result::ZipResult;
 use crate::aligned_data::{AlignedArticle, Article, IntoJsonPickleDeserializerIterator, JsonPickleDeserializerIterator};
+use crate::{impl_py_stub, register_python};
 use crate::py::enum_mapping::map_enum;
-use crate::py::helpers::{LanguageHintValue, StringSetOrList, SpecialVec};
+use crate::py::helpers::{LanguageHintValue, SpecialVec};
 use crate::py::vocabulary::PyVocabulary;
 use crate::tokenizer::{Tokenizer, TokenizerBuilder};
+use crate::toolkit::special_python_values::{VecOrSet};
 use crate::toolkit::with_ref_of::{SupportsWithRef, WithValue};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::vocabulary::{BasicVocabulary};
+
+#[cfg(feature = "gen_python_api")]
+use crate::toolkit::pystub::TypeInfoBuilder;
 
 
 enum JsonPickleIterWrapper<'a, T> {
@@ -81,6 +85,7 @@ impl<'a, T> Iterator for JsonPickleIterWrapper<'a, T> where T: DeserializeOwned 
 
 type DeserializeIter<'a> = JsonPickleIterWrapper<'a, PyAlignedArticle>;
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct PyAlignedArticleIter {
@@ -95,6 +100,7 @@ impl PyAlignedArticleIter {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyAlignedArticleIter {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -131,6 +137,7 @@ impl Iterator for PyAlignedArticleIter {
 
 type ParsedDeserializeIter<'a> = JsonPickleIterWrapper<'a, PyTokenizedAlignedArticle>;
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct PyAlignedArticleParsedIter {
@@ -145,6 +152,7 @@ impl PyAlignedArticleParsedIter {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyAlignedArticleParsedIter {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -179,6 +187,7 @@ impl Iterator for PyAlignedArticleParsedIter {
 }
 
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct PyParsedAlignedArticleIter {
@@ -193,6 +202,7 @@ impl PyParsedAlignedArticleIter {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyParsedAlignedArticleIter {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -236,6 +246,7 @@ fn read_aligned_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: bool) -> 
     })
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (path, with_pickle=None))]
 pub fn read_aligned_articles(path: PathBuf, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleIter> {
@@ -366,7 +377,7 @@ fn read_aligned_parsed_articles_impl<'a>(path: impl AsRef<Path>, with_pickle: Op
     })
 }
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (path, with_pickle=None))]
 pub fn read_aligned_parsed_articles(path: PathBuf, with_pickle: Option<bool>) -> PyResult<PyAlignedArticleParsedIter> {
@@ -380,6 +391,8 @@ pub fn read_aligned_parsed_articles(path: PathBuf, with_pickle: Option<bool>) ->
 
 type TokenizingDeserializeIter<'a> = Map<WithValue<DeserializeIter<'a>, Arc<HashMap<LanguageHint, Tokenizer<'a>>>>, fn((Arc<HashMap<LanguageHint, Tokenizer>>, Result<PyAlignedArticle, Error>)) -> Result<PyTokenizedAlignedArticle, Error>>;
 
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (path, processor, with_pickle=None))]
 pub fn read_and_parse_aligned_articles(path: PathBuf, processor: PyAlignedArticleProcessor, with_pickle: Option<bool>) -> PyResult<PyParsedAlignedArticleIter>{
@@ -421,6 +434,7 @@ enum WriteIntoError {
 #[error("The max value {1} is smaller than the min value (0)!")]
 pub struct TokenCountFilterError(usize, usize);
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass(get_all)]
 #[derive(Copy, Clone, Default, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
 pub struct TokenCountFilter {
@@ -500,7 +514,7 @@ impl TokenCountFilter {
     }
 }
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl TokenCountFilter {
     #[new]
@@ -598,6 +612,7 @@ mod test_filter {
 }
 
 /// The options for storing.
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Default, Debug)]
 pub struct StoreOptions {
@@ -611,6 +626,7 @@ pub struct StoreOptions {
     show_progress_after: Option<NonZeroUsize>,
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl StoreOptions {
     #[new]
@@ -648,7 +664,7 @@ impl StoreOptions {
     }
 }
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (path_in, path_out, processor, filter=None, store_options=None, with_pickle=None))]
 pub fn read_and_parse_aligned_articles_into(
@@ -836,17 +852,56 @@ pub fn read_and_parse_aligned_articles_into(
 }
 
 
-#[derive(Debug, FromPyObject)]
+#[derive(Debug, FromPyObject, Clone)]
 pub enum PyAlignedArticleArgUnion<TArticle> {
     Map(HashMap<LanguageHintValue, TArticle>),
     List(Vec<TArticle>)
 }
 
-#[derive(Debug, Clone)]
+#[cfg(feature = "gen_python_api")]
+impl<T> pyo3_stub_gen::PyStubType for PyAlignedArticleArgUnion<T> where T: pyo3_stub_gen::PyStubType {
+    fn type_output() -> pyo3_stub_gen::TypeInfo {
+        TypeInfoBuilder::new()
+            .with::<HashMap<LanguageHintValue, T>>()
+            .with::<Vec<T>>()
+            .build_output()
+    }
+
+    fn type_input() -> pyo3_stub_gen::TypeInfo {
+        TypeInfoBuilder::new()
+            .with::<HashMap<LanguageHintValue, T>>()
+            .with::<Vec<T>>()
+            .build_input()
+    }
+}
+
+#[derive(Debug, Clone, FromPyObject)]
 pub enum PyAlignedArticleResultUnion<TAlignedArticle, TArticle> {
     Normal(TAlignedArticle),
     WithDoublets(TAlignedArticle, Vec<TArticle>)
 }
+
+#[cfg(feature = "gen_python_api")]
+impl<TAlignedArticle, TArticle> pyo3_stub_gen::PyStubType for PyAlignedArticleResultUnion<TAlignedArticle, TArticle>
+where
+    TAlignedArticle: pyo3_stub_gen::PyStubType,
+    TArticle: pyo3_stub_gen::PyStubType
+{
+    fn type_output() -> pyo3_stub_gen::TypeInfo {
+        TypeInfoBuilder::new()
+            .with::<TAlignedArticle>()
+            .with::<(TAlignedArticle, Vec<TArticle>)>()
+            .build_output()
+    }
+
+    fn type_input() -> pyo3_stub_gen::TypeInfo {
+        TypeInfoBuilder::new()
+            .with::<TAlignedArticle>()
+            .with::<(TAlignedArticle, Vec<TArticle>)>()
+            .build_input()
+    }
+}
+
 
 impl<'py, TAlignedArticle, TArticle> IntoPy<PyObject> for PyAlignedArticleResultUnion<TAlignedArticle, TArticle>
     where TAlignedArticle: IntoPy<PyObject>, TArticle: IntoPy<PyObject> {
@@ -866,12 +921,14 @@ impl<'py, TAlignedArticle, TArticle> IntoPy<PyObject> for PyAlignedArticleResult
 macro_rules! impl_aligned_article_wrapper {
     ($($name: ident<$typ: ty>),+) => {
         $(
+            #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
             #[pyclass]
             #[repr(transparent)]
             #[derive(Clone, Debug, Serialize, Deserialize)]
             #[serde(transparent)]
             pub struct $name(AlignedArticle<$typ>);
 
+            #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
             #[pymethods]
             impl $name {
                 #[new]
@@ -963,6 +1020,8 @@ pub enum PyTokenizedArticleUnion {
     NotTokenized(PyArticle)
 }
 
+impl_py_stub!(PyTokenizedArticleUnion: PyArticle, Vec<(String, PyToken)>);
+
 
 impl IntoPy<PyObject> for PyTokenizedArticleUnion {
     fn into_py(self, py: Python<'_>) -> PyObject {
@@ -1015,12 +1074,14 @@ impl Display for PyAlignedArticle {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyArticle(Article);
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyArticle {
     #[new]
@@ -1105,6 +1166,7 @@ impl Display for PyArticle {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass(get_all)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PyToken {
@@ -1126,6 +1188,7 @@ pub struct PyToken {
     language: Option<PyLanguage>
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyToken {
     pub fn byte_len(&self) -> usize {
@@ -1195,6 +1258,7 @@ impl Display for PyToken {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyAlignedArticleProcessor {
@@ -1281,6 +1345,8 @@ impl PyAlignedArticleProcessor {
     }
 }
 
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyAlignedArticleProcessor {
     #[new]
@@ -1332,7 +1398,7 @@ impl PyAlignedArticleProcessor {
 }
 
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyTokenizerBuilder {
@@ -1344,6 +1410,7 @@ pub struct PyTokenizerBuilder {
     vocabulary: Option<PyVocabulary>
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTokenizerBuilder {
     #[new]
@@ -1351,47 +1418,55 @@ impl PyTokenizerBuilder {
         Self::default()
     }
 
-    #[pyo3(signature = (stemmer, smart=None))]
+    #[pyo3(signature = (stemmer, smart=None), text_signature = "stemmer: PyStemmingAlgorithm, smart: None | bool = None")]
     fn stemmer<'py>(slf: Bound<'py, Self>, stemmer: PyStemmingAlgorithm, smart: Option<bool>) -> Bound<'py, Self> {
         slf.borrow_mut().stemmer = Some((stemmer, smart.unwrap_or_default()));
         slf
     }
 
+    #[pyo3(signature = (vocabulary), text_signature = "vocabulary: PyVocabulary")]
     fn phrase_vocabulary<'py>(slf: Bound<'py, Self>, vocabulary: PyVocabulary) -> Bound<'py, Self> {
         slf.borrow_mut().vocabulary = Some(vocabulary);
         slf
     }
 
+    #[pyo3(signature = (stop_words), text_signature = "stop_words: PyStopWordsArg")]
     fn stop_words<'py>(slf: Bound<'py, Self>, stop_words: PyStopWordsArg) -> PyResult<Bound<'py, Self>> {
         slf.borrow_mut().normalizer_option.classifier.stop_words = Some(stop_words.to_stop_words()?);
         Ok(slf)
     }
 
-    fn separators<'py>(slf: Bound<'py, Self>, separators: StringSetOrList) -> PyResult<Bound<'py, Self>> {
+    #[pyo3(signature = (separators), text_signature = "separators: list[str] | set[str]")]
+    fn separators<'py>(slf: Bound<'py, Self>, separators: VecOrSet<String>) -> PyResult<Bound<'py, Self>> {
         slf.borrow_mut().normalizer_option.classifier.set_separators(Some(separators.to_vec()))?;
         Ok(slf)
     }
 
-    fn words_dict<'py>(slf: Bound<'py, Self>, words: StringSetOrList) -> Bound<'py, Self> {
+    #[pyo3(signature = (words), text_signature = "words: list[str] | set[str]")]
+    fn words_dict<'py>(slf: Bound<'py, Self>, words: VecOrSet<String>) -> Bound<'py, Self> {
         slf.borrow_mut().words_dict = Some(SpecialVec::new(words.to_vec()));
         slf
     }
 
+    #[pyo3(signature = (create_char_map), text_signature = "create_char_map: bool")]
     fn create_char_map<'py>(slf: Bound<'py, Self>, create_char_map: bool) -> Bound<'py, Self> {
         slf.borrow_mut().normalizer_option.create_char_map = create_char_map;
         slf
     }
 
+    #[pyo3(signature = (lossy), text_signature = "lossy: bool")]
     fn lossy_normalization<'py>(slf: Bound<'py, Self>, lossy: bool) -> Bound<'py, Self> {
         slf.borrow_mut().normalizer_option.lossy = lossy;
         slf
     }
 
+    #[pyo3(signature = (unicode), text_signature = "unicode: bool")]
     fn unicode_segmentation<'py>(slf: Bound<'py, Self>, unicode: bool) -> Bound<'py, Self> {
         slf.borrow_mut().unicode = unicode;
         slf
     }
 
+    #[pyo3(signature = (allow_list), text_signature = "allow_list: dict[PyScript, list[PyLanguage]]")]
     fn allow_list<'py>(slf: Bound<'py, Self>, allow_list: HashMap<PyScript, Vec<PyLanguage>>) -> Bound<'py, Self> {
         slf.borrow_mut().segmenter_option.set_allow_list(Some(allow_list));
         slf
@@ -1456,6 +1531,7 @@ impl PyTokenizerBuilder {
 }
 
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -1469,10 +1545,11 @@ impl PyStopWords {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyStopWords {
     #[new]
-    fn py_new(words: StringSetOrList) -> PyResult<Self> {
+    fn py_new(words: VecOrSet<String>) -> PyResult<Self> {
         let mut words = words.to_vec();
         words.sort();
         match Set::from_iter(words) {
@@ -1523,7 +1600,6 @@ impl TryFrom<PyStopWordsSerializable> for PyStopWords {
     }
 }
 
-
 #[derive(Clone, Debug, FromPyObject)]
 pub enum PyStopWordsArg {
     List(Vec<String>),
@@ -1531,14 +1607,16 @@ pub enum PyStopWordsArg {
     StopWords(PyStopWords)
 }
 
+impl_py_stub!(PyStopWordsArg: Vec<String>, HashSet<String>, PyStopWords);
+
 impl PyStopWordsArg {
     pub fn to_stop_words(self) -> PyResult<PyStopWords> {
         match self {
             PyStopWordsArg::List(value) => {
-                PyStopWords::py_new(StringSetOrList::List(value))
+                PyStopWords::py_new(VecOrSet::from(value))
             }
             PyStopWordsArg::Set(value) => {
-                PyStopWords::py_new(StringSetOrList::Set(value))
+                PyStopWords::py_new(VecOrSet::from(value))
             }
             PyStopWordsArg::StopWords(value) => {
                 Ok(value)
@@ -1564,6 +1642,7 @@ impl Display for PyStopWordsSerializable {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass(set_all, get_all)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyNormalizerOption {
@@ -1582,6 +1661,7 @@ impl Default for PyNormalizerOption {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyNormalizerOption {
     #[new]
@@ -1611,6 +1691,7 @@ impl PyNormalizerOption {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PyClassifierOption {
@@ -1619,6 +1700,7 @@ pub struct PyClassifierOption {
     separators: Option<SpecialVec>,
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyClassifierOption {
     #[new]
@@ -1679,6 +1761,7 @@ impl PyClassifierOption {
 }
 
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(from = "PySegmenterOptionSerializer")]
@@ -1702,6 +1785,7 @@ impl From<PySegmenterOptionSerializer> for PySegmenterOption {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PySegmenterOption {
     #[new]
@@ -1768,10 +1852,21 @@ impl From<PySegmenterOption> for PySegmenterOptionSerializer {
 }
 
 
-
+/// An automaton for searching multiple strings in linear time.
+/// This is only used to hold the results.
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyAhoCorasick(AhoCorasick);
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyAhoCorasick {
+    #[staticmethod]
+    pub fn builder() -> PyAhoCorasickBuilder {
+        PyAhoCorasickBuilder::new()
+    }
+}
 
 impl From<AhoCorasick> for PyAhoCorasick {
     #[inline(always)]
@@ -1787,11 +1882,13 @@ impl Into<AhoCorasick> for PyAhoCorasick {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone, Default)]
 #[repr(transparent)]
 pub struct PyAhoCorasickBuilder(AhoCorasickBuilder);
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyAhoCorasickBuilder {
     #[new]
@@ -1863,8 +1960,8 @@ impl PyAhoCorasickBuilder {
     ///
     /// Standard semantics:
     ///
-    /// ```
-    /// use ldatranslate::py::{PyAhoCorasick, PyMatchKind};
+    /// ```plaintext
+    /// use ldatranslate::py::tokenizer::{PyAhoCorasick, PyMatchKind};
     ///
     /// let patterns = &["b", "abc", "abcd"];
     /// let haystack = "abcd";
@@ -1879,14 +1976,14 @@ impl PyAhoCorasickBuilder {
     ///
     /// Leftmost-first semantics:
     ///
-    /// ```
-    /// use ldatranslate::py::{PyAhoCorasick, PyMatchKind};
+    /// ```plaintext
+    /// use ldatranslate::py::tokenizer::{PyAhoCorasick, PyMatchKind};
     ///
     /// let patterns = &["b", "abc", "abcd"];
     /// let haystack = "abcd";
     ///
     /// let ac = PyAhoCorasick::builder()
-    ///     .match_kind(PyAhoCorasick::LeftmostFirst)
+    ///     .match_kind(PyMatchKind::LeftmostFirst)
     ///     .build(patterns)
     ///     .unwrap();
     /// let mat = ac.find(haystack).expect("should have a match");
@@ -1895,19 +1992,20 @@ impl PyAhoCorasickBuilder {
     ///
     /// Leftmost-longest semantics:
     ///
-    /// ```
-    /// use ldatranslate::py::{PyAhoCorasick, PyMatchKind};
+    /// ```plaintext
+    /// use ldatranslate::py::tokenizer::{PyAhoCorasick, PyMatchKind};
     ///
     /// let patterns = &["b", "abc", "abcd"];
     /// let haystack = "abcd";
     ///
     /// let ac = PyAhoCorasick::builder()
-    ///     .match_kind(PyAhoCorasick::LeftmostLongest)
+    ///     .match_kind(PyMatchKind::LeftmostLongest)
     ///     .build(patterns)
     ///     .unwrap();
     /// let mat = ac.find(haystack).expect("should have a match");
     /// assert_eq!("abcd", &haystack[mat.start()..mat.end()]);
     /// ```
+    #[pyo3(signature = (kind), text_signature = "kind: PyMatchKind")]
     pub fn match_kind<'py>(slf: Bound<'py, Self>, kind: PyMatchKind) -> Bound<'py, Self> {
         slf.borrow_mut().0.match_kind(kind.into());
         slf
@@ -2001,6 +2099,7 @@ impl PyAhoCorasickBuilder {
     ///
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[pyo3(signature = (kind), text_signature = "kind: PyStartKind")]
     pub fn start_kind<'py>(slf: Bound<'py, Self>, kind: PyStartKind) -> Bound<'py, Self> {
         slf.borrow_mut().0.start_kind(kind.into());
         slf
@@ -2037,6 +2136,7 @@ impl PyAhoCorasickBuilder {
     ///     .unwrap();
     /// assert_eq!(3, ac.find_iter(haystack).count());
     /// ```
+    #[pyo3(signature = (yes), text_signature = "yes: bool")]
     pub fn ascii_case_insensitive<'py>(slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
         slf.borrow_mut().0.ascii_case_insensitive(yes);
         slf
@@ -2085,7 +2185,7 @@ impl PyAhoCorasickBuilder {
     ///
     /// Note that the heuristics used for choosing which `PyAhoCorasickKind`
     /// may be changed in a semver compatible release.
-    #[pyo3(signature = (kind=None))]
+    #[pyo3(signature = (kind=None), text_signature = "kind: None | PyAhoCorasickKind")]
     pub fn kind<'py>(slf: Bound<'py, Self>, kind: Option<PyAhoCorasickKind>) -> Bound<'py, Self> {
         slf.borrow_mut().0.kind(kind.map(Into::into));
         slf
@@ -2103,6 +2203,7 @@ impl PyAhoCorasickBuilder {
     /// with a small (less than 100) number of patterns.
     ///
     /// This is enabled by default.
+    #[pyo3(signature = (yes), text_signature = "yes: bool")]
     pub fn prefilter<'py>(slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
         slf.borrow_mut().0.prefilter(yes);
         slf
@@ -2135,6 +2236,7 @@ impl PyAhoCorasickBuilder {
     /// will help things much, since the most active states have a small depth.
     /// More to the point, the memory usage increases superlinearly as this
     /// number increases.
+    #[pyo3(signature = (depth), text_signature = "depth: int")]
     pub fn dense_depth<'py>(slf: Bound<'py, Self>, depth: usize) -> Bound<'py, Self> {
         slf.borrow_mut().0.dense_depth(depth);
         slf
@@ -2165,6 +2267,7 @@ impl PyAhoCorasickBuilder {
     /// equivalence class. This is useful for debugging the actual generated
     /// transitions because it lets one see the transitions defined on actual
     /// bytes instead of the equivalence classes.
+    #[pyo3(signature = (yes), text_signature = "yes: bool")]
     pub fn byte_classes<'py>(slf: Bound<'py, Self>, yes: bool) -> Bound<'py, Self> {
         slf.borrow_mut().0.byte_classes(yes);
         slf
@@ -2276,6 +2379,7 @@ map_enum!(
 );
 
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::Display)]
@@ -2361,37 +2465,67 @@ map_enum!(
     }
 );
 
-
-pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyAhoCorasick>()?;
-    m.add_class::<PyAhoCorasickBuilder>()?;
-    m.add_class::<PyAhoCorasickKind>()?;
-    m.add_class::<PyAlignedArticle>()?;
-    m.add_class::<PyAlignedArticleProcessor>()?;
-    m.add_class::<PyAlignedArticleIter>()?;
-    m.add_class::<PyArticle>()?;
-    m.add_class::<PyClassifierOption>()?;
-    m.add_class::<PyLanguage>()?;
-    m.add_class::<PyMatchKind>()?;
-    m.add_class::<PyNormalizerOption>()?;
-    m.add_class::<PyParsedAlignedArticleIter>()?;
-    m.add_class::<PyScript>()?;
-    m.add_class::<PySegmenterOption>()?;
-    m.add_class::<PyStartKind>()?;
-    m.add_class::<PyStopWords>()?;
-    m.add_class::<PyToken>()?;
-    m.add_class::<PyTokenizedAlignedArticle>()?;
-    m.add_class::<PyTokenizerBuilder>()?;
-    m.add_class::<PyTokenKind>()?;
-    m.add_class::<PyStemmingAlgorithm>()?;
-    m.add_class::<TokenCountFilter>()?;
-    m.add_class::<StoreOptions>()?;
-    m.add_function(wrap_pyfunction!(read_aligned_articles, m)?)?;
-    m.add_function(wrap_pyfunction!(read_aligned_parsed_articles, m)?)?;
-    m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles, m)?)?;
-    m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles_into, m)?)?;
-    Ok(())
+register_python! {
+    struct PyAhoCorasick;
+    struct PyAhoCorasickBuilder;
+    struct PyAhoCorasickKind;
+    struct PyAlignedArticle;
+    struct PyAlignedArticleProcessor;
+    struct PyAlignedArticleIter;
+    struct PyArticle;
+    struct PyClassifierOption;
+    struct PyLanguage;
+    struct PyMatchKind;
+    struct PyNormalizerOption;
+    struct PyParsedAlignedArticleIter;
+    struct PyScript;
+    struct PySegmenterOption;
+    struct PyStartKind;
+    struct PyStopWords;
+    struct PyToken;
+    struct PyTokenizedAlignedArticle;
+    struct PyTokenizerBuilder;
+    struct PyTokenKind;
+    struct PyStemmingAlgorithm;
+    struct TokenCountFilter;
+    struct StoreOptions;
+    fn read_aligned_articles;
+    fn read_aligned_parsed_articles;
+    fn read_and_parse_aligned_articles;
+    fn read_and_parse_aligned_articles_into;
 }
+
+
+// pub(crate) fn tokenizer_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+//     // m.add_class::<PyAhoCorasick>()?;
+//     // m.add_class::<PyAhoCorasickBuilder>()?;
+//     // m.add_class::<PyAhoCorasickKind>()?;
+//     // m.add_class::<PyAlignedArticle>()?;
+//     // m.add_class::<PyAlignedArticleProcessor>()?;
+//     // m.add_class::<PyAlignedArticleIter>()?;
+//     // m.add_class::<PyArticle>()?;
+//     // m.add_class::<PyClassifierOption>()?;
+//     // m.add_class::<PyLanguage>()?;
+//     // m.add_class::<PyMatchKind>()?;
+//     // m.add_class::<PyNormalizerOption>()?;
+//     // m.add_class::<PyParsedAlignedArticleIter>()?;
+//     // m.add_class::<PyScript>()?;
+//     // m.add_class::<PySegmenterOption>()?;
+//     // m.add_class::<PyStartKind>()?;
+//     // m.add_class::<PyStopWords>()?;
+//     // m.add_class::<PyToken>()?;
+//     // m.add_class::<PyTokenizedAlignedArticle>()?;
+//     // m.add_class::<PyTokenizerBuilder>()?;
+//     // m.add_class::<PyTokenKind>()?;
+//     // m.add_class::<PyStemmingAlgorithm>()?;
+//     // m.add_class::<TokenCountFilter>()?;
+//     // m.add_class::<StoreOptions>()?;
+//     m.add_function(wrap_pyfunction!(read_aligned_articles, m)?)?;
+//     m.add_function(wrap_pyfunction!(read_aligned_parsed_articles, m)?)?;
+//     m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles, m)?)?;
+//     m.add_function(wrap_pyfunction!(read_and_parse_aligned_articles_into, m)?)?;
+//     Ok(())
+// }
 
 #[cfg(test)]
 mod test {

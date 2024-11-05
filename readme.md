@@ -4,7 +4,7 @@ A tool to translate topic models between languages written in rust for python.
 This is experimental code and will change over the time.
 
 ## How to build?
-See: https://pyo3.rs/v0.21.2/
+See: https://pyo3.rs/v0.22.5/
 
 ````commandline
 python -m venv .env
@@ -13,5 +13,15 @@ pip install maturin
 maturin build --release
 ````
 
+
+build pyi:
+````commandline
+cargo run --features gen_python_api --bin stub_gen
+````
+
 ## Links
 See more at https://github.com/FelixEngl/ptmt
+
+
+## Known problems:
+- using gen_stub_pymethods on enum impls results in a panic.

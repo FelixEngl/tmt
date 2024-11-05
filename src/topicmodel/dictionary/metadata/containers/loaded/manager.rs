@@ -9,6 +9,39 @@ macro_rules! create_struct {
             )*
         }
 
+        impl std::fmt::Debug for LoadedMetadataManager {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                use itertools::Itertools;
+                f.debug_struct(stringify!(LoadedMetadataManager))
+                .field(
+                    "meta_a",
+                    &format!("(len: {})", self.meta_a.len())
+                )
+                .field(
+                    "meta_b",
+                    &format!("(len: {})", self.meta_b.len())
+                )
+                .field(
+                    "dictionary_interner",
+                    &format!(
+                        "(len: {}, contents: [\"{}\"])",
+                        self.dictionary_interner.len(),
+                        self.dictionary_interner.iter().map(|v| v.1).join("\", \"")
+                    )
+                )
+                $(
+                .field(
+                    stringify!($name),
+                    &format!(
+                        "(len: {})",
+                        self.$name.len()
+                    )
+                )
+                )+
+                .finish()
+            }
+        }
+
         impl LoadedMetadataManager {
             pub fn intern_dictionary_origin_static(&mut self, voc_entry: &'static str) -> $crate::toolkit::typesafe_interner::DictionaryOriginSymbol {
                 self.dictionary_interner.get_or_intern_static(voc_entry)

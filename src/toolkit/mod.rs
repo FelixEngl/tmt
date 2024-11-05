@@ -20,3 +20,25 @@ pub mod once_serializer;
 pub mod with_ref_of;
 pub mod typesafe_interner;
 pub mod aho;
+pub mod special_python_values;
+#[cfg(feature = "gen_python_api")]
+pub mod pystub;
+pub mod register_python;
+
+#[cfg(not(feature = "gen_python_api"))]
+#[macro_export]
+macro_rules! impl_py_stub {
+    ($($tt:tt)*) => {};
+}
+
+#[cfg(not(feature = "gen_python_api"))]
+#[macro_export]
+macro_rules! impl_py_type_def {
+    ($($tt:tt)*) => {};
+}
+
+#[cfg(not(feature = "gen_python_api"))]
+#[macro_export]
+macro_rules! impl_py_type_def_special {
+    ($($tt:tt)*) => {};
+}

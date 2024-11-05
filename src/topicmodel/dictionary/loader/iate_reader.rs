@@ -325,7 +325,7 @@ pub fn process_element(
                 $(
                     {
                         define_aho_matcher!(
-                            PATTERN as ascii_case_insensitive for: $($pattern,)+
+                            static PATTERN = $($pattern |)+ as ascii_case_insensitive
                         );
                         if PATTERN.is_match(&$i) {
                             success = true;

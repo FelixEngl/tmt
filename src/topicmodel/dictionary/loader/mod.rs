@@ -12,9 +12,8 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash};
 use std::path::Path;
-use pyo3::{Bound, PyResult};
-use pyo3::prelude::{PyModule, PyModuleMethods};
 use thiserror::Error;
+use crate::register_python;
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
@@ -33,15 +32,14 @@ mod generalized_data;
 mod toolkit;
 mod muse;
 
-pub(crate) fn register_py_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<word_infos::Language>()?;
-    m.add_class::<word_infos::Region>()?;
-    m.add_class::<word_infos::PartOfSpeech>()?;
-    m.add_class::<word_infos::GrammaticalGender>()?;
-    m.add_class::<word_infos::GrammaticalNumber>()?;
-    m.add_class::<word_infos::Domain>()?;
-    m.add_class::<word_infos::Register>()?;
-    Ok(())
+register_python! {
+    enum Language;
+    enum Region;
+    enum PartOfSpeech;
+    enum GrammaticalGender;
+    enum GrammaticalNumber;
+    enum Domain;
+    enum Register;
 }
 
 

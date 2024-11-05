@@ -13,12 +13,6 @@ pub struct TbxElement {
     /// Meta Infos
     /// ```text
     /// Depth: 0
-    ///     En: 1
-    ///```
-    pub lang_attribute: LangAttribute,
-    /// Meta Infos
-    /// ```text
-    /// Depth: 0
     ///     urn:iso:std:iso:30042:ed-2: 1
     ///```
     pub xmlns_attribute: String,
@@ -28,6 +22,12 @@ pub struct TbxElement {
     ///     TbxIate: 1
     ///```
     pub type_attribute: TypeAttribute,
+    /// Meta Infos
+    /// ```text
+    /// Depth: 0
+    ///     En: 1
+    ///```
+    pub lang_attribute: LangAttribute,
     ///Multiplicity:
     ///```text
     ///    Encounters: 1
@@ -97,16 +97,16 @@ pub fn read_tbx_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader:
                     builder.style_attribute(value);
                     continue;
                 }
-                if let Some(value) = read_lang_attribute(&attr)? {
-                    builder.lang_attribute(value);
-                    continue;
-                }
                 if let Some(value) = read_xmlns_attribute(&attr)? {
                     builder.xmlns_attribute(value);
                     continue;
                 }
                 if let Some(value) = read_type_attribute(&attr)? {
                     builder.type_attribute(value);
+                    continue;
+                }
+                if let Some(value) = read_lang_attribute(&attr)? {
+                    builder.lang_attribute(value);
                     continue;
                 }
             }
@@ -274,24 +274,24 @@ pub struct FileDescElement {
     ///        - Depth 3: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub source_desc_element: SourceDescElement,
+    pub title_stmt_element: TitleStmtElement,
     ///Multiplicity:
     ///```text
     ///    Encounters: 1
     ///        - Depth 3: - 1..1
     ///```
     #[builder(setter(custom))]
-    pub title_stmt_element: TitleStmtElement,
+    pub source_desc_element: SourceDescElement,
 }
 
 impl FileDescElementBuilder {
-    pub fn source_desc_element(&mut self, value: SourceDescElement){
-        assert!(self.source_desc_element.is_none(), "source_desc_element in FileDescElement should be unset!");
-        self.source_desc_element = Some(value);
-    }
     pub fn title_stmt_element(&mut self, value: TitleStmtElement){
         assert!(self.title_stmt_element.is_none(), "title_stmt_element in FileDescElement should be unset!");
         self.title_stmt_element = Some(value);
+    }
+    pub fn source_desc_element(&mut self, value: SourceDescElement){
+        assert!(self.source_desc_element.is_none(), "source_desc_element in FileDescElement should be unset!");
+        self.source_desc_element = Some(value);
     }
 }
 
@@ -334,13 +334,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"sourceDesc" => {
-                        let recognized = read_source_desc_element(reader, start)?;
-                        builder.source_desc_element(recognized);
-                    }
                     b"titleStmt" => {
                         let recognized = read_title_stmt_element(reader, start)?;
                         builder.title_stmt_element(recognized);
+                    }
+                    b"sourceDesc" => {
+                        let recognized = read_source_desc_element(reader, start)?;
+                        builder.source_desc_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -355,13 +355,13 @@ pub fn read_file_desc_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"sourceDesc" => {
-                        let recognized = read_source_desc_element(reader, value)?;
-                        builder.source_desc_element(recognized);
-                    }
                     b"titleStmt" => {
                         let recognized = read_title_stmt_element(reader, value)?;
                         builder.title_stmt_element(recognized);
+                    }
+                    b"sourceDesc" => {
+                        let recognized = read_source_desc_element(reader, value)?;
+                        builder.source_desc_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -534,7 +534,7 @@ pub fn read_title_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reade
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -704,7 +704,7 @@ pub fn read_p_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader::R
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -932,28 +932,28 @@ pub struct ConceptEntryElement {
     pub id_attribute: u64,
     ///Multiplicity:
     ///```text
-    ///    Encounters: 1299397
-    ///        - Depth 4: - 1..2
-    ///```
-    #[builder(setter(custom), default)]
-    pub lang_sec_elements: Vec<LangSecElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 2480673
     ///        - Depth 4: - 1..1
     ///```
     #[builder(setter(custom))]
     pub descrip_element: DescripElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1299397
+    ///        - Depth 4: - 1..2
+    ///```
+    #[builder(setter(custom), default)]
+    pub lang_sec_elements: Vec<LangSecElement>,
 }
 
 impl ConceptEntryElementBuilder {
-    pub fn lang_sec_element(&mut self, value: LangSecElement){
-        let targ = self.lang_sec_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
     pub fn descrip_element(&mut self, value: DescripElement){
         assert!(self.descrip_element.is_none(), "descrip_element in ConceptEntryElement should be unset!");
         self.descrip_element = Some(value);
+    }
+    pub fn lang_sec_element(&mut self, value: LangSecElement){
+        let targ = self.lang_sec_elements.get_or_insert_with(Default::default);
+        targ.push(value);
     }
 }
 
@@ -1007,13 +1007,13 @@ pub fn read_concept_entry_element<'a, R: std::io::BufRead>(reader: &mut quick_xm
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"langSec" => {
-                        let recognized = read_lang_sec_element(reader, start)?;
-                        builder.lang_sec_element(recognized);
-                    }
                     b"descrip" => {
                         let recognized = read_descrip_element(reader, start)?;
                         builder.descrip_element(recognized);
+                    }
+                    b"langSec" => {
+                        let recognized = read_lang_sec_element(reader, start)?;
+                        builder.lang_sec_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1028,13 +1028,13 @@ pub fn read_concept_entry_element<'a, R: std::io::BufRead>(reader: &mut quick_xm
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"langSec" => {
-                        let recognized = read_lang_sec_element(reader, value)?;
-                        builder.lang_sec_element(recognized);
-                    }
                     b"descrip" => {
                         let recognized = read_descrip_element(reader, value)?;
                         builder.descrip_element(recognized);
+                    }
+                    b"langSec" => {
+                        let recognized = read_lang_sec_element(reader, value)?;
+                        builder.lang_sec_element(recognized);
                     }
                     unknown => { log::warn!("Unknown Tag: '{}'", String::from_utf8_lossy(unknown)); }
                 }
@@ -1129,7 +1129,7 @@ pub fn read_descrip_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::rea
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1270,18 +1270,18 @@ pub fn read_lang_sec_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
 pub struct TermSecElement {
     ///Multiplicity:
     ///```text
-    ///    Encounters: 1670808
-    ///        - Depth 6: - 1..2
-    ///```
-    #[builder(setter(custom), default)]
-    pub term_note_elements: Vec<TermNoteElement>,
-    ///Multiplicity:
-    ///```text
     ///    Encounters: 2480673
     ///        - Depth 6: - 1..1
     ///```
     #[builder(setter(custom))]
     pub descrip_element: DescripElement,
+    ///Multiplicity:
+    ///```text
+    ///    Encounters: 1670808
+    ///        - Depth 6: - 1..2
+    ///```
+    #[builder(setter(custom), default)]
+    pub term_note_elements: Vec<TermNoteElement>,
     ///Multiplicity:
     ///```text
     ///    Encounters: 1664265
@@ -1292,13 +1292,13 @@ pub struct TermSecElement {
 }
 
 impl TermSecElementBuilder {
-    pub fn term_note_element(&mut self, value: TermNoteElement){
-        let targ = self.term_note_elements.get_or_insert_with(Default::default);
-        targ.push(value);
-    }
     pub fn descrip_element(&mut self, value: DescripElement){
         assert!(self.descrip_element.is_none(), "descrip_element in TermSecElement should be unset!");
         self.descrip_element = Some(value);
+    }
+    pub fn term_note_element(&mut self, value: TermNoteElement){
+        let targ = self.term_note_elements.get_or_insert_with(Default::default);
+        targ.push(value);
     }
     pub fn term_element(&mut self, value: TermElement){
         assert!(self.term_element.is_none(), "term_element in TermSecElement should be unset!");
@@ -1345,13 +1345,13 @@ pub fn read_term_sec_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
         match reader.read_event_into(&mut buffer)? {
             quick_xml::events::Event::Start(start) => {
                 match start.local_name().as_ref(){
-                    b"termNote" => {
-                        let recognized = read_term_note_element(reader, start)?;
-                        builder.term_note_element(recognized);
-                    }
                     b"descrip" => {
                         let recognized = read_descrip_element(reader, start)?;
                         builder.descrip_element(recognized);
+                    }
+                    b"termNote" => {
+                        let recognized = read_term_note_element(reader, start)?;
+                        builder.term_note_element(recognized);
                     }
                     b"term" => {
                         let recognized = read_term_element(reader, start)?;
@@ -1370,13 +1370,13 @@ pub fn read_term_sec_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::re
             quick_xml::events::Event::Empty(value) => {
                 
                 match value.local_name().as_ref(){
-                    b"termNote" => {
-                        let recognized = read_term_note_element(reader, value)?;
-                        builder.term_note_element(recognized);
-                    }
                     b"descrip" => {
                         let recognized = read_descrip_element(reader, value)?;
                         builder.descrip_element(recognized);
+                    }
+                    b"termNote" => {
+                        let recognized = read_term_note_element(reader, value)?;
+                        builder.term_note_element(recognized);
                     }
                     b"term" => {
                         let recognized = read_term_element(reader, value)?;
@@ -1454,7 +1454,7 @@ pub fn read_term_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 builder.content(s_value.to_string());
             }
             quick_xml::events::Event::Eof => {
@@ -1468,7 +1468,7 @@ pub fn read_term_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::reader
 }
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum ETermNoteElement {
     #[strum(serialize="fullForm")]
     FullForm,
@@ -1569,7 +1569,7 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
                     _ => {}                }
             }
             quick_xml::events::Event::Text(value) => {
-                let s_value = std::str::from_utf8(value.as_ref())?;
+                let s_value = value.unescape()?;
                 let s = s_value.trim();
                 match s.parse(){
                     Ok(value) => {
@@ -1592,18 +1592,18 @@ pub fn read_term_note_element<'a, R: std::io::BufRead>(reader: &mut quick_xml::r
 
 
 // Attribute - type - a_type - TypeAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum TypeAttribute {
+    #[strum(serialize="administrativestatus")]
+    AdministrativeStatus,
+    #[strum(serialize="termtype")]
+    TermType,
+    #[strum(serialize="reliabilitycode")]
+    ReliabilityCode,
     #[strum(serialize="tbx-iate")]
     TbxIate,
     #[strum(serialize="subjectfield")]
     SubjectField,
-    #[strum(serialize="termtype")]
-    TermType,
-    #[strum(serialize="administrativestatus")]
-    AdministrativeStatus,
-    #[strum(serialize="reliabilitycode")]
-    ReliabilityCode,
 }
 
 /// Attribute - type - a_type
@@ -1619,7 +1619,7 @@ pub fn read_type_attribute(attr: &quick_xml::events::attributes::Attribute) -> R
 }
 
 // Attribute - style - a_style - StyleAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum StyleAttribute {
     #[strum(serialize="dca")]
     Dca,
@@ -1638,7 +1638,7 @@ pub fn read_style_attribute(attr: &quick_xml::events::attributes::Attribute) -> 
 }
 
 // Attribute - lang - a_lang - LangAttribute
-#[derive(Debug, Copy, Clone, Eq, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, strum::Display, strum::EnumString)]
 pub enum LangAttribute {
     #[strum(serialize="en")]
     En,

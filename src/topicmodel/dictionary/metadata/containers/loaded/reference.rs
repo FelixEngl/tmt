@@ -1,7 +1,7 @@
 macro_rules! create_cached_getter {
     (interned: $ident:ident, $interner_name: ident: $ty:ty, $($tt:tt)*) => {
         paste::paste! {
-            fn [<get_ $ident _impl>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a str>)> {
+            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a str>)> {
                 self.[<$ident>].get_or_init(|| {
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
@@ -43,7 +43,7 @@ macro_rules! create_cached_getter {
                 })
             }
 
-            pub fn [<get_ $ident>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a str>)> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a str>)> {
                 self.[<get_ $ident _impl>]()
             }
         }
@@ -51,7 +51,7 @@ macro_rules! create_cached_getter {
     };
     (set: $ident:ident: $ty:ty, $($tt:tt)*) => {
         paste::paste! {
-            pub fn [<get_ $ident>](&self) -> &Storage<'a, tinyset::Set64<$ty>> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, tinyset::Set64<$ty>> {
                 self.[<$ident>].get_or_init(|| {
                     use string_interner::Symbol;
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
@@ -79,10 +79,13 @@ macro_rules! create_cached_getter {
 
 pub(super) use create_cached_getter;
 
+
+
+
 macro_rules! create_ref_implementation {
     ($($tt:tt: $name: ident $(, $interner_name: ident)?: $ty: ty | $ty_sub:ty),* $(,)?) => {
         #[derive(Clone)]
-        pub struct Storage<'a, T> {
+        pub(super) struct Storage<'a, T> {
             pub default: Option<T>,
             pub mapped: Vec<(&'a str, Option<T>)>
         }
@@ -93,6 +96,15 @@ macro_rules! create_ref_implementation {
             pub(in super) manager_ref: &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager,
             $(pub(in super) $name: std::sync::Arc<std::sync::OnceLock<Storage<'a, $ty>>>,
             )*
+        }
+
+        impl std::fmt::Debug for LoadedMetadataRef<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct(stringify!(LoadedMetadataRef))
+                $(.field(stringify!($name), &self.$name.get().is_some())
+                )*
+                .finish_non_exhaustive()
+            }
         }
 
         impl<'a> LoadedMetadataRef<'a> {
@@ -145,5 +157,3 @@ macro_rules! create_ref_implementation {
 
 
 pub(super) use create_ref_implementation;
-
-

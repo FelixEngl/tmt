@@ -12,27 +12,32 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use pyo3::{PyResult};
-use pyo3::prelude::*;
-
 macro_rules! declare_variable_names_internal {
     ($variable_name: ident: $name: literal) => {
         pub const $variable_name: &str = $name;
+        #[cfg(feature = "gen_python_api")]
+        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
     };
 
     (doc = $doc: literal $variable_name: ident: $name: literal) => {
         #[doc = $doc]
         pub const $variable_name: &str = $name;
+        #[cfg(feature = "gen_python_api")]
+        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
     };
 
     ($variable_name: ident: $name: literal, $($tt:tt)+) => {
         pub const $variable_name: &str = $name;
+        #[cfg(feature = "gen_python_api")]
+        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
         declare_variable_names_internal!($($tt)+);
     };
 
     (doc = $doc: literal $variable_name: ident: $name: literal, $($tt:tt)+) => {
         #[doc = $doc]
         pub const $variable_name: &str = $name;
+        #[cfg(feature = "gen_python_api")]
+        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
         declare_variable_names_internal!($($tt)+);
     };
 }
@@ -79,6 +84,8 @@ macro_rules! declare_py_module {
 }
 
 
+
+
 macro_rules! declare_variable_names {
     ($variable_name: ident: $name: literal, $($tt:tt)*) => {
         declare_variable_names_internal!($variable_name: $name, $($tt)+);
@@ -90,11 +97,19 @@ macro_rules! declare_variable_names {
             )(input)
         }
 
-        pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-            let submodule = PyModule::new_bound(m.py(), "variable_names")?;
-            declare_py_module!(submodule, $variable_name: $name, $($tt)+);
-            m.add_submodule(&submodule)?;
-            Ok(())
+        // pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        //     let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+        //     declare_py_module!(submodule, $variable_name: $name, $($tt)+);
+        //     m.add_submodule(&submodule)?;
+        //     Ok(())
+        // }
+
+        crate::register_python! {
+            custom(m) {
+                let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+                declare_py_module!(submodule, $variable_name: $name, $($tt)+);
+                m.add_submodule(&submodule)?;
+            }
         }
     };
 
@@ -108,11 +123,19 @@ macro_rules! declare_variable_names {
             )(input)
         }
 
-        pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-            let submodule = PyModule::new_bound(m.py(), "variable_names")?;
-            declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
-            m.add_submodule(&submodule)?;
-            Ok(())
+        // pub(crate) fn register_py_variable_names_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        //     let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+        //     declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
+        //     m.add_submodule(&submodule)?;
+        //     Ok(())
+        // }
+
+        crate::register_python! {
+            custom(m) {
+                let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+                declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
+                m.add_submodule(&submodule)?;
+            }
         }
     };
 }

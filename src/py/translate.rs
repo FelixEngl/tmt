@@ -15,26 +15,26 @@
 use std::num::NonZeroUsize;
 use derive_more::From;
 use evalexpr::{Value};
-use pyo3::{Bound, pyclass, pyfunction, pymethods, PyResult, wrap_pyfunction};
+use pyo3::{pyclass, pyfunction, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::{PyModule, PyModuleMethods};
 use crate::py::dictionary::PyDictionary;
 use crate::py::helpers::{KeepOriginalWordArg, VotingArg};
 use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
 use crate::py::vocabulary::PyVocabulary;
 use crate::py::voting::{PyVoting, PyVotingRegistry};
-use crate::translate::{KeepOriginalWord, register_py_translate, TranslateConfig};
+use crate::register_python;
+use crate::translate::{KeepOriginalWord, TranslateConfig};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
 use crate::topicmodel::topic_model::MappableTopicModel;
-use crate::variable_names::{register_py_variable_names_module};
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
 use crate::voting::py::PyVotingModel;
 use crate::voting::traits::VotingMethodMarker;
 
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyTranslationConfig {
@@ -44,7 +44,7 @@ pub struct PyTranslationConfig {
     top_candidate_limit: Option<NonZeroUsize>,
 }
 
-
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTranslationConfig {
     #[new]
@@ -124,11 +124,13 @@ impl PyTranslationConfig {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
 pub fn translate_topic_model<'a>(
     topic_model: &PyTopicModel,
     dictionary: &PyDictionary,
+    // VotingArg<'a>
     voting: VotingArg<'a>,
     config: PyTranslationConfig,
     provider: Option<&PyVariableProvider>,
@@ -146,10 +148,7 @@ pub fn translate_topic_model<'a>(
 }
 
 
-pub(crate) fn translate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyTranslationConfig>()?;
-    m.add_function(wrap_pyfunction!(translate_topic_model, m)?)?;
-    register_py_translate(m)?;
-    register_py_variable_names_module(m)?;
-    Ok(())
+register_python! {
+    struct PyTranslationConfig;
+    fn translate_topic_model;
 }

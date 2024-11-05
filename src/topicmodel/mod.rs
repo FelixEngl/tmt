@@ -30,18 +30,16 @@ pub mod reference;
 mod math;
 pub mod language_hint;
 
-
-
 pub fn create_topic_model_specific_dictionary<D2, D1, T, V1, V2>(
     dictionary: &D1,
     vocabulary: &V1
 ) -> D2
-    where
-        V1: VocabularyMut<T> + MappableVocabulary<T> + Clone,
-        V2: VocabularyMut<T>,
-        T: Eq + Hash + Clone,
-        D1: DictionaryMut<T, V1>,
-        D2: DictionaryMut<T, V2> + FromVoc<T, V2>
+where
+    V1: VocabularyMut<T> + MappableVocabulary<T> + Clone,
+    V2: VocabularyMut<T>,
+    T: Eq + Hash + Clone,
+    D1: DictionaryMut<T, V1>,
+    D2: DictionaryMut<T, V2> + FromVoc<T, V2>
 {
     let mut new_dict: D2 = D2::from_voc_lang::<A>(
         vocabulary.clone().map(|value| value.clone()),

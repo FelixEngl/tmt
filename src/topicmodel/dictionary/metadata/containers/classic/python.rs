@@ -1,31 +1,28 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use itertools::Itertools;
-use pyo3::{pyclass, pymethods, FromPyObject, IntoPy, PyObject, Python};
+use pyo3::{pyclass, pymethods};
+use crate::register_python;
 use crate::topicmodel::dictionary::metadata::classic::reference::ClassicMetadataRef;
 
-#[derive(Debug, FromPyObject, Clone)]
+
+register_python! {
+    enum MetadataPyStateValues;
+    struct SolvedMetadata;
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass]
+#[derive(Debug, Clone)]
 pub enum MetadataPyStateValues {
     InternedVec(Vec<usize>),
     UnstemmedMapping(HashMap<usize, Vec<usize>>)
 }
 
-impl IntoPy<PyObject> for MetadataPyStateValues {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            MetadataPyStateValues::InternedVec(value) => {
-                value.into_py(py)
-            }
-            MetadataPyStateValues::UnstemmedMapping(value) => {
-                value.into_py(py)
-            }
-        }
-    }
-}
-
 /// A completely memory save copy of some [Metadata]
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SolvedMetadata {
     associated_dictionaries: Option<Vec<String>>,
     subjects: Option<Vec<String>>,
@@ -50,6 +47,7 @@ impl SolvedMetadata {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl SolvedMetadata {
     #[getter]

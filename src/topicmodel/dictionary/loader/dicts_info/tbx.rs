@@ -7,7 +7,7 @@ use std::num::ParseIntError;
 use std::path::Path;
 use std::str::Utf8Error;
 use itertools::chain;
-use nom::{AsBytes, IResult};
+use nom::{IResult};
 use nom::branch::alt;
 use nom::bytes::complete::is_not;
 use nom::character::complete::{char, space0};

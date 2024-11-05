@@ -4,7 +4,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name>]($target_dict, $value.into_iter().map(
                 |value|
                 match value {
-                    itertools::Either::Left(value) => value,
+                    either::Either::Left(value) => value,
                     _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                 }
             ));
@@ -15,7 +15,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name>]($target_dict, $value.into_iter().map(
                 |value|
                 match value {
-                    itertools::Either::Right(value) => value,
+                    either::Either::Right(value) => value,
                     _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
                 }
             ));
@@ -26,7 +26,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name _default>]($value.into_iter().map(
                 |value|
                 match value {
-                    itertools::Either::Left(value) => value,
+                    either::Either::Left(value) => value,
                     _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                 }
             ));
@@ -37,7 +37,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name _default>]($value.into_iter().map(
                 |value|
                 match value {
-                    itertools::Either::Right(value) => value,
+                    either::Either::Right(value) => value,
                     _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
                 }
             ));
@@ -49,7 +49,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name>]($value.into_iter().map(
                 |value|
                 match value {
-                    itertools::Either::Left(value) => value,
+                    either::Either::Left(value) => value,
                     _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                 }
             ));
@@ -60,7 +60,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name>]($value.into_iter().map(
                 |value|
                 match value {
-                    itertools::Either::Right(value) => value,
+                    either::Either::Right(value) => value,
                     _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
                 }
             ));
@@ -73,7 +73,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name>]($target_dict, $value.iter().map(
                 |value|
                 match value {
-                    itertools::Either::Left(value) => value.clone(),
+                    either::Either::Left(value) => value.clone(),
                     _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                 }
             ));
@@ -84,7 +84,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name>]($target_dict, $value.iter().map(
                 |value|
                 match value {
-                    itertools::Either::Right(value) => value.clone(),
+                    either::Either::Right(value) => value.clone(),
                     _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
                 }
             ));
@@ -95,7 +95,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name _default>]($value.iter().map(
                 |value|
                 match value {
-                    itertools::Either::Left(value) => value.clone(),
+                    either::Either::Left(value) => value.clone(),
                     _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                 }
             ));
@@ -106,7 +106,7 @@ macro_rules! generate_insert {
             $output.[<add_all_to_ $name _default>]($value.iter().map(
                 |value|
                 match value {
-                    itertools::Either::Right(value) => value.clone(),
+                    either::Either::Right(value) => value.clone(),
                     _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
                 }
             ));
@@ -120,23 +120,23 @@ macro_rules! generate_insert_builder {
     (set: $name: ident: $typ: ty | $gtyp: ty) => {
         paste::paste! {
             pub fn [<push_ $name>](&mut self, value: $typ) {
-                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).push(itertools::Either::Left(value));
+                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).push(either::Either::Left(value));
             }
 
             pub fn [<extend_ $name>]<I: IntoIterator<Item=$typ>>(&mut self, value: I) {
-                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).extend(value.into_iter().map(itertools::Either::Left));
+                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).extend(value.into_iter().map(either::Either::Left));
             }
 
             pub fn [<peek_ $name>](&self) -> Option<Vec<&$typ>> {
                 Some(self.$name.as_ref()?.as_ref()?.iter().map(|value| {
                     match value {
-                        itertools::Either::Left(value) => value,
+                        either::Either::Left(value) => value,
                         _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                     }
                 }).collect::<Vec<_>>())
             }
 
-            pub fn [<peek_raw_ $name>](&self) -> Option<&Vec<itertools::Either<$typ, $gtyp>>> {
+            pub fn [<peek_raw_ $name>](&self) -> Option<&Vec<either::Either<$typ, $gtyp>>> {
                 self.$name.as_ref()?.as_ref()
             }
         }
@@ -144,23 +144,23 @@ macro_rules! generate_insert_builder {
     (interned: $name: ident: $typ: ty | $gtyp: ty) => {
         paste::paste! {
             pub fn [<push_ $name>](&mut self, value: $gtyp) {
-                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).push(itertools::Either::Right(value));
+                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).push(either::Either::Right(value));
             }
 
             pub fn [<extend_ $name>]<I: IntoIterator<Item=$gtyp>>(&mut self, value: I) {
-                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).extend(value.into_iter().map(itertools::Either::Right));
+                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).extend(value.into_iter().map(either::Either::Right));
             }
 
             pub fn [<peek_ $name>](&self) -> Option<Vec<&$gtyp>> {
                 Some(self.$name.as_ref()?.as_ref()?.iter().map(|value| {
                     match value {
-                        itertools::Either::Right(value) => value,
+                        either::Either::Right(value) => value,
                         _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
                     }
                 }).collect::<Vec<_>>())
             }
 
-            pub fn [<peek_raw_ $name>](&self) -> Option<&Vec<itertools::Either<$typ, $gtyp>>> {
+            pub fn [<peek_raw_ $name>](&self) -> Option<&Vec<either::Either<$typ, $gtyp>>> {
                 self.$name.as_ref()?.as_ref()
             }
         }
@@ -175,13 +175,13 @@ macro_rules! generate_getter {
             pub fn [<get_ $name>]<'a>(&'a self) -> Option<Vec<&'a $typ>> {
                 Some(self.$name.as_ref()?.iter().map(|value| {
                     match value {
-                        itertools::Either::Left(value) => value,
+                        either::Either::Left(value) => value,
                         _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                     }
                 }).collect::<Vec<_>>())
             }
 
-            pub fn [<get_ $name _raw>](&self) -> Option<&Vec<itertools::Either<$typ, $gtyp>>> {
+            pub fn [<get_ $name _raw>](&self) -> Option<&Vec<either::Either<$typ, $gtyp>>> {
                 self.$name.as_ref()
             }
         }
@@ -191,13 +191,13 @@ macro_rules! generate_getter {
             pub fn [<get_ $name>]<'a>(&'a self) -> Option<Vec<&'a $gtyp>> {
                 Some(self.$name.as_ref()?.iter().map(|value| {
                     match value {
-                        itertools::Either::Right(value) => value,
+                        either::Either::Right(value) => value,
                         _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
                     }
                 }).collect::<Vec<_>>())
             }
 
-            pub fn [<get_ $name _raw>](&self) -> Option<&Vec<itertools::Either<$typ, $gtyp>>> {
+            pub fn [<get_ $name _raw>](&self) -> Option<&Vec<either::Either<$typ, $gtyp>>> {
                 self.$name.as_ref()
             }
         }
@@ -214,7 +214,7 @@ macro_rules! create_collector_implementation {
             #[builder(setter(custom))]
             pub dictionary_name: Option<&'static str>,
             $(#[builder(setter(custom), default)]
-            $name: Option<Vec<itertools::Either<$collect_type, T>>>,
+            $name: Option<Vec<either::Either<$collect_type, T>>>,
             )+
         }
 
@@ -249,8 +249,8 @@ macro_rules! create_collector_implementation {
                     let mut new = Vec::with_capacity($name.len());
                     for x in $name {
                         new.push(match x {
-                            itertools::Either::Right(value) => itertools::Either::Right(mapping(value)),
-                            itertools::Either::Left(value) => itertools::Either::Left(value)
+                            either::Either::Right(value) => either::Either::Right(mapping(value)),
+                            either::Either::Left(value) => either::Either::Left(value)
                         })
                     }
                     Some(new)
@@ -343,8 +343,8 @@ macro_rules! create_collector_implementation {
                         let mut new = Vec::with_capacity($name.len());
                         for x in $name {
                             new.push(match x {
-                                itertools::Either::Right(value) => itertools::Either::Right(mapping(value)),
-                                itertools::Either::Left(value) => itertools::Either::Left(value)
+                                either::Either::Right(value) => either::Either::Right(mapping(value)),
+                                either::Either::Left(value) => either::Either::Left(value)
                             })
                         }
                         Some(Some(new))
