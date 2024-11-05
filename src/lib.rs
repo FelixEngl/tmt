@@ -41,3 +41,23 @@ pub fn ldatranslate(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(feature = "gen_python_api")]
 pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
+
+#[cfg(test)]
+mod test {
+    use env_logger::{Target};
+    use log::LevelFilter;
+    use pyo3::prelude::*;
+
+    #[test]
+    fn can_register_the_modules(){
+        let _ = env_logger::builder()
+            .target(Target::Stdout)
+            .filter_level(LevelFilter::Debug)
+            .init();
+
+        Python::with_gil(|py| {
+            let ldatranslate = PyModule::new_bound(py, "ldatranslate")?;
+            super::ldatranslate(&ldatranslate)
+        }).unwrap();
+    }
+}

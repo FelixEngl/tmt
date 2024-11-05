@@ -1,11 +1,13 @@
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use either::Either;
 use itertools::Itertools;
 use strum::Display;
 use thiserror::Error;
+use tinyset::Set64;
 use crate::topicmodel::dictionary::word_infos::{Language, PartOfSpeech, Region};
 use crate::topicmodel::reference::HashRef;
 use super::helper::gen_ms_terms_reader::iter::TermEntryElementIter;
@@ -13,101 +15,6 @@ use super::helper::gen_ms_terms_reader::*;
 
 pub struct MSTermsReader<R> {
     iter: TermEntryElementIter<R>,
-}
-
-#[derive(Debug)]
-pub struct MsTermsEntry {
-    id: HashRef<String>,
-    terms: HashMap<LangAttribute, TermDefinition>
-}
-
-#[derive(Debug, Error)]
-pub enum MsTermsEntryMergeError {
-    #[error("Failed on top level!")]
-    EntryLevel(MsTermsEntry),
-    #[error("Failed on definition level!")]
-    DefinitionLevel(TermDefinition),
-    #[error("Failed on term level {2}!")]
-    TermLevel(Term, Term, MsTermsEntryMergeTermErrorKind),
-}
-
-#[derive(Debug, Copy, Clone, Display)]
-pub enum MsTermsEntryMergeTermErrorKind {
-    Id,
-    Term,
-    POS
-}
-
-impl MsTermsEntry {
-    pub fn merge_in_place(&mut self, other: MsTermsEntry) -> Result<(), MsTermsEntryMergeError> {
-        if self.id == other.id {
-            for (k, v) in other.terms {
-                match self.terms.entry(k) {
-                    Entry::Occupied(mut value) => {
-                        value.get_mut().merge_in_place(v)?;
-                    }
-                    Entry::Vacant(value) => {
-                        value.insert(v);
-                    }
-                }
-            }
-            Ok(())
-        } else {
-            Err(MsTermsEntryMergeError::EntryLevel(other))
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct TermDefinition {
-    // todo: Sicherstellen, das BE und US korrekt unterschieden werden
-    lang: Language,
-    region: Option<Region>,
-    defintition: Vec<String>,
-    terms: HashMap<HashRef<String>, Term>
-}
-
-impl TermDefinition {
-    pub fn merge_in_place(&mut self, other: TermDefinition) -> Result<(), MsTermsEntryMergeError> {
-        if self.lang == other.lang {
-            self.defintition.extend(other.defintition);
-            for (k, v) in other.terms.into_iter() {
-                match self.terms.entry(k) {
-                    Entry::Occupied(mut value) => {
-                        value.get_mut().merge_in_place(v)?;
-                    }
-                    Entry::Vacant(value) => {
-                        value.insert(v);
-                    }
-                }
-            }
-            Ok(())
-        } else {
-            Err(MsTermsEntryMergeError::DefinitionLevel(other))
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Term {
-    term: String,
-    id: HashRef<String>,
-    part_of_speech: PartOfSpeech
-}
-
-impl Term {
-    pub fn merge_in_place(&mut self, other: Term) -> Result<(), MsTermsEntryMergeError> {
-        if self.id != other.id {
-            return Err(MsTermsEntryMergeError::TermLevel(self.clone(), other, MsTermsEntryMergeTermErrorKind::Id))
-        }
-        if self.term != other.term {
-            return Err(MsTermsEntryMergeError::TermLevel(self.clone(), other, MsTermsEntryMergeTermErrorKind::Term))
-        }
-        if self.part_of_speech != other.part_of_speech {
-            return Err(MsTermsEntryMergeError::TermLevel(self.clone(), other, MsTermsEntryMergeTermErrorKind::POS))
-        }
-        Ok(())
-    }
 }
 
 impl<R> Iterator for MSTermsReader<R> where R: BufRead {
@@ -191,12 +98,111 @@ impl<R> Iterator for MSTermsReader<R> where R: BufRead {
     }
 }
 
+
+#[derive(Debug)]
+pub struct MsTermsEntry {
+    pub id: HashRef<String>,
+    pub terms: HashMap<LangAttribute, TermDefinition>
+}
+
+#[derive(Debug, Error)]
+pub enum MsTermsEntryMergeError {
+    #[error("Failed on top level!")]
+    EntryLevel(MsTermsEntry),
+    #[error("Failed on definition level!")]
+    DefinitionLevel(TermDefinition),
+    #[error("Failed on term level {2}!")]
+    TermLevel(Term, Term, MsTermsEntryMergeTermErrorKind),
+}
+
+#[derive(Debug, Copy, Clone, Display)]
+pub enum MsTermsEntryMergeTermErrorKind {
+    Id,
+    Term,
+    POS
+}
+
+impl MsTermsEntry {
+    pub fn merge_in_place(&mut self, other: MsTermsEntry) -> Result<(), MsTermsEntryMergeError> {
+        if self.id == other.id {
+            for (k, v) in other.terms {
+                match self.terms.entry(k) {
+                    Entry::Occupied(mut value) => {
+                        value.get_mut().merge_in_place(v)?;
+                    }
+                    Entry::Vacant(value) => {
+                        value.insert(v);
+                    }
+                }
+            }
+            Ok(())
+        } else {
+            Err(MsTermsEntryMergeError::EntryLevel(other))
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TermDefinition {
+    // todo: Sicherstellen, das BE und US korrekt unterschieden werden
+    pub lang: Language,
+    pub region: Option<Region>,
+    pub defintition: Vec<String>,
+    pub terms: HashMap<HashRef<String>, Term>
+}
+
+impl TermDefinition {
+    pub fn merge_in_place(&mut self, other: TermDefinition) -> Result<(), MsTermsEntryMergeError> {
+        if self.lang == other.lang {
+            self.defintition.extend(other.defintition);
+            for (k, v) in other.terms.into_iter() {
+                match self.terms.entry(k) {
+                    Entry::Occupied(mut value) => {
+                        value.get_mut().merge_in_place(v)?;
+                    }
+                    Entry::Vacant(value) => {
+                        value.insert(v);
+                    }
+                }
+            }
+            Ok(())
+        } else {
+            Err(MsTermsEntryMergeError::DefinitionLevel(other))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Term {
+    pub term: String,
+    pub id: HashRef<String>,
+    pub part_of_speech: PartOfSpeech
+}
+
+impl Term {
+    pub fn merge_in_place(&mut self, other: Term) -> Result<(), MsTermsEntryMergeError> {
+        if self.id != other.id {
+            return Err(MsTermsEntryMergeError::TermLevel(self.clone(), other, MsTermsEntryMergeTermErrorKind::Id))
+        }
+        if self.term != other.term {
+            return Err(MsTermsEntryMergeError::TermLevel(self.clone(), other, MsTermsEntryMergeTermErrorKind::Term))
+        }
+        if self.part_of_speech != other.part_of_speech {
+            return Err(MsTermsEntryMergeError::TermLevel(self.clone(), other, MsTermsEntryMergeTermErrorKind::POS))
+        }
+        Ok(())
+    }
+}
+
+
 #[derive(Debug, Error)]
 pub enum MSTermsReaderError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Xml(#[from] MartifReaderError),
+    #[error(transparent)]
+    Merge(#[from] MsTermsEntryMergeError),
 }
 
 pub fn read_ms_terms(path: impl AsRef<Path>) -> Result<MSTermsReader<BufReader<File>>, MSTermsReaderError> {
@@ -214,11 +220,140 @@ pub fn read_ms_terms(path: impl AsRef<Path>) -> Result<MSTermsReader<BufReader<F
     )
 }
 
+
+pub struct MergingReader {
+    cache: HashMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>,
+    readers: Vec<Option<Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>>>>,
+    emit_unfinished_in_the_end: bool,
+    finished: bool
+}
+
+impl MergingReader {
+    pub fn new<I: IntoIterator<Item=Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>>>>(
+        readers: I,
+        emit_unfinished_in_the_end: bool
+    ) -> Self {
+        let new = Self {
+            cache: Default::default(),
+            readers: readers.into_iter().map(Some).collect(),
+            emit_unfinished_in_the_end,
+            finished: false
+        };
+        assert!(new.readers.len() > 0);
+        new
+    }
+
+    pub fn get_unfinished(&mut self) -> Option<&mut HashMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>> {
+        if self.finished {
+            Some(&mut self.cache)
+        } else {
+            None
+        }
+    }
+}
+
+
+impl MergingReader {
+
+    /// Merges an element in the already cached element.
+    /// Pops the element from the ache when it is completed.
+    fn merge_element(&mut self, reader_id: usize, entry: MsTermsEntry) -> Result<Option<MsTermsEntry>, MSTermsReaderError> {
+        match self.cache.entry(entry.id.clone()) {
+            Entry::Occupied(mut value) => {
+                let len = {
+                    let (a, b) = value.get_mut();
+                    a.merge_in_place(entry)?;
+                    b.insert(reader_id);
+                    b.len()
+                };
+                if len == self.readers.len() {
+                    Ok(Some(value.remove().0))
+                } else {
+                    Ok(None)
+                }
+            }
+            Entry::Vacant(empty) => {
+                let (_, b) = empty.insert((entry, Set64::with_capacity(self.readers.len())));
+                b.insert(reader_id);
+                Ok(None)
+            }
+        }
+    }
+
+    fn read_until_next(&mut self) -> Result<Option<MsTermsEntry>, MSTermsReaderError> {
+        let mut cache = Vec::with_capacity(self.readers.len());
+        'outer: loop {
+            for reader in self.readers.iter_mut() {
+                if let Some(reader) = reader {
+                    cache.push(reader.next().transpose()?);
+                } else {
+                    cache.push(None)
+                }
+            }
+
+            for (id, element) in cache.drain(..).enumerate() {
+                match element {
+                    None => {
+                        self.readers[id] = None;
+                    }
+                    Some(value) => {
+                        if let Some(finished) = self.merge_element(id, value)? {
+                            break 'outer Ok(Some(finished))
+                        }
+                    }
+                }
+            }
+
+            if self.readers.iter().any(Option::is_some) {
+                continue
+            }
+            break Ok(None)
+        }
+    }
+}
+
+
+impl Iterator for MergingReader {
+    type Item = Result<MsTermsEntry, MSTermsReaderError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            if self.emit_unfinished_in_the_end && !self.cache.is_empty() {
+                let value = {
+                    self.cache.iter().next().unwrap().0.clone()
+                };
+                return Some(Ok(self.cache.remove(&value).unwrap().0))
+            }
+            return None
+        }
+        if self.readers.len() == 1 {
+            match &mut self.readers[0] {
+                None => {
+                    None
+                }
+                Some(val) => {
+                    let result = val.next();
+                    if result.is_none() {
+                        self.finished = true
+                    }
+                    result
+                }
+            }
+        } else {
+            let result = self.read_until_next().transpose();
+            if result.is_none() {
+                self.finished = true;
+            }
+            result
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap};
+    use std::collections::{HashMap, HashSet};
     use crate::topicmodel::reference::HashRef;
-    use super::{read_ms_terms, MsTermsEntry};
+    use super::{read_ms_terms, MSTermsReaderError, MergingReader, MsTermsEntry};
 
     #[test]
     fn can_run(){
@@ -235,26 +370,43 @@ mod test {
         }
 
         let mut en_en: HashMap<HashRef<String>, MsTermsEntry> = HashMap::new();
+        let mut x = MergingReader::new(
+            vec![
+                read_ms_terms(
+                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx"
+                ).unwrap(),
+                read_ms_terms(
+                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
+                ).unwrap()
+            ].into_iter().map(|value| {
+                let x: Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>> = Box::new(value);
+                x
+            }),
+            false
+        );
 
-        for value in read_ms_terms(
-            "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx"
-        ).unwrap() {
+        let mut ct = 0;
+
+        for value in &mut x {
             let value = value.unwrap();
-            if let Some(value) = en_en.insert(value.id.clone(), value) {
-                panic!("Failed for id {}", value.id);
+            ct += 1;
+        }
+
+        let mut ids = HashSet::new();
+        let mut sub_ids = HashSet::new();
+
+        for (k, v) in x.get_unfinished().unwrap() {
+            ids.insert(k.clone());
+            for (_, a) in &v.0.terms {
+                for id in a.terms.keys() {
+                    if !sub_ids.insert(id.clone()) {
+                        println!("Collision: {}", id)
+                    }
+                }
             }
         }
 
 
-        let mut merge_ct = 0usize;
-
-        for (k, v) in en_de.iter_mut() {
-            if let Some(value) = en_en.remove(k) {
-                merge_ct += 1;
-                v.merge_in_place(value).unwrap()
-            }
-        }
-
-        println!("{merge_ct}");
+        println!("{ct} - {}", x.get_unfinished().unwrap().len());
     }
 }

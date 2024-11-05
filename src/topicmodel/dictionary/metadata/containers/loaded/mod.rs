@@ -164,4 +164,3 @@ generate_field_code! {
         }
     },
 }
-

@@ -136,6 +136,7 @@ macro_rules! create_python_getter {
 
 
 
+
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
         #[pyo3::pymethods]
         impl SolvedLoadedMetadata {
@@ -167,6 +168,10 @@ macro_rules! create_python_getter {
                         )+
                     }
                 )
+            }
+
+            pub fn domain_vector(&self) -> $crate::topicmodel::dictionary::metadata::domain_matrix::Entry {
+                $crate::topicmodel::dictionary::metadata::domain_matrix::Entry::from_meta(&self)
             }
 
             $(

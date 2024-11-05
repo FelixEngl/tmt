@@ -2,9 +2,9 @@ use std::fmt::{Display, Formatter};
 use std::ops::{Add, AddAssign, Deref, DerefMut, RangeBounds, Sub, SubAssign};
 use std::vec::Drain;
 use itertools::Itertools;
-use pyo3::{pyclass, pymethods};
+use pyo3::{pyclass, pymethods, FromPyObject};
 use strum::EnumCount;
-use crate::register_python;
+use crate::{impl_py_stub, register_python};
 use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata, SolvedLoadedMetadata};
 use crate::topicmodel::dictionary::word_infos::{Domain, Register};
 
@@ -44,6 +44,10 @@ impl TopicMatrix {
         } else {
             Self::new()
         }
+    }
+    
+    pub fn __str__(&self) -> String {
+        self.to_string()
     }
 }
 
@@ -104,15 +108,30 @@ impl Display for TopicMatrix {
 }
 
 
+type Value = u8;
 
-#[pyclass]
+
+#[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass(eq, hash, frozen)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 #[repr(transparent)]
 pub struct Entry {
-    inner: [i32; Domain::COUNT + Register::COUNT]
+    inner: [Value; Domain::COUNT + Register::COUNT]
 }
 
 
+#[derive(Debug, Copy, Clone, FromPyObject)]
+pub enum ValidAdd {
+    Entry(Entry),
+    Domain(Domain, Value),
+    Register(Register, Value),
+}
+
+impl_py_stub!(
+    ValidAdd: Entry, (Domain, Value), (Register, Value)
+);
+
+#[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl Entry {
     #[new]
@@ -120,29 +139,71 @@ impl Entry {
         Self{inner: [0; Domain::COUNT + Register::COUNT]}
     }
 
-    pub fn fill_with_meta(&mut self, meta: SolvedLoadedMetadata) {
-        {
-            let (a, b) = meta.domains();
-            if let Some(a) = a {
-                for x in a {
-                    let domain: Domain = x.clone().try_into().unwrap();
-                    self.increment(domain);
-                }
+    pub fn __add__(&self, other: ValidAdd) -> Self {
+        match other {
+            ValidAdd::Entry(value) => {
+                self.add(value)
             }
-            if let Some(b) = b {
-                for x in b.values().flat_map(|value| value.iter().cloned()) {
-                    let domain: Domain = x.clone().try_into().unwrap();
-                    self.increment(domain);
-                }
+            ValidAdd::Domain(domain, value) => {
+                let mut new = self.clone();
+                new.increment_by(domain, value);
+                new
+            }
+            ValidAdd::Register(domain, value) => {
+                let mut new = self.clone();
+                new.increment_by(domain, value);
+                new
             }
         }
+    }
 
-        meta.registers();
+    pub fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    pub fn to_list(&self) -> Vec<Value> {
+        self.inner.to_vec()
     }
 }
 
 
 impl Entry {
+
+    pub fn from_meta(meta: &SolvedLoadedMetadata) -> Self {
+        let mut new = Self::new();
+        {
+            let (a, b) = meta.domains();
+            if let Some(a) = a {
+                for x in a {
+                    let domain: Domain = x.clone().try_into().unwrap();
+                    new.increment(domain);
+                }
+            }
+            if let Some(b) = b {
+                for x in b.values().flat_map(|value| value.iter().cloned()) {
+                    let domain: Domain = x.clone().try_into().unwrap();
+                    new.increment(domain);
+                }
+            }
+        }
+        {
+            let (a, b) = meta.registers();
+            if let Some(a) = a {
+                for x in a {
+                    let domain: Register = x.clone().try_into().unwrap();
+                    new.increment(domain);
+                }
+            }
+            if let Some(b) = b {
+                for x in b.values().flat_map(|value| value.iter().cloned()) {
+                    let domain: Register = x.clone().try_into().unwrap();
+                    new.increment(domain);
+                }
+            }
+        }
+        new
+    }
+
     pub fn fill_by(&mut self, meta: &AssociatedMetadata) {
         if let Some(meta) = meta.domains() {
             for x in meta.iter() {
@@ -157,19 +218,19 @@ impl Entry {
         }
     }
 
-    pub fn get<I: TopicMatrixIndex>(&self, i: I) -> i32 {
+    pub fn get<I: TopicMatrixIndex>(&self, i: I) -> Value {
         self.inner[i.get()]
     }
 
-    pub fn get_mut<I: TopicMatrixIndex>(&mut self, i: I) -> &mut i32 {
+    pub fn get_mut<I: TopicMatrixIndex>(&mut self, i: I) -> &mut Value {
         &mut self.inner[i.get()]
     }
 
-    pub fn into_inner(self) -> [i32; Domain::COUNT + Register::COUNT] {
+    pub fn into_inner(self) -> [Value; Domain::COUNT + Register::COUNT] {
         self.inner
     }
 
-    pub fn increment_by<I: TopicMatrixIndex>(&mut self, index: I, value: i32) {
+    pub fn increment_by<I: TopicMatrixIndex>(&mut self, index: I, value: Value) {
         self.inner[index.get()] += value;
     }
 
@@ -179,8 +240,8 @@ impl Entry {
 
 }
 
-impl From<[i32; Domain::COUNT + Register::COUNT]> for Entry {
-    fn from(inner: [i32; Domain::COUNT + Register::COUNT]) -> Self {
+impl From<[Value; Domain::COUNT + Register::COUNT]> for Entry {
+    fn from(inner: [Value; Domain::COUNT + Register::COUNT]) -> Self {
         Self{inner}
     }
 }
@@ -224,7 +285,7 @@ impl SubAssign for Entry {
 }
 
 impl Deref for Entry {
-    type Target = [i32; Domain::COUNT + Register::COUNT];
+    type Target = [Value; Domain::COUNT + Register::COUNT];
 
     fn deref(&self) -> &Self::Target {
         &self.inner

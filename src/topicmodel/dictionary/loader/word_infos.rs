@@ -4,12 +4,24 @@ use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, EnumString, IntoStaticStr};
 use tinyset::Fits64;
+use crate::register_python;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{EGenElement, ENumberElement, EPosElement, LangAttribute as FreeDictLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
 use crate::topicmodel::dictionary::loader::iate_reader::{AdministrativeStatus};
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute, ETermNoteElement};
 use crate::topicmodel::dictionary::metadata::domain_matrix::TopicMatrixIndex;
 use crate::topicmodel::dictionary::metadata::loaded::impl_try_from_as_unpack;
+
+register_python! {
+    enum Language;
+    enum Region;
+    enum PartOfSpeech;
+    enum GrammaticalGender;
+    enum GrammaticalNumber;
+    enum Domain;
+    enum Register;
+}
+
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(name = "DictionaryLanguage", eq, eq_int, hash, frozen)]

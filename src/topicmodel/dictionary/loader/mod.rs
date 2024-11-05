@@ -13,9 +13,10 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash};
 use std::path::Path;
 use thiserror::Error;
-use crate::register_python;
+use crate::topicmodel::dictionary::dicts_info::omega_wiki::OptionalOmegaWikiEntry;
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
+use crate::topicmodel::dictionary::loader::ms_terms_reader::{MsTermsEntry, TermDefinition};
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
 
 mod ding;
@@ -32,15 +33,6 @@ mod generalized_data;
 mod toolkit;
 mod muse;
 
-register_python! {
-    enum Language;
-    enum Region;
-    enum PartOfSpeech;
-    enum GrammaticalGender;
-    enum GrammaticalNumber;
-    enum Domain;
-    enum Register;
-}
 
 
 pub trait Preprocessor {
@@ -251,7 +243,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn process_free_dict_entry<D: Direction + DirLang>(&mut self, entry: free_dict::FreeDictEntry) {
+    fn process_free_dict_entry<D: Direction + DirLang>(&mut self, entry: free_dict::FreeDictEntry) {
         let free_dict::Word {
             domains,
             languages,
@@ -394,7 +386,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn process_dictcc<D: Direction + DirLang, V: AsRef<str> + Clone + Display>(&mut self, dictcc::Entry(lang_a_cont, lang_b_cont, word_types, categories): dictcc::Entry<V>) {
+    fn process_dictcc<D: Direction + DirLang, V: AsRef<str> + Clone + Display>(&mut self, dictcc::Entry(lang_a_cont, lang_b_cont, word_types, categories): dictcc::Entry<V>) {
         use crate::topicmodel::dictionary::loader::dictcc::{SpecialInfo, WordTypeInfo};
 
         let mut general_register = Vec::new();
@@ -488,6 +480,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
+
     pub fn read_ding_dict<D: DirLang + Direction>(&mut self, p: impl AsRef<Path>) -> Result<usize, (usize, Vec<LineDictionaryReaderError<DictionaryLineParserError<ding::DingEntry<String>>>>)> {
         match ding::read_dictionary(p) {
             Ok(value) => {
@@ -517,10 +510,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    fn process_ding_interchangeable<D: Direction + DirLang, L: DirLang, V: AsRef<str> + Clone + Display>(
-        &mut self,
-        interchangeables: Vec<Vec<(String, LoadedMetadataCollectionBuilder<V>)>>
-    ) -> Vec<Vec<usize>> {
+    fn process_ding_interchangeable<D: Direction + DirLang, L: DirLang, V: AsRef<str> + Clone + Display>(&mut self, interchangeables: Vec<Vec<(String, LoadedMetadataCollectionBuilder<V>)>>) -> Vec<Vec<usize>> {
         let mut ids = Vec::new();
         let interchangeable_id = self.get_ding_id();
         for value in interchangeables {
@@ -539,7 +529,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         ids
     }
 
-    pub fn process_ding_dict<D: Direction + DirLang, V: AsRef<str> + Clone + Display>(&mut self, entry: ding::DingEntry<V>) -> Result<(), ding::entry_processing::Translation<V>> {
+    fn process_ding_dict<D: Direction + DirLang, V: AsRef<str> + Clone + Display>(&mut self, entry: ding::DingEntry<V>) -> Result<(), ding::entry_processing::Translation<V>> {
         let value = ding::entry_processing::process_translation_entry(entry);
         let converted = value.create_alternatives();
         if converted.0.len() != converted.1.len() {
@@ -562,6 +552,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
         Ok(())
     }
+
 
     pub fn read_iate_dict<D: DirLang + Direction>(&mut self, p: impl AsRef<Path>, lang_a: Language, lang_b: Language) -> Result<usize, (usize, Vec<IateError>)> {
         match iate_reader::read_iate(p) {
@@ -597,7 +588,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn process_iate<D: Direction + DirLang>(&mut self, element: iate_reader::IateElement, lang_a: Language, lang_b: Language) -> Result<(), IateError> {
+    fn process_iate<D: Direction + DirLang>(&mut self, element: iate_reader::IateElement, lang_a: Language, lang_b: Language) -> Result<(), IateError> {
         let (id, contextual, domains, registers, mut words) = iate_reader::process_element(element);
         let mut builder = LoadedMetadataCollectionBuilder::with_name(Some(IATE));
         builder.extend_contextual_informations(contextual);
@@ -704,10 +695,62 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         Ok(())
     }
 
-    fn process_omega_impl<D: Direction + DirLang, L: DirLang>(&mut self, dicts_info::omega_wiki::OmegaWikiWord {
-        word,
-        meta: meta_info
-    }: dicts_info::omega_wiki::OmegaWikiWord<String> ) -> usize {
+
+    pub fn read_omega_dict<D: Direction + DirLang>(&mut self, p: impl AsRef<Path>) -> Result<usize, (usize, Vec<LineReaderError<OptionalOmegaWikiEntry>>)> {
+        let mut counter = 0;
+        let mut errors = Vec::new();
+        match dicts_info::omega_wiki::read_dictionary(p) {
+            Ok(reader) => {
+                for value in reader {
+                    match value {
+                        Ok(value) => {
+                            self.process_omega::<D>(value);
+                            counter+=1;
+                        }
+                        Err(err) => {
+                            errors.push(err.into())
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(counter)
+                } else {
+                    Err((counter, errors))
+                }
+            }
+            Err(value) => {
+                Err((0, vec![value.into()]))
+            }
+        }
+
+    }
+
+    fn process_omega<D: Direction + DirLang>(&mut self, entry: OptionalOmegaWikiEntry) {
+        if let Some(dicts_info::omega_wiki::OmegaWikiEntry{
+            lang_a,
+            lang_b
+        }) = entry.into_inner() {
+            let mut lang_a_ids = Vec::new();
+            let mut lang_b_ids = Vec::new();
+            for value in lang_a {
+                lang_a_ids.push(self.process_omega_impl::<D, A>(value));
+            }
+            for value in lang_b {
+                lang_b_ids.push(self.process_omega_impl::<D::OPPOSITE, B>(value));
+            }
+            for (a, b) in lang_a_ids.into_iter().cartesian_product(lang_b_ids) {
+                unsafe {
+                    if D::LANG.is_a() {
+                        self.dictionary.insert_raw_values::<Invariant>(a, b);
+                    } else {
+                        self.dictionary.insert_raw_values::<Invariant>(b, a);
+                    }
+                }
+            }
+        }
+    }
+
+    fn process_omega_impl<D: Direction + DirLang, L: DirLang>(&mut self, dicts_info::omega_wiki::OmegaWikiWord { word, meta: meta_info }: dicts_info::omega_wiki::OmegaWikiWord<String> ) -> usize {
         let (id, mut meta) = if D::DIRECTION.is_a_to_b() {
             if L::LANG.is_a() {
                 self.insert::<D, L>(OMEGA, &word)
@@ -735,28 +778,20 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         id
     }
 
-    pub fn process_omega<D: Direction + DirLang>(&mut self, entry: dicts_info::omega_wiki::OptionalOmegaWikiEntry) {
-        if let Some(dicts_info::omega_wiki::OmegaWikiEntry{
-            lang_a,
-            lang_b
-        }) = entry.into_inner() {
-            let mut lang_a_ids = Vec::new();
-            let mut lang_b_ids = Vec::new();
-            for value in lang_a {
-                lang_a_ids.push(self.process_omega_impl::<D, A>(value));
-            }
-            for value in lang_b {
-                lang_b_ids.push(self.process_omega_impl::<D::OPPOSITE, B>(value));
-            }
-            for (a, b) in lang_a_ids.into_iter().cartesian_product(lang_b_ids) {
-                unsafe {
-                    if D::LANG.is_a() {
-                        self.dictionary.insert_raw_values::<Invariant>(a, b);
-                    } else {
-                        self.dictionary.insert_raw_values::<Invariant>(b, a);
-                    }
-                }
-            }
+
+    pub fn read_ms_terms<D: Direction + DirLang>(&mut self, lang_a: impl AsRef<Path>, lang_b: impl AsRef<Path>) {
+
+    }
+
+
+    fn process_ms_terms(&mut self, MsTermsEntry {terms, id}: MsTermsEntry) {
+        for (language, TermDefinition{
+            lang,
+            terms,
+            region,
+            defintition
+        }) in terms {
+
         }
     }
 }
@@ -829,7 +864,15 @@ mod test {
         let new = default.len();
         println!("{} delta: {}", new, current.diff(&new));
 
-
+        current = new;
+        let x = default.read_omega_dict::<AToB>("dictionaries/dicts.info/OmegaWiki.txt");
+        if let Err((_, b)) = x {
+            for value in b {
+                println!("{value}")
+            }
+        }
+        let new = default.len();
+        println!("{} delta: {}", new, current.diff(&new));
 
         let data = default.finalize();
         let mut writer = BufWriter::new(dict_file);
