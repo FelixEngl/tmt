@@ -243,9 +243,9 @@ impl MergingReader {
         new
     }
 
-    pub fn get_unfinished(&mut self) -> Option<&mut HashMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>> {
+    pub fn get_unfinished(&self) -> Option<&HashMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>> {
         if self.finished {
-            Some(&mut self.cache)
+            Some(&self.cache)
         } else {
             None
         }
