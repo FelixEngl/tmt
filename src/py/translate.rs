@@ -28,7 +28,7 @@ use crate::translate::{KeepOriginalWord, TranslateConfig};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
-use crate::topicmodel::topic_model::MappableTopicModel;
+use crate::topicmodel::model::MappableTopicModel;
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
 use crate::voting::py::PyVotingModel;
 use crate::voting::traits::VotingMethodMarker;

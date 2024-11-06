@@ -20,7 +20,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};
 
-use crate::topicmodel::topic_model::{Importance, ImportanceRank, ImportanceRankTo, Position, PositionTo, Probability, Rank, TopicId, WordId, WordTo};
+use crate::topicmodel::model::{Importance, ImportanceRank, ImportanceRankTo, Position, PositionTo, Probability, Rank, TopicId, WordId, WordTo};
 
 /// The precalculated stats of a topic
 #[derive(Debug, Clone, Serialize, Deserialize)]

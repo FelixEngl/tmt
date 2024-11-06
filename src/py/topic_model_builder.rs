@@ -21,7 +21,7 @@ use crate::py::topic_model::PyTopicModel;
 use crate::py::vocabulary::PyVocabulary;
 use crate::register_python;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
-use crate::topicmodel::topic_model::{DocumentLength, DocumentTo, Probability, TopicModel, TopicTo, WordFrequency, WordTo};
+use crate::topicmodel::model::{DocumentLength, DocumentTo, Probability, TopicModel, TopicTo, WordFrequency, WordTo};
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
 
@@ -175,7 +175,7 @@ impl PyTopicModelBuilder {
 #[cfg(test)]
 mod test {
     use crate::py::topic_model_builder::PyTopicModelBuilder;
-    use crate::topicmodel::topic_model::DisplayableTopicModel;
+    use crate::topicmodel::model::DisplayableTopicModel;
 
     #[test]
     fn can_create(){

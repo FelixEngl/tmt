@@ -21,7 +21,7 @@ use pyo3::exceptions::PyValueError;
 use crate::external_variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
 use crate::register_python;
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
-use crate::topicmodel::topic_model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
+use crate::topicmodel::model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
 use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
 use crate::voting::py::PyExprValue;
 
@@ -181,7 +181,7 @@ impl AsVariableProvider<String> for PyVariableProvider {
             }
         }
 
-        return Ok(variable_provider);
+        Ok(variable_provider)
     }
 }
 

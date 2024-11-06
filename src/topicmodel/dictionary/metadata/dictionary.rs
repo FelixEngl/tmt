@@ -12,7 +12,7 @@ use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, Searcha
 use crate::topicmodel::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
-use crate::topicmodel::dictionary::metadata::domain_matrix::TopicMatrix;
+use crate::topicmodel::domain_matrix::TopicMatrix;
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin};
 use crate::topicmodel::reference::HashRef;
 

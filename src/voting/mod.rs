@@ -51,17 +51,17 @@ impl<T> VotingMethodContext for T where T: ContextWithMutableVariables + Iterate
 pub trait VotingMethod {
     #[inline]
     fn execute_to_f64<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<f64>
-        where
-            A : VotingMethodContext,
-            B : VotingMethodContext
+    where
+        A : VotingMethodContext,
+        B : VotingMethodContext
     {
         Ok(self.execute(global_context, voters)?.as_number()?)
     }
 
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
-        where
-            A : VotingMethodContext,
-            B : VotingMethodContext;
+    where
+        A : VotingMethodContext,
+        B : VotingMethodContext;
 
     // #[inline]
     // fn execute_to_f64_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(f64, &'a [B])>
@@ -74,9 +74,9 @@ pub trait VotingMethod {
     // }
 
     fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])>
-        where
-            A : VotingMethodContext,
-            B : VotingMethodContext {
+    where
+        A : VotingMethodContext,
+        B : VotingMethodContext {
         Ok((self.execute(global_context, voters)?, voters))
     }
 }

@@ -26,7 +26,7 @@ use rayon::prelude::*;
 use strum::{AsRefStr, Display, EnumString, ParseError};
 use thiserror::Error;
 use crate::toolkit::evalexpr::{CombineableContext};
-use crate::topicmodel::topic_model::{BasicTopicModel, TopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
+use crate::topicmodel::model::{BasicTopicModel, TopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{AToB, B, BToA};
 use crate::topicmodel::vocabulary::{MappableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
@@ -761,7 +761,7 @@ pub(crate) mod test {
     use std::num::NonZeroUsize;
     use crate::topicmodel::dictionary::{Dictionary, DictionaryMut};
     use crate::topicmodel::dictionary::direction::Invariant;
-    use crate::topicmodel::topic_model::{TopicModel};
+    use crate::topicmodel::model::{TopicModel};
     use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::{translate_topic_model_without_provider, TranslateConfig};

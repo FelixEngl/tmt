@@ -25,8 +25,8 @@ use itertools::Itertools;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use topic_model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
-use topicmodel::topic_model;
+use model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
+use topicmodel::model;
 use crate::py::helpers::{LanguageHintValue};
 use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::PyVocabulary;
@@ -36,8 +36,8 @@ use crate::toolkit::special_python_values::{SingleOrVec};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::topic_model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
-use crate::topicmodel::topic_model::meta::*;
+use crate::topicmodel::model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
+use crate::topicmodel::model::meta::*;
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
@@ -415,7 +415,7 @@ mod test {
     use crate::py::helpers::LanguageHintValue;
     use crate::py::topic_model::{PyTopicModel};
     use crate::py::vocabulary::PyVocabulary;
-    use crate::topicmodel::topic_model::TopicModel;
+    use crate::topicmodel::model::TopicModel;
     use crate::translate::test::create_test_data;
 
     #[test]

@@ -71,6 +71,7 @@ env_logger = "0.11"
 sealed = "0.6"
 either = "1.13"
 enum-map = "2.7"
+nalgebra = { version = "0.33",  features = ["serde"]}
 
 # Plugin System
 inventory = { version = "0.3" }

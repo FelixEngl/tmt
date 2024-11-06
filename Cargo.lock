@@ -1034,6 +1034,7 @@ dependencies = [
  "itertools",
  "log",
  "memchr",
+ "nalgebra 0.33.2",
  "nom",
  "num",
  "num_enum",
@@ -1485,7 +1486,24 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "rand_distr 0.4.3",
- "simba",
+ "simba 0.8.1",
+ "typenum",
+]
+
+[[package]]
+name = "nalgebra"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26aecdf64b707efd1310e3544d709c5c0ac61c13756046aaaba41be5c4f66a3b"
+dependencies = [
+ "approx",
+ "matrixmultiply",
+ "nalgebra-macros",
+ "num-complex",
+ "num-rational",
+ "num-traits",
+ "serde",
+ "simba 0.9.0",
  "typenum",
 ]
 
@@ -2209,6 +2227,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "simba"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3a386a501cd104797982c15ae17aafe8b9261315b5d07e3ec803f2ea26be0fa"
+dependencies = [
+ "approx",
+ "num-complex",
+ "num-traits",
+ "paste",
+ "wide",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2251,7 +2282,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f697a07e4606a0a25c044de247e583a330dbb1731d11bc7350b81f48ad567255"
 dependencies = [
  "approx",
- "nalgebra",
+ "nalgebra 0.32.6",
  "num-traits",
  "rand 0.8.5",
 ]

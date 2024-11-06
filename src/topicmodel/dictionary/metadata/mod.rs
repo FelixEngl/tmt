@@ -14,6 +14,5 @@
 
 pub(super) mod dictionary;
 pub mod containers;
-pub mod domain_matrix;
 
 pub use containers::*;

@@ -9,7 +9,7 @@ use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{EGe
 use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
 use crate::topicmodel::dictionary::loader::iate_reader::{AdministrativeStatus};
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute, ETermNoteElement};
-use crate::topicmodel::dictionary::metadata::domain_matrix::TopicMatrixIndex;
+use crate::topicmodel::domain_matrix::TopicMatrixIndex;
 use crate::topicmodel::dictionary::metadata::loaded::impl_try_from_as_unpack;
 
 register_python! {

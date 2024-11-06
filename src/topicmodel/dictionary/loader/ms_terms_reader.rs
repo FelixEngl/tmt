@@ -99,12 +99,6 @@ impl<R> Iterator for MSTermsReader<R> where R: BufRead {
 }
 
 
-#[derive(Debug)]
-pub struct MsTermsEntry {
-    pub id: HashRef<String>,
-    pub terms: HashMap<LangAttribute, TermDefinition>
-}
-
 #[derive(Debug, Error)]
 pub enum MsTermsEntryMergeError {
     #[error("Failed on top level!")]
@@ -120,6 +114,13 @@ pub enum MsTermsEntryMergeTermErrorKind {
     Id,
     Term,
     POS
+}
+
+
+#[derive(Debug)]
+pub struct MsTermsEntry {
+    pub id: HashRef<String>,
+    pub terms: HashMap<LangAttribute, TermDefinition>
 }
 
 impl MsTermsEntry {
@@ -139,6 +140,10 @@ impl MsTermsEntry {
         } else {
             Err(MsTermsEntryMergeError::EntryLevel(other))
         }
+    }
+
+    pub fn get_languages(&self) -> HashSet<Language> {
+        self.terms.values().map(|v| v.lang).collect()
     }
 }
 
@@ -220,40 +225,66 @@ pub fn read_ms_terms(path: impl AsRef<Path>) -> Result<MSTermsReader<BufReader<F
     )
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MergingReaderFinishedMode {
+    #[default]
+    DoNothing,
+    EmitUnfinished,
+    EmitWhenAtLeastNLanguages(usize)
+}
 
+#[derive(Debug)]
 pub struct MergingReader {
-    cache: HashMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>,
+    cache: indexmap::IndexMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>,
     readers: Vec<Option<Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>>>>,
-    emit_unfinished_in_the_end: bool,
+    mode: MergingReaderFinishedMode,
+    dropped: usize,
     finished: bool
 }
 
 impl MergingReader {
     pub fn new<I: IntoIterator<Item=Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>>>>(
         readers: I,
-        emit_unfinished_in_the_end: bool
+        mode: MergingReaderFinishedMode
     ) -> Self {
         let new = Self {
             cache: Default::default(),
             readers: readers.into_iter().map(Some).collect(),
-            emit_unfinished_in_the_end,
+            mode,
+            dropped: 0,
             finished: false
         };
         assert!(new.readers.len() > 0);
         new
     }
 
-    pub fn get_unfinished(&self) -> Option<&HashMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>> {
+
+    pub fn read_from<I: IntoIterator<Item=T>, T: AsRef<Path>>(
+        values: I,
+        mode: MergingReaderFinishedMode
+    ) -> Result<Self, MSTermsReaderError> {
+        Ok(
+            Self::new(
+                values.into_iter().map(|value| {
+                    read_ms_terms(value).map(|boxing| {
+                        Box::new(boxing)
+                    })
+                }).collect::<Result<Vec<_>, _>>()?,
+                mode
+            )
+        )
+    }
+
+    pub fn cache(&self) -> Option<&indexmap::IndexMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>> {
         if self.finished {
             Some(&self.cache)
         } else {
             None
         }
     }
-}
 
 
-impl MergingReader {
+
 
     /// Merges an element in the already cached element.
     /// Pops the element from the ache when it is completed.
@@ -310,25 +341,51 @@ impl MergingReader {
             break Ok(None)
         }
     }
-}
 
+    pub fn mode(&self) -> MergingReaderFinishedMode {
+        self.mode
+    }
+
+    pub fn dropped(&self) -> usize {
+        self.dropped
+    }
+
+    pub fn finished(&self) -> bool {
+        self.finished
+    }
+}
 
 impl Iterator for MergingReader {
     type Item = Result<MsTermsEntry, MSTermsReaderError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
-            if self.emit_unfinished_in_the_end && !self.cache.is_empty() {
-                let value = {
-                    self.cache.iter().next().unwrap().0.clone()
-                };
-                return Some(Ok(self.cache.remove(&value).unwrap().0))
+            match self.mode {
+                MergingReaderFinishedMode::DoNothing => {
+                    if !self.cache.is_empty() {
+                        self.dropped = self.cache.len();
+                        self.cache.clear();
+                    }
+                    None
+                }
+                MergingReaderFinishedMode::EmitUnfinished => {
+                    Some(Ok(self.cache.pop()?.1.0))
+                }
+                MergingReaderFinishedMode::EmitWhenAtLeastNLanguages(n) => {
+                    while let Some((_, (value, _))) = self.cache.pop() {
+                        if value.get_languages().len() >= n {
+                            return Some(Ok(value))
+                        } else {
+                            self.dropped += 1;
+                        }
+                    }
+                    None
+                }
             }
-            return None
-        }
-        if self.readers.len() == 1 {
+        } else if self.readers.len() == 1 {
             match &mut self.readers[0] {
                 None => {
+                    self.finished;
                     None
                 }
                 Some(val) => {
@@ -346,6 +403,7 @@ impl Iterator for MergingReader {
             }
             result
         }
+
     }
 }
 
@@ -353,7 +411,7 @@ impl Iterator for MergingReader {
 mod test {
     use std::collections::{HashMap, HashSet};
     use crate::topicmodel::reference::HashRef;
-    use super::{read_ms_terms, MSTermsReaderError, MergingReader, MsTermsEntry};
+    use super::{read_ms_terms, MSTermsReaderError, MergingReader, MergingReaderFinishedMode, MsTermsEntry};
 
     #[test]
     fn can_run(){
@@ -369,44 +427,16 @@ mod test {
             }
         }
 
-        let mut en_en: HashMap<HashRef<String>, MsTermsEntry> = HashMap::new();
-        let mut x = MergingReader::new(
+        let reader = MergingReader::read_from(
             vec![
-                read_ms_terms(
-                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx"
-                ).unwrap(),
-                read_ms_terms(
-                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
-                ).unwrap()
-            ].into_iter().map(|value| {
-                let x: Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>> = Box::new(value);
-                x
-            }),
-            false
+                "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
+                "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
+            ],
+            MergingReaderFinishedMode::EmitWhenAtLeastNLanguages(2)
         );
 
-        let mut ct = 0;
 
-        for value in &mut x {
-            let value = value.unwrap();
-            ct += 1;
-        }
+        println!("{}", reader.unwrap().count())
 
-        let mut ids = HashSet::new();
-        let mut sub_ids = HashSet::new();
-
-        for (k, v) in x.get_unfinished().unwrap() {
-            ids.insert(k.clone());
-            for (_, a) in &v.0.terms {
-                for id in a.terms.keys() {
-                    if !sub_ids.insert(id.clone()) {
-                        println!("Collision: {}", id)
-                    }
-                }
-            }
-        }
-
-
-        println!("{ct} - {}", x.get_unfinished().unwrap().len());
     }
 }

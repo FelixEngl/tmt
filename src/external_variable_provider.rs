@@ -18,7 +18,7 @@ use std::sync::{Arc, RwLock, OnceLock};
 use evalexpr::{ContextWithMutableVariables, EvalexprError, Value};
 use thiserror::Error;
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
-use crate::topicmodel::topic_model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
+use crate::topicmodel::model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
 use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
 
 #[derive(Debug, Clone, Error)]
