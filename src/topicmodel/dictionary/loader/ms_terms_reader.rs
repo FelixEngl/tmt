@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use either::Either;
 use itertools::Itertools;
 use strum::Display;
 use thiserror::Error;
@@ -233,13 +232,12 @@ pub enum MergingReaderFinishedMode {
     EmitWhenAtLeastNLanguages(usize)
 }
 
-#[derive(Debug)]
 pub struct MergingReader {
     cache: indexmap::IndexMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>,
     readers: Vec<Option<Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>>>>,
     mode: MergingReaderFinishedMode,
     dropped: usize,
-    finished: bool
+    finished: bool,
 }
 
 impl MergingReader {
@@ -267,7 +265,8 @@ impl MergingReader {
             Self::new(
                 values.into_iter().map(|value| {
                     read_ms_terms(value).map(|boxing| {
-                        Box::new(boxing)
+                        let x: Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>> = Box::new(boxing);
+                        x
                     })
                 }).collect::<Result<Vec<_>, _>>()?,
                 mode
@@ -275,22 +274,15 @@ impl MergingReader {
         )
     }
 
-    pub fn cache(&self) -> Option<&indexmap::IndexMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>> {
-        if self.finished {
-            Some(&self.cache)
-        } else {
-            None
-        }
+    pub fn cache(&self) -> &indexmap::IndexMap<HashRef<String>, (MsTermsEntry, Set64<usize>)> {
+        &self.cache
     }
-
-
-
 
     /// Merges an element in the already cached element.
     /// Pops the element from the ache when it is completed.
     fn merge_element(&mut self, reader_id: usize, entry: MsTermsEntry) -> Result<Option<MsTermsEntry>, MSTermsReaderError> {
         match self.cache.entry(entry.id.clone()) {
-            Entry::Occupied(mut value) => {
+            indexmap::map::Entry::Occupied(mut value) => {
                 let len = {
                     let (a, b) = value.get_mut();
                     a.merge_in_place(entry)?;
@@ -298,12 +290,12 @@ impl MergingReader {
                     b.len()
                 };
                 if len == self.readers.len() {
-                    Ok(Some(value.remove().0))
+                    Ok(Some(value.swap_remove().0))
                 } else {
                     Ok(None)
                 }
             }
-            Entry::Vacant(empty) => {
+            indexmap::map::Entry::Vacant(empty) => {
                 let (_, b) = empty.insert((entry, Set64::with_capacity(self.readers.len())));
                 b.insert(reader_id);
                 Ok(None)
@@ -353,65 +345,104 @@ impl MergingReader {
     pub fn finished(&self) -> bool {
         self.finished
     }
-}
 
-impl Iterator for MergingReader {
-    type Item = Result<MsTermsEntry, MSTermsReaderError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.finished {
-            match self.mode {
-                MergingReaderFinishedMode::DoNothing => {
-                    if !self.cache.is_empty() {
-                        self.dropped = self.cache.len();
-                        self.cache.clear();
-                    }
-                    None
-                }
-                MergingReaderFinishedMode::EmitUnfinished => {
-                    Some(Ok(self.cache.pop()?.1.0))
-                }
-                MergingReaderFinishedMode::EmitWhenAtLeastNLanguages(n) => {
-                    while let Some((_, (value, _))) = self.cache.pop() {
-                        if value.get_languages().len() >= n {
-                            return Some(Ok(value))
-                        } else {
-                            self.dropped += 1;
-                        }
-                    }
-                    None
-                }
-            }
-        } else if self.readers.len() == 1 {
-            match &mut self.readers[0] {
-                None => {
-                    self.finished;
-                    None
-                }
-                Some(val) => {
-                    let result = val.next();
-                    if result.is_none() {
-                        self.finished = true
-                    }
-                    result
-                }
-            }
-        } else {
-            let result = self.read_until_next().transpose();
-            if result.is_none() {
-                self.finished = true;
-            }
-            result
+    pub fn iter(&mut self) -> MergingReaderIter {
+        MergingReaderIter {
+            reader: self
         }
+    }
 
+    pub fn read_next(&mut self) -> Option<Result<MsTermsEntry, MSTermsReaderError>> {
+        loop {
+            if self.finished {
+                debug_assert!(self.readers.iter().all(Option::is_none), "Not all readers are none!");
+                match self.mode {
+                    MergingReaderFinishedMode::DoNothing => {
+                        if !self.cache.is_empty() {
+                            self.dropped = self.cache.len();
+                            self.cache.clear();
+                        }
+                        return None
+                    }
+                    MergingReaderFinishedMode::EmitUnfinished => {
+                        return Some(Ok(self.cache.pop()?.1.0))
+                    }
+                    MergingReaderFinishedMode::EmitWhenAtLeastNLanguages(n) => {
+                        while let Some((_, (value, _))) = self.cache.pop() {
+                            if value.get_languages().len() >= n {
+                                return Some(Ok(value))
+                            } else {
+                                self.dropped += 1;
+                            }
+                        }
+                        return None
+                    }
+                }
+            } else if self.readers.len() == 1 {
+                match &mut self.readers[0] {
+                    Some(val) => {
+                        let result = val.next();
+                        if result.is_none() {
+                            self.finished = true
+                        }
+                        return result
+                    }
+                    _ => unreachable!()
+                }
+            } else {
+                let result = self.read_until_next().transpose();
+                if result.is_none() {
+                    self.finished = true;
+                    continue
+                }
+                return result
+            }
+        }
     }
 }
 
+impl IntoIterator for MergingReader {
+    type Item = Result<MsTermsEntry, MSTermsReaderError>;
+    type IntoIter = MergingReaderIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        MergingReaderIterator {
+            reader: self
+        }
+    }
+}
+
+pub struct MergingReaderIterator {
+    reader: MergingReader
+}
+
+impl Iterator for MergingReaderIterator {
+    type Item = <MergingReader as IntoIterator>::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.reader.read_next()
+    }
+}
+
+pub struct MergingReaderIter<'a> {
+    reader: &'a mut MergingReader
+}
+
+impl<'a> Iterator for MergingReaderIter<'a> {
+    type Item = <MergingReader as IntoIterator>::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.reader.read_next()
+    }
+}
+
+
+
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{HashMap};
     use crate::topicmodel::reference::HashRef;
-    use super::{read_ms_terms, MSTermsReaderError, MergingReader, MergingReaderFinishedMode, MsTermsEntry};
+    use super::{read_ms_terms, MergingReader, MergingReaderFinishedMode, MsTermsEntry};
 
     #[test]
     fn can_run(){
@@ -427,16 +458,16 @@ mod test {
             }
         }
 
-        let reader = MergingReader::read_from(
+        let mut reader = MergingReader::read_from(
             vec![
                 "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
                 "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
             ],
             MergingReaderFinishedMode::EmitWhenAtLeastNLanguages(2)
-        );
+        ).unwrap();
 
-
-        println!("{}", reader.unwrap().count())
-
+        println!("{}", reader.iter().count());
+        println!("{}", reader.cache().len());
+        println!("{}", reader.dropped());
     }
 }

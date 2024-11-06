@@ -19,7 +19,6 @@ mod traits;
 mod classic_serialisation;
 mod inferencer;
 
-pub use classic_serialisation::*;
 pub use inferencer::*;
 pub use traits::*;
 
@@ -29,19 +28,16 @@ use std::cmp::{min, Ordering, Reverse};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io;
-use std::io::{BufRead, ErrorKind, Read, Write};
+use std::io::{ErrorKind, Write};
 use std::marker::PhantomData;
-use std::ops::{DerefMut, Range};
-use std::str::FromStr;
+use std::ops::{Range};
 use std::sync::Arc;
 
 use crate::toolkit::normal_number::IsNormalNumber;
 use crate::topicmodel::model::meta::*;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::traits::ToParseableString;
-use crate::topicmodel::vocabulary::{BasicVocabulary, LoadableVocabulary, MappableVocabulary, StoreableVocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
 use itertools::Itertools;
-use rand_distr::Distribution;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +66,8 @@ pub(crate) type DocumentLength = u64;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TopicModel<T, V> {
     // topic to word
+    // Row = Topic
+    // Col = Word
     topics: TopicTo<WordTo<Probability>>,
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
     vocabulary: V,
@@ -181,6 +179,7 @@ impl<T, V> TopicModel<T, V> where
             }
         }
 
+
         topics.par_iter().enumerate().map(|(topic_id, topic)| {
             let position_to_word_id_and_prob = topic
                 .iter()
@@ -281,6 +280,7 @@ impl<T, V> TopicModel<T, V> where
             TopicMeta::new(stats, topic_content, position_to_meta, importance_to_meta)
         }).collect()
     }
+
 
     fn recalculate_statistics(&mut self) {
         self.topic_metas = unsafe {
@@ -578,7 +578,7 @@ impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash +
 
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use crate::topicmodel::enums::TopicModelVersion;
     use crate::topicmodel::model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
     use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary, VocabularyMut};
@@ -632,6 +632,14 @@ mod test {
                 assert_equal(k, v);
             }
         }
+    }
+
+    #[test]
+    fn test_complete_functionality(){
+        let mut t = create_test_data();
+        println!("{:?}", t.topics);
+        t.normalize_in_place();
+        println!("{:?}", t.topics);
     }
 
     #[test]

@@ -18,7 +18,7 @@ use std::hash::Hash;
 use evalexpr::{Value};
 use pyo3::{pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use crate::external_variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
+use crate::variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
 use crate::register_python;
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};

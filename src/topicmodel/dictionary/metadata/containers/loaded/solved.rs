@@ -170,8 +170,8 @@ macro_rules! create_python_getter {
                 )
             }
 
-            pub fn domain_vector(&self) -> $crate::topicmodel::domain_matrix::Entry {
-                $crate::topicmodel::domain_matrix::Entry::from_meta(&self)
+            pub fn domain_vector(&self) -> $crate::topicmodel::dictionary::metadata::domain_matrix::Entry {
+                $crate::topicmodel::dictionary::metadata::domain_matrix::Entry::from_meta(&self)
             }
 
             $(

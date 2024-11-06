@@ -14,7 +14,7 @@
 
 use std::sync::Mutex;
 use evalexpr::{Value};
-use crate::variable_names::{CANDIDATE_ID, SCORE, SCORE_CANDIDATE, TOPIC_ID, VOTER_ID};
+use crate::variable_provider::variable_names::{CANDIDATE_ID, SCORE, SCORE_CANDIDATE, TOPIC_ID, VOTER_ID};
 use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult};
 use crate::voting::traits::RootVotingMethodMarker;
 

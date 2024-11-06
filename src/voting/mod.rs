@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
 use std::num::NonZeroUsize;
 use evalexpr::{ContextWithMutableVariables, IterateVariablesContext, Value};
-use crate::variable_names::{NUMBER_OF_VOTERS, RANK};
+use crate::variable_provider::variable_names::{NUMBER_OF_VOTERS, RANK};
 pub use crate::voting::buildin::*;
 use crate::voting::display::{DisplayTree, IndentWriter};
 pub use crate::voting::parser::voting_function::VotingFunction;

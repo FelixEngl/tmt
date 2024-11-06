@@ -18,7 +18,7 @@ use evalexpr::{Context, EvalexprError, EvalexprResult, Value};
 use itertools::Itertools;
 use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
-use crate::variable_names::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
+use crate::variable_provider::variable_names::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
 use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::{Aggregation, AggregationError};
 use crate::voting::aggregations::AggregationKind::{AvgOf, GAvgOf, SumOf};

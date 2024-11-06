@@ -1,10 +1,17 @@
 macro_rules! create_struct {
     ($($name: ident: $ty:ident => $method: ident: $r_typ: ty),* $(,)?) => {
+
+        pub type DomainCounts = ([u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE], [u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE]);
+
         #[derive(Clone, serde::Serialize, serde::Deserialize)]
         pub struct LoadedMetadataManager {
-            pub(in crate::topicmodel::dictionary) meta_a: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
-            pub(in crate::topicmodel::dictionary) meta_b: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
-            pub(in crate::topicmodel::dictionary) dictionary_interner: $crate::toolkit::typesafe_interner::DefaultDictionaryOriginStringInterner,
+            meta_a: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
+            meta_b: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
+            pub(in crate::topicmodel::dictionary) dictionary_interner: $crate::toolkit::typesafe_interner::DictionaryOriginStringInterner,
+            #[serde(default, skip)]
+            changed: bool,
+            #[serde(default, skip)]
+            domain_count: std::cell::RefCell<Option<DomainCounts>>,
             $(pub(in crate::topicmodel::dictionary) $name: $ty,
             )*
         }
@@ -50,6 +57,7 @@ macro_rules! create_struct {
             pub fn intern_dictionary_origin(&mut self, voc_entry: impl AsRef<str>) -> $crate::toolkit::typesafe_interner::DictionaryOriginSymbol {
                 self.dictionary_interner.get_or_intern(voc_entry)
             }
+
         }
 
         impl Default for LoadedMetadataManager {
@@ -57,7 +65,9 @@ macro_rules! create_struct {
                 Self {
                     meta_a: Vec::new(),
                     meta_b: Vec::new(),
-                    dictionary_interner: $crate::toolkit::typesafe_interner::DefaultDictionaryOriginStringInterner::new(),
+                    dictionary_interner: $crate::toolkit::typesafe_interner::DictionaryOriginStringInterner::new(),
+                    changed: false,
+                    domain_count: Default::default(),
                     $($name: $ty::new(),
                     )*
                 }
@@ -84,6 +94,8 @@ macro_rules! create_struct {
                     meta_a: self.meta_b,
                     meta_b: self.meta_a,
                     dictionary_interner: self.dictionary_interner,
+                    changed: false,
+                    domain_count: Default::default(),
                     $($name: self.$name,
                     )*
                 }
@@ -105,6 +117,7 @@ macro_rules! create_struct {
                 } else {
                     value.meta_b.get_mut(word_id)
                 }?;
+                self.changed = true;
                 Some($crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef::new(ptr, result))
             }
 
@@ -121,6 +134,7 @@ macro_rules! create_struct {
                     targ.resize(word_id + 1, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default())
                 }
 
+                self.changed = true;
                 unsafe{
                     LoadedMetadataMutRef::new(ptr, targ.get_unchecked_mut(word_id))
                 }
@@ -132,10 +146,12 @@ macro_rules! create_struct {
 
             fn resize(&mut self, meta_a: usize, meta_b: usize) {
                 if meta_a > self.meta_a.len() {
+                    self.changed = true;
                     self.meta_a.resize(meta_a, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default());
                 }
 
                 if meta_b > self.meta_a.len() {
+                    self.changed = true;
                     self.meta_b.resize(meta_b, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default());
                 }
             }
@@ -145,6 +161,8 @@ macro_rules! create_struct {
                     meta_a: Default::default(),
                     meta_b: Default::default(),
                     dictionary_interner: self.dictionary_interner.clone(),
+                    changed: false,
+                    domain_count: Default::default(),
                     $($name: self.$name.clone(),
                     )*
                 }

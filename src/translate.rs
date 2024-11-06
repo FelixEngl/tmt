@@ -31,16 +31,17 @@ use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, Fro
 use crate::topicmodel::dictionary::direction::{AToB, B, BToA};
 use crate::topicmodel::vocabulary::{MappableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 use crate::translate::LanguageOrigin::{Origin, Target};
-use crate::variable_names::*;
+use crate::variable_provider::variable_names::*;
 use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
 use crate::voting::traits::VotingMethodMarker;
 use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use crate::external_variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError, VariableProviderOut};
+use crate::variable_provider::{AsVariableProvider, VariableProviderOut, VariableProvider};
 use crate::register_python;
 use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::translate::TranslateError::IncompatibleLanguages;
+use crate::variable_provider::errors::{VariableProviderError, AsVariableProviderError};
 
 /// The config for a translation
 #[derive(Debug)]
@@ -410,7 +411,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
 
     translated.normalize_in_place();
 
-    return Ok(translated)
+    Ok(translated)
 }
 
 #[derive(Debug, Clone)]

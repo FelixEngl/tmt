@@ -1,6 +1,6 @@
 use crate::tokenizer::Tokenizer;
-use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE, OMEGA};
-use crate::topicmodel::dictionary::direction::{Direction, Invariant, Language as DirLang, A, B};
+use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE, MS_TERMS, OMEGA};
+use crate::topicmodel::dictionary::direction::{AToB, Direction, Invariant, Language as DirLang, A, B};
 use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictReaderError, GramaticHints, Translation};
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBuilder, LoadedMetadataManager};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::topicmodel::dictionary::dicts_info::omega_wiki::OptionalOmegaWikiEntry;
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
-use crate::topicmodel::dictionary::loader::ms_terms_reader::{MsTermsEntry, TermDefinition};
+use crate::topicmodel::dictionary::loader::ms_terms_reader::{MSTermsReaderError, MergingReader, MergingReaderFinishedMode, MsTermsEntry, TermDefinition};
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
 
 mod ding;
@@ -170,17 +170,11 @@ pub mod constants {
     pub const DING: &'static str = "ding";
     pub const IATE: &'static str = "iate";
     pub const OMEGA: &'static str = "omega_wiki";
+    pub const MS_TERMS: &'static str = "ms_terms";
 }
 
 impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
 
-    fn convert_optional_gram(gram: Option<GramaticHints>) -> (Vec<PartOfSpeech>, Vec<GrammaticalGender>, Vec<GrammaticalNumber>) {
-        if let Some(g) = gram {
-            (g.pos, g.gender, g.number)
-        } else {
-            (Vec::with_capacity(0), Vec::with_capacity(0), Vec::with_capacity(0))
-        }
-    }
     fn insert_single_word_inner<'a, D: Direction + DirLang>(&mut self, original: &str, value: Option<Either<Cow<'a, str>, (Cow<'a, str>, Cow<'a, str>)>>) -> usize {
         match value {
             None => {
@@ -209,11 +203,9 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             self.dictionary.metadata.get_or_create_meta::<L::OPPOSITE>(orth_id)
         })
     }
-
     pub fn finalize(self) -> DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager> {
         self.dictionary
     }
-
 
     pub fn read_free_dict<D: DirLang + Direction>(&mut self, p: impl AsRef<Path>) -> Result<usize, (usize, Vec<FreeDictReaderError>)> {
         let mut ct = 0;
@@ -244,6 +236,16 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
     fn process_free_dict_entry<D: Direction + DirLang>(&mut self, entry: free_dict::FreeDictEntry) {
+
+        fn convert_optional_gram(gram: Option<GramaticHints>) -> (Vec<PartOfSpeech>, Vec<GrammaticalGender>, Vec<GrammaticalNumber>) {
+            if let Some(g) = gram {
+                (g.pos, g.gender, g.number)
+            } else {
+                (Vec::with_capacity(0), Vec::with_capacity(0), Vec::with_capacity(0))
+            }
+        }
+
+
         let free_dict::Word {
             domains,
             languages,
@@ -273,7 +275,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             meta.add_all_to_languages(FREE_DICT, languages);
             meta.add_all_to_registers(FREE_DICT, registers);
             let (pos, gender, number) =
-                Self::convert_optional_gram(gram);
+                convert_optional_gram(gram);
             meta.add_all_to_pos(FREE_DICT, pos);
             meta.add_all_to_genders(FREE_DICT, gender);
             meta.add_all_to_numbers(FREE_DICT, number);
@@ -335,7 +337,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 meta.add_all_to_languages(FREE_DICT, languages);
                 meta.add_all_to_registers(FREE_DICT, registers);
                 let (pos, gender, number) =
-                    Self::convert_optional_gram(gram);
+                    convert_optional_gram(gram);
                 meta.add_all_to_pos(FREE_DICT, pos);
                 meta.add_all_to_genders(FREE_DICT, gender);
                 meta.add_all_to_numbers(FREE_DICT, number);
@@ -779,20 +781,92 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
 
-    pub fn read_ms_terms<D: Direction + DirLang>(&mut self, lang_a: impl AsRef<Path>, lang_b: impl AsRef<Path>) {
-
+    pub fn read_ms_terms<I: IntoIterator<Item=T>, T: AsRef<Path>>(&mut self, paths: I, lang_a: Language, lang_b: Language) -> Result<(usize, usize), (usize, usize, Vec<MsTermsError>)> {
+        let reader = MergingReader::read_from(
+            paths,
+            MergingReaderFinishedMode::EmitWhenAtLeastNLanguages(2)
+        );
+        match reader {
+            Ok(mut reader) => {
+                let mut ct = 0;
+                let mut errors = Vec::new();
+                for value in reader.iter() {
+                    match value {
+                        Ok(result) => {
+                            match self.process_ms_terms(result, lang_a, lang_b) {
+                                Ok(_) => {
+                                    ct += 1;
+                                }
+                                Err(err) => {
+                                    errors.push(err.into());
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            errors.push(err.into());
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    Ok((ct, reader.dropped()))
+                } else {
+                    Err((ct, reader.dropped(), errors))
+                }
+            }
+            Err(value) => {
+                Err((0, 0, vec![value.into()]))
+            }
+        }
     }
 
 
-    fn process_ms_terms(&mut self, MsTermsEntry {terms, id}: MsTermsEntry) {
-        for (language, TermDefinition{
+
+    fn process_ms_terms(&mut self, MsTermsEntry {terms, id}: MsTermsEntry, lang_a: Language, lang_b: Language) -> Result<(), MsTermsError> {
+        let mut lang_a_values = Vec::new();
+        let mut lang_b_values = Vec::new();
+        for (_, TermDefinition{
             lang,
             terms,
             region,
             defintition
         }) in terms {
+            let mut builder =  LoadedMetadataCollectionBuilder::with_name(Some(MS_TERMS));
+            if let Some(reg) = region {
+                builder.push_regions(reg);
+            }
+            builder.push_ids(id.to_string());
+            builder.push_languages(lang);
+            builder.extend_unclassified(defintition);
+            for (id, ms_terms_reader::Term{
+                term,
+                id: id2,
+                part_of_speech
+            }) in terms {
+                assert_eq!(id, id2);
+                let mut builder2 = builder.clone();
+                builder2.push_ids(id.to_string());
+                builder2.push_ids(id2.to_string());
+                builder2.push_pos(part_of_speech);
 
+                if lang_a == lang {
+                    let (id, mut outp) = self.insert::<AToB, A>(MS_TERMS, &term);
+                    lang_a_values.push(id);
+                    builder.build().unwrap().write_into(&mut outp);
+                } else {
+                    let (id, mut outp) = self.insert::<AToB, B>(MS_TERMS, &term);
+                    lang_b_values.push(id);
+                    builder.build().unwrap().write_into(&mut outp);
+                }
+            }
         }
+
+        for (a, b) in lang_a_values.into_iter().cartesian_product(lang_b_values) {
+            unsafe {
+                self.dictionary.insert_raw_values::<Invariant>(a, b);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -802,6 +876,14 @@ pub enum IateError {
     IllegalLanguage(Language),
     #[error(transparent)]
     IateReader(#[from] iate_reader::IateReaderError),
+}
+
+#[derive(Error, Debug)]
+pub enum MsTermsError {
+    #[error("Encountered unexpected language {0}")]
+    IllegalLanguage(Language),
+    #[error(transparent)]
+    MsTerms(#[from] ms_terms_reader::MSTermsReaderError),
 }
 
 #[derive(Debug, Error)]
@@ -814,59 +896,78 @@ pub enum LineReaderError<T: Debug> {
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::direction::{AToB, BToA};
-    use crate::topicmodel::dictionary::{UnifiedTranslationHelper};
+    use crate::topicmodel::dictionary::direction::{AToB, BToA, DirectionTuple};
+    use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithVocabulary, UnifiedTranslationHelper};
     use std::fs::File;
     use std::io::{BufWriter, Write};
     use crate::topicmodel::dictionary::word_infos::Language;
+    use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary};
 
     #[test]
     pub fn test(){
         let dict_file = File::options().write(true).create(true).truncate(true).open("my_dict.json").unwrap();
 
         let mut default = UnifiedTranslationHelper::default();
-
-        let x = default.read_free_dict::<AToB>("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei");
-        if let Err((_, b)) = x {
-            for value in b {
-                println!("{value}")
-            }
-        }
         let mut current = default.len();
-        println!("{}", current);
 
-        let x = default.read_free_dict::<BToA>("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei");
-        if let Err((_, b)) = x {
-            for value in b {
-                println!("{value}")
-            }
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
+        // let x = default.read_free_dict::<AToB>("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei");
+        // if let Err((_, b)) = x {
+        //     for value in b {
+        //         println!("{value}")
+        //     }
+        // }
+        // let new = default.len();
+        // println!("{}", new);
+        //
+        // let x = default.read_free_dict::<BToA>("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei");
+        // if let Err((_, b)) = x {
+        //     for value in b {
+        //         println!("{value}")
+        //     }
+        // }
+        // let new = default.len();
+        // println!("{} delta: {}", new, current.diff(&new));
+        //
+        // current = new;
+        // let x = default.read_dict_cc::<BToA>("dictionaries/DictCC/dict.txt");
+        // if let Err((_, b)) = x {
+        //     for value in b {
+        //         println!("{value}")
+        //     }
+        // }
+        // let new = default.len();
+        // println!("{} delta: {}", new, current.diff(&new));
+        //
+        // current = new;
+        // let x = default.read_iate_dict::<AToB>("dictionaries/IATE/IATE_export.tbx", Language::English, Language::German);
+        // if let Err((_, b)) = x {
+        //     for value in b {
+        //         println!("{value}")
+        //     }
+        // }
+        // let new = default.len();
+        // println!("{} delta: {}", new, current.diff(&new));
+        //
+        // current = new;
+        // let x = default.read_omega_dict::<AToB>("dictionaries/dicts.info/OmegaWiki.txt");
+        // if let Err((_, b)) = x {
+        //     for value in b {
+        //         println!("{value}")
+        //     }
+        // }
+        // let new = default.len();
+        // println!("{} delta: {}", new, current.diff(&new));
 
-        current = new;
-        let x = default.read_dict_cc::<BToA>("dictionaries/DictCC/dict.txt");
-        if let Err((_, b)) = x {
-            for value in b {
-                println!("{value}")
-            }
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_iate_dict::<AToB>("dictionaries/IATE/IATE_export.tbx", Language::English, Language::German);
-        if let Err((_, b)) = x {
-            for value in b {
-                println!("{value}")
-            }
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_omega_dict::<AToB>("dictionaries/dicts.info/OmegaWiki.txt");
-        if let Err((_, b)) = x {
+        // current = new;
+        let x = default.read_ms_terms::<_, _>(
+            vec![
+                "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
+                "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
+            ],
+            Language::English,
+            Language::German
+        );
+        if let Err((_, _, b)) = x {
             for value in b {
                 println!("{value}")
             }
@@ -878,6 +979,14 @@ mod test {
         let mut writer = BufWriter::new(dict_file);
         serde_json::to_writer_pretty(&mut writer, &data).unwrap();
         writer.flush().unwrap();
+
+        for DirectionTuple {
+            a,
+            b,
+            direction
+        } in data.iter_with_meta() {
+            println!("a: {}, b: {}", data.voc_a().get_value(a.0).unwrap(), data.voc_b().get_value(b.0).unwrap())
+        }
 
     }
 }

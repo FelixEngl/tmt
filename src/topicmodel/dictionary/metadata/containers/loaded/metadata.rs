@@ -29,6 +29,8 @@ macro_rules! impl_associated_metadata {
             inner: std::cell::OnceCell<AssociatedMetadataImpl>
         }
 
+
+
         impl PartialEq for AssociatedMetadata {
             fn eq(&self, other: &Self) -> bool {
                 self.inner.get() == other.inner.get()

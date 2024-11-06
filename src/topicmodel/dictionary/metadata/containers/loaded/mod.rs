@@ -8,6 +8,7 @@ pub mod field_denom;
 mod resolved_value;
 mod solved_new_arg;
 
+use std::ops::Deref;
 pub use resolved_value::*;
 pub use solved_new_arg::*;
 
@@ -15,20 +16,11 @@ use tinyset::Set64;
 use crate::register_python;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::toolkit::typesafe_interner::*;
-
+use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModelIndex;
 
 register_python! {
     struct SolvedLoadedMetadata;
     struct MetaField;
-}
-
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
-#[pyo3::pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum Test {
-    A,
-    B,
-    C
 }
 
 
@@ -106,19 +98,19 @@ generate_field_code! {
     interned {
         r#"Stores the inflected value of a word."#
         inflected("inflected"): InflectedSymbol | (Set64<InflectedSymbol>, Vec<&'a str>) {
-            inflected_interner: DefaultInflectedStringInterner => intern_inflected
+            inflected_interner: InflectedStringInterner => intern_inflected
         }
     },
     interned {
         r#"Stores the abbreviations value of a word."#
         abbreviations("abbreviations"): AbbreviationSymbol | (Set64<AbbreviationSymbol>, Vec<&'a str>) {
-            abbreviations_interner: DefaultAbbreviationStringInterner => intern_abbreviations
+            abbreviations_interner: AbbreviationStringInterner => intern_abbreviations
         }
     },
     interned {
         r#"Stores the unaltered vocabulary value of a word."#
         unaltered_vocabulary("unaltered_vocabulary"): UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>) {
-            unaltered_vocabulary_interner: DefaultUnalteredVocStringInterner => intern_unaltered_vocabulary
+            unaltered_vocabulary_interner: UnalteredVocStringInterner => intern_unaltered_vocabulary
         }
     },
     interned {
@@ -136,7 +128,7 @@ generate_field_code! {
     interned {
         r#"Stores some kind of artificial id"#
         ids("ids"): AnyIdSymbol | (Set64<AnyIdSymbol>, Vec<&'a str>) {
-            ids_interner: DefaultAnyIdStringInterner => intern_ids
+            ids_interner: AnyIdStringInterner => intern_ids
         }
     },
     interned {
@@ -148,19 +140,88 @@ generate_field_code! {
     interned {
         r#"Stores the original entry. May contain multiple is some kind of merge action is done."#
         original_entry("original_entry"): OriginalEntrySymbol | (Set64<OriginalEntrySymbol>, Vec<&'a str>) {
-            original_entry_interner: DefaultOriginalEntryStringInterner => intern_original_entry
+            original_entry_interner: OriginalEntryStringInterner => intern_original_entry
         }
     },
     interned {
         r#"Contextual information."#
         contextual_informations("contextual_informations"): ContextualInformationSymbol | (Set64<ContextualInformationSymbol>, Vec<&'a str>) {
-            contextual_informations_interner: DefaultContextualInformationStringInterner => intern_contextual_informations
+            contextual_informations_interner: ContextualInformationStringInterner => intern_contextual_informations
         }
     },
     interned {
         r#"Unclassified information."#
         unclassified("unclassified"): UnclassifiedSymbol | (Set64<UnclassifiedSymbol>, Vec<&'a str>) {
-            unclassified_interner: DefaultUnclassifiedStringInterner => intern_unclassified
+            unclassified_interner: UnclassifiedStringInterner => intern_unclassified
         }
     },
+}
+
+
+impl LoadedMetadataManager {
+
+
+
+    pub fn domain_count(&self) -> DomainCounts {
+        use std::sync::Arc;
+        use itertools::Itertools;
+        use lockfree_object_pool::LinearObjectPool;
+        use rayon::prelude::*;
+        use super::super::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE;
+
+        #[repr(transparent)]
+        struct Wrap<'a>(&'a LoadedMetadata);
+        impl<'a> Deref for Wrap<'a> {
+            type Target = &'a LoadedMetadata;
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        unsafe impl Sync for Wrap<'_> {}
+
+        fn sum_up_meta(pool: Arc<LinearObjectPool<[u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]>>, meta: &[LoadedMetadata]) -> [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
+            meta.iter().map(|v| Wrap(v)).collect_vec().into_par_iter().map(|value| {
+                let mut ct = pool.pull_owned();
+                for value in value.iter() {
+                    match value {
+                        MetadataWithOrigin::General(value)
+                        | MetadataWithOrigin::Associated(_, value) => {
+                            if let Some(reg) = value.registers() {
+                                for value in reg.iter() {
+                                    ct[value.get()] += 1;
+                                }
+                            }
+                            if let Some(dom) = value.domains() {
+                                for value in dom.iter() {
+                                    ct[value.get()] += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                ct
+            }).reduce(
+                || pool.pull_owned(),
+                |mut value, value2| {
+                    value.iter_mut().zip_eq(value2.into_iter()).for_each(|(a, b)| {
+                        *a += b;
+                    });
+                    value
+                }
+            ).clone()
+        }
+
+        if self.changed || self.domain_count.borrow().is_none() {
+            let pool = Arc::new(LinearObjectPool::new(
+                || [0u64; DOMAIN_MODEL_ENTRY_MAX_SIZE],
+                |value| value.fill(0)
+            ));
+            let a = sum_up_meta(pool.clone(), &self.meta_a);
+            let b = sum_up_meta(pool.clone(), &self.meta_b);
+            self.domain_count.replace(Some((a, b)));
+        }
+
+        self.domain_count.borrow().clone().unwrap()
+    }
 }

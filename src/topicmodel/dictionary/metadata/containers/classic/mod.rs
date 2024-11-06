@@ -16,7 +16,7 @@ pub use reference_mut::{
 use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::direction::{Language, A, B};
-use crate::toolkit::typesafe_interner::{DefaultDictionaryOriginStringInterner, DefaultTagStringInterner};
+use crate::toolkit::typesafe_interner::{DictionaryOriginStringInterner, TagStringInterner};
 use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
 use crate::topicmodel::vocabulary::Vocabulary;
@@ -26,9 +26,9 @@ use crate::topicmodel::vocabulary::Vocabulary;
 pub struct ClassicMetadataManager {
     pub(in crate::topicmodel::dictionary) meta_a: Vec<ClassicMetadata>,
     pub(in crate::topicmodel::dictionary) meta_b: Vec<ClassicMetadata>,
-    pub(in crate::topicmodel::dictionary) dictionary_interner: DefaultDictionaryOriginStringInterner,
+    pub(in crate::topicmodel::dictionary) dictionary_interner: DictionaryOriginStringInterner,
     #[serde(alias = "tag_interner")]
-    pub(in crate::topicmodel::dictionary) subject_interner: DefaultTagStringInterner,
+    pub(in crate::topicmodel::dictionary) subject_interner: TagStringInterner,
     pub(in crate::topicmodel::dictionary) unstemmed_voc: Vocabulary<String>,
 }
 
@@ -37,8 +37,8 @@ impl Default for ClassicMetadataManager {
         Self {
             meta_a: Default::default(),
             meta_b: Default::default(),
-            dictionary_interner: DefaultDictionaryOriginStringInterner::new(),
-            subject_interner: DefaultTagStringInterner::new(),
+            dictionary_interner: DictionaryOriginStringInterner::new(),
+            subject_interner: TagStringInterner::new(),
             unstemmed_voc: Default::default(),
         }
     }
@@ -141,25 +141,25 @@ impl ClassicMetadataManager {
         Self{
             meta_a: Default::default(),
             meta_b: Default::default(),
-            dictionary_interner: DefaultDictionaryOriginStringInterner::new(),
-            subject_interner: DefaultTagStringInterner::new(),
+            dictionary_interner: DictionaryOriginStringInterner::new(),
+            subject_interner: TagStringInterner::new(),
             unstemmed_voc: Default::default()
         }
     }
 
-    pub fn get_dictionary_interner(&self) -> &DefaultDictionaryOriginStringInterner {
+    pub fn get_dictionary_interner(&self) -> &DictionaryOriginStringInterner {
         &self.dictionary_interner
     }
 
-    pub fn get_dictionary_interner_mut(&mut self) -> &mut DefaultDictionaryOriginStringInterner {
+    pub fn get_dictionary_interner_mut(&mut self) -> &mut DictionaryOriginStringInterner {
         &mut self.dictionary_interner
     }
 
-    pub fn get_subject_interner(&self) -> &DefaultTagStringInterner {
+    pub fn get_subject_interner(&self) -> &TagStringInterner {
         &self.subject_interner
     }
 
-    pub fn get_tag_interner_mut(&mut self) -> &mut DefaultTagStringInterner {
+    pub fn get_tag_interner_mut(&mut self) -> &mut TagStringInterner {
         &mut self.subject_interner
     }
 

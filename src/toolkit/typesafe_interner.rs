@@ -238,9 +238,8 @@ macro_rules! create_interned_typesafe_symbol {
 
             paste::paste!{
                 pub type [<$name Symbol>] = $name<string_interner::DefaultSymbol>;
-                pub type [<$name Backend>]<S> = string_interner::backend::StringBackend<$name<S>>;
-                pub type [<Default $name Backend>] = [<$name Backend>]<string_interner::DefaultSymbol>;
-                pub type [<Default $name StringInterner>]<H = string_interner::DefaultHashBuilder> = string_interner::DefaultStringInterner<[<Default $name Backend>], H>;
+                pub type [<$name Backend>]<S=string_interner::DefaultSymbol> = string_interner::backend::StringBackend<$name<S>>;
+                pub type [<$name StringInterner>]<S=string_interner::DefaultSymbol, H = string_interner::DefaultHashBuilder> = string_interner::DefaultStringInterner<[<$name Backend>]<S>, H>;
             }
         )+
     };
@@ -256,5 +255,6 @@ create_interned_typesafe_symbol! {
     OriginalEntry,
     AnyId,
     ContextualInformation,
-    Unclassified
+    Unclassified,
+    VariableName
 }

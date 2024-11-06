@@ -2,14 +2,14 @@ use std::fmt::{Display, Formatter};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumCount, EnumString, IntoStaticStr};
+use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr};
 use tinyset::Fits64;
 use crate::register_python;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{EGenElement, ENumberElement, EPosElement, LangAttribute as FreeDictLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
 use crate::topicmodel::dictionary::loader::iate_reader::{AdministrativeStatus};
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute, ETermNoteElement};
-use crate::topicmodel::domain_matrix::TopicMatrixIndex;
+use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModelIndex;
 use crate::topicmodel::dictionary::metadata::loaded::impl_try_from_as_unpack;
 
 register_python! {
@@ -279,7 +279,7 @@ impl Fits64 for Region {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[derive(Display, EnumString, IntoStaticStr)]
+#[derive(Display, EnumString, IntoStaticStr, EnumIter)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum PartOfSpeech {
@@ -422,7 +422,7 @@ impl From<EPosElement> for PartOfSpeech {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[derive(Display, EnumString, IntoStaticStr)]
+#[derive(Display, EnumString, IntoStaticStr, EnumIter)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum GrammaticalGender {
@@ -483,7 +483,7 @@ impl From<EGenElement> for GrammaticalGender {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[derive(Display, EnumString, IntoStaticStr)]
+#[derive(Display, EnumString, IntoStaticStr, EnumIter)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum GrammaticalNumber {
@@ -549,7 +549,7 @@ impl From<ENumberElement> for GrammaticalNumber {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[derive(Display, EnumString, IntoStaticStr, EnumCount)]
+#[derive(Display, EnumString, IntoStaticStr, EnumCount, EnumIter)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum Domain {
@@ -999,7 +999,7 @@ impl Domain {
     }
 }
 
-impl TopicMatrixIndex for Domain {
+impl DomainModelIndex for Domain {
     #[inline(always)]
     fn get(self) -> usize {
         (self as u64) as usize
@@ -1022,7 +1022,7 @@ impl Fits64 for Domain {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[derive(Display, EnumString, IntoStaticStr, EnumCount)]
+#[derive(Display, EnumString, IntoStaticStr, EnumCount, EnumIter)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum Register {
@@ -1106,7 +1106,7 @@ impl Register {
     }
 }
 
-impl TopicMatrixIndex for Register {
+impl DomainModelIndex for Register {
     #[inline(always)]
     fn get(self) -> usize {
         Domain::COUNT + (self as u64) as usize

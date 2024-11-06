@@ -12,7 +12,7 @@ use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, Searcha
 use crate::topicmodel::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
-use crate::topicmodel::domain_matrix::TopicMatrix;
+use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModel;
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin};
 use crate::topicmodel::reference::HashRef;
 
@@ -68,7 +68,7 @@ impl<T> CreateTopicMatrixMode<T> where T: PartialEq {
 }
 
 impl<T, V> DictionaryWithMeta<T, V, LoadedMetadataManager> where V: BasicVocabulary<T> {
-    pub fn create_topic_matrix<'a, L: Language, S: AsRef<str>>(&'a self, mode: &CreateTopicMatrixMode<S>) -> TopicMatrix {
+    pub fn create_topic_matrix<'a, L: Language, S: AsRef<str>>(&'a self, mode: &CreateTopicMatrixMode<S>) -> DomainModel {
 
         let mode = match mode {
             CreateTopicMatrixMode::All => CreateTopicMatrixMode::All,
@@ -89,15 +89,15 @@ impl<T, V> DictionaryWithMeta<T, V, LoadedMetadataManager> where V: BasicVocabul
             }
         };
 
-        let mut matrix: TopicMatrix;
+        let mut matrix: DomainModel;
         let iter: std::slice::Iter<'a, LoadedMetadata>;
 
         if L::LANG.is_a() {
-            matrix = TopicMatrix::with_capacity(self.voc_a().len());
-            iter = self.metadata.meta_a.iter();
+            matrix = DomainModel::with_capacity(self.voc_a().len());
+            iter = self.metadata.meta_a().iter();
         } else {
-            matrix = TopicMatrix::with_capacity(self.voc_b().len());
-            iter = self.metadata.meta_b.iter();
+            matrix = DomainModel::with_capacity(self.voc_b().len());
+            iter = self.metadata.meta_b().iter();
         }
 
         for x in iter {

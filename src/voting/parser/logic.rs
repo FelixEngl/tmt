@@ -24,7 +24,7 @@ use nom::multi::{many1, many1_count};
 use nom::sequence::{delimited, pair, preceded, separated_pair, terminated, tuple};
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
-use crate::variable_names::{reserved_variable_name};
+use crate::variable_provider::variable_names::{reserved_variable_name};
 use crate::voting::buildin::BuildInVoting;
 use crate::voting::aggregations::parse::AggregationParserError;
 use crate::voting::parser::input::ParserInput;
@@ -633,7 +633,7 @@ mod test {
     use evalexpr::{ContextWithMutableVariables, HashMapContext};
     use nom::{Finish};
     use nom::error::VerboseError;
-    use crate::variable_names::{NUMBER_OF_VOTERS, SCORE};
+    use crate::variable_provider::variable_names::{NUMBER_OF_VOTERS, SCORE};
     use crate::voting::{VotingMethod};
     use crate::voting::parser::logic::{b_exp, voting, voting_function};
 
