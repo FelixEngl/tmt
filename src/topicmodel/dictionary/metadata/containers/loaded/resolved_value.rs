@@ -18,6 +18,7 @@ pub enum ResolvedValue {
     Register(Register),
     GrammaticalGender(GrammaticalGender),
     PartOfSpeech(PartOfSpeech),
+    PartOfSpeechTag(PartOfSpeechTag),
     Region(Region),
     GrammaticalNumber(GrammaticalNumber),
     RawId(u64),
@@ -91,6 +92,7 @@ impl Display for ResolvedValue {
             ResolvedValue::Register(value) => value,
             ResolvedValue::GrammaticalGender(value) => value,
             ResolvedValue::PartOfSpeech(value) => value,
+            ResolvedValue::PartOfSpeechTag(value) => value,
             ResolvedValue::Region(value) => value,
             ResolvedValue::GrammaticalNumber(value) => value,
             ResolvedValue::String(value) => value,
@@ -109,6 +111,7 @@ impl IntoPy<PyObject> for ResolvedValue {
             ResolvedValue::Register(value) => value,
             ResolvedValue::GrammaticalGender(value) => value,
             ResolvedValue::PartOfSpeech(value) => value,
+            ResolvedValue::PartOfSpeechTag(value) => value,
             ResolvedValue::Region(value) => value,
             ResolvedValue::GrammaticalNumber(value) => value,
             ResolvedValue::String(value) => value,
@@ -130,6 +133,7 @@ crate::impl_py_type_def_special!(
             .with::<PartOfSpeech>()
             .with::<Region>()
             .with::<GrammaticalNumber>()
+            .with::<PartOfSpeechTag>()
             .with::<String>()
             .with::<u64>()
             .build_output()
@@ -143,6 +147,7 @@ crate::impl_py_type_def_special!(
             .with::<PartOfSpeech>()
             .with::<Region>()
             .with::<GrammaticalNumber>()
+            .with::<PartOfSpeechTag>()
             .with::<String>()
             .with::<u64>()
             .build_input()

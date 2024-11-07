@@ -1,10 +1,10 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, IntoStaticStr};
+use tinyset::Fits64;
 use crate::register_python;
-use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::EPosElement;
-use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::ETermNoteElement;
+use crate::topicmodel::dictionary::metadata::loaded::impl_try_from_as_unpack;
 
 register_python!(
     enum PartOfSpeechTag;
@@ -215,7 +215,7 @@ pub enum PartOfSpeechTag {
     /// ```plaintext
     ///    - hanja
     /// ```
-    #[strum(to_string = "Hanja", serialize = "Hanja")]
+    #[strum(to_string = "hanja", serialize = "Hanja")]
     Hanja = 15,
 
     /// Associated Pos:
@@ -513,4 +513,31 @@ impl PartOfSpeechTag {
     pub const TRANSITIVE: [PartOfSpeechTag; 1] = [PartOfSpeechTag::Transitive];
     pub const VERBAL: [PartOfSpeechTag; 1] = [PartOfSpeechTag::Verbal];
     pub const INDEFINITE: [PartOfSpeechTag; 1] = [PartOfSpeechTag::Indefinite];
+}
+
+impl_try_from_as_unpack! {
+        PartOfSpeechTag => PartOfSpeechTag
+}
+
+
+#[pymethods]
+impl PartOfSpeechTag {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
+}
+
+impl Fits64 for PartOfSpeechTag {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        PartOfSpeechTag::try_from(x).unwrap()
+    }
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
 }

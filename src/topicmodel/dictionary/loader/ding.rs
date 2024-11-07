@@ -56,8 +56,11 @@ impl<T> Display for WordInfo<T> where T: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             WordInfo::POS(value, value2) => {
-                Display::fmt(value, f);
-                Display::fmt(value2, f)
+                if let Some(value2) = value2 {
+                    write!(f, "{value} {}", value2.into_iter().join(" "))
+                } else {
+                    Display::fmt(value, f)
+                }
             }
             WordInfo::Gender(value) => {
                 Display::fmt(value, f)
@@ -1063,7 +1066,7 @@ pub mod entry_processing {
                     WordInfo::POS(value, value2) => {
                         builder.push_pos(value);
                         if let Some(value2) = value2 {
-                            builder.extend_pos_tag(value2);
+                            builder.extend_pos_tag(value2.into_iter().copied());
                         }
                     }
                     WordInfo::Gender(value) => {
