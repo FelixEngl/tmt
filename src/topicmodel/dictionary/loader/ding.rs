@@ -1,6 +1,6 @@
 use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
 use crate::topicmodel::dictionary::loader::helper::take_nested_bracket_delimited;
-use crate::topicmodel::dictionary::loader::word_infos::{PartialWordType, WordInfo};
+use crate::topicmodel::dictionary::loader::word_infos::{PartialWordType};
 use itertools::{chain, Itertools};
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag};
@@ -14,6 +14,64 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::path::Path;
+use crate::topicmodel::dictionary::word_infos::{GrammaticalGender, GrammaticalNumber, PartOfSpeech, PartOfSpeechTag};
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum WordInfo<T> {
+    POS(PartOfSpeech, Option<&'static [PartOfSpeechTag]>),
+    Gender(GrammaticalGender),
+    Number(GrammaticalNumber),
+    Other(T)
+}
+
+
+
+impl<T> From<T> for WordInfo<T> where T: AsRef<str> {
+    fn from(value: T) -> Self {
+        let s = value.as_ref();
+        if let Ok(value) = s.parse() {
+            WordInfo::POS(value, PartOfSpeechTag::get_tags(s))
+        } else if let Ok(value) = s.parse() {
+            WordInfo::Gender(value)
+        } else if let Ok(value) = s.parse() {
+            WordInfo::Number(value)
+        } else {
+            WordInfo::Other(value)
+        }
+    }
+}
+
+impl<T> WordInfo<T> {
+    pub fn map<R, F: FnOnce(T) -> R>(self, mapper: F) -> WordInfo<R> {
+        match self {
+            WordInfo::Other(value) => WordInfo::Other(mapper(value)),
+            WordInfo::POS(value, value2) => WordInfo::POS(value, value2),
+            WordInfo::Gender(value) => WordInfo::Gender(value),
+            WordInfo::Number(value) => WordInfo::Number(value),
+        }
+    }
+}
+
+impl<T> Display for WordInfo<T> where T: Display {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WordInfo::POS(value, value2) => {
+                Display::fmt(value, f);
+                Display::fmt(value2, f)
+            }
+            WordInfo::Gender(value) => {
+                Display::fmt(value, f)
+            }
+            WordInfo::Number(value) => {
+                Display::fmt(value, f)
+            }
+            WordInfo::Other(value) => {
+                Display::fmt(value, f)
+            }
+        }
+    }
+}
+
 
 /// The single elements that make up an entry
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -608,7 +666,7 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWi
 
 pub mod entry_processing {
     use crate::topicmodel::dictionary::loader::ding;
-    use crate::topicmodel::dictionary::loader::ding::{Abbreviation, DingAlternatingWord, DingAlternatingWordValue, DingWordEntry, DingWordEntryElement};
+    use crate::topicmodel::dictionary::loader::ding::{Abbreviation, DingAlternatingWord, DingAlternatingWordValue, DingWordEntry, DingWordEntryElement, WordInfo};
     use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollection, LoadedMetadataCollectionBuilder};
     use crate::topicmodel::dictionary::word_infos::*;
     use itertools::Itertools;
@@ -693,6 +751,7 @@ pub mod entry_processing {
         }
     }
 
+    #[derive(Debug)]
     pub struct Translation<T> {
         pub a: Entries<T>,
         pub b: Entries<T>
@@ -732,6 +791,7 @@ pub mod entry_processing {
     }
 
     /// Denotes a complete language entry, sonsists of multiple single entries.
+    #[derive(Debug)]
     pub struct Entries<T> {
         pub complete_entry: String,
         /// These translations are alternatives to each other and may have different meanings.
@@ -749,6 +809,7 @@ pub mod entry_processing {
 
 
     /// Multiple words with the same meaning but different translations.
+    #[derive(Debug)]
     pub struct AlternativeWords<T> {
         pub single_entry: String,
         /// The words are interchangeable for each other. Usually different ways to write the same word.
@@ -999,8 +1060,11 @@ pub mod entry_processing {
             }
             DingWordEntryElement::Info(info) => {
                 match info {
-                    WordInfo::Type(value) => {
+                    WordInfo::POS(value, value2) => {
                         builder.push_pos(value);
+                        if let Some(value2) = value2 {
+                            builder.extend_pos_tag(value2);
+                        }
                     }
                     WordInfo::Gender(value) => {
                         builder.push_genders(value);

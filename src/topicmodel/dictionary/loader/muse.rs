@@ -2,7 +2,6 @@ use std::collections::{HashSet};
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Cursor, Read, Seek};
-use std::marker::PhantomData;
 use std::path::Path;
 use flate2::bufread::GzDecoder;
 use itertools::Itertools;
@@ -17,20 +16,23 @@ pub enum MuseError {
     FileNotSupported(String)
 }
 
-pub struct MuseReader<R, P, S, E> {
+pub struct MuseReader<R, E> {
     reader: R,
     cached_file_name: String,
     buffer: String,
     already_vistited: HashSet<String>,
     cached_file: Option<Cursor<Vec<u8>>>,
-    parser: P,
-    selector: S,
+    parser: Box<dyn Fn(&str, &str, &str) -> Result<(String, String), E>>,
+    selector: Box<dyn Fn(&str) -> bool>,
     had_error: bool,
-    _phantom: PhantomData<E>
 }
 
-impl<R, P, S, E> MuseReader<R, P, S, E> {
-    fn new(reader: R, parser: P, selector: S) -> Result<Self, std::io::Error> {
+impl<R, E> MuseReader<R, E> {
+    fn new<P, S>(reader: R, parser: P, selector: S) -> Result<Self, std::io::Error>
+        where
+            P: Fn(&str, &str, &str) -> Result<(String, String), E> + 'static,
+            S: Fn(&str) -> bool + 'static
+    {
         Ok(
             Self {
                 reader,
@@ -38,20 +40,17 @@ impl<R, P, S, E> MuseReader<R, P, S, E> {
                 cached_file_name: String::new(),
                 buffer: String::new(),
                 cached_file: None,
-                parser,
-                selector,
+                parser: Box::new(parser),
+                selector: Box::new(selector),
                 had_error: false,
-                _phantom: PhantomData
             }
         )
     }
 }
 
-impl<R, P, S, E> Iterator for  MuseReader<R, P, S, E>
+impl<R, E> Iterator for  MuseReader<R, E>
 where
     R: BufRead + Seek,
-    P: Fn(&str, &str, &str) -> Result<(String, String), E>,
-    S: Fn(&str) -> bool,
     E: Error + From<std::io::Error>
 {
     type Item = Result<(String, String), E>;
@@ -155,15 +154,37 @@ where
     }
 }
 
-pub fn read_from_archive<P, S, E>(path: impl AsRef<Path>, selector: S, parser: P) -> Result<MuseReader<BufReader<File>, P, S, E>, MuseError>
+/// The selector selects if a file with a specific name should be extracted.
+/// The parser converts the read words into a tuple where the word for lang a is left and the word for lang b is right.
+/// The order is decided by the filename that is provided with the first argument.
+///
+/// S = (FileName) -> Bool
+/// P = (FileName, LeftWord, RightWord) -> (String for A, String for B)
+pub fn read_from_archive<P, S, E>(path: impl AsRef<Path>, selector: S, parser: P) -> Result<MuseReader<BufReader<File>, E>, MuseError>
 where
-    P: Fn(&str, &str, &str) -> Result<(String, String), E>,
-    S: Fn(&str) -> bool,
+    P: Fn(&str, &str, &str) -> Result<(String, String), E> + 'static,
+    S: Fn(&str) -> bool + 'static,
     E: Error + From<std::io::Error>
 {
     Ok(MuseReader::new(BufReader::new(
         File::options().read(true).open(path)?
     ), parser, selector)?)
+}
+
+pub fn read_single_from_archive(path: impl AsRef<Path>, name: impl Into<String>) -> Result<MuseReader<BufReader<File>, MuseError>, MuseError> {
+    let name1 = name.into();
+    let name2 = name1.clone();
+    read_from_archive(
+        path,
+        move |target| { name1 == target },
+        move |file, a, b| {
+            if file != name2 {
+                Err(MuseError::FileNotSupported(file.to_string()))
+            } else {
+                Ok((a.to_string(), b.to_string()))
+            }
+        }
+    )
 }
 
 #[cfg(test)]

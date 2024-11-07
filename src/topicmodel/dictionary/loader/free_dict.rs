@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::*;
-use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Region, Register};
+use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, PartOfSpeechTag, Region, Register};
 // see https://tei-c.org/release/doc/tei-p5-doc/en/html/DI.html
 
 pub struct FreeDictReader<R> {

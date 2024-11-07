@@ -1,7 +1,7 @@
 use crate::topicmodel::dictionary::loader::file_parser::{base_parser_method, FileParserResult, FunctionBasedLineWiseReader, LineWiseDictionaryReader};
 use crate::topicmodel::dictionary::loader::helper::{space_only0, take_bracket, take_nested_bracket_delimited};
 use crate::topicmodel::dictionary::loader::word_infos::{GrammaticalGender, PartOfSpeech, PartialWordType};
-use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalNumber, Region, Register};
+use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalNumber, PartOfSpeechTag, Region, Register};
 use itertools::Itertools;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag, take_until};
@@ -229,7 +229,7 @@ pub enum SpecialInfo {
 }
 
 #[derive(Clone, Debug, Copy)]
-pub struct WordTypeInfo(pub Option<SpecialInfo>, pub PartOfSpeech);
+pub struct WordTypeInfo(pub Option<SpecialInfo>, pub PartOfSpeech, pub Option<&'static [PartOfSpeechTag]>);
 
 impl Display for WordTypeInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -355,9 +355,11 @@ fn parse_word_type_info<'a, E: DictCCParserError<&'a str>>(s: &'a str) -> IResul
     map(
         pair(
             opt(terminated(map_res(take_until(":"), |value: &str| value.to_lowercase().parse()), char(':'))),
-            map_res(is_not(" .\t/"), |value: &str| value.try_into()),
+            map_res(is_not(" .\t/"), |value: &str| {
+                value.try_into().map(|v2| { (v2, PartOfSpeechTag::get_tags(value)) })
+            }),
         ),
-        |value| WordTypeInfo(value.0, value.1)
+        |value| WordTypeInfo(value.0, value.1.0, value.1.1)
     )(s)
 }
 
@@ -489,6 +491,7 @@ pub struct ProcessingResult<S> {
     pub gender: Vec<GrammaticalGender>,
     pub numeric: Vec<GrammaticalNumber>,
     pub pos: Vec<PartOfSpeech>,
+    pub pos_tag: Vec<PartOfSpeechTag>,
     pub register: Vec<Register>,
     pub regions: Vec<Region>,
     pub abbrev: Vec<String>,
@@ -529,11 +532,12 @@ impl<S> ProcessingResult<S> where S: Clone {
 pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
     entry: WordEntry<S>,
     additional_domains: &[Domain],
-    additional_pos: &[PartOfSpeech]
+    additional_pos: &[PartOfSpeech],
 ) -> ProcessingResult<S> {
     let mut gender: Vec<GrammaticalGender> = Vec::new();
     let mut numeric: Vec<GrammaticalNumber> = Vec::new();
     let mut pos: Vec<PartOfSpeech> = Vec::new();
+    let mut pos_tag: Vec<PartOfSpeechTag> = Vec::new();
     let mut register: Vec<Register> = Vec::new();
     let mut abbrev: Vec<String> = Vec::new();
     let mut domain: Vec<Domain> = Vec::new();
@@ -568,11 +572,16 @@ pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
             ref a @ WordEntryElement::MetaInfo(ref v) => {
                 match v.as_ref() {
                     "prep+art" => {
-                        pos.push(PartOfSpeech::Preposition);
+                        pos.push(PartOfSpeech::Prep);
                         pos.push(PartOfSpeech::Article);
                     }
-                    "pron" | "adv" | "conj" | "indefinite article" => {
+                    "pron" | "adv" | "conj" => {
                         pos.push(v.as_ref().parse().unwrap())
+                    }
+                    "indefinite article" => {
+                        if let Some(x) = PartOfSpeechTag::get_tags("indefinite article") {
+                            pos_tag.extend_from_slice(x)
+                        }
                     }
                     "ugs." => {
                         register.push(Register::Coll)
@@ -604,7 +613,7 @@ pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
                     latin_names: &mut Vec<String>,
                     regions: &mut Vec<Region>,
                     additional_domains: &[Domain],
-                    additional_pos: &[PartOfSpeech]
+                    additional_pos: &[PartOfSpeech],
                 ) -> bool {
                     {
                         let s = s.trim_end_matches(',');
@@ -727,7 +736,7 @@ pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
                                 latin_names,
                                 regions,
                                 additional_domains,
-                                additional_pos
+                                additional_pos,
                             );
                         }
                         if found_something {
@@ -767,6 +776,7 @@ pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
         gender,
         numeric,
         pos,
+        pos_tag,
         register,
         abbrev,
         domain,
@@ -823,8 +833,12 @@ mod test {
 
                 let mut general_register = Vec::new();
                 let mut general_pos = Vec::new();
+                let mut general_pos_tags = Vec::new();
                 if let Some(dictcc::WordTypes(types)) = word_types {
-                    for WordTypeInfo(a, b) in types {
+                    for WordTypeInfo(a, b, c) in types {
+                        if let Some(c) = c {
+                            general_pos_tags.extend_from_slice(c);
+                        }
                         general_pos.push(b);
                         match a {
                             None => {}

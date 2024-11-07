@@ -163,6 +163,8 @@ pub trait Translation: Direction + private::Sealed {}
 pub trait Language: Translation + Direction + private::Sealed {
     type OPPOSITE: Language;
     const LANG: LanguageKind;
+
+
 }
 
 /// Language A

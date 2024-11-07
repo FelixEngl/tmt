@@ -88,22 +88,27 @@ impl PyVocabulary {
         Ok(())
     }
 
+    #[doc(hidden)]
     fn __repr__(&self) -> String {
         format!("PyVocabulary({:?})", self.inner)
     }
 
+    #[doc(hidden)]
     fn __str__(&self) -> String {
         self.inner.to_string()
     }
 
+    #[doc(hidden)]
     fn __len__(&self) -> usize {
         self.inner.len()
     }
 
+    #[doc(hidden)]
     fn __contains__(&self, value: &str) -> bool {
         self.inner.contains(value)
     }
 
+    #[doc(hidden)]
     fn __iter__(&self) -> PyVocIter {
         PyVocIter::new(self.clone())
     }
@@ -120,10 +125,12 @@ impl PyVocabulary {
         self.inner.get_value(id).map(|value| value.as_ref())
     }
 
+    /// Save the vocabulary in a standardisized way
     fn save(&self, path: PathBuf) -> PyResult<usize> {
         Ok(self.inner.save_to_file(path)?)
     }
 
+    /// Load the vocabulary from a file
     #[staticmethod]
     fn load(path: PathBuf) -> PyResult<PyVocabulary> {
         match Vocabulary::<String>::load_from_file(path) {
@@ -136,12 +143,14 @@ impl PyVocabulary {
         }
     }
 
+    /// Serializes this to a json
     fn to_json(&self) -> PyResult<String> {
         Ok(
             serde_json::to_string(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?
         )
     }
 
+    /// Deserializes a json to a vocabulary.
     #[staticmethod]
     fn from_json(s: &str) -> PyResult<Self> {
         Ok(serde_json::from_str(s).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)

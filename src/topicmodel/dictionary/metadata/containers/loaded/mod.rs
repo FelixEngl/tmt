@@ -84,6 +84,10 @@ generate_field_code! {
         pos("pos"): PartOfSpeech | Set64<PartOfSpeech>
     },
     set {
+        r#"Stores additional tags for the pos of a word."#
+        pos_tag("pos_tag"): PartOfSpeechTag | Set64<PartOfSpeechTag>
+    },
+    set {
         r#"Stores the regions of a word."#
         regions("regions"): Region | Set64<Region>
     },
