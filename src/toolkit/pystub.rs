@@ -1,8 +1,6 @@
-use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use itertools::Itertools;
 use pyo3_stub_gen::{PyStubType, TypeInfo};
-use pyo3_stub_gen::generate::Import;
 
 pub struct TypeInfoBuilder {
     input: Vec<TypeInfo>,
