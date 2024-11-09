@@ -3,15 +3,15 @@ use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryPointerProvider, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
-// use crate::topicmodel::dictionary::metadata::classic::{
-//     ClassicMetadataManager,
-// };
+use crate::topicmodel::dictionary::metadata::classic::{
+    ClassicMetadataManager,
+};
 use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModel;
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin};
 use crate::topicmodel::reference::HashRef;
@@ -30,17 +30,17 @@ impl<T, V, C> DictionaryWithMeta<T, V, C> {
     }
 }
 
-// impl<T, V> DictionaryWithMeta<T, V, ClassicMetadataManager> {
-//
-//     pub fn subjects(&self) -> Vec<&str> {
-//         self.metadata.subject_interner.iter().map(|value| value.1).collect_vec()
-//     }
-//
-//     pub fn unstemmed(&self) -> &Vocabulary<String> {
-//         &self.metadata.unstemmed_voc
-//     }
-// }
-//
+impl<T, V> DictionaryWithMeta<T, V, ClassicMetadataManager> {
+
+    pub fn subjects(&self) -> Vec<&str> {
+        self.metadata.subject_interner.iter().map(|value| value.1).collect_vec()
+    }
+
+    pub fn unstemmed(&self) -> &Vocabulary<String> {
+        &self.metadata.unstemmed_voc
+    }
+}
+
 
 
 pub enum CreateTopicMatrixMode<T=()> {
@@ -67,7 +67,7 @@ impl<T> CreateTopicMatrixMode<T> where T: PartialEq {
     }
 }
 
-impl<T, V> DictionaryWithMeta<T, V, LoadedMetadataManager<Dictionary<T, V>, T, V>> where V: BasicVocabulary<T> {
+impl<T, V> DictionaryWithMeta<T, V, LoadedMetadataManager> where V: BasicVocabulary<T> {
     pub fn create_topic_matrix<'a, L: Language, S: AsRef<str>>(&'a self, mode: &CreateTopicMatrixMode<S>) -> DomainModel {
 
         let mode = match mode {
@@ -129,7 +129,7 @@ impl<T, V, M> DictionaryWithMeta<T, V, M> where V: From<Option<LanguageHint>>, M
     }
 }
 
-impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T>, M: MetadataManager<Dictionary<T, V>>
+impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T>, M: MetadataManager
 {
     pub fn metadata_with_dict(&self) -> MetadataContainerWithDict<Self, T, V, M> where Self: Sized {
         MetadataContainerWithDict::wrap(self)
@@ -149,7 +149,7 @@ impl<T, V, M> DictionaryWithMeta<T, V, M>
 where
     V: VocabularyMut<T> + From<Option<LanguageHint>>,
     T: Hash + Eq,
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
 
     fn insert_meta_for_create_subset<'a, L: Language>(
@@ -157,11 +157,8 @@ where
         word_id: usize,
         metadata_ref: M::Reference<'a>
     ) {
-        let ptr = (&mut self.inner) as *mut Dictionary<T, V>;
-        let mut meta = self.metadata.get_or_create_meta::<L>(
-            ptr,
-            word_id
-        );
+
+        let mut meta = self.metadata.get_or_create_meta::<L>(word_id);
         meta.update_with_reference::<L>(metadata_ref)
     }
 
@@ -170,6 +167,7 @@ where
         F1: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool,
         F2: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool
     {
+
         let mut new = Self {
             inner: Dictionary::new_with(
                 self.inner.voc_a.language().cloned(),
@@ -214,7 +212,7 @@ impl<T, V, M> FromVoc<T, V> for DictionaryWithMeta<T, V, M>
 where
     V: BasicVocabulary<T> + Default,
     T: Hash + Eq,
-    M: Default + MetadataManager<Dictionary<T, V>>
+    M: Default + MetadataManager
 {
     fn from_voc(voc_a: V, voc_b: V) -> Self {
         Self::new(
@@ -239,7 +237,7 @@ impl<T, V, M> Clone for DictionaryWithMeta<T, V, M> where V: Clone, M: Clone {
 }
 impl<T, V, M> BasicDictionary for DictionaryWithMeta<T, V, M>
 where
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
     delegate::delegate! {
         to self.inner {
@@ -259,26 +257,11 @@ where
         }
     }
 }
-
-impl<T, V, M> BasicDictionaryPointerProvider<Dictionary<T, V>> for DictionaryWithMeta<T, V, M>
-where
-    M: MetadataManager<Dictionary<T, V>>,
-    V: BasicVocabulary<T>,
-{
-    fn provide_pointer(&self) -> *const Dictionary<T, V> {
-        (&self.inner) as *const Dictionary<T, V>
-    }
-}
-
-impl<T, V, M> BasicDictionaryWithMeta<Dictionary<T, V>, M> for DictionaryWithMeta<T, V, M>
+impl<T, V, M> BasicDictionaryWithMeta<M> for DictionaryWithMeta<T, V, M>
 where
     V: BasicVocabulary<T>,
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
-    fn underlying_dict(&self) -> &Dictionary<T, V> {
-        &self.inner
-    }
-
     fn metadata(&self) -> &M {
         &self.metadata
     }
@@ -289,7 +272,7 @@ where
 }
 impl<T, V, M> BasicDictionaryWithVocabulary<V> for DictionaryWithMeta<T, V, M>
 where
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
     delegate::delegate! {
         to self.inner {
@@ -309,7 +292,7 @@ impl<T, V, M> DictionaryWithMeta<T, V, M> where T: Eq + Hash, V: MappableVocabul
 impl<T, V, M> DictionaryWithVocabulary<T, V> for  DictionaryWithMeta<T, V, M>
 where
     V: BasicVocabulary<T>,
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
 
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
@@ -350,7 +333,7 @@ impl<T, V, M> DictionaryMut<T, V> for  DictionaryWithMeta<T, V, M>
 where
     T: Eq + Hash,
     V: VocabularyMut<T>,
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
     fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
         self.inner.set_language::<L>(value)
@@ -376,7 +359,7 @@ impl<T, V, M> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V, M>
 where
     T: Eq + Hash,
     V: VocabularyMut<T> + Default,
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
         let mut new_dict = DictionaryWithMeta::new(
@@ -482,8 +465,8 @@ where
 
 impl<T: Display, V: BasicVocabulary<T>, M> Display for DictionaryWithMeta<T, V, M>
 where
-    M: MetadataManager<Dictionary<T, V>>,
-    for<'a> <M as MetadataManager<Dictionary<T, V>>>::Reference<'a>: Display
+    M: MetadataManager,
+    for<'a> <M as MetadataManager>::Reference<'a>: Display
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.inner, f)?;
@@ -508,7 +491,7 @@ impl<T, V, M> IntoIterator for DictionaryWithMeta<T, V, M>
 where
     V: BasicVocabulary<T>,
     T: Hash + Eq,
-    M: MetadataManager<Dictionary<T, V>>
+    M: MetadataManager
 {
     type Item = DirectionTuple<
         (usize, HashRef<T>, Option<M::ResolvedMetadata>),

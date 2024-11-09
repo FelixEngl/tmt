@@ -32,9 +32,6 @@ pub trait BasicDictionary: Send + Sync {
     }
 }
 
-pub trait BasicDictionaryPointerProvider<D> {
-    fn provide_pointer(&self) -> *const D;
-}
 
 /// A basic dictionary with a vocabulary
 pub trait BasicDictionaryWithVocabulary<V>: BasicDictionary {
@@ -215,13 +212,12 @@ pub trait FromVoc<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: B
 }
 
 
-pub trait BasicDictionaryWithMeta<D, M: MetadataManager<D>>: BasicDictionary + BasicDictionaryPointerProvider<D> {
+pub trait BasicDictionaryWithMeta<M: MetadataManager>: BasicDictionary {
 
-    fn underlying_dict(&self) -> &D;
     fn metadata(&self) -> &M;
     fn metadata_mut(&mut self) -> &mut M;
 
-    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, D, M> {
+    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M> {
         DictionaryWithMetaIter::new(self)
     }
 }

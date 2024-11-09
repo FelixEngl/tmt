@@ -1,6 +1,6 @@
 macro_rules! create_adders {
     (interned: $ident:ident, $interner_name:ident, $interner_method: ident: $ty:ty, $($tt:tt)*) => {
-        impl<'a, D, U, V> LoadedMetadataMutRef<'a, D, U, V> {
+        impl<'a> LoadedMetadataMutRef<'a> {
             paste::paste! {
                 pub fn [<add_single_to_ $ident _default>](&mut self, value: impl AsRef<str>) {
                     let interned = unsafe { &mut *self.manager_ref }.$interner_method(value);
@@ -85,7 +85,7 @@ macro_rules! create_adders {
     };
 
     (set: $ident:ident: $ty:ty, $($tt:tt)*) => {
-        impl<'a, D, T, V> LoadedMetadataMutRef<'a, D, T, V> {
+        impl<'a> LoadedMetadataMutRef<'a> {
             paste::paste! {
                 pub fn [<add_single_to_ $ident _default>](&mut self, value: $ty) {
                     self.meta
@@ -140,6 +140,7 @@ macro_rules! create_adders {
     () => {}
 }
 
+
 pub(super) use create_adders;
 
 macro_rules! create_mut_ref_implementation {
@@ -150,27 +151,20 @@ macro_rules! create_mut_ref_implementation {
 
 
 pub(super) use create_mut_ref_implementation;
-use crate::topicmodel::dictionary::direction::LanguageKind;
+
 use super::*;
 use crate::topicmodel::dictionary::metadata::MetadataMutReference;
 
-pub struct LoadedMetadataMutRef<'a, D, T, V> {
+pub struct LoadedMetadataMutRef<'a> {
     pub(in crate::topicmodel::dictionary) meta: &'a mut LoadedMetadata,
     // always outlifes meta
-    pub(super) manager_ref: *mut LoadedMetadataManager<D, T, V>,
-    pub(super) dictionary: *mut D,
-    pub(super) direction: LanguageKind,
+    pub(super) manager_ref: *mut LoadedMetadataManager
 }
 
-impl<'a, D, T, V> LoadedMetadataMutRef<'a, D, T, V> {
+impl<'a> LoadedMetadataMutRef<'a> {
 
-    pub(in crate::topicmodel::dictionary) fn new(
-        dictionary: *mut D,
-        manager_ref: *mut LoadedMetadataManager<D, T, V>,
-        meta: &'a mut LoadedMetadata,
-        direction: LanguageKind
-    ) -> Self {
-        Self { meta, manager_ref, direction, dictionary }
+    pub(in crate::topicmodel::dictionary) fn new(dict_ref: *mut LoadedMetadataManager, meta: &'a mut LoadedMetadata) -> Self {
+        Self { meta, manager_ref: dict_ref }
     }
 
     pub fn add_dictionary_static(&mut self, name: &'static str) -> DictionaryOriginSymbol {
@@ -186,23 +180,23 @@ impl<'a, D, T, V> LoadedMetadataMutRef<'a, D, T, V> {
     }
 }
 
-impl<'a, D, T, V> MetadataMutReference<'a, D, LoadedMetadataManager<D, T, V>> for LoadedMetadataMutRef<'a, D, T, V> {
+impl<'a> MetadataMutReference<'a, LoadedMetadataManager> for LoadedMetadataMutRef<'a> {
     #[allow(clippy::needless_lifetimes)]
-    fn update_with_reference<'b, L: crate::topicmodel::dictionary::direction::Language>(&mut self, associated: <LoadedMetadataManager<D, T, V> as crate::topicmodel::dictionary::metadata::MetadataManager<D>>::Reference<'b>) {
+    fn update_with_reference<'b, L: crate::topicmodel::dictionary::direction::Language>(&mut self, associated: <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Reference<'b>) {
         // todo: needs to refit language ids!!
         self.meta.update_with(associated.raw)
     }
 
-    fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <LoadedMetadataManager<D, T, V> as crate::topicmodel::dictionary::metadata::MetadataManager<D>>::Metadata {
+    fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
         self.meta
     }
 
-    fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut LoadedMetadataManager<D, T, V> {
+    fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut LoadedMetadataManager {
         unsafe { &mut *self.manager_ref }
     }
 }
 
-impl<'a, D, T, V> Deref for LoadedMetadataMutRef<'a, D, T, V> {
+impl<'a> Deref for LoadedMetadataMutRef<'a> {
     type Target = LoadedMetadata;
 
     fn deref(&self) -> &Self::Target {
@@ -210,7 +204,7 @@ impl<'a, D, T, V> Deref for LoadedMetadataMutRef<'a, D, T, V> {
     }
 }
 
-impl<'a, D, T, V> std::ops::DerefMut for LoadedMetadataMutRef<'a, D, T, V> {
+impl<'a> std::ops::DerefMut for LoadedMetadataMutRef<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.meta
     }
