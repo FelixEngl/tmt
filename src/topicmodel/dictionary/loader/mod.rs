@@ -1,5 +1,5 @@
 use crate::tokenizer::Tokenizer;
-use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE, MS_TERMS, MUSE, OMEGA};
+use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE, MS_TERMS, MUSE, OMEGA, WIKTIONARY};
 use crate::topicmodel::dictionary::dicts_info::omega_wiki::OptionalOmegaWikiEntry;
 use crate::topicmodel::dictionary::direction::{Invariant, Language as DirLang, A, B};
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
@@ -21,6 +21,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::path::Path;
 use thiserror::Error;
+use crate::topicmodel::dictionary::loader::wiktionary_reader::{convert_entry_to_entries, EntryConversionError, ExtractedWord, ExtractedWordValues, WiktionaryReaderError};
 
 mod ding;
 mod dictcc;
@@ -150,8 +151,8 @@ impl<P> UnifiedTranslationHelper<P> {
         Self {
             dir,
             dictionary: DictionaryWithMeta::new_with(
-                Some(dir.lang_a.to_string()),
-                Some(dir.lang_b.to_string()),
+                Some(dir.lang_a().to_string()),
+                Some(dir.lang_b().to_string()),
             ),
             preprocessor,
             ding_dict_id_provider: 0
@@ -182,6 +183,7 @@ pub mod constants {
     pub const OMEGA: &'static str = "omega_wiki";
     pub const MS_TERMS: &'static str = "ms_terms";
     pub const MUSE: &'static str = "muse";
+    pub const WIKTIONARY: &'static str = "wiktionary";
 }
 
 impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
@@ -242,7 +244,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
     fn assert_lang_dir<Payload: Debug, E: Error, InitError: Error>(&self, other: &LanguageDirection) -> Result<(), UnifiedTranslationError<Payload, E, InitError>> {
-        if self.dir.contains(other.lang_a) && self.dir.contains(other.lang_b) {
+        if self.dir.contains(&other.lang_a()) && self.dir.contains(&other.lang_b()) {
             Ok(())
         } else {
             Err(UnifiedTranslationError::IllegalLanguageDirection {
@@ -616,7 +618,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         builder.extend_domains(domains);
         builder.push_internal_ids(id);
         builder.extend_registers(registers);
-        if let (Some(a), Some(b)) = (words.remove(&dir.lang_a), words.remove(&dir.lang_b)) {
+        if let (Some(a), Some(b)) = (words.remove(&dir.lang_a()), words.remove(&dir.lang_b())) {
             let mut a_word = Vec::new();
             let mut b_word = Vec::new();
             let mut a_phrase = Vec::new();
@@ -637,7 +639,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 builder.extend_unclassified(unknown);
                 builder.extend_abbreviations(abbrev);
                 builder.extend_abbreviations(short_form);
-                builder.push_languages(dir.lang_a);
+                builder.push_languages(dir.lang_a());
 
 
                 for word in words {
@@ -669,7 +671,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 builder.extend_unclassified(unknown);
                 builder.extend_abbreviations(abbrev);
                 builder.extend_abbreviations(short_form);
-                builder.push_languages(dir.lang_b);
+                builder.push_languages(dir.lang_b());
 
                 for word in words {
                     let (id, mut outp) = self.insert::<B>(IATE, &word, dir);
@@ -815,12 +817,12 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 builder2.push_pos(part_of_speech);
 
                 match lang {
-                    a if a == dir.lang_a => {
+                    a if a == dir.lang_a() => {
                         let (id, mut outp) = self.insert::<A>(MS_TERMS, &term, dir);
                         lang_a_values.push(id);
                         builder.build().unwrap().write_into(&mut outp);
                     }
-                    b if b == dir.lang_b => {
+                    b if b == dir.lang_b() => {
                         let (id, mut outp) = self.insert::<B>(MS_TERMS, &term, dir);
                         lang_b_values.push(id);
                         builder.build().unwrap().write_into(&mut outp);
@@ -882,12 +884,172 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         let (b, _) = self.insert::<B>(MUSE, &right, dir);
         self.insert_translation_by_id(a, b, dir)
     }
+
+    pub fn read_wiktionary(&mut self, path: impl AsRef<Path>) -> Result<WiktionaryReaderStats, UnifiedTranslationError<WiktionaryReaderStats, WiktionaryError, std::io::Error>> {
+        let reader = wiktionary_reader::read_wiktionary(path)?;
+        let mut errors = Vec::new();
+        let mut ct = WiktionaryReaderStats::default();
+        for entry in reader {
+            match entry {
+                Ok(Either::Right(value)) => {
+                    match value.lang.parse::<Language>() {
+                        Ok(lang) if self.dir.contains(&lang) => {
+                            if let Some(other_lang) = value.translations.iter()
+                                .filter_map(|value| value.lang.parse::<Language>().ok())
+                                .filter(|value| lang.ne(value) && self.dir.contains(value))
+                                .next()
+                            {
+                                match self.process_wikidata_entry(value, lang.to(other_lang)) {
+                                    Ok(value) => {
+                                        ct.success += value;
+                                    }
+                                    Err(value) => {
+                                        errors.push(value);
+                                    }
+                                }
+                            } else {
+                                if self.dir.lang_a() == lang {
+                                    ct.no_lang_b += 1
+                                } else {
+                                    ct.no_lang_a += 1
+                                }
+                            }
+                        }
+                        _ => {
+                            ct.not_lang_a_or_b += 1;
+                        }
+                    }
+                }
+                Err(err) => {
+                    errors.push(err.into());
+                }
+                _ => {
+                    ct.redirects += 1;
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(ct)
+        } else {
+            Err(UnifiedTranslationError::reader(ct, errors))
+        }
+    }
+
+    fn process_wikidata_entry(&mut self, word: ExtractedWord, recognized: LanguageDirection) -> Result<usize, WiktionaryError> {
+        let ExtractedWordValues {
+            main: (word, lang, mut content),
+            forms,
+            synonyms,
+            antonyms: _,
+            related:_,
+            translations
+        } = convert_entry_to_entries(word, recognized.as_ref())?;
+        content.dictionary_name(Some(WIKTIONARY));
+        content.extend_synonyms(synonyms.into_iter().map(|v| v.0));
+
+        let mut lang_a_variants = Vec::new();
+
+        let base_meta = {
+            let (word, mut meta) = if lang == self.dir.lang_a() {
+                unsafe{
+                    self.insert_pipeline::<A>(WIKTIONARY, &word)
+                }
+            } else {
+                unsafe{
+                    self.insert_pipeline::<B>(WIKTIONARY, &word)
+                }
+            };
+
+            lang_a_variants.push(word);
+
+            let build = content.build().unwrap();
+            build.write_to(&mut meta);
+            build
+        };
+
+        for (w, mut v) in forms {
+            v.dictionary_name(Some(WIKTIONARY));
+            v.update_with(&base_meta);
+            let (word, mut meta) = if lang == self.dir.lang_a() {
+                unsafe{
+                    self.insert_pipeline::<A>(WIKTIONARY, &w)
+                }
+            } else {
+                unsafe{
+                    self.insert_pipeline::<B>(WIKTIONARY, &w)
+                }
+            };
+            v.build_consuming().unwrap().write_into(&mut meta);
+            lang_a_variants.push(word);
+        }
+
+
+        let mut lang_b_variants = Vec::new();
+        for (word, lang_b, mut data) in translations {
+            data.dictionary_name(Some(WIKTIONARY));
+            let data = data.build_consuming().unwrap();
+            if lang_b == lang {
+                // todo: Do we want to transfer the meta to the translations?
+                let (word, mut meta) = if lang == self.dir.lang_a() {
+                    unsafe{ self.insert_pipeline::<A>(WIKTIONARY, &word) }
+                } else {
+                    unsafe{ self.insert_pipeline::<B>(WIKTIONARY, &word) }
+                };
+                data.write_into(&mut meta);
+                lang_a_variants.push(word);
+            } else {
+                // todo: Do we want to transfer the meta to the translations?
+                let (word, mut meta) = if lang == self.dir.lang_a() {
+                    unsafe{ self.insert_pipeline::<B>(WIKTIONARY, &word) }
+                } else {
+                    unsafe{ self.insert_pipeline::<A>(WIKTIONARY, &word) }
+                };
+                data.write_into(&mut meta);
+                lang_b_variants.push(word);
+            }
+        }
+
+        let mut ct = 0;
+        if lang == self.dir.lang_a() {
+            for (a, b) in lang_a_variants.into_iter().cartesian_product(lang_b_variants) {
+                ct += 1;
+                unsafe {
+                    self.dictionary.insert_raw_values::<Invariant>(a, b);
+                }
+            }
+        } else {
+            for (a, b) in lang_a_variants.into_iter().cartesian_product(lang_b_variants) {
+                ct += 1;
+                unsafe {
+                    self.dictionary.insert_raw_values::<Invariant>(b, a);
+                }
+            }
+        }
+        Ok(ct)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct WiktionaryReaderStats {
+    success: usize,
+    redirects: usize,
+    not_lang_a_or_b: usize,
+    no_lang_a: usize,
+    no_lang_b: usize
+}
+
+#[derive(Debug, Error)]
+pub enum WiktionaryError {
+    #[error(transparent)]
+    WiktionaryReaderError(#[from] WiktionaryReaderError),
+    #[error(transparent)]
+    Conversion(#[from] EntryConversionError)
 }
 
 
 #[derive(Debug, Error)]
 pub enum UnifiedTranslationError<P: Debug, E: Error, InitError: Error = E> {
-    #[error("Expected any combination of ({ea}, {eb}) got ({aa}, {ab})", ea = expected.lang_a, eb = expected.lang_b, aa = actual.lang_a, ab = actual.lang_b)]
+    #[error("Expected any combination of ({ea}, {eb}) got ({aa}, {ab})", ea = expected.lang_a(), eb = expected.lang_b(), aa = actual.lang_a(), ab = actual.lang_b())]
     IllegalLanguageDirection {
         expected: LanguageDirection,
         actual: LanguageDirection
@@ -1046,7 +1208,7 @@ mod test {
         for DirectionTuple {
             a,
             b,
-            direction
+            direction: _
         } in data.iter_with_meta() {
             println!("a: {}, b: {}", data.voc_a().get_value(a.0).unwrap(), data.voc_b().get_value(b.0).unwrap())
         }

@@ -465,3 +465,41 @@ macro_rules! create_collector_implementation {
 }
 
 pub(super) use create_collector_implementation;
+
+use super::*;
+
+impl<T> LoadedMetadataCollectionBuilder<T> {
+    pub fn push_any_word_info(&mut self, word_info: AnyWordInfo) {
+        match word_info {
+            AnyWordInfo::Language(v) => {
+                self.push_languages(v)
+            }
+            AnyWordInfo::Domain(v) => {
+                self.push_domains(v)
+            }
+            AnyWordInfo::Gender(v) => {
+                self.push_genders(v)
+            }
+            AnyWordInfo::Number(v) => {
+                self.push_numbers(v)
+            }
+            AnyWordInfo::POS(v) => {
+                self.push_pos(v)
+            }
+            AnyWordInfo::POSTag(v) => {
+                self.push_pos_tag(v)
+            }
+            AnyWordInfo::Region(v) => {
+                self.push_regions(v)
+            }
+            AnyWordInfo::Register(v) => {
+                self.push_registers(v)
+            }
+        }
+    }
+    pub fn extend_any_word_info<I: IntoIterator<Item=AnyWordInfo>>(&mut self, word_info: I) {
+        for value in word_info {
+            self.push_any_word_info(value)
+        }
+    }
+}

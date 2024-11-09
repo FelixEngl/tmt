@@ -36,6 +36,7 @@ impl SharedInterner {
         }
     }
 
+    #[allow(dead_code)]
     pub fn resolve(&self, var_name: VarName) -> String {
         unsafe { self.inner.read().unwrap().resolve_unchecked(var_name).to_string() }
     }

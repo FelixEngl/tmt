@@ -80,21 +80,13 @@ macro_rules! create_cached_getter {
 pub(super) use create_cached_getter;
 
 
-
-
 macro_rules! create_ref_implementation {
     ($($tt:tt: $name: ident $(, $interner_name: ident)?: $ty: ty | $ty_sub:ty),* $(,)?) => {
-        #[derive(Clone)]
-        pub(super) struct Storage<'a, T> {
-            pub default: Option<T>,
-            pub mapped: Vec<(&'a str, Option<T>)>
-        }
-
         #[derive(Clone)]
         pub struct LoadedMetadataRef<'a> {
             pub(in super) raw: &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata,
             pub(in super) manager_ref: &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager,
-            $(pub(in super) $name: std::sync::Arc<std::sync::OnceLock<Storage<'a, $ty>>>,
+            $(pub(in super) $name: std::sync::Arc<std::sync::OnceLock<$crate::topicmodel::dictionary::metadata::containers::loaded::Storage<'a, $ty>>>,
             )*
         }
 
@@ -118,42 +110,58 @@ macro_rules! create_ref_implementation {
             }
         }
 
-        impl<'a> std::ops::Deref for LoadedMetadataRef<'a>  {
-            type Target = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata;
-
-            fn deref(&self) -> &Self::Target {
-                self.raw
-            }
-        }
-
-        impl<'a> $crate::topicmodel::dictionary::metadata::MetadataReference<'a, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager> for LoadedMetadataRef<'a> {
-            fn raw(&self) -> &'a <$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager as $crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
-                self.raw
-            }
-
-            fn meta_manager(&self) -> &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager {
-                self.manager_ref
-            }
-
-            fn into_owned(self) -> <$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager as $crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
-                self.raw.clone()
-            }
-
-            fn into_resolved(self) -> <$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager as $crate::topicmodel::dictionary::metadata::MetadataManager>::ResolvedMetadata {
-                self.into()
-            }
-        }
 
         impl<'a> LoadedMetadataRef<'a> {
             $crate::topicmodel::dictionary::metadata::loaded::reference::create_cached_getter!($($tt: $name $(, $interner_name)?: $ty_sub,)*);
-
-            fn as_solved(&self) -> $crate::topicmodel::dictionary::metadata::loaded::SolvedLoadedMetadata {
-                $crate::topicmodel::dictionary::metadata::loaded::SolvedLoadedMetadata::create_from(self)
-            }
         }
     };
     () => {}
 }
 
-
 pub(super) use create_ref_implementation;
+
+use crate::topicmodel::dictionary::metadata::MetadataReference;
+use super::*;
+
+/// A storage for data.
+#[derive(Clone)]
+pub(in crate::topicmodel::dictionary::metadata::containers) struct Storage<'a, T> {
+    pub default: Option<T>,
+    pub mapped: Vec<(&'a str, Option<T>)>
+}
+
+
+
+impl<'a> Deref for LoadedMetadataRef<'a>  {
+    type Target = LoadedMetadata;
+
+    fn deref(&self) -> &Self::Target {
+        self.raw
+    }
+}
+
+
+impl<'a> MetadataReference<'a, LoadedMetadataManager> for LoadedMetadataRef<'a> {
+    fn raw(&self) -> &'a <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
+        self.raw
+    }
+
+    fn meta_manager(&self) -> &'a LoadedMetadataManager {
+        self.manager_ref
+    }
+
+    fn into_owned(self) -> <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
+        self.raw.clone()
+    }
+
+    fn into_resolved(self) -> <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::ResolvedMetadata {
+        self.into()
+    }
+}
+
+impl<'a> LoadedMetadataRef<'a> {
+    /// Create a solved loaded metadata
+    fn as_solved(&self) -> SolvedLoadedMetadata {
+        SolvedLoadedMetadata::create_from(self)
+    }
+}

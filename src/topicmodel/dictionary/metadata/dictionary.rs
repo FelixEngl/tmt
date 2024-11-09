@@ -167,7 +167,6 @@ where
         F1: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool,
         F2: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool
     {
-
         let mut new = Self {
             inner: Dictionary::new_with(
                 self.inner.voc_a.language().cloned(),

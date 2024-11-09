@@ -1,14 +1,20 @@
-pub mod metadata;
-pub mod reference;
-pub mod reference_mut;
-pub mod solved;
-pub mod manager;
-pub mod collector;
-pub mod field_denom;
+mod metadata;
+mod reference;
+mod reference_mut;
+mod solved;
+mod manager;
+mod collector;
+mod field_denom;
 mod resolved_value;
 mod solved_new_arg;
 
-use std::ops::Deref;
+pub use metadata::*;
+use reference::*;
+pub use reference_mut::*;
+// pub use solved::*;
+// pub use manager::*;
+// pub use collector::*;
+// pub use field_denom::*;
 pub use resolved_value::*;
 pub use solved_new_arg::*;
 
@@ -17,6 +23,7 @@ use crate::register_python;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::toolkit::typesafe_interner::*;
 use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModelIndex;
+use std::ops::Deref;
 
 register_python! {
     struct SolvedLoadedMetadata;

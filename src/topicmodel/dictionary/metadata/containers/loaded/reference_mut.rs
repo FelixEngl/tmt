@@ -145,65 +145,67 @@ pub(super) use create_adders;
 
 macro_rules! create_mut_ref_implementation {
     ($($tt:tt)+) => {
-
-        pub struct LoadedMetadataMutRef<'a> {
-            pub(in crate::topicmodel::dictionary) meta: &'a mut $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata,
-            // always outlifes meta
-            manager_ref: *mut $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager
-        }
-
-        impl<'a> std::ops::Deref for LoadedMetadataMutRef<'a> {
-            type Target = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata;
-
-            fn deref(&self) -> &Self::Target {
-                self.meta
-            }
-        }
-
-        impl<'a> std::ops::DerefMut for LoadedMetadataMutRef<'a> {
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                self.meta
-            }
-        }
-
-        impl<'a> $crate::topicmodel::dictionary::metadata::MetadataMutReference<'a, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager> for LoadedMetadataMutRef<'a> {
-            fn update_with_reference<'b, L: crate::topicmodel::dictionary::direction::Language>(&mut self, associated: <$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager as $crate::topicmodel::dictionary::metadata::MetadataManager>::Reference<'b>) {
-                self.meta.update_with(associated.raw)
-            }
-
-            fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager as $crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
-                self.meta
-            }
-
-            fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager {
-                unsafe { &mut *self.manager_ref }
-            }
-        }
-
-        impl<'a> LoadedMetadataMutRef<'a> {
-
-            pub(in crate::topicmodel::dictionary) fn new(dict_ref: *mut $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager, meta: &'a mut $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata) -> Self {
-                Self { meta, manager_ref: dict_ref }
-            }
-
-            pub fn add_dictionary_static(&mut self, name: &'static str) -> $crate::toolkit::typesafe_interner::DictionaryOriginSymbol {
-                use $crate::topicmodel::dictionary::metadata::MetadataMutReference;
-                self.meta_container_mut().intern_dictionary_origin_static(name)
-            }
-
-            pub fn add_dictionary(&mut self, name: impl AsRef<str>) -> $crate::toolkit::typesafe_interner::DictionaryOriginSymbol {
-                use $crate::topicmodel::dictionary::metadata::MetadataMutReference;
-                self.meta_container_mut().intern_dictionary_origin(name)
-            }
-
-            pub fn update_with_solved(&mut self, solved: &$crate::topicmodel::dictionary::metadata::containers::loaded::SolvedLoadedMetadata) -> Result<(), WrongResolvedValueError> {
-                solved.write_into(self)
-            }
-        }
-
         $crate::topicmodel::dictionary::metadata::loaded::reference_mut::create_adders!($($tt)+);
     };
 }
 
 
 pub(super) use create_mut_ref_implementation;
+
+use super::*;
+use crate::topicmodel::dictionary::metadata::MetadataMutReference;
+
+pub struct LoadedMetadataMutRef<'a> {
+    pub(in crate::topicmodel::dictionary) meta: &'a mut LoadedMetadata,
+    // always outlifes meta
+    pub(super) manager_ref: *mut LoadedMetadataManager
+}
+
+impl<'a> LoadedMetadataMutRef<'a> {
+
+    pub(in crate::topicmodel::dictionary) fn new(dict_ref: *mut LoadedMetadataManager, meta: &'a mut LoadedMetadata) -> Self {
+        Self { meta, manager_ref: dict_ref }
+    }
+
+    pub fn add_dictionary_static(&mut self, name: &'static str) -> DictionaryOriginSymbol {
+        self.meta_container_mut().intern_dictionary_origin_static(name)
+    }
+
+    pub fn add_dictionary(&mut self, name: impl AsRef<str>) -> DictionaryOriginSymbol {
+        self.meta_container_mut().intern_dictionary_origin(name)
+    }
+
+    pub fn update_with_solved(&mut self, solved: &SolvedLoadedMetadata) -> Result<(), WrongResolvedValueError> {
+        solved.write_into(self)
+    }
+}
+
+impl<'a> MetadataMutReference<'a, LoadedMetadataManager> for LoadedMetadataMutRef<'a> {
+    #[allow(clippy::needless_lifetimes)]
+    fn update_with_reference<'b, L: crate::topicmodel::dictionary::direction::Language>(&mut self, associated: <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Reference<'b>) {
+        // todo: needs to refit language ids!!
+        self.meta.update_with(associated.raw)
+    }
+
+    fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
+        self.meta
+    }
+
+    fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut LoadedMetadataManager {
+        unsafe { &mut *self.manager_ref }
+    }
+}
+
+impl<'a> Deref for LoadedMetadataMutRef<'a> {
+    type Target = LoadedMetadata;
+
+    fn deref(&self) -> &Self::Target {
+        self.meta
+    }
+}
+
+impl<'a> std::ops::DerefMut for LoadedMetadataMutRef<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.meta
+    }
+}

@@ -140,7 +140,6 @@ pub enum Domain {
         serialize = "astronautics",
         serialize = "ASTRONAU",
         serialize = "aerospace",
-        serialize = "aerospace",
     )]
     Astronau = 11,
     /// Audiology / Audiologie, Akustik
@@ -514,7 +513,8 @@ pub enum Domain {
         to_string = "F",
         serialize = "F.",
         serialize = "f.",
-        serialize = "f"
+        serialize = "f",
+        serialize = "Harry-Potter",
     )]
     F = 45,
     /// Film / Film
@@ -607,9 +607,6 @@ pub enum Domain {
         serialize = "gastr",
         serialize = "GASTR",
         serialize = "GASTR.",
-        serialize = "gastr",
-        serialize = "GASTR",
-        serialize = "GASTR."
     )]
     Gastr = 54,
     /// Geography / Geografie
@@ -752,7 +749,6 @@ pub enum Domain {
         serialize = "jur.",
         serialize = "law-enforcement",
         serialize = "police",
-        serialize = "criminology",
         serialize = "patent-law",
     )]
     Law = 68,
@@ -827,7 +823,6 @@ pub enum Domain {
         serialize = "mathematical-analysis",
         serialize = "statistics",
         serialize = "trigonometry",
-        serialize = "arithmetic",
         serialize = "algebra",
         serialize = "algebraic-geometry",
         serialize = "algebraic-topology",
@@ -1210,6 +1205,11 @@ pub enum Domain {
         serialize = "RELIG",
         serialize = "RELIG.",
         serialize = "religion",
+        serialize = "Catholic",
+        serialize = "Christian",
+        serialize = "Hinduism",
+        serialize = "Hebrew",
+        serialize = "Church-of-England",
         serialize = "paganism",
         serialize = "mysticism",
         serialize = "hinduism",
@@ -1234,6 +1234,9 @@ pub enum Domain {
         serialize = "Zoroastrianism",
         serialize = "Catholicism",
         serialize = "ethics",
+        serialize = "Hebrew",
+        serialize = "Hinduism",
+        serialize = "Mormonism",
     )]
     Relig = 108,
     /// Rhetoric / Rhetorik
@@ -1305,7 +1308,6 @@ pub enum Domain {
         serialize = "sports.",
         serialize = "soccer.",
         serialize = "soccer",
-        serialize = "tennis",
         serialize = "baseball",
         serialize = "basketball",
         serialize = "judo",
@@ -1320,7 +1322,6 @@ pub enum Domain {
         serialize = "bat",
         serialize = "batter",
         serialize = "bicycle",
-        serialize = "bike",
         serialize = "bocce",
         serialize = "bow",
         serialize = "box",
@@ -1363,7 +1364,6 @@ pub enum Domain {
         serialize = "inning",
         serialize = "javelin",
         serialize = "jog",
-        serialize = "judo",
         serialize = "jump",
         serialize = "jumper",
         serialize = "karate",
@@ -1415,9 +1415,7 @@ pub enum Domain {
         serialize = "netball",
         serialize = "boxing",
         serialize = "ball-games",
-        serialize = "soccer",
         serialize = "gymnastics",
-        serialize = "sport",
         serialize = "skateboarding",
         serialize = "snowboarding",
         serialize = "rowing",
@@ -1433,7 +1431,6 @@ pub enum Domain {
         serialize = "volleyball",
         serialize = "ice-hockey",
         serialize = "bowling",
-        serialize = "gymnastics",
         serialize = "swim",
         serialize = "swimmer",
         serialize = "tag",
@@ -1678,6 +1675,8 @@ pub enum Domain {
     /// Wissenschaft
     #[strum(
         to_string = "sci.",
+        serialize = "sciences",
+        serialize = "science",
     )]
     Science = 137,
     /// Wissenschaft
@@ -1769,11 +1768,19 @@ pub enum Domain {
     )]
     Money = 153,
     #[strum(
+        to_string =  "natural-sciences",
+    )]
+    NatSci = 154,
+    #[strum(
         to_string =  "pseudoscience",
         serialize = "homeopathy",
         serialize = "cryptozoology",
     )]
-    PseudoSc = 154,
+    PseudoSci = 155,
+    #[strum(
+        to_string =  "human-sciences",
+    )]
+    Humanities = 156,
 }
 
 impl_try_from_as_unpack! {

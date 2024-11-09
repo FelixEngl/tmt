@@ -5,25 +5,30 @@ use std::any::type_name;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Lines, Read};
 use std::path::Path;
+use std::str::FromStr;
 use flate2::bufread::GzDecoder;
 use rayon::iter::{IterBridge, Map};
 use rayon::prelude::{IntoParallelIterator, ParallelBridge, ParallelIterator};
+use strum::ParseError;
 use thiserror::Error;
+use crate::define_aho_matcher;
+use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataCollectionBuilder;
+use crate::topicmodel::dictionary::word_infos::{AnyWordInfo, Domain, Language, PartOfSpeech, PartOfSpeechTag};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ExtractedWord {
     /// the word form
-    word: String,
+    pub word: String,
     /// part-of-speech, such as "noun", "verb", "adj", "adv", "pron", "determiner", "prep" (preposition), "postp" (postposition), and many others. The complete list of possible values returned by the package can be found in wiktextract.PARTS_OF_SPEECH.
     #[serde(default)]
-    pos: Option<String>,
+    pub pos: Option<String>,
     /// name of the language this word belongs to (e.g., English)
-    lang: String,
+    pub lang: String,
     /// Wiktionary language code corresponding to lang key (e.g., en)
-    lang_code: String,
+    pub lang_code: String,
     /// list of word senses (dictionaries) for this word/part-of-speech (see below)
     #[serde(default)]
-    senses: Vec<Sense>,
+    pub senses: Vec<Sense>,
     /// list of inflected or alternative forms specified for the word (e.g., plural, comparative, superlative, roman script version).
     /// This is a list of dictionaries, where each dictionary has a form key and a tags key.
     /// The tags identify what type of form it is. It may also contain "ipa", "roman", and "source" fields.
@@ -31,7 +36,7 @@ pub struct ExtractedWord {
     /// (some of those will be word-specific, while others are language-specific; post-processing
     /// can drop such forms when no word has a value for that tag combination).
     #[serde(default)]
-    forms: Vec<Form>,
+    pub forms: Vec<Form>,
     /// list of dictionaries containing pronunciation, hyphenation, rhyming, and related information.
     /// Each dictionary may have a tags key containing tags that clarify what kind of form that
     /// entry is. Different types of information are stored in different fields: ipa is IPA
@@ -40,13 +45,13 @@ pub struct ExtractedWord {
     _sounds: IgnoredAny,
     /// list of non-disambiguated categories for the word
     #[serde(default)]
-    categories: Vec<String>,
+    pub categories: Vec<String>,
     /// list of non-disambiguated topics for the word
     #[serde(default)]
-    topics: Vec<String>,
+    pub topics: Vec<String>,
     /// non-disambiguated translation entries (see below)
     #[serde(default)]
-    translations: Vec<Translation>,
+    pub translations: Vec<Translation>,
     /// etymology section as cleaned text
     #[serde(default, skip, rename = "etymology_text")]
     _etymology_text: IgnoredAny,
@@ -61,34 +66,34 @@ pub struct ExtractedWord {
     _descendants: IgnoredAny,
     /// non-disambiguated synonym linkages for the word (see below)
     #[serde(default)]
-    synonyms: Vec<Linkage>,
+    pub synonyms: Vec<Linkage>,
     /// non-disambiguated antonym linkages for the word (see below)
     #[serde(default)]
-    antonyms: Vec<Linkage>,
+    pub antonyms: Vec<Linkage>,
     /// non-disambiguated hypernym linkages for the word (see below)
     #[serde(default)]
-    hypernyms: Vec<Linkage>,
+    pub hypernyms: Vec<Linkage>,
     /// non-disambiguated linkages indicating being part of something (see below) (not systematically encoded)
     #[serde(default)]
-    holonyms: Vec<Linkage>,
+    pub holonyms: Vec<Linkage>,
     /// non-disambiguated linkages indicating having a part (see below) (fairly rare)
     #[serde(default)]
-    meronyms: Vec<Linkage>,
+    pub meronyms: Vec<Linkage>,
     /// non-disambiguated derived word linkages for the word (see below)
     #[serde(default)]
-    derived: Vec<Linkage>,
+    pub derived: Vec<Linkage>,
     /// non-disambiguated related word linkages for the word (see below)
     #[serde(default)]
-    related: Vec<Linkage>,
+    pub related: Vec<Linkage>,
     /// non-disambiguated coordinate term linkages for the word (see below)
     #[serde(default)]
-    coordinate_terms: Vec<Linkage>,
+    pub coordinate_terms: Vec<Linkage>,
     /// non-disambiguated Wikidata identifer
     #[serde(default, deserialize_with = "deserialize_optional_flat_either")]
-    wikidata: Option<Either<String, Vec<String>>>,
+    pub wikidata: Option<Either<String, Vec<String>>>,
     /// non-disambiguated page title in Wikipedia (possibly prefixed by language id)
     #[serde(default)]
-    wiktionary: Option<String>,
+    pub wiktionary: Option<String>,
     /// part-of-speech specific head tags for the word. This basically just captures the templates (their name and arguments) as a list of dictionaries. Most applications may want to ignore this.
     #[serde(default, skip, rename = "head_templates")]
     _head_templates: IgnoredAny,
@@ -98,74 +103,82 @@ pub struct ExtractedWord {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Dictionary {
+    /// Linked word
+    word: String,
+    /// additional text
+    extra: Option<String>
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Sense {
     /// list of gloss strings for the word sense (usually only one). This has been cleaned, and should be straightforward text with no tagging.
     #[serde(default)]
-    glosses: Vec<String>,
+    pub glosses: Vec<String>,
     /// list of gloss strings for the word sense, with less cleaning than
     #[serde(default)]
-    raw_glosses: Vec<String>,
+    pub raw_glosses: Vec<String>,
     /// list of qualifiers and tags for the gloss.
     /// This is a list of strings, and may include
     /// words such as "archaic", "colloquial", "present",
     /// "participle", "plural", "feminine", and many others
     /// (new words may appear arbitrarily).
     #[serde(default)]
-    tags: Vec<String>,
+    pub tags: Vec<String>,
     /// list of sense-disambiguated category names extracted from (a subset) of the Category links on the page
     #[serde(default)]
-    categories: Vec<String>,
+    pub categories: Vec<String>,
     /// list of sense-disambiguated topic names (kind of similar to categories but determined differently)
     #[serde(default)]
-    topics: Vec<String>,
+    pub topics: Vec<String>,
     /// list of words that his sense is an alternative form of; this is a list of dictionaries, with field word containing the linked word and optionally extra containing additional text
-    #[serde(default, skip, rename = "alt_of")]
-    _alt_of: IgnoredAny,
+    #[serde(default, skip)]
+    alt_of: Vec<Dictionary>,
     /// list of words that this sense is an inflected form of; this is a list of dictionaries, with field word containing the linked word and optionally extra containing additional text
     #[serde(default, skip, rename = "form_of")]
     _form_of: IgnoredAny,
     /// sense-disambiguated translation entries (see below)
     #[serde(default)]
-    translations: Vec<Translation>,
+    pub translations: Vec<Translation>,
     /// sense-disambiguated synonym linkages for the word (see below)
     #[serde(default)]
-    synonyms: Vec<Linkage>,
+    pub synonyms: Vec<Linkage>,
     /// sense-disambiguated antonym linkages for the word (see below)
     #[serde(default)]
-    antonyms: Vec<Linkage>,
+    pub antonyms: Vec<Linkage>,
     /// sense-disambiguated hypernym linkages for the word (see below)
     #[serde(default)]
-    hypernyms: Vec<Linkage>,
+    pub hypernyms: Vec<Linkage>,
     /// sense-disambiguated linkages indicating being part of something (see below) (not systematically encoded)
     #[serde(default)]
-    holonyms: Vec<Linkage>,
+    pub holonyms: Vec<Linkage>,
     /// sense-disambiguated linkages indicating having a part (see below) (fairly rare)
     #[serde(default)]
-    meronyms: Vec<Linkage>,
+    pub meronyms: Vec<Linkage>,
     /// sense-disambiguated coordinate_terms linkages (see below)
     #[serde(default)]
-    coordinate_terms: Vec<Linkage>,
+    pub coordinate_terms: Vec<Linkage>,
     /// sense-disambiguated derived word linkages for the word (see below)
     #[serde(default)]
-    derived: Vec<Linkage>,
+    pub derived: Vec<Linkage>,
     /// sense-disambiguated related word linkages for the word (see below)
     #[serde(default)]
-    related: Vec<Linkage>,
+    pub related: Vec<Linkage>,
     /// list of textual identifiers collected for the sense. If there is a QID for the entry (e.g., Q123), those are stored in the wikidata field.
     #[serde(default)]
-    senseid: Vec<String>,
+    pub senseid: Vec<String>,
     /// list of QIDs (e.g., Q123) for the sense
     #[serde(default)]
-    wikidata: Vec<String>,
+    pub wikidata: Vec<String>,
     /// list of Wikipedia page titles (with optional language code prefix)
     #[serde(default)]
-    wikipedia: Vec<String>,
+    pub wikipedia: Vec<String>,
     /// list of usage examples, each example being a dictionary with text field containing the example text, optional ref field containing a source reference, optional english field containing English translation, optional type field containing example type (currently example or quotation if present), optional roman field containing romanization (for some languages written in non-Latin scripts), and optional (rare) note field contains English-language parenthesized note from the beginning of a non-english example.
     #[serde(default, skip, rename = "examples")]
     _examples: IgnoredAny,
     /// if the word sense has a qualifier that could not be parsed, that qualifier is put in this field (rare). Most qualifiers are parsed into tags and/or topics. The gloss with the qualifier still present can be found in raw_glosses.
     #[serde(default)]
-    english: Vec<String>,
+    pub english: Vec<String>,
 }
 
 /// Pronunciation -> Ignored bc sounds are ignored
@@ -174,33 +187,33 @@ pub struct Sense {
 pub struct Translation {
     /// optional alternative form of the translation (e.g., in a different script)
     #[serde(default)]
-    alt: Option<String>,
+    pub alt: Option<String>,
     /// Wiktionary's 2 or 3-letter language code for the language the translation is for
     #[serde(default)]
-    code: Option<String>,
+    pub code: Option<String>,
     /// English text, generally clarifying the target sense of the translation
     #[serde(default, skip, rename = "english")]
     _english: IgnoredAny,
     /// the language name that the translation is for
-    lang: String,
+    pub lang: String,
     /// optional text describing or commenting on the translation
     #[serde(default)]
-    note: Option<String>,
+    pub note: Option<String>,
     /// optional romanization of the translation (when in non-Latin characters)
     #[serde(default, skip, rename = "roman")]
     _roman: IgnoredAny,
     /// optional sense indicating the meaning for which this is a translation (this is a free-text string, and may not match any gloss exactly)
     #[serde(default)]
-    sense: Option<String>,
+    pub sense: Option<String>,
     /// optional list of qualifiers for the translations, e.g., gender
     #[serde(default)]
-    tags: Vec<String>,
+    pub tags: Vec<String>,
     /// optional taxonomic name of an organism mentioned in the translation
     #[serde(default)]
-    taxonomic: Option<String>,
+    pub taxonomic: Option<String>,
     /// the translation in the specified language (may be missing when note is present)
     #[serde(default)]
-    word: Option<String>,
+    pub word: Option<String>,
 }
 
 /// Etymologies ignored bc entymologie nicht spannend
@@ -210,7 +223,7 @@ pub struct Translation {
 pub struct Linkage {
     /// optional alternative form of the target (e.g., in a different script)
     #[serde(default)]
-    alt: Option<String>,
+    pub alt: Option<String>,
     /// optional English text associated with the sense, usually identifying the linked target sense
     #[serde(default, skip, rename = "english")]
     _english: IgnoredAny,
@@ -219,18 +232,18 @@ pub struct Linkage {
     _roman: IgnoredAny,
     /// text identifying the word sense or context (e.g., "to rain very heavily")
     #[serde(default, deserialize_with = "deserialize_optional_flat_either")]
-    sense: Option<Either<String, Vec<String>>>,
+    pub sense: Option<Either<String, Vec<String>>>,
     /// qualifiers specified for the sense (e.g., field of study, region, dialect, style)
     #[serde(default)]
-    tags: Vec<String>,
+    pub tags: Vec<String>,
     /// optional taxonomic name associated with the linkage
     #[serde(default)]
-    taxonomic: Option<String>,
+    pub taxonomic: Option<String>,
     /// list of topic descriptors for the linkage (e.g., military)
     #[serde(default)]
-    topics: Vec<String>,
+    pub topics: Vec<String>,
     /// the word this links to (string)
-    word: String,
+    pub word: String,
 }
 
 fn deserialize_optional_flat_either<'de, D, L, R>(deser: D) -> Result<Option<Either<L, R>>, D::Error>
@@ -386,6 +399,308 @@ pub fn read_wiktionary(path: impl AsRef<Path>) -> Result<WiktionaryReader<GzDeco
 }
 
 
+macro_rules! try_parse_without_prefix {
+    ($i: ident as $ty: ty: $($l: literal),+ $(,)?) => {
+        {
+            #[inline(always)]
+            fn parse_method(s: &str) -> Result<$ty, strum::ParseError>{
+                $(
+                    if s.starts_with($l) {
+                        let trimmed = s.trim_start_matches($l);
+                        if let Ok(value) = trimmed.parse::<$ty>() {
+                            return Ok(value);
+                        }
+                        if let Ok(value) = trimmed.to_lowercase().parse::<$ty>() {
+                            return Ok(value);
+                        }
+                    }
+                )+
+                Err(strum::ParseError::VariantNotFound)
+            }
+            parse_method($i.as_ref())
+        }
+    };
+}
+
+
+pub struct ExtractedWordValues<S> {
+    pub main: (String, Language, LoadedMetadataCollectionBuilder<S>),
+    /// Variants of the word
+    pub forms: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
+    /// Synonyms of the word
+    pub synonyms: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
+    pub antonyms: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
+    pub related: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
+    pub translations: Vec<(String, Language, LoadedMetadataCollectionBuilder<S>)>,
+}
+
+impl<S> ExtractedWordValues<S> {
+    pub fn new(main: (String, Language, LoadedMetadataCollectionBuilder<S>)) -> Self {
+        Self {
+            main,
+            forms: Vec::new(),
+            synonyms: Vec::new(),
+            antonyms: Vec::new(),
+            related: Vec::new(),
+            translations: Vec::new()
+        }
+    }
+}
+
+
+pub fn convert_entry_to_entries(
+    ExtractedWord {
+        word,
+        pos,
+        lang,
+        // Not needed
+        lang_code: _,
+        senses,
+        forms,
+        _sounds,
+        categories,
+        topics,
+        translations,
+        _etymology_text,
+        _etymology_templates,
+        _etymology_number,
+        _descendants,
+        synonyms,
+        antonyms,
+        hypernyms: _,
+        holonyms: _,
+        meronyms: _,
+        derived: _,
+        related,
+        coordinate_terms: _,
+        wikidata: _,
+        wiktionary: _,
+        _head_templates,
+        _inflection_templates,
+    }: ExtractedWord,
+    target_languages: &[Language]
+) -> Result<ExtractedWordValues<String>, EntryConversionError> {
+
+
+    fn parse_categories(word_meta_builder: &mut LoadedMetadataCollectionBuilder<String>, categories: Vec<String>) {
+        for cat in categories {
+            match cat.parse::<AnyWordInfo>() {
+                Ok(value) => {
+                    word_meta_builder.push_any_word_info(value);
+                }
+                Err(_) => {
+                    if let Ok(parsed) = try_parse_without_prefix!(
+                        cat as AnyWordInfo: "en:", "de:", "ger:"
+                    ) {
+                        word_meta_builder.push_any_word_info(parsed);
+                        continue
+                    }
+
+                    if cat.starts_with("Terms with") && cat.ends_with("translations")
+                        || cat.starts_with("Pages with")
+                    {
+                        continue
+                    }
+                    word_meta_builder.push_unclassified(format!("#cat:{}", cat));
+                }
+            }
+        }
+    }
+    fn parse_tags(word_meta_builder: &mut LoadedMetadataCollectionBuilder<String>, tags: Vec<String>) {
+        for tag in tags {
+            match tag.parse::<AnyWordInfo>() {
+                Ok(value) => {
+                    word_meta_builder.push_any_word_info(value);
+                }
+                Err(_) => {
+                    word_meta_builder.push_unclassified(format!("#tag:{}", tag));
+                }
+            }
+        }
+    }
+    fn parse_topics(word_meta_builder: &mut LoadedMetadataCollectionBuilder<String>, topics: Vec<String>) {
+        for topic in topics {
+            match topic.parse::<Domain>() {
+                Ok(value) => {
+                    word_meta_builder.push_domains(value);
+                }
+                Err(_) => {
+                    word_meta_builder.push_unclassified(format!("#topic:{}", topic));
+                }
+            }
+        }
+    }
+
+    // Base and senses
+    let mut result = {
+        let lang = lang.parse::<Language>().map_err(|value| EntryConversionError::WrongLanguageError(lang))?;
+        let mut word_meta_builder = LoadedMetadataCollectionBuilder::with_name(None);
+        word_meta_builder.push_languages(lang);
+        parse_categories(&mut word_meta_builder, categories);
+        parse_topics(&mut word_meta_builder, topics);
+
+        if let Some(pos) = pos {
+            if let Ok(pos) = pos.parse::<PartOfSpeech>() {
+                word_meta_builder.push_pos(pos);
+            }
+            if let Some(pos_tags) = PartOfSpeechTag::get_tags(&pos) {
+                word_meta_builder.extend_pos_tag(pos_tags.into_iter().copied());
+            }
+        }
+
+        for Sense {
+            glosses: _,
+            raw_glosses: _,
+            tags,
+            categories,
+            topics,
+            alt_of,
+            _form_of,
+            // No relevant found with a translation
+            translations: _,
+            synonyms:_ ,
+            antonyms:_ ,
+            hypernyms:_ ,
+            holonyms:_ ,
+            meronyms:_ ,
+            coordinate_terms:_ ,
+            derived:_ ,
+            related:_ ,
+            senseid:_ ,
+            wikidata:_ ,
+            wikipedia:_ ,
+            _examples,
+            english:_ ,
+        } in senses {
+            parse_topics(&mut word_meta_builder, topics);
+            parse_tags(&mut word_meta_builder, tags);
+            parse_categories(&mut word_meta_builder, categories);
+        }
+
+        ExtractedWordValues::new((word, lang, word_meta_builder))
+    };
+
+    // forms
+    {
+        for Form {
+            form,
+            tags,
+            // Unused, this are strange tags
+            raw_tags: _
+        } in forms {
+            let mut meta = LoadedMetadataCollectionBuilder::with_name(None);
+            parse_tags(&mut meta, tags);
+            result.forms.push((form, meta))
+        }
+    }
+
+    // translations
+    {
+        for Translation {
+            alt: _,
+            code,
+            _english,
+            lang,
+            note,
+            _roman,
+            sense,
+            tags,
+            taxonomic,
+            word
+        } in translations {
+            let lang = if let Ok(lang) = lang.parse::<Language>() {
+                lang
+            } else if let Some(Ok(lang)) = code.map(|v| v.parse::<Language>()) {
+                lang
+            } else {
+                continue
+            };
+            if !target_languages.contains(&lang) {
+                continue
+            }
+            let mut meta = LoadedMetadataCollectionBuilder::with_name(None);
+            parse_tags(&mut meta, tags);
+            if let Some(sense) = sense {
+                meta.push_contextual_informations(sense);
+            }
+
+            if let Some(taxonomic) = taxonomic {
+                let mut copy = meta.clone();
+                copy.push_domains(Domain::T);
+                result.translations.push((taxonomic, lang, copy))
+            }
+
+            if let Some(word) = word {
+                result.translations.push((word, lang, meta));
+            } else if let Some(note) = note {
+                result.translations.push((note, lang, meta));
+            } else {
+                unreachable!("Why was this reached? There should always be a note or a word in a translation!")
+            }
+        }
+    }
+
+
+    fn process_linkage_list(list: Vec<Linkage>) -> Option<Vec<(String, LoadedMetadataCollectionBuilder<String>)>> {
+        if list.is_empty() {
+            return None
+        }
+        let mut result = Vec::new();
+        for Linkage {
+            alt: _,
+            _english,
+            _roman,
+            sense: _,
+            tags,
+            taxonomic,
+            topics,
+            word
+        } in list {
+            let mut meta = LoadedMetadataCollectionBuilder::with_name(None);
+            parse_tags(&mut meta, tags);
+            parse_topics(&mut meta, topics);
+            if let Some(tax) = taxonomic {
+                let mut copy = meta.clone();
+                copy.push_domains(Domain::T);
+                result.push((tax, copy));
+            }
+            result.push((word, meta));
+        }
+        Some(result)
+    }
+
+    // related
+    {
+        if let Some(r) = process_linkage_list(related) {
+            result.related.extend(r);
+        }
+    }
+
+    // synonyms
+    {
+        if let Some(r) = process_linkage_list(synonyms) {
+            result.synonyms.extend(r);
+        }
+    }
+
+    // antonyms
+    {
+        if let Some(r) = process_linkage_list(antonyms) {
+            result.antonyms.extend(r);
+        }
+    }
+
+    Ok(result)
+}
+
+
+#[derive(Debug, Error)]
+pub enum EntryConversionError {
+    #[error("Was not able to parse the language \"{0}\" to a known language.")]
+    WrongLanguageError(String),
+    #[error("The pos marker {0} is unknown!")]
+    UnknownPOS(String)
+}
 
 
 #[cfg(test)]
@@ -396,8 +711,8 @@ mod test {
     use itertools::Itertools;
     use rayon::prelude::*;
     use crate::define_aho_matcher;
-    use crate::topicmodel::dictionary::loader::wiktionary_reader::read_wiktionary;
-    use crate::topicmodel::dictionary::word_infos::Domain;
+    use crate::topicmodel::dictionary::loader::wiktionary_reader::{read_wiktionary, WiktionaryReaderError};
+    use crate::topicmodel::dictionary::word_infos::{Domain, AnyWordInfo};
 
     fn identify_possible_topics(s: &str) -> Option<Vec<(Domain, String)>> {
         let s_low = s.to_lowercase();
@@ -421,6 +736,118 @@ mod test {
     #[test]
     fn test2(){
         define_aho_matcher!(
+            static LANGUAGE1 = "english" as ascii_case_insensitive
+        );
+        define_aho_matcher!(
+            static LANGUAGE2 = "german" as ascii_case_insensitive
+        );
+        let topics1 = read_wiktionary("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz")
+            .unwrap()
+            // .into_par_iter()
+
+            .filter_map(|value| {
+                match value {
+                    Ok(Either::Right(value)) => {
+                        Some(value)
+                    }
+                    _ => None
+                }
+            })
+            .filter(|value|
+                        !value.coordinate_terms.is_empty()
+                    // &&
+                    // value.senses.iter().any(|value| !value.translations.is_empty())
+            )
+            .filter(
+                |value|
+                    LANGUAGE1.is_match(&value.lang)
+                        && value.translations.iter().any(|value| LANGUAGE2.is_match(&value.lang))
+            )
+            .take(5)
+            .collect::<Vec<_>>();
+
+        // let topics2 = read_wiktionary("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz")
+        //     .unwrap()
+        //     // .into_par_iter()
+        //     .filter_map(|value| {
+        //         match value {
+        //             Ok(Either::Right(value)) => {
+        //                 Some(value)
+        //             }
+        //             _ => None
+        //         }
+        //     })
+        //     .filter(|value| value.senses.len() > 1)
+        //     .filter(
+        //         |value|
+        //             LANGUAGE2.is_match(&value.lang)
+        //                 && value.translations.iter().any(|value| LANGUAGE1.is_match(&value.lang))
+        //     )
+        //     .take(5)
+        //     .collect::<Vec<_>>();
+
+        serde_json::to_writer_pretty(
+            File::options().write(true).truncate(true).create(true).open("example_data1.json").unwrap(),
+            &topics1
+        ).unwrap();
+
+        // serde_json::to_writer_pretty(
+        //     File::options().write(true).truncate(true).create(true).open("example_data2.json").unwrap(),
+        //     &topics2
+        // ).unwrap();
+
+        // let mut topic_to_other = HashMap::new();
+        //
+        // for values in topics {
+        //     for value in values {
+        //         topic_to_other.entry(value.clone()).or_insert_with(HashSet::new).insert(value);
+        //     }
+        // }
+        //
+        // let mut f = File::options().write(true).truncate(true).create(true).open("data2.json").unwrap();
+        // serde_json::to_writer_pretty(&mut f, &topic_to_other).unwrap()
+    }
+
+    #[test]
+    fn test() {
+
+
+        // let topics: HashSet<String> = serde_json::from_reader(
+        //     File::options().read(true).open("data.json").unwrap()
+        // ).unwrap();
+        //
+        // let mut mappings = indexmap::IndexMap::new();
+        // let mut not_recognized = HashSet::new();
+        // define_aho_matcher!(
+        //     static IDENT = "aer" as ascii_case_insensitive
+        // );
+        // for value in topics {
+        //     if value.parse::<Domain>().is_ok() {
+        //         continue
+        //     }
+        //     if let Some(found) = identify_possible_topics(&value) {
+        //         for (a, b) in found {
+        //             mappings.entry(a).or_insert_with(HashSet::new).insert((value.clone(), b));
+        //         }
+        //     } else {
+        //         if IDENT.is_match(&value) {
+        //             println!("{value}")
+        //         }
+        //         not_recognized.insert(value);
+        //     }
+        // }
+        //
+        // let mut not_recognized = Vec::from_iter(not_recognized.into_iter());
+        // not_recognized.sort();
+        // mappings.sort_keys();
+        //
+        // let mut f = File::options().write(true).create(true).truncate(true).open("data_not_rec.json").unwrap();
+        // serde_json::to_writer_pretty(&mut f, &not_recognized).unwrap();
+        //
+        // let mut f = File::options().write(true).create(true).truncate(true).open("data_rec.json").unwrap();
+        // serde_json::to_writer_pretty(&mut f, &mappings).unwrap();
+
+        define_aho_matcher!(
             static LANGUAGE = "german" | "english" as ascii_case_insensitive
         );
 
@@ -433,102 +860,40 @@ mod test {
                     Ok(Either::Right(value)) => {
                         Some(value)
                     }
+                    Err(WiktionaryReaderError::Serde(err, s)) => {
+                        panic!("{s}\n\n{err}")
+                    }
                     _ => None
                 }
             })
+            .filter(|value| LANGUAGE.is_match(&value.lang) && value.translations.iter().any(|value| LANGUAGE.is_match(&value.lang)))
             .map(|value| {
-                value.senses.into_par_iter().flat_map(|value| {
-                    value.topics
-                }).chain(value.topics).collect::<Vec<_>>()
-                // value.lang
+                value.senses
+                    .into_iter()
+                    .map(|value| value.tags)
+                    .chain(
+                        value.translations.into_iter()
+                            .filter(|value| LANGUAGE.is_match(&value.lang))
+                            .map(|value| value.tags)
+                    )
+                    .flatten()
+                    .collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>();
+            .flatten()
+            .collect::<HashSet<_>>();
 
-        let mut topic_to_other = HashMap::new();
-
-        for values in topics {
-            for value in values {
-                topic_to_other.entry(value.clone()).or_insert_with(HashSet::new).insert(value);
-            }
-        }
-
-        let mut f = File::options().write(true).truncate(true).create(true).open("data2.json").unwrap();
-        serde_json::to_writer_pretty(&mut f, &topic_to_other).unwrap()
-    }
-
-    #[test]
-    fn test() {
-
-
-        let topics: HashSet<String> = serde_json::from_reader(
-            File::options().read(true).open("data.json").unwrap()
-        ).unwrap();
-
-        let mut mappings = indexmap::IndexMap::new();
-        let mut not_recognized = HashSet::new();
-        define_aho_matcher!(
-            static IDENT = "aer" as ascii_case_insensitive
-        );
-        for value in topics {
-            if value.parse::<Domain>().is_ok() {
-                continue
-            }
-            if let Some(found) = identify_possible_topics(&value) {
-                for (a, b) in found {
-                    mappings.entry(a).or_insert_with(HashSet::new).insert((value.clone(), b));
-                }
+        let x = topics.into_iter().into_group_map_by(|value| value.parse::<AnyWordInfo>().ok().map(|value| value.to_string()));
+        for (a, mut b) in x.into_iter() {
+            b.sort();
+            if let Some(a) = a {
+                let mut f = File::options().write(true).truncate(true).create(true).open(format!("tags_{a}.json")).unwrap();
+                serde_json::to_writer_pretty(&mut f, &b).unwrap()
             } else {
-                if IDENT.is_match(&value) {
-                    println!("{value}")
-                }
-                not_recognized.insert(value);
+                let mut f = File::options().write(true).truncate(true).create(true).open(format!("tags_UNKNOWN.json")).unwrap();
+                serde_json::to_writer_pretty(&mut f, &b).unwrap()
             }
         }
 
-        let mut not_recognized = Vec::from_iter(not_recognized.into_iter());
-        not_recognized.sort();
-        mappings.sort_keys();
 
-        let mut f = File::options().write(true).create(true).truncate(true).open("data_not_rec.json").unwrap();
-        serde_json::to_writer_pretty(&mut f, &not_recognized).unwrap();
-
-        let mut f = File::options().write(true).create(true).truncate(true).open("data_rec.json").unwrap();
-        serde_json::to_writer_pretty(&mut f, &mappings).unwrap();
-
-        // define_aho_matcher!(
-        //     static LANGUAGE = "german" | "english" as ascii_case_insensitive
-        // );
-        //
-        //
-        // let topics = read_wiktionary("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz")
-        //     .unwrap()
-        //     .into_par_iter()
-        //     .filter_map(|value| {
-        //         match value {
-        //             Ok(Either::Right(value)) => {
-        //                 Some(value)
-        //             }
-        //             _ => None
-        //         }
-        //     })
-        //     .filter(|value| LANGUAGE.is_match(&value.lang))
-        //     .map(|value| {
-        //         value.senses.into_par_iter().flat_map(|value| {
-        //             value.topics
-        //         }).chain(value.topics).collect::<Vec<_>>()
-        //         // value.lang
-        //     })
-        //     .collect::<Vec<_>>();
-        //
-        // let mut topic_to_other = HashMap::new();
-        //
-        // for values in topics {
-        //     for value in values {
-        //         topic_to_other.entry(value.clone()).or_insert_with(HashSet::new).insert(value);
-        //     }
-        // }
-        //
-        // let mut f = File::options().write(true).truncate(true).create(true).open("data2.json").unwrap();
-        // serde_json::to_writer_pretty(&mut f, &topic_to_other).unwrap()
     }
 }

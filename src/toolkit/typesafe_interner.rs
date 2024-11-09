@@ -256,5 +256,5 @@ create_interned_typesafe_symbol! {
     AnyId,
     ContextualInformation,
     Unclassified,
-    VariableName
+    VariableName,
 }

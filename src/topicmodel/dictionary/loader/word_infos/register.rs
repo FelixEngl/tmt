@@ -23,7 +23,13 @@ register_python! {
 pub enum Register {
     #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.", serialize = "hum")]
     Humor = 0,
-    #[strum(to_string = "vulg.", serialize = "vulg", serialize = "derb")]
+    #[strum(
+        to_string = "vulg.",
+        serialize = "vulg",
+        serialize = "derb",
+        serialize = "slur",
+        serialize = "vulgar",
+    )]
     Vulg = 1,
     #[strum(to_string = "techn.", serialize = "techn")]
     Techn = 2,
@@ -37,23 +43,54 @@ pub enum Register {
     Slang = 5,
     #[strum(to_string = "iron.", serialize = "iron")]
     Iron = 6,
-    #[strum(to_string = "formal", serialize = "formal.", serialize = "formell")]
+    #[strum(
+        to_string = "formal",
+        serialize = "formal.",
+        serialize = "formell",
+        serialize = "polite",
+    )]
     Formal = 7,
-    #[strum(to_string = "euphem.", serialize = "euphem")]
+    #[strum(
+        to_string = "euphem.",
+        serialize = "euphem",
+        serialize = "euphemistic",
+    )]
     Euphem = 8,
-    #[strum(to_string = "literary", serialize = "literary.")]
+    #[strum(
+        to_string = "literary",
+        serialize = "literary.",
+        serialize = "literally",
+    )]
     Literary = 9,
     #[strum(to_string = "dialect", serialize = "dialect.")]
     Dialect = 10,
     /// DictCC
-    #[strum(to_string = "archaic", serialize = "veraltet", serialize = "veraltend")]
-    #[strum(serialize = "dated", serialize = "alt", serialize = "obs.")]
-    #[strum(serialize = "altertümlich", serialize = "veraltentd", serialize = "frühere Bezeichnung")]
-    #[strum(serialize = "ancient name", serialize = "becoming dated")]
-    #[strum(serialize = "altertümelnd", serialize = "slightly dated")]
+    #[strum(
+        to_string = "archaic",
+        serialize = "veraltet",
+        serialize = "veraltend",
+        serialize = "dated",
+        serialize = "alt",
+        serialize = "obs.",
+        serialize = "altertümlich",
+        serialize = "veraltentd",
+        serialize = "frühere Bezeichnung",
+        serialize = "ancient name",
+        serialize = "becoming dated",
+        serialize = "Ancient",
+        serialize = "Anglian",
+        serialize = "historic",
+        serialize = "historical",
+        serialize = "obsolete",
+    )]
     Archaic = 11,
     /// DictCC
-    #[strum(to_string = "rare", serialize = "selten", serialize = "very rare")]
+    #[strum(
+        to_string = "rare",
+        serialize = "selten",
+        serialize = "very rare",
+        serialize = "uncommon",
+    )]
     Rare = 12,
     /// DictCC -
     #[strum(to_string = "pej.")]
@@ -73,16 +110,32 @@ pub enum Register {
     #[strum(to_string = "übtr.")]
     Transfer = 18,
     /// Netzjargon
-    #[strum(to_string = "Chat-Jargon", serialize = "internet slang", serialize = "chat jargon")]
+    #[strum(
+        to_string = "Chat-Jargon",
+        serialize = "internet slang",
+        serialize = "chat jargon",
+        serialize = "Leet",
+    )]
     NetJargon = 19,
     /// Informal
-    #[strum(to_string = "informell")]
+    #[strum(
+        to_string = "informell",
+        serialize = "impolite",
+        serialize = "informal",
+    )]
     Informal = 20,
     /// Quantity
     #[strum(to_string = "Mengenangabe")]
     QuantityInformation = 21,
     #[strum(to_string = "IATEPreferred")]
-    IATEPreferred = 22
+    IATEPreferred = 22,
+    #[strum(to_string = "misspelling")]
+    Miss = 23,
+    #[strum(
+        to_string = "common-gender",
+        serialize = "gender-neutral",
+    )]
+    ComGend = 24
 }
 
 impl_try_from_as_unpack! {

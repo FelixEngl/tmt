@@ -279,11 +279,7 @@ macro_rules! create_solved_implementation {
             }
         }
 
-        impl<'a> From<$crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataRef<'a>> for SolvedLoadedMetadata {
-            fn from(value: $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataRef<'a>) -> Self {
-                Self::create_from(&value)
-            }
-        }
+
 
         impl SolvedLoadedMetadata {
             pub fn get_doc(&self) -> pretty::RcDoc {
@@ -316,14 +312,22 @@ macro_rules! create_solved_implementation {
             }
         }
 
-
-
-        impl std::fmt::Display for SolvedLoadedMetadata {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                self.get_doc().render_fmt(80, f)
-            }
-        }
     };
 }
 
 pub(super) use create_solved_implementation;
+
+
+use super::*;
+
+impl<'a> From<LoadedMetadataRef<'a>> for SolvedLoadedMetadata {
+    fn from(value: LoadedMetadataRef<'a>) -> Self {
+        Self::create_from(&value)
+    }
+}
+
+impl std::fmt::Display for SolvedLoadedMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.get_doc().render_fmt(80, f)
+    }
+}

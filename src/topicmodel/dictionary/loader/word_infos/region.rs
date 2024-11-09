@@ -17,17 +17,49 @@ register_python!(
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum Region {
-    #[strum(to_string = "BE", serialize = "eBr.", serialize = "Br.", serialize = "BR.", serialize = "Br,")]
-    #[strum(serialize = "also Br.")]
+    #[strum(
+        to_string = "BE",
+        serialize = "eBr.",
+        serialize = "Br.",
+        serialize = "BR.",
+        serialize = "Br,",
+        serialize = "also Br.",
+        serialize = "Britain",
+        serialize = "British",
+        serialize = "British-Army",
+        serialize = "British-Columbia",
+        serialize = "British-Isles",
+        serialize = "British-Royal-Navy",
+        serialize = "British-airforce",
+        serialize = "UK",
+    )]
     BritishEnglish = 0,
-    #[strum(to_string = "AE", serialize = "eAm.", serialize = "Am.", serialize = "AM.", serialize = "Am .")]
-    #[strum(serialize = "mainly Am.")]
+    #[strum(
+        to_string = "AE",
+        serialize = "eAm.",
+        serialize = "Am.",
+        serialize = "AM.",
+        serialize = "Am .",
+        serialize = "mainly Am.",
+        serialize = "North-American",
+        serialize = "North-America",
+        serialize = "US",
+    )]
     AmericanEnglish = 1,
-    #[strum(to_string = "Aus.", serialize = "Austr.")]
+    #[strum(
+        to_string = "Aus.",
+        serialize = "Austr.",
+    )]
     AustralianEnglish = 2,
-    #[strum(to_string = "NZ")]
+    #[strum(
+        to_string = "NZ",
+    )]
     NewZealandEnglish = 3,
-    #[strum(to_string = "Can.")]
+    #[strum(
+        to_string = "Can.",
+        serialize = "Canada",
+        serialize = "Canadian",
+    )]
     CanadianEnglish = 4,
     #[strum(to_string = "Irish", serialize = "Ir.", serialize = "Irl.")]
     IrishEnglish = 5,
@@ -35,17 +67,35 @@ pub enum Region {
     IndianEnglish = 6,
     #[strum(to_string = "S.Afr.", serialize = "South Africa")]
     SouthAfricanEnglish = 7,
-    #[strum(to_string = "Scot.", serialize = "Sc.")]
+    #[strum(
+        to_string = "Scot.",
+        serialize = "Sc.",
+        serialize = "Scottish",
+    )]
     ScottishEnglish = 8,
-    #[strum(to_string = "österr.", serialize = "Ös.")]
+    #[strum(
+        to_string = "österr.",
+        serialize = "Ös.",
+        serialize = "Austria",
+        serialize = "Austrian",
+    )]
     AustrianGerman = 9,
     #[strum(to_string = "südd.", serialize = "Süddt.")]
     SouthGerman = 10,
-    #[strum(to_string = "nordd.", serialize = "Norddt.")]
+    #[strum(
+        to_string = "nordd.",
+        serialize = "Norddt.",
+        serialize = "North-German",
+    )]
     NorthGerman = 11,
     #[strum(to_string = "ostd.", serialize = "Ostdt.")]
     EastGerman = 12,
-    #[strum(to_string = "schweiz.", serialize = "Schw.")]
+    #[strum(
+        to_string = "schweiz.",
+        serialize = "Schw.",
+        serialize = "Swiss",
+        serialize = "Swiss-German",
+    )]
     SwissGerman = 13,
     #[strum(to_string = "regional")]
     Regional = 14,
@@ -65,11 +115,18 @@ pub enum Region {
     NorthEastGerman = 21,
     #[strum(to_string = "Mitteldt.")]
     MiddleGerman = 22,
-    #[strum(to_string = "Bayr.")]
+    #[strum(
+        to_string = "Bayr.",
+        serialize = "Bavaria",
+        serialize = "Bavarian",
+    )]
     BavarianGerman = 23,
     #[strum(to_string = "Northern Irish")]
     NorthernIrish = 24,
-    #[strum(to_string = "Oberdt.")]
+    #[strum(
+        to_string = "Oberdt.",
+        serialize = "Upper-German",
+    )]
     UpperGerman = 25,
     #[strum(to_string = "Ostös.")]
     EastAustrianGerman = 26,
@@ -128,7 +185,9 @@ pub enum Region {
     #[strum(to_string = "Franken")]
     FranconianGerman = 53,
     #[strum(to_string = "Ostschw.")]
-    EastSwissGerman = 54
+    EastSwissGerman = 54,
+    #[strum(to_string = "Germanic")]
+    Germanic = 55
 }
 
 impl_try_from_as_unpack! {

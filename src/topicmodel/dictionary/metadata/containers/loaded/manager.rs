@@ -49,16 +49,6 @@ macro_rules! create_struct {
             }
         }
 
-        impl LoadedMetadataManager {
-            pub fn intern_dictionary_origin_static(&mut self, voc_entry: &'static str) -> $crate::toolkit::typesafe_interner::DictionaryOriginSymbol {
-                self.dictionary_interner.get_or_intern_static(voc_entry)
-            }
-
-            pub fn intern_dictionary_origin(&mut self, voc_entry: impl AsRef<str>) -> $crate::toolkit::typesafe_interner::DictionaryOriginSymbol {
-                self.dictionary_interner.get_or_intern(voc_entry)
-            }
-
-        }
 
         impl Default for LoadedMetadataManager {
             fn default() -> Self {
@@ -73,7 +63,6 @@ macro_rules! create_struct {
                 }
             }
         }
-
 
         impl $crate::topicmodel::dictionary::metadata::MetadataManager for LoadedMetadataManager {
             type Metadata = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata;
@@ -209,3 +198,14 @@ macro_rules! create_managed_implementation {
 
 pub(super) use create_managed_implementation;
 
+use super::*;
+
+impl LoadedMetadataManager {
+    pub fn intern_dictionary_origin_static(&mut self, dict_origin: &'static str) -> DictionaryOriginSymbol {
+        self.dictionary_interner.get_or_intern_static(dict_origin)
+    }
+
+    pub fn intern_dictionary_origin(&mut self, dict_origin: impl AsRef<str>) -> DictionaryOriginSymbol {
+        self.dictionary_interner.get_or_intern(dict_origin)
+    }
+}

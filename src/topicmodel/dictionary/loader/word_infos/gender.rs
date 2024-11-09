@@ -19,11 +19,11 @@ register_python! {
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum GrammaticalGender {
-    #[strum(to_string = "f", serialize = "female", serialize = "f.")]
+    #[strum(to_string = "f", serialize = "female", serialize = "f.", serialize = "feminine")]
     Feminine = 0,
-    #[strum(to_string = "m", serialize = "male", serialize = "m.")]
+    #[strum(to_string = "m", serialize = "male", serialize = "m.", serialize = "masculine")]
     Masculine = 1,
-    #[strum(to_string = "n", serialize = "neutral", serialize = "n.")]
+    #[strum(to_string = "n", serialize = "neutral", serialize = "n.", serialize = "neuter")]
     Neutral = 2,
     #[strum(to_string = "not f")]
     NotFeminine = 3
