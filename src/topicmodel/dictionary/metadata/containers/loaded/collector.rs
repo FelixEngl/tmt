@@ -266,7 +266,8 @@ macro_rules! create_collector_implementation {
         }
 
         impl<T: AsRef<str>> LoadedMetadataCollection<T> {
-            pub fn write_into(self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef) {
+            pub fn write_into<D, U, V>(self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef<'_, D, U, V>) {
+                // todo: needs insert for alternatives
                 if let Some(dictionary_name) = self.dictionary_name {
                     $(
                     if let Some(content) = self.$name {
@@ -286,7 +287,8 @@ macro_rules! create_collector_implementation {
         }
 
         impl<T: AsRef<str> + Clone> LoadedMetadataCollection<T> {
-            pub fn write_to(&self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef) {
+            // todo: need handling of synonyms
+            pub fn write_to<D, U, V>(&self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef<D, U, V>) {
                 if let Some(ref dictionary_name) = self.dictionary_name {
                     $(
                     if let Some(ref content) = self.$name {

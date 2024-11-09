@@ -1,3 +1,4 @@
+
 macro_rules! generate_enum {
     (
         $($variant_name: ident $field: ident $lit_name: literal),+ $(,)?
@@ -9,6 +10,8 @@ macro_rules! generate_enum {
         #[derive(serde::Serialize, serde::Deserialize)]
         #[derive(enum_map::Enum)]
         pub enum MetaField {
+            #[strum(serialize = "word_association")]
+            WordAssociation,
             $(
             #[strum(serialize = $lit_name)]
             $variant_name,

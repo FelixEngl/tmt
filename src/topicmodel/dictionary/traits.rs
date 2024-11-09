@@ -26,11 +26,14 @@ pub trait BasicDictionary: Send + Sync {
     /// Switches language a and b
     fn switch_languages(self) -> Self where Self: Sized;
 
-
     /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
     fn iter(&self) -> DictIter {
         DictIterImpl::new(self)
     }
+}
+
+pub trait BasicDictionaryPointerProvider<D> {
+    fn provide_pointer(&self) -> *const D;
 }
 
 /// A basic dictionary with a vocabulary
@@ -38,7 +41,6 @@ pub trait BasicDictionaryWithVocabulary<V>: BasicDictionary {
     fn voc_a(&self) -> &V;
 
     fn voc_b(&self) -> &V;
-
 }
 
 /// A dictionary with known vocabulary types.
@@ -213,11 +215,13 @@ pub trait FromVoc<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: B
 }
 
 
-pub trait BasicDictionaryWithMeta<M: MetadataManager>: BasicDictionary {
+pub trait BasicDictionaryWithMeta<D, M: MetadataManager<D>>: BasicDictionary + BasicDictionaryPointerProvider<D> {
+
+    fn underlying_dict(&self) -> &D;
     fn metadata(&self) -> &M;
     fn metadata_mut(&mut self) -> &mut M;
 
-    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M> {
+    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, D, M> {
         DictionaryWithMetaIter::new(self)
     }
 }

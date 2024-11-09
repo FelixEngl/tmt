@@ -3,8 +3,8 @@ macro_rules! create_struct {
 
         pub type DomainCounts = ([u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE], [u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE]);
 
-        #[derive(Clone, serde::Serialize, serde::Deserialize)]
-        pub struct LoadedMetadataManager {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        pub struct LoadedMetadataManager<D, T, V> {
             meta_a: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
             meta_b: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
             pub(in crate::topicmodel::dictionary) dictionary_interner: $crate::toolkit::typesafe_interner::DictionaryOriginStringInterner,
@@ -14,9 +14,25 @@ macro_rules! create_struct {
             domain_count: std::cell::RefCell<Option<DomainCounts>>,
             $(pub(in crate::topicmodel::dictionary) $name: $ty,
             )*
+            _phantom: std::marker::PhantomData<fn(T, V) -> D>
         }
 
-        impl std::fmt::Debug for LoadedMetadataManager {
+        impl<D, T, V> Clone for LoadedMetadataManager<D, T, V> {
+            fn clone(&self) -> Self {
+                Self {
+                    meta_a: self.meta_a.clone(),
+                    meta_b: self.meta_b.clone(),
+                    dictionary_interner: self.dictionary_interner.clone(),
+                    changed: self.changed.clone(),
+                    domain_count: self.domain_count.clone(),
+                    $($name: self.$name.clone(),
+                    )*
+                    _phantom: std::marker::PhantomData
+                }
+            }
+        }
+
+        impl<D, T, V> std::fmt::Debug for LoadedMetadataManager<D, T, V> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 use itertools::Itertools;
                 f.debug_struct(stringify!(LoadedMetadataManager))
@@ -50,7 +66,7 @@ macro_rules! create_struct {
         }
 
 
-        impl Default for LoadedMetadataManager {
+        impl<D, T, V> Default for LoadedMetadataManager<D, T, V> {
             fn default() -> Self {
                 Self {
                     meta_a: Vec::new(),
@@ -60,15 +76,16 @@ macro_rules! create_struct {
                     domain_count: Default::default(),
                     $($name: $ty::new(),
                     )*
+                    _phantom: std::marker::PhantomData
                 }
             }
         }
 
-        impl $crate::topicmodel::dictionary::metadata::MetadataManager for LoadedMetadataManager {
+        impl<D, T, V> $crate::topicmodel::dictionary::metadata::MetadataManager<D> for LoadedMetadataManager<D, T, V> {
             type Metadata = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata;
             type ResolvedMetadata = $crate::topicmodel::dictionary::metadata::containers::loaded::SolvedLoadedMetadata;
-            type Reference<'a> = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataRef<'a> where Self: 'a;
-            type MutReference<'a> = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef<'a> where Self: 'a;
+            type Reference<'a> = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataRef<'a, D, T, V> where Self: 'a;
+            type MutReference<'a> = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef<'a, D, T, V> where Self: 'a;
 
             fn meta_a(&self) -> &[Self::Metadata] {
                 self.meta_a.as_slice()
@@ -87,6 +104,7 @@ macro_rules! create_struct {
                     domain_count: Default::default(),
                     $($name: self.$name,
                     )*
+                    _phantom: std::marker::PhantomData
                 }
             }
 
@@ -98,39 +116,21 @@ macro_rules! create_struct {
                 }
             }
 
-            fn get_meta_mut<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a mut self, word_id: usize) -> Option<Self::MutReference<'a>> {
-                let ptr = self as *mut Self;
-                let value = unsafe{&mut*ptr};
-                let result = if L::LANG.is_a() {
-                    value.meta_a.get_mut(word_id)
-                } else {
-                    value.meta_b.get_mut(word_id)
-                }?;
-                self.changed = true;
-                Some($crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef::new(ptr, result))
+            fn get_meta_mut<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a mut self, dict_ref: *mut D, word_id: usize) -> Option<Self::MutReference<'a>> {
+                self.get_meta_mut_impl::<L>(dict_ref, word_id)
             }
 
-            fn get_or_create_meta<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a mut self, word_id: usize) -> Self::MutReference<'a> {
-                let ptr = self as *mut Self;
+            fn get_or_create_meta<'a, L: $crate::topicmodel::dictionary::direction::Language>(
+                &'a mut self,
+                dict_ref: *mut D,
+                word_id: usize
+            ) -> Self::MutReference<'a> {
+                self.get_or_create_meta_impl::<L>(dict_ref, word_id)
 
-                let targ = if L::LANG.is_a() {
-                    &mut self.meta_a
-                } else {
-                    &mut self.meta_b
-                };
-
-                if word_id >= targ.len() {
-                    targ.resize(word_id + 1, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default())
-                }
-
-                self.changed = true;
-                unsafe{
-                    LoadedMetadataMutRef::new(ptr, targ.get_unchecked_mut(word_id))
-                }
             }
 
-            fn get_meta_ref<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a self, word_id: usize) -> Option<Self::Reference<'a>> {
-                Some(LoadedMetadataRef::new(self.get_meta::<L>(word_id)?, self))
+            fn get_meta_ref<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a self, dict_ref: &'a D, word_id: usize) -> Option<Self::Reference<'a>> {
+                Some(LoadedMetadataRef::new(self.get_meta::<L>(word_id)?, self, dict_ref))
             }
 
             fn resize(&mut self, meta_a: usize, meta_b: usize) {
@@ -168,7 +168,7 @@ pub(super) use create_struct;
 
 macro_rules! create_manager_interns {
     ($($name: ident => $method: ident: $r_typ: ty),+ $(,)?) => {
-        impl LoadedMetadataManager {
+        impl<D, T, V> LoadedMetadataManager<D, T, V> {
             $(
                 paste::paste! {
                     pub fn [<$method _static>](&mut self, voc_entry: &'static str) -> $r_typ {
@@ -197,15 +197,52 @@ macro_rules! create_managed_implementation {
 }
 
 pub(super) use create_managed_implementation;
-
+use crate::topicmodel::dictionary::direction;
+use crate::topicmodel::dictionary::metadata::MetadataManager;
 use super::*;
 
-impl LoadedMetadataManager {
+impl<D, T, V> LoadedMetadataManager<D, T, V> {
     pub fn intern_dictionary_origin_static(&mut self, dict_origin: &'static str) -> DictionaryOriginSymbol {
         self.dictionary_interner.get_or_intern_static(dict_origin)
     }
 
     pub fn intern_dictionary_origin(&mut self, dict_origin: impl AsRef<str>) -> DictionaryOriginSymbol {
         self.dictionary_interner.get_or_intern(dict_origin)
+    }
+
+    pub(super) fn get_meta_mut_impl<'a, L: direction::Language>(&'a mut self, dict_ref: *mut D, word_id: usize) -> Option<<Self as MetadataManager<D>>::MutReference<'a>> {
+        let ptr = self as *mut Self;
+        let value = unsafe{&mut*ptr};
+        let result = if L::LANG.is_a() {
+            value.meta_a.get_mut(word_id)
+        } else {
+            value.meta_b.get_mut(word_id)
+        }?;
+        self.changed = true;
+        Some(LoadedMetadataMutRef::new(dict_ref, ptr, result, L::LANG))
+    }
+
+    pub(super) fn get_or_create_meta_impl<'a, L: direction::Language>(&'a mut self, dict_ref: *mut D, word_id: usize) -> <Self as MetadataManager<D>>::MutReference<'a> {
+        let ptr = self as *mut Self;
+
+        let targ = if L::LANG.is_a() {
+            &mut self.meta_a
+        } else {
+            &mut self.meta_b
+        };
+
+        if word_id >= targ.len() {
+            targ.resize(word_id + 1, LoadedMetadata::default())
+        }
+
+        self.changed = true;
+        unsafe{
+            LoadedMetadataMutRef::new(
+                dict_ref,
+                ptr,
+                targ.get_unchecked_mut(word_id),
+                L::LANG
+            )
+        }
     }
 }

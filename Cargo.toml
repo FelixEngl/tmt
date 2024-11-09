@@ -70,7 +70,7 @@ deranged = "0.3"
 env_logger = "0.11"
 sealed = "0.6"
 either = { version = "1.13", features = ["serde"] }
-enum-map = "2.7"
+enum-map = { version = "2.7", features = ["serde"] }
 #nalgebra = { version = "0.33",  features = ["serde", "rayon"]}
 float-cmp = "0.10.0"
 lockfree-object-pool = "0.1.6"

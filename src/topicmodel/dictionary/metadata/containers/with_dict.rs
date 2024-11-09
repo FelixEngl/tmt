@@ -86,13 +86,13 @@ where
 }
 
 
-pub struct MetadataContainerWithDictMut<'a, D, T, V, M: MetadataManager> {
+pub struct MetadataContainerWithDictMut<'a, D, DNest, T, V, M: MetadataManager<DNest>> {
     dict: *mut D,
     meta_data: &'a mut M,
-    _voc_types: PhantomData<fn(T)->V>
+    _voc_types: PhantomData<fn(T, DNest)->V>
 }
 
-impl<'a, D, T, V, M: MetadataManager> MetadataContainerWithDictMut<'a, D, T, V, M> {
+impl<'a, D, DNest, T, V, M: MetadataManager<DNest>> MetadataContainerWithDictMut<'a, D, DNest, T, V, M> {
     pub fn new(
         dict: *mut D,
         meta_data: &'a mut M,
@@ -110,8 +110,10 @@ impl<'a, D, T, V, M: MetadataManager> MetadataContainerWithDictMut<'a, D, T, V, 
     }
 }
 
-impl<'a, D, T, V, M: MetadataManager> MetadataContainerWithDictMut<'a, D, T, V, M>
-where D: BasicDictionaryWithMeta<M> + BasicDictionaryWithVocabulary<V> {
+impl<'a, D, DNest, T, V, M: MetadataManager<DNest>> MetadataContainerWithDictMut<'a, D, DNest, T, V, M>
+where
+    D: BasicDictionaryWithMeta<DNest, M> + BasicDictionaryWithVocabulary<V>
+{
     pub fn wrap(target: &'a mut D) -> Self {
         let ptr = target as *mut D;
         Self::new(

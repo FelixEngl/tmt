@@ -7,7 +7,9 @@ mod collector;
 mod field_denom;
 mod resolved_value;
 mod solved_new_arg;
+mod word_associations;
 
+pub use word_associations::*;
 pub use metadata::*;
 use reference::*;
 pub use reference_mut::*;
@@ -102,10 +104,6 @@ generate_field_code! {
         r#"Stores the number of a word."#
         numbers("numbers"): GrammaticalNumber | Set64<GrammaticalNumber>
     },
-    set {
-        r#"Stores an internal id, associating some words with each other."#
-        internal_ids("internal_ids"): u64 | Set64<u64>
-    },
     interned {
         r#"Stores the inflected value of a word."#
         inflected("inflected"): InflectedSymbol | (Set64<InflectedSymbol>, Vec<&'a str>) {
@@ -124,12 +122,12 @@ generate_field_code! {
             unaltered_vocabulary_interner: UnalteredVocStringInterner => intern_unaltered_vocabulary
         }
     },
-    interned {
-        r#"Stores the synonyms"#
-        synonyms("synonyms"): UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>)  {
-            unaltered_vocabulary_interner => intern_unaltered_vocabulary
-        }
-    },
+    // interned {
+    //     r#"Stores the synonyms"#
+    //     synonyms("synonyms"): UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>)  {
+    //         unaltered_vocabulary_interner => intern_unaltered_vocabulary
+    //     }
+    // },
     interned {
         r#"Stores similar words"#
         look_at("look_at"): UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>) {
@@ -169,7 +167,7 @@ generate_field_code! {
 }
 
 
-impl LoadedMetadataManager {
+impl<D, T, V> LoadedMetadataManager<D, T, V> {
 
 
 

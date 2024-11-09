@@ -25,23 +25,7 @@ impl<'a> Deref for ClassicMetadataRef<'a> {
     }
 }
 
-impl<'a> MetadataReference<'a, ClassicMetadataManager> for ClassicMetadataRef<'a> {
-    fn raw(&self) -> &'a ClassicMetadata {
-        self.raw
-    }
 
-    fn meta_manager(&self) -> &'a ClassicMetadataManager {
-        self.manager_ref
-    }
-
-    fn into_owned(self) -> ClassicMetadata {
-        self.raw.clone()
-    }
-
-    fn into_resolved(self) -> <ClassicMetadataManager as MetadataManager>::ResolvedMetadata {
-        self.into()
-    }
-}
 
 impl<'a> ClassicMetadataRef<'a> {
 

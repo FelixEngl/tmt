@@ -18,10 +18,10 @@ use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionK
 use crate::topicmodel::dictionary::iterators::{DictIter, DictionaryWithMetaIterator};
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataManager, MetaField, SolvedLoadedMetadata};
 use crate::topicmodel::dictionary::metadata::{MetadataManager};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryPointerProvider, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
+use crate::topicmodel::vocabulary::{SearchableVocabulary, StringVocabulary, Vocabulary};
 use itertools::Itertools;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::{PyAnyMethods};
@@ -35,11 +35,14 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use crate::register_python;
 
+type MetaType = LoadedMetadataManager<Dictionary<String, PyVocabulary>, String, PyVocabulary>;
+type DictType = DictionaryWithMeta<String, PyVocabulary, MetaType>;
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PyDictionary {
-    wrapped: DictionaryWithMeta<String, PyVocabulary, LoadedMetadataManager>,
+    wrapped: DictType,
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -206,30 +209,39 @@ impl PyDictionary {
 
     pub fn get_meta_a_of(&self, word: &str) -> Option<SolvedLoadedMetadata> {
         let word_id = self.wrapped.voc_a().get_id(word)?;
-        let meta = self.wrapped.metadata().get_meta_ref::<A>(word_id)?;
+        let meta = self.wrapped.metadata().get_meta_ref::<A>(
+            &self.wrapped.inner,
+            word_id
+        )?;
         Some(meta.into())
     }
 
     pub fn get_meta_b_of(&self, word: &str) -> Option<SolvedLoadedMetadata> {
         let word_id = self.wrapped.voc_b().get_id(word)?;
-        let meta = self.wrapped.metadata().get_meta_ref::<B>(word_id)?;
+        let meta = self.wrapped.metadata().get_meta_ref::<B>(&self.wrapped.inner, word_id)?;
         Some(meta.into())
     }
 
 }
 
 impl Deref for PyDictionary {
-    type Target = DictionaryWithMeta<String, PyVocabulary, LoadedMetadataManager>;
+    type Target = DictType;
 
     fn deref(&self) -> &Self::Target {
         &self.wrapped
     }
 }
 
+impl BasicDictionaryPointerProvider<Dictionary<String, PyVocabulary>> for PyDictionary {
+    fn provide_pointer(&self) -> *const Dictionary<String, PyVocabulary> {
+        self.wrapped.provide_pointer()
+    }
+}
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 pub struct PyDictIter {
-    inner: DictionaryWithMetaIterator<DictionaryWithMeta<String, PyVocabulary, LoadedMetadataManager>, String, PyVocabulary, LoadedMetadataManager>,
+    inner: DictionaryWithMetaIterator<DictType, String, PyVocabulary, MetaType>,
 }
 
 unsafe impl Send for PyDictIter{}

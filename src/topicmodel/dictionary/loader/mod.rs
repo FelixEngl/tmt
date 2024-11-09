@@ -12,7 +12,7 @@ use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBuilder, LoadedMetadataManager};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryPointerProvider, BasicDictionaryWithVocabulary, Dictionary, DictionaryMut, DictionaryWithMeta};
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary};
 use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
@@ -109,7 +109,7 @@ impl<'b> Preprocessor for SpecialPreprocessor<'b> {
 
 
 pub struct UnifiedTranslationHelper<P = DefaultPreprocessor> {
-    dictionary: DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>,
+    dictionary: DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager<Dictionary<String, Vocabulary<String>>, String, Vocabulary<String>>>,
     preprocessor: P,
     ding_dict_id_provider: u64,
     dir: LanguageDirection
@@ -199,7 +199,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    unsafe fn insert_pipeline<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str) -> (usize, LoadedMetadataMutRef<'a>) {
+    unsafe fn insert_pipeline<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str) -> (usize, LoadedMetadataMutRef<'a, Dictionary<String, Vocabulary<String>>, String, Vocabulary<String>>) {
         let preprocessed = self.preprocessor.preprocess_word::<L>(dict, word);
         let orth_id = match preprocessed {
             None => {
@@ -213,13 +213,14 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             }
         };
         let lang = self.get_lang::<L>();
-        let mut meta = self.dictionary.metadata.get_or_create_meta::<L>(orth_id);
+        self.dictionary.metadata_with_dict_mut()
+        let mut meta = self.dictionary.metadata.get_or_create_meta::<L>((self.dictionary).provide_pointer(), orth_id);
         meta.add_single_to_languages_default(lang);
         (orth_id, meta)
     }
 
     #[allow(clippy::needless_lifetimes)]
-    fn insert<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str, dir: &LanguageDirection) -> (usize, LoadedMetadataMutRef<'a>) {
+    fn insert<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str, dir: &LanguageDirection) -> (usize, LoadedMetadataMutRef<'a, Dictionary<String, Vocabulary<String>>, String, Vocabulary<String>>) {
         unsafe {
             if self.check_dir_lang::<L>(dir) {
                 self.insert_pipeline::<L>(dict, word)
@@ -239,7 +240,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn finalize(self) -> DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager> {
+    pub fn finalize(self) -> DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager<Dictionary<String, Vocabulary<String>>, String, Vocabulary<String>>> {
         self.dictionary
     }
 
@@ -323,8 +324,11 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             meta.add_all_to_pos(FREE_DICT, pos);
             meta.add_all_to_genders(FREE_DICT, gender);
             meta.add_all_to_numbers(FREE_DICT, number);
+            // {
+            //     todo!("Reimplement")
+            //     meta.add_all_to_synonyms(FREE_DICT, synonyms.iter().map(|value| &value.word));
+            // }
 
-            meta.add_all_to_synonyms(FREE_DICT, synonyms.iter().map(|value| &value.word));
             meta.add_all_to_contextual_informations(
                 FREE_DICT,
                 chain!(colloc, contextual)
@@ -340,7 +344,8 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 target_id,
                 word
             } in synonyms.into_iter() {
-                meta.add_single_to_synonyms(FREE_DICT, word);
+                // TODO
+                // meta.add_single_to_synonyms(FREE_DICT, word);
                 meta.add_single_to_outgoing_ids(FREE_DICT, target_id);
             }
             for free_dict::See {
@@ -461,7 +466,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         let mut id_b = Vec::with_capacity(words_b.len());
 
         fn extend<V: AsRef<str> + Display>(
-            meta: &mut LoadedMetadataMutRef,
+            meta: &mut LoadedMetadataMutRef<Dictionary<String, Vocabulary<String>>, String, Vocabulary<String>>,
             unchanged: &str,
             general_register: &[Register],
             general_pos: &[PartOfSpeech],
@@ -616,7 +621,8 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         let mut builder = LoadedMetadataCollectionBuilder::with_name(Some(IATE));
         builder.extend_contextual_informations(contextual);
         builder.extend_domains(domains);
-        builder.push_internal_ids(id);
+        /// TODO: reimplement
+        // builder.push_internal_ids(id);
         builder.extend_registers(registers);
         if let (Some(a), Some(b)) = (words.remove(&dir.lang_a()), words.remove(&dir.lang_b())) {
             let mut a_word = Vec::new();
@@ -945,7 +951,9 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             translations
         } = convert_entry_to_entries(word, recognized.as_ref())?;
         content.dictionary_name(Some(WIKTIONARY));
-        content.extend_synonyms(synonyms.into_iter().map(|v| v.0));
+
+        // todo reimplement
+        // content.extend_synonyms(synonyms.into_iter().map(|v| v.0));
 
         let mut lang_a_variants = Vec::new();
 

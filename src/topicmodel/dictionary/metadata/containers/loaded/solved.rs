@@ -266,7 +266,8 @@ macro_rules! create_solved_implementation {
         }
 
         impl SolvedLoadedMetadata {
-            pub fn create_from<'a>(reference: &$crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataRef<'a>) -> Self {
+            // TODO: needs handling of resolveable
+            pub fn create_from<'a, D, T, V>(reference: &$crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataRef<'a, D, T, V>) -> Self {
                 $(
                     $crate::topicmodel::dictionary::metadata::loaded::solved::convert_into!($tt: reference => $name);
                 )+
@@ -295,7 +296,7 @@ macro_rules! create_solved_implementation {
                 result.append(RcDoc::text("}"))
             }
 
-            pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef) -> Result<(), WrongResolvedValueError> {
+            pub fn write_into<D, T, V>(&self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef<'_, D, T, V>) -> Result<(), WrongResolvedValueError> {
                 $(
                     paste::paste! {
                         if let Some(ref $name) = self.$name.0 {
@@ -320,8 +321,8 @@ pub(super) use create_solved_implementation;
 
 use super::*;
 
-impl<'a> From<LoadedMetadataRef<'a>> for SolvedLoadedMetadata {
-    fn from(value: LoadedMetadataRef<'a>) -> Self {
+impl<'a, D, T, V> From<LoadedMetadataRef<'a, D, T, V>> for SolvedLoadedMetadata {
+    fn from(value: LoadedMetadataRef<'a, D, T, V>) -> Self {
         Self::create_from(&value)
     }
 }

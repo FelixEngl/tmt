@@ -47,6 +47,9 @@ macro_rules! impl_associated_metadata {
 
         #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
         pub struct AssociatedMetadataImpl {
+            /// Allows to store various associated words based on type.
+            #[serde(skip_serializing_if = "enum_map::EnumMap::is_empty", default)]
+            pub(super) associated_words: $crate::topicmodel::dictionary::metadata::loaded::WordAssociationMap,
             $(
                 $(#[doc=$doc])?
                 #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
@@ -96,6 +99,7 @@ macro_rules! impl_associated_metadata {
     };
 }
 
+use std::ops::IndexMut;
 pub(super) use impl_associated_metadata;
 
 macro_rules! impl_general_metadata {
@@ -103,17 +107,20 @@ macro_rules! impl_general_metadata {
 
         #[derive(Clone, Copy, Hash, Eq, PartialEq, Debug)]
         pub enum GeneralMetadataEntry<'a> {
+            WordAssociation(&'a $crate::topicmodel::dictionary::metadata::loaded::WordAssociationMap),
             $($enum_var_name(&'a tinyset::Set64<$typ>),
             )+
         }
 
         #[derive(Clone, Hash, Eq, PartialEq, Debug, serde::Deserialize, serde::Serialize)]
         pub enum GeneralMetadata {
+            WordAssociation(Option<$crate::topicmodel::dictionary::metadata::loaded::WordAssociationMap>, Vec<Option<$crate::topicmodel::dictionary::metadata::loaded::WordAssociationMap>>),
             $($enum_var_name(Option<tinyset::Set64<$typ>>, Vec<Option<tinyset::Set64<$typ>>>),
             )+
         }
 
         impl GeneralMetadata {
+
             $(
             fn $normal_name(default: Option<tinyset::Set64<$typ>>, dicts: Vec<Option<tinyset::Set64<$typ>>>) -> GeneralMetadata {
                 GeneralMetadata::$enum_var_name(default, dicts)
@@ -122,6 +129,9 @@ macro_rules! impl_general_metadata {
 
             pub fn get_default(&self) -> Option<GeneralMetadataEntry> {
                 match self {
+                    GeneralMetadata::WordAssociation(Some(default), _) => {
+                        Some(GeneralMetadataEntry::WordAssociation(default))
+                    }
                     $(
                     GeneralMetadata::$enum_var_name(Some(default), _) => {
                         Some(GeneralMetadataEntry::$enum_var_name(default))
@@ -133,6 +143,12 @@ macro_rules! impl_general_metadata {
 
             pub fn get_dicts(&self) -> Vec<Option<GeneralMetadataEntry>> {
                 match self {
+                    GeneralMetadata::WordAssociation(_, value) => {
+                        value
+                        .iter()
+                        .map(|value| value.as_ref().map(GeneralMetadataEntry::WordAssociation))
+                        .collect()
+                    }
                     $(
                     GeneralMetadata::$enum_var_name(_, value) => {
                         value
@@ -146,6 +162,12 @@ macro_rules! impl_general_metadata {
 
             pub fn get_for_dict<S: string_interner::Symbol>(&self, idx: S) -> Option<GeneralMetadataEntry> {
                 match self {
+                    GeneralMetadata::WordAssociation(_, value) => {
+                        value
+                        .get(idx.to_usize())?
+                        .as_ref()
+                        .map(GeneralMetadataEntry::WordAssociation)
+                    }
                     $(
                     GeneralMetadata::$enum_var_name(_, value) => {
                         value
@@ -161,6 +183,10 @@ macro_rules! impl_general_metadata {
         impl LoadedMetadata {
             pub fn all_fields(&self) -> enum_map::EnumMap<MetaField, GeneralMetadata> {
                 enum_map::enum_map! {
+                    MetaField::WordAssociation => GeneralMetadata::WordAssociation(
+                        self.general_metadata.get().map(|value| value.associated_words().cloned()).flatten(),
+                        self.associated_metadata.iter().map(|value| value.get().map(|value| value.associated_words().cloned()).flatten()).collect()
+                    ),
                     $(
                         MetaField::$enum_var_name => GeneralMetadata::$normal_name(
                             self.general_metadata.get().map(|value| value.$normal_name().cloned()).flatten(),
@@ -172,6 +198,10 @@ macro_rules! impl_general_metadata {
 
             pub fn field(&self, field: MetaField) -> GeneralMetadata {
                 match field {
+                    MetaField::WordAssociation => GeneralMetadata::WordAssociation(
+                        self.general_metadata.get().map(|value| value.associated_words().cloned()).flatten(),
+                        self.associated_metadata.iter().map(|value| value.get().map(|value| value.associated_words().cloned()).flatten()).collect()
+                    ),
                     $(
                         MetaField::$enum_var_name => GeneralMetadata::$normal_name(
                             self.general_metadata.get().map(|value| value.$normal_name().cloned()).flatten(),
@@ -184,6 +214,23 @@ macro_rules! impl_general_metadata {
             /// set dict to None for default
             pub fn single_field_value<S: string_interner::Symbol>(&self, field: MetaField, dict: Option<S>) -> Option<GeneralMetadataEntry> {
                 match field {
+                    MetaField::WordAssociation => {
+                        if let Some(dict) = dict {
+                            self
+                            .associated_metadata
+                            .get(dict.to_usize())?
+                            .get()
+                            .map(
+                                |value|
+                                value
+                                .associated_words()
+                                .map(GeneralMetadataEntry::WordAssociation)
+                            )
+                            .flatten()
+                        } else {
+                            self.general_metadata.get()?.associated_words().map(GeneralMetadataEntry::WordAssociation)
+                        }
+                    }
                     $(
                         MetaField::$enum_var_name => {
                             if let Some(dict) = dict {
@@ -243,6 +290,12 @@ fn empty_vec() -> Vec<LazyAssociatedMetadata> {
 }
 
 impl LoadedMetadata {
+    pub fn all_raw_associated_words(&self) -> (Option<WordAssociationMap>, Vec<Option<WordAssociationMap>>) {
+        let a = self.general_metadata.get().map(|value| value.associated_words().cloned()).flatten();
+        let b = self.associated_metadata.iter().map(|value| value.get().map(|value| value.associated_words().cloned()).flatten()).collect();
+        (a, b)
+    }
+
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             general_metadata: LazyAssociatedMetadata::new(),
@@ -538,5 +591,34 @@ impl AssociatedMetadata {
                 targ.update_with(other)
             }
         }
+    }
+
+    pub fn associated_words(&self) -> Option<&WordAssociationMap> {
+        Some(&self.inner.get()?.associated_words)
+    }
+
+    pub fn add_single_to_associated_words(&mut self, association: WordAssociation, word_id: usize) {
+        self.get_mut_or_init().associated_words.index_mut(association).insert(word_id);
+    }
+
+    pub fn add_all_to_associated_words<I: IntoIterator<Item=(WordAssociation, usize)>>(&mut self, values: I) {
+        self.get_mut_or_init().add_all_to_associated_words(values);
+    }
+}
+
+
+impl AssociatedMetadataImpl {
+    pub fn add_single_to_associated_words(&mut self, association: WordAssociation, word_id: usize) {
+        self.associated_words.index_mut(association).insert(word_id);
+    }
+
+    pub fn add_all_to_associated_words<I: IntoIterator<Item=(WordAssociation, usize)>>(&mut self, iter: I) {
+        for (k, v) in iter {
+            self.add_single_to_associated_words(k, v)
+        }
+    }
+
+    pub fn associated_words(&self) -> &WordAssociationMap {
+        &self.associated_words
     }
 }

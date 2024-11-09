@@ -20,7 +20,7 @@ use std::slice::Iter;
 use itertools::{Itertools, Unique};
 use strum::EnumIs;
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryPointerProvider, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataReference};
 use crate::topicmodel::reference::HashRef;
@@ -154,6 +154,7 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
         return new
     }
 
+
     pub fn into_inner(self) -> D {
         self.inner
     }
@@ -262,9 +263,9 @@ impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq 
 /// A dict iterator with metadata
 pub struct DictionaryWithMetaIterator<D, T, V, M>
 where
-    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
+    D: BasicDictionaryWithMeta<D, M> + DictionaryWithVocabulary<T, V> + BasicDictionaryPointerProvider<D>,
     V: BasicVocabulary<T>,
-    M: MetadataManager
+    M: MetadataManager<D>
 {
     inner: DictionaryIteratorImpl<T, V, D>,
     _meta: PhantomData<M>
@@ -272,9 +273,9 @@ where
 
 impl<D, T, V, M> DictionaryWithMetaIterator<D, T, V, M>
 where
-    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
+    D: BasicDictionaryWithMeta<D, M> + DictionaryWithVocabulary<T, V> + BasicDictionaryPointerProvider<D>,
     V: BasicVocabulary<T>,
-    M: MetadataManager
+    M: MetadataManager<D>
 {
     pub fn new(inner: D) -> Self {
         Self {
@@ -290,9 +291,9 @@ where
 
 impl<D, T, V, M> Iterator for DictionaryWithMetaIterator<D, T, V, M>
 where
-    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
+    D: BasicDictionaryWithMeta<D, M> + DictionaryWithVocabulary<T, V>  + BasicDictionaryPointerProvider<D>,
     V: BasicVocabulary<T>,
-    M: MetadataManager
+    M: MetadataManager<D>
 {
     type Item = DirectionTuple<
         (usize, HashRef<T>, Option<M::ResolvedMetadata>),
@@ -305,11 +306,11 @@ where
         Some(
             next.map(
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(|value| value.into_resolved());
+                    let value = self.inner.inner.metadata().get_meta_ref::<A>(self.inner.provide_pointer(), id).map(|value| value.into_resolved());
                     (id, href, value)
                 },
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(|value| value.into_resolved());
+                    let value = self.inner.inner.metadata().get_meta_ref::<B>(self.inner.provide_pointer(), id).map(|value| value.into_resolved());
                     (id, href, value)
                 }
             )
