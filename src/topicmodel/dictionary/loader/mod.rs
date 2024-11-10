@@ -1210,6 +1210,16 @@ mod test {
         let new = default.len();
         println!("{} delta: {}", new, current.diff(&new));
 
+        current = new;
+        let x = default.read_wiktionary(
+            "dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"
+        );
+        if let Err(err) = x {
+            println!("{:?}", err)
+        }
+        let new = default.len();
+        println!("{} delta: {}", new, current.diff(&new));
+
         let data = default.finalize();
         let mut writer = BufWriter::new(dict_file);
         serde_json::to_writer_pretty(&mut writer, &data).unwrap();

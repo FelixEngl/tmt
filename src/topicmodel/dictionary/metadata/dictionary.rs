@@ -247,6 +247,7 @@ where
             }
         }
         new.metadata.update_ids(&update);
+        new.metadata.optimize();
         new
     }
 }
@@ -485,6 +486,7 @@ where
         }
 
         new.metadata.update_ids(&update);
+        new.metadata.optimize();
         new
     }
 
