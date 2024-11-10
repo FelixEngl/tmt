@@ -198,14 +198,14 @@ impl<T, V> DictionaryWithVocabulary<T, V> for Dictionary<T, V> where V: BasicVoc
         }
     }
 
-    fn ids_to_values<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<&'a HashRef<T>> where V: 'a {
+    fn ids_to_values<'a, D: Translation, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a HashRef<T>> where V: 'a {
         if D::DIRECTION.is_a_to_b() {
-            ids.iter().map(|value| unsafe {
-                self.voc_b.get_value(*value).unwrap_unchecked()
+            ids.into_iter().map(|value| unsafe {
+                self.voc_b.get_value(value).unwrap_unchecked()
             }).collect()
         } else {
-            ids.iter().map(|value| unsafe {
-                self.voc_a.get_value(*value).unwrap_unchecked()
+            ids.into_iter().map(|value| unsafe {
+                self.voc_a.get_value(value).unwrap_unchecked()
             }).collect()
         }
     }
@@ -281,7 +281,45 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
         DirectionTuple::new(id_a, id_b, D::DIRECTION)
     }
 }
-impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default{
+impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default  {
+    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    where
+        Self: Sized,
+        T: 'a,
+        Fa: Fn(&'a HashRef<T>) -> Option<HashRef<T>>,
+        Fb: Fn(&'a HashRef<T>) -> Option<HashRef<T>>
+    {
+        let mut new_dict = Dictionary::new();
+        for DirectionTuple{a, b, direction} in self.iter() {
+            if let Some(a) = f_a(self.id_to_word::<A>(a).unwrap()) {
+                if let Some(b) = f_b(self.id_to_word::<B>(b).unwrap()) {
+                    match direction {
+                        DirectionKind::AToB => {
+                            new_dict.insert_hash_ref::<AToB>(
+                                a,
+                                b
+                            );
+                        }
+                        DirectionKind::BToA => {
+                            new_dict.insert_hash_ref::<BToA>(
+                                a,
+                                b
+                            );
+                        }
+                        DirectionKind::Invariant => {
+                            new_dict.insert_hash_ref::<Invariant>(
+                                a,
+                                b
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        new_dict
+    }
+
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
         let mut new_dict = Dictionary::new();
 

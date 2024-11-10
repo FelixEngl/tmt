@@ -1,5 +1,4 @@
 use std::fmt::{Display, Formatter};
-use std::ops::Deref;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use pyo3::{pyclass, pymethods, FromPyObject, IntoPy, PyObject, Python};
 use serde::{Deserialize, Serialize};

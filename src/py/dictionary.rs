@@ -77,12 +77,14 @@ impl PyDictionary {
     }
 
     #[getter]
-    fn voc_a(&self) -> PyVocabulary {
+    #[pyo3(name = "voc_a")]
+    fn voc_a_py(&self) -> PyVocabulary {
         self.wrapped.voc_a().clone()
     }
 
     #[getter]
-    fn voc_b(&self) -> PyVocabulary {
+    #[pyo3(name = "voc_b")]
+    fn voc_b_py(&self) -> PyVocabulary {
         self.wrapped.voc_b().clone()
     }
 
@@ -206,13 +208,13 @@ impl PyDictionary {
 
     pub fn get_meta_a_of(&self, word: &str) -> Option<SolvedLoadedMetadata> {
         let word_id = self.wrapped.voc_a().get_id(word)?;
-        let meta = self.wrapped.metadata().get_meta_ref::<A>(word_id)?;
+        let meta = self.wrapped.metadata().get_meta_ref::<A>(self.voc_a(), word_id)?;
         Some(meta.into())
     }
 
     pub fn get_meta_b_of(&self, word: &str) -> Option<SolvedLoadedMetadata> {
         let word_id = self.wrapped.voc_b().get_id(word)?;
-        let meta = self.wrapped.metadata().get_meta_ref::<B>(word_id)?;
+        let meta = self.wrapped.metadata().get_meta_ref::<B>(self.voc_b(), word_id)?;
         Some(meta.into())
     }
 
@@ -320,8 +322,8 @@ impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
     }
 
     #[inline(always)]
-    fn ids_to_values<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<&'a HashRef<String>> where PyVocabulary: 'a {
-        self.wrapped.ids_to_values::<D>(ids)
+    fn ids_to_values<'a, D: Translation, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a HashRef<String>> where PyVocabulary: 'a {
+        self.wrapped.ids_to_values::<D, _>(ids)
     }
 
     #[inline(always)]
@@ -361,6 +363,19 @@ impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
 }
 
 impl DictionaryFilterable<String, PyVocabulary> for PyDictionary {
+    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    where
+        Self: Sized,
+        String: 'a,
+        Fa: Fn(&'a HashRef<String>) -> Option<HashRef<String>>,
+        Fb: Fn(&'a HashRef<String>) -> Option<HashRef<String>>
+    {
+        Self {
+            wrapped: self.wrapped.filter_and_process(f_a, f_b)
+        }
+    }
+
+
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
         Self {
             wrapped: self.wrapped.filter_by_ids(filter_a, filter_b)

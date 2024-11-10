@@ -98,7 +98,11 @@ macro_rules! create_struct {
                 }
             }
 
-            fn get_meta_mut<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a mut self, word_id: usize) -> Option<Self::MutReference<'a>> {
+            fn get_meta_mut<'a, L: $crate::topicmodel::dictionary::direction::Language>(
+                &'a mut self,
+                vocabulary: &'a mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut,
+                word_id: usize
+            ) -> Option<Self::MutReference<'a>> {
                 let ptr = self as *mut Self;
                 let value = unsafe{&mut*ptr};
                 let result = if L::LANG.is_a() {
@@ -107,10 +111,21 @@ macro_rules! create_struct {
                     value.meta_b.get_mut(word_id)
                 }?;
                 self.changed = true;
-                Some($crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef::new(ptr, result))
+                let vocabulary = unsafe {
+                    std::mem::transmute::<_, &'static mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut>(vocabulary)
+                } as *mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut;
+                Some($crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef::new(
+                    vocabulary,
+                    ptr,
+                    result
+                ))
             }
 
-            fn get_or_create_meta<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a mut self, word_id: usize) -> Self::MutReference<'a> {
+            fn get_or_create_meta<'a, L: $crate::topicmodel::dictionary::direction::Language>(
+                &'a mut self,
+                vocabulary: &'a mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut,
+                word_id: usize
+            ) -> Self::MutReference<'a> {
                 let ptr = self as *mut Self;
 
                 let targ = if L::LANG.is_a() {
@@ -120,17 +135,32 @@ macro_rules! create_struct {
                 };
 
                 if word_id >= targ.len() {
-                    targ.resize(word_id + 1, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default())
+                    targ.resize_with(
+                        word_id + 1,
+                        $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default
+                    );
                 }
+
+                let vocabulary = unsafe {
+                    std::mem::transmute::<_, &'static mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut>(vocabulary)
+                } as *mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut;
 
                 self.changed = true;
                 unsafe{
-                    LoadedMetadataMutRef::new(ptr, targ.get_unchecked_mut(word_id))
+                    LoadedMetadataMutRef::new(
+                        vocabulary,
+                        ptr,
+                        targ.get_unchecked_mut(word_id)
+                    )
                 }
             }
 
-            fn get_meta_ref<'a, L: $crate::topicmodel::dictionary::direction::Language>(&'a self, word_id: usize) -> Option<Self::Reference<'a>> {
-                Some(LoadedMetadataRef::new(self.get_meta::<L>(word_id)?, self))
+            fn get_meta_ref<'a, L: $crate::topicmodel::dictionary::direction::Language>(
+                &'a self,
+                vocabulary: $crate::topicmodel::vocabulary::AnonymousVocabularyRef<'a>,
+                word_id: usize
+            ) -> Option<Self::Reference<'a>> {
+                Some(LoadedMetadataRef::new(self.get_meta::<L>(word_id)?, self, vocabulary))
             }
 
             fn resize(&mut self, meta_a: usize, meta_b: usize) {
@@ -159,6 +189,17 @@ macro_rules! create_struct {
 
             fn dictionaries(&self) -> Vec<&str> {
                 self.dictionary_interner.iter().map(|value| value.1).collect()
+            }
+
+            fn update_ids(
+                &mut self,
+                update: &$crate::topicmodel::dictionary::metadata::update::WordIdUpdate
+            ){
+                self.update_ids_impl(update)
+            }
+
+            fn optimize(&mut self) {
+
             }
         }
     };
@@ -198,7 +239,107 @@ macro_rules! create_managed_implementation {
 
 pub(super) use create_managed_implementation;
 
+macro_rules! update_routine_declaration_implementation {
+    (interned: $field: ident, $t:ident; $($tt:tt)*) => {
+        let mut $field: $t = $t::new();
+        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!($($tt)*);
+    };
+    (interned: $field: ident; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!($($tt)*);
+    };
+    ($marker:tt: ; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!($($tt)*);
+    };
+    ($(;)?) => {
+
+    };
+}
+pub(super) use update_routine_declaration_implementation;
+
+macro_rules! update_routine_set_implementation {
+    (interned: $TSelf:ident, $intern_name: ident, $t:ident; $($tt:tt)*) => {
+        $TSelf.$intern_name = $intern_name;
+        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!($($tt)*);
+    };
+    (interned: $TSelf:ident, $intern_name: ident; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!($($tt)*);
+    };
+    ($marker:tt: $TSelf:ident; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!($($tt)*);
+    };
+    ($(;)?) => {
+
+    };
+}
+pub(super) use update_routine_set_implementation;
+
+macro_rules! implement_filter_set {
+    (interned: $TSelf:ident, $target:ident, $field_name: ident, $intern_name: ident; $($tt:tt)*) => {
+        paste::paste! {
+            let mut [<$field_name _value>] = tinyset::Set64::new();
+            for value in $target.$field_name.iter() {
+                [<$field_name _value>].insert(
+                      $intern_name.get_or_intern(
+                          unsafe {
+                              $TSelf.$intern_name.resolve_unchecked(value)
+                          }
+                      )
+                );
+            }
+            $target.$field_name = [<$field_name _value>];
+        }
+        $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!(
+            $($tt)*
+        );
+    };
+
+    ($marker:tt : $TSelf:ident, $target:ident, $field_name: ident, $intern_name: ident; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!(
+            $($tt)*
+        );
+    };
+
+    ($marker:tt: $TSelf:ident, $target:ident, $field_name: ident; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!($($tt)*);
+    };
+    ($(;)?) => {
+
+    };
+}
+pub(super) use implement_filter_set;
+
+macro_rules! update_routine {
+    ($($marker:tt: $target_field: ident $(, $target_intern: ident $(, $ty: ident)?)?;)*) => {
+        impl LoadedMetadataManager {
+            fn optimize_impl(&mut self) {
+                $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!(
+                    $($marker: $($target_intern $(, $ty)?)?;)*
+                );
+                for value in self.meta_a.iter_mut() {
+                    for value in value.iter_mut() {
+                        let metadata = value.to_metadata();
+                        if let Some(targ) = metadata.get_mut() {
+                            $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!(
+                                $($marker: self, targ, $target_field $(, $target_intern)?;)*
+                            );
+                        }
+                    }
+                }
+                $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!(
+                    $($marker: self $(, $target_intern $(, $ty)?)?;)*
+                );
+            }
+        }
+    };
+}
+
+pub(super) use update_routine;
+
+
+use crate::topicmodel::dictionary::direction::{A, B};
 use super::*;
+
+
 
 impl LoadedMetadataManager {
     pub fn intern_dictionary_origin_static(&mut self, dict_origin: &'static str) -> DictionaryOriginSymbol {
@@ -207,5 +348,58 @@ impl LoadedMetadataManager {
 
     pub fn intern_dictionary_origin(&mut self, dict_origin: impl AsRef<str>) -> DictionaryOriginSymbol {
         self.dictionary_interner.get_or_intern(dict_origin)
+    }
+
+    pub(in super) fn update_ids_impl(
+        &mut self,
+        update: &crate::topicmodel::dictionary::metadata::update::WordIdUpdate
+    ){
+        for value in self.meta_a.iter_mut() {
+            for value in value.iter_mut() {
+                match value {
+                    MetadataWithOrigin::General(assoc)
+                    | MetadataWithOrigin::Associated(_, assoc) => {
+                        if let Some(targ) = assoc.get_mut() {
+                            targ.update_ids::<A>(update)
+                        }
+                    }
+                }
+            }
+        }
+        for value in self.meta_b.iter_mut() {
+            for value in value.iter_mut() {
+                match value {
+                    MetadataWithOrigin::General(assoc)
+                    | MetadataWithOrigin::Associated(_, assoc) => {
+                        if let Some(targ) = assoc.get_mut() {
+                            targ.update_ids::<B>(update)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn optimize_impl2(&mut self) {
+        let mut original_entry_interner: OriginalEntryStringInterner = OriginalEntryStringInterner::new();
+        for value in self.meta_a.iter_mut() {
+            for value in value.iter_mut() {
+                let metadata = value.to_metadata();
+                if let Some(targ) = metadata.get_mut() {
+                    let mut original_entry_value = Set64::new();
+                    for value in targ.original_entry.iter() {
+                        original_entry_value.insert(
+                            original_entry_interner.get_or_intern(
+                                unsafe {
+                                    self.original_entry_interner.resolve_unchecked(value)
+                                }
+                            )
+                        );
+                    }
+                    targ.original_entry = original_entry_value;
+                }
+            }
+        }
+        self.original_entry_interner = original_entry_interner;
     }
 }

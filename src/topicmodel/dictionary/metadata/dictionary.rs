@@ -4,16 +4,17 @@ use std::hash::Hash;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc};
-use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, Translation, A, B};
+use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
-use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference};
+use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference, MetadataReference};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 use crate::topicmodel::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
 use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModel;
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin};
+use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
 use crate::topicmodel::reference::HashRef;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -129,7 +130,7 @@ impl<T, V, M> DictionaryWithMeta<T, V, M> where V: From<Option<LanguageHint>>, M
     }
 }
 
-impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T>, M: MetadataManager
+impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T> + AnonymousVocabulary + AnonymousVocabularyMut, M: MetadataManager
 {
     pub fn metadata_with_dict(&self) -> MetadataContainerWithDict<Self, T, V, M> where Self: Sized {
         MetadataContainerWithDict::wrap(self)
@@ -145,20 +146,32 @@ impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T>, M: Metada
 }
 unsafe impl<T, V, M> Send for DictionaryWithMeta<T, V, M>{}
 unsafe impl<T, V, M> Sync for DictionaryWithMeta<T, V, M>{}
+
+
+
 impl<T, V, M> DictionaryWithMeta<T, V, M>
 where
-    V: VocabularyMut<T> + From<Option<LanguageHint>>,
+    V: VocabularyMut<T> + From<Option<LanguageHint>> + AnonymousVocabulary + AnonymousVocabularyMut,
     T: Hash + Eq,
     M: MetadataManager
 {
-
     fn insert_meta_for_create_subset<'a, L: Language>(
         &mut self,
         word_id: usize,
         metadata_ref: M::Reference<'a>
     ) {
 
-        let mut meta = self.metadata.get_or_create_meta::<L>(word_id);
+        let mut meta = self.metadata.get_or_create_meta::<L>(
+            match L::LANG {
+                LanguageKind::A => {
+                    &mut self.inner.voc_a
+                }
+                LanguageKind::B => {
+                    &mut self.inner.voc_b
+                }
+            },
+            word_id
+        );
         meta.update_with_reference::<L>(metadata_ref)
     }
 
@@ -175,6 +188,12 @@ where
             ),
             metadata: self.metadata.copy_keep_vocabulary()
         };
+
+        let mut update = WordIdUpdate::new(
+            self.voc_a().len(),
+            self.voc_b().len()
+        );
+
         for DirectionTuple{
             a: (word_id_a, meta_a),
             b: (word_id_b, meta_b),
@@ -184,7 +203,7 @@ where
                 if filter_b(self, word_id_b, meta_b.as_ref()) {
                     let word_a = self.inner.voc_a.get_value(word_id_a).unwrap();
                     let word_b = self.inner.voc_b.get_value(word_id_b).unwrap();
-                    let DirectionTuple{ a: word_a, b: word_b, direction: _ } = match direction {
+                    let DirectionTuple{a: word_a, b: word_b, direction: _} = match direction {
                         DirectionKind::AToB => {
                             new.insert_hash_ref::<AToB>(word_a.clone(), word_b.clone())
                         }
@@ -196,14 +215,38 @@ where
                         }
                     };
                     if let Some(meta_a) = meta_a {
+                        if let Some(a) = meta_a.collect_all_associated_word_ids() {
+                            for value in a.iter() {
+                                if let Some(value) = self.voc_a().get_value(value) {
+                                    update.add_id::<A>(
+                                        word_id_a,
+                                        new.inner.voc_a.add_hash_ref(value.clone())
+                                    )
+                                }
+                            }
+                        }
                         new.insert_meta_for_create_subset::<A>(word_a, meta_a);
                     }
                     if let Some(meta_b) = meta_b {
+                        if let Some(b) = meta_b.collect_all_associated_word_ids() {
+                            for value in b.iter() {
+                                if let Some(value) = self.voc_b().get_value(value) {
+                                    update.add_id::<B>(
+                                        word_id_b,
+                                        new.inner.voc_b.add_hash_ref(value.clone())
+                                    )
+                                }
+                            }
+                        }
+
                         new.insert_meta_for_create_subset::<B>(word_b, meta_b);
                     }
+                    update.add_id::<A>(word_id_a, word_a);
+                    update.add_id::<B>(word_id_b, word_b);
                 }
             }
         }
+        new.metadata.update_ids(&update);
         new
     }
 }
@@ -257,9 +300,9 @@ where
         }
     }
 }
-impl<T, V, M> BasicDictionaryWithMeta<M> for DictionaryWithMeta<T, V, M>
+impl<T, V, M> BasicDictionaryWithMeta<M, V> for DictionaryWithMeta<T, V, M>
 where
-    V: BasicVocabulary<T>,
+    V: BasicVocabulary<T> + AnonymousVocabulary,
     M: MetadataManager
 {
     fn metadata(&self) -> &M {
@@ -295,22 +338,27 @@ where
     M: MetadataManager
 {
 
+    #[inline(always)]
     fn can_translate_id<D: Translation>(&self, id: usize) -> bool {
         self.inner.can_translate_id::<D>(id)
     }
 
+    #[inline(always)]
     fn id_to_word<'a, D: Translation>(&'a self, id: usize) -> Option<&'a HashRef<T>> where V: 'a {
         self.inner.id_to_word::<D>(id)
     }
 
+    #[inline(always)]
     fn ids_to_id_entry<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<(usize, &'a HashRef<T>)> where V: 'a {
         self.inner.ids_to_id_entry::<D>(ids)
     }
 
-    fn ids_to_values<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<&'a HashRef<T>> where V: 'a {
-        self.inner.ids_to_values::<D>(ids)
+    #[inline(always)]
+    fn ids_to_values<'a, D: Translation, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a HashRef<T>> where V: 'a {
+        self.inner.ids_to_values::<D, _>(ids)
     }
 
+    #[inline(always)]
     fn translate_value_to_ids<D: Translation, Q: ?Sized>(&self, word: &Q) -> Option<&Vec<usize>>
     where
         T: Borrow<Q> + Eq + Hash,
@@ -320,6 +368,7 @@ where
         self.inner.translate_value_to_ids::<D, _>(word)
     }
 
+    #[inline(always)]
     fn word_to_id<D: Translation, Q: ?Sized>(&self, id: &Q) -> Option<usize>
     where
         T: Borrow<Q> + Eq + Hash,
@@ -357,116 +406,213 @@ where
 }
 impl<T, V, M> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V, M>
 where
-    T: Eq + Hash,
-    V: VocabularyMut<T> + Default,
+    V: VocabularyMut<T> + From<Option<LanguageHint>> + AnonymousVocabulary + AnonymousVocabularyMut,
+    T: Hash + Eq,
     M: MetadataManager
 {
-    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
-        let mut new_dict = DictionaryWithMeta::new(
-            Default::default(),
-            self.metadata.copy_keep_vocabulary()
+    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    where
+        Self: Sized,
+        T: 'a,
+        Fa: Fn(&'a HashRef<T>) -> Option<HashRef<T>>,
+        Fb: Fn(&'a HashRef<T>) -> Option<HashRef<T>>
+    {
+        let mut new = Self {
+            inner: Dictionary::new_with(
+                self.inner.voc_a.language().cloned(),
+                self.inner.voc_b.language().cloned()
+            ),
+            metadata: self.metadata.copy_keep_vocabulary()
+        };
+
+        let mut update = WordIdUpdate::new(
+            self.voc_a().len(),
+            self.voc_b().len()
         );
 
-        for DirectionTuple{a, b, direction} in self.iter() {
-            match direction {
-                DirectionKind::AToB => {
-                    if filter_a(a) {
-                        new_dict.insert_hash_ref::<AToB>(
-                            self.id_to_word::<A>(a).unwrap().clone(),
-                            self.id_to_word::<B>(b).unwrap().clone()
-                        );
+        for DirectionTuple{
+            a: (word_id_a, meta_a),
+            b: (word_id_b, meta_b),
+            direction
+        } in self.iter_with_meta() {
+            if let Some(a) = f_a(self.voc_a().get_value(word_id_a).unwrap()) {
+                if let Some(b) = f_b(self.voc_b().get_value(word_id_b).unwrap()) {
+                    let DirectionTuple{a: word_a, b: word_b, direction: _} = match direction {
+                        DirectionKind::AToB => {
+                            new.insert_hash_ref::<AToB>(a, b)
+                        }
+                        DirectionKind::BToA => {
+                            new.insert_hash_ref::<BToA>(a, b)
+                        },
+                        DirectionKind::Invariant => {
+                            new.insert_hash_ref::<Invariant>(a, b)
+                        }
+                    };
+                    if let Some(meta_a) = meta_a {
+                        if let Some(a) = meta_a.collect_all_associated_word_ids() {
+                            for value in a.iter() {
+                                if let Some(value) = self.voc_a().get_value(value) {
+                                    if let Some(value) = f_a(value) {
+                                        update.add_id::<A>(
+                                            word_id_a,
+                                            new.inner.voc_a.add_hash_ref(value.clone())
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        new.insert_meta_for_create_subset::<A>(word_a, meta_a);
                     }
-                }
-                DirectionKind::BToA => {
-                    if filter_b(b) {
-                        new_dict.insert_hash_ref::<BToA>(
-                            self.id_to_word::<A>(a).unwrap().clone(),
-                            self.id_to_word::<B>(b).unwrap().clone()
-                        );
+                    if let Some(meta_b) = meta_b {
+                        if let Some(b) = meta_b.collect_all_associated_word_ids() {
+                            for value in b.iter() {
+                                if let Some(value) = self.voc_b().get_value(value) {
+                                    if let Some(value) = f_b(value) {
+                                        update.add_id::<B>(
+                                            word_id_b,
+                                            new.inner.voc_b.add_hash_ref(value)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        new.insert_meta_for_create_subset::<B>(word_b, meta_b);
                     }
-                }
-                DirectionKind::Invariant => {
-                    let filter_a = filter_a(a);
-                    let filter_b = filter_b(b);
-                    if filter_a && filter_b {
-                        new_dict.insert_hash_ref::<Invariant>(
-                            self.id_to_word::<A>(a).unwrap().clone(),
-                            self.id_to_word::<B>(b).unwrap().clone()
-                        );
-                    } else if filter_a {
-                        new_dict.insert_hash_ref::<AToB>(
-                            self.id_to_word::<A>(a).unwrap().clone(),
-                            self.id_to_word::<B>(b).unwrap().clone()
-                        );
-                    } else if filter_b {
-                        new_dict.insert_hash_ref::<BToA>(
-                            self.id_to_word::<A>(a).unwrap().clone(),
-                            self.id_to_word::<B>(b).unwrap().clone()
-                        );
-                    }
+                    update.add_id::<A>(word_id_a, word_a);
+                    update.add_id::<B>(word_id_b, word_b);
                 }
             }
         }
 
-        new_dict
+        new.metadata.update_ids(&update);
+        new
+    }
+
+    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
+
+        self.create_subset_with_filters(
+            |_, a, _| filter_a(a),
+            |_, b, _| filter_b(b)
+        )
+
+        // let mut new_dict = DictionaryWithMeta::new(
+        //     Default::default(),
+        //     self.metadata.copy_keep_vocabulary()
+        // );
+        //
+        // for DirectionTuple{
+        //     a: (a, meta_a),
+        //     b: (b, meta_b),
+        //     direction
+        // } in self.iter_with_meta() {
+        //     match direction {
+        //         DirectionKind::AToB => {
+        //             if filter_a(a) {
+        //                 new_dict.insert_hash_ref::<AToB>(
+        //                     self.id_to_word::<A>(a).unwrap().clone(),
+        //                     self.id_to_word::<B>(b).unwrap().clone()
+        //                 );
+        //             }
+        //         }
+        //         DirectionKind::BToA => {
+        //             if filter_b(b) {
+        //                 new_dict.insert_hash_ref::<BToA>(
+        //                     self.id_to_word::<A>(a).unwrap().clone(),
+        //                     self.id_to_word::<B>(b).unwrap().clone()
+        //                 );
+        //             }
+        //         }
+        //         DirectionKind::Invariant => {
+        //             let filter_a = filter_a(a);
+        //             let filter_b = filter_b(b);
+        //             if filter_a && filter_b {
+        //                 new_dict.insert_hash_ref::<Invariant>(
+        //                     self.id_to_word::<A>(a).unwrap().clone(),
+        //                     self.id_to_word::<B>(b).unwrap().clone()
+        //                 );
+        //             } else if filter_a {
+        //                 new_dict.insert_hash_ref::<AToB>(
+        //                     self.id_to_word::<A>(a).unwrap().clone(),
+        //                     self.id_to_word::<B>(b).unwrap().clone()
+        //                 );
+        //             } else if filter_b {
+        //                 new_dict.insert_hash_ref::<BToA>(
+        //                     self.id_to_word::<A>(a).unwrap().clone(),
+        //                     self.id_to_word::<B>(b).unwrap().clone()
+        //                 );
+        //             }
+        //         }
+        //     }
+        // }
+        //
+        // new_dict
     }
 
     fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
-        let mut new_dict = DictionaryWithMeta::new(
-            Default::default(),
-            self.metadata.copy_keep_vocabulary()
-        );
-        for DirectionTuple{a, b, direction} in self.iter() {
-            let a = self.id_to_word::<A>(a).unwrap();
-            let b = self.id_to_word::<B>(b).unwrap();
-            match direction {
-                DirectionKind::AToB => {
-                    if filter_a(a) {
-                        new_dict.insert_hash_ref::<AToB>(
-                            a.clone(),
-                            b.clone()
-                        );
-                    }
-                }
-                DirectionKind::BToA => {
-                    if filter_b(b) {
-                        new_dict.insert_hash_ref::<BToA>(
-                            a.clone(),
-                            b.clone()
-                        );
-                    }
-                }
-                DirectionKind::Invariant => {
-                    let filter_a = filter_a(a);
-                    let filter_b = filter_b(a);
-                    if filter_a && filter_b {
-                        new_dict.insert_hash_ref::<Invariant>(
-                            a.clone(),
-                            b.clone()
-                        );
-                    } else if filter_a {
-                        new_dict.insert_hash_ref::<AToB>(
-                            a.clone(),
-                            b.clone()
-                        );
-                    } else if filter_b {
-                        new_dict.insert_hash_ref::<BToA>(
-                            a.clone(),
-                            b.clone()
-                        );
-                    }
-                }
-            }
-        }
+        let voc_a = self.voc_a();
+        let voc_b = self.voc_b();
+        self.create_subset_with_filters(
+            |_, a, _| filter_a(voc_a.get_value(a).unwrap()),
+            |_, b, _| filter_b(voc_b.get_value(b).unwrap())
+        )
 
-        new_dict
+        // let mut new_dict = DictionaryWithMeta::new(
+        //     Default::default(),
+        //     self.metadata.copy_keep_vocabulary()
+        // );
+        // for DirectionTuple{a, b, direction} in self.iter() {
+        //     let a = self.id_to_word::<A>(a).unwrap();
+        //     let b = self.id_to_word::<B>(b).unwrap();
+        //     match direction {
+        //         DirectionKind::AToB => {
+        //             if filter_a(a) {
+        //                 new_dict.insert_hash_ref::<AToB>(
+        //                     a.clone(),
+        //                     b.clone()
+        //                 );
+        //             }
+        //         }
+        //         DirectionKind::BToA => {
+        //             if filter_b(b) {
+        //                 new_dict.insert_hash_ref::<BToA>(
+        //                     a.clone(),
+        //                     b.clone()
+        //                 );
+        //             }
+        //         }
+        //         DirectionKind::Invariant => {
+        //             let filter_a = filter_a(a);
+        //             let filter_b = filter_b(a);
+        //             if filter_a && filter_b {
+        //                 new_dict.insert_hash_ref::<Invariant>(
+        //                     a.clone(),
+        //                     b.clone()
+        //                 );
+        //             } else if filter_a {
+        //                 new_dict.insert_hash_ref::<AToB>(
+        //                     a.clone(),
+        //                     b.clone()
+        //                 );
+        //             } else if filter_b {
+        //                 new_dict.insert_hash_ref::<BToA>(
+        //                     a.clone(),
+        //                     b.clone()
+        //                 );
+        //             }
+        //         }
+        //     }
+        // }
+        //
+        // new_dict
     }
 }
 
-impl<T: Display, V: BasicVocabulary<T>, M> Display for DictionaryWithMeta<T, V, M>
+impl<T, V, M> Display for DictionaryWithMeta<T, V, M>
 where
+    T: Display,
     M: MetadataManager,
-    for<'a> <M as MetadataManager>::Reference<'a>: Display
+    for<'a> <M as MetadataManager>::Reference<'a>: Display,
+    V: BasicVocabulary<T> + AnonymousVocabulary + AnonymousVocabularyMut
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.inner, f)?;
@@ -489,7 +635,7 @@ where M: Default
 
 impl<T, V, M> IntoIterator for DictionaryWithMeta<T, V, M>
 where
-    V: BasicVocabulary<T>,
+    V: BasicVocabulary<T> + AnonymousVocabulary,
     T: Hash + Eq,
     M: MetadataManager
 {

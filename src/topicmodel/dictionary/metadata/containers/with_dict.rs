@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, A, B};
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
-use crate::topicmodel::vocabulary::BasicVocabulary;
+use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 
 pub struct MetadataContainerWithDict<'a, D, T, V, M: MetadataManager> {
     dict: *const D,
@@ -31,7 +31,10 @@ impl<'a, D, T, V, M: MetadataManager> MetadataContainerWithDict<'a, D, T, V, M> 
 }
 
 impl<'a, D, T, V, M: MetadataManager> MetadataContainerWithDict<'a, D, T, V, M>
-where D: BasicDictionaryWithMeta<M> + BasicDictionaryWithVocabulary<V> {
+where
+    D: BasicDictionaryWithMeta<M, V> + BasicDictionaryWithVocabulary<V>,
+    V: AnonymousVocabulary
+{
     pub fn wrap(target: &'a D) -> Self {
         let ptr = target as *const D;
         Self::new(
@@ -52,7 +55,7 @@ impl<D, T, V, M: MetadataManager> Deref for MetadataContainerWithDict<'_, D, T, 
 impl<D, T, V, M> Display for MetadataContainerWithDict<'_, D, T, V, M>
 where
     D: DictionaryWithVocabulary<T, V>,
-    V: BasicVocabulary<T>,
+    V: BasicVocabulary<T> + AnonymousVocabulary,
     T: Display,
     M: MetadataManager,
     for<'a> <M as MetadataManager>::Reference<'a>: Display
@@ -63,7 +66,10 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_a().len() {
-                if let Some(value) = self.get_meta_ref::<A>(word_id) {
+                if let Some(value) = self.get_meta_ref::<A>(
+                    self.dict().voc_a(),
+                    word_id
+                ) {
                     write!(f, "    {}: {}\n", self.dict().id_to_word::<AToB>(word_id).unwrap(), value)?;
                 }
             }
@@ -75,7 +81,10 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_b().len() {
-                if let Some(value) = self.get_meta_ref::<B>(word_id) {
+                if let Some(value) = self.get_meta_ref::<B>(
+                    self.dict().voc_b(),
+                    word_id
+                ) {
                     write!(f, "    {}: {}\n", self.dict().id_to_word::<BToA>(word_id).unwrap(), value)?;
                 }
             }
@@ -111,7 +120,10 @@ impl<'a, D, T, V, M: MetadataManager> MetadataContainerWithDictMut<'a, D, T, V, 
 }
 
 impl<'a, D, T, V, M: MetadataManager> MetadataContainerWithDictMut<'a, D, T, V, M>
-where D: BasicDictionaryWithMeta<M> + BasicDictionaryWithVocabulary<V> {
+where
+    D: BasicDictionaryWithMeta<M, V> + BasicDictionaryWithVocabulary<V>,
+    V: AnonymousVocabulary
+{
     pub fn wrap(target: &'a mut D) -> Self {
         let ptr = target as *mut D;
         Self::new(
@@ -139,7 +151,7 @@ impl<D, T, V, M: MetadataManager> DerefMut for MetadataContainerWithDictMut<'_, 
 impl<D, T, V, M: MetadataManager> Display for MetadataContainerWithDictMut<'_, D, T, V, M>
 where
     D: DictionaryWithVocabulary<T, V>,
-    V: BasicVocabulary<T>,
+    V: BasicVocabulary<T> + AnonymousVocabulary,
     T: Display,
     M: MetadataManager,
     for<'a> <M as MetadataManager>::Reference<'a>: Display
@@ -150,7 +162,10 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_a().len() {
-                if let Some(value) = self.get_meta_ref::<A>(word_id) {
+                if let Some(value) = self.get_meta_ref::<A>(
+                    self.dict().voc_a(),
+                    word_id
+                ) {
                     write!(f, "    {}: {}\n", self.dict().id_to_word::<AToB>(word_id).unwrap(), value)?;
                 }
             }
@@ -162,7 +177,10 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_b().len() {
-                if let Some(value) = self.get_meta_ref::<B>(word_id) {
+                if let Some(value) = self.get_meta_ref::<B>(
+                    self.dict().voc_b(),
+                    word_id
+                ) {
                     write!(f, "    {}: {}\n", self.dict().id_to_word::<BToA>(word_id).unwrap(), value)?;
                 }
             }

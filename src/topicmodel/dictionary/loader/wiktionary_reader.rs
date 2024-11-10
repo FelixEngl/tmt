@@ -5,13 +5,10 @@ use std::any::type_name;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Lines, Read};
 use std::path::Path;
-use std::str::FromStr;
 use flate2::bufread::GzDecoder;
 use rayon::iter::{IterBridge, Map};
 use rayon::prelude::{IntoParallelIterator, ParallelBridge, ParallelIterator};
-use strum::ParseError;
 use thiserror::Error;
-use crate::define_aho_matcher;
 use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataCollectionBuilder;
 use crate::topicmodel::dictionary::word_infos::{AnyWordInfo, Domain, Language, PartOfSpeech, PartOfSpeechTag};
 
@@ -705,7 +702,7 @@ pub enum EntryConversionError {
 
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{HashSet};
     use std::fs::File;
     use either::Either;
     use itertools::Itertools;

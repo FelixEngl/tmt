@@ -24,6 +24,7 @@ use crate::topicmodel::dictionary::word_infos::*;
 use crate::toolkit::typesafe_interner::*;
 use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModelIndex;
 use std::ops::Deref;
+use crate::topicmodel::reference::HashRef;
 
 register_python! {
     struct SolvedLoadedMetadata;
@@ -52,7 +53,7 @@ macro_rules! generate_field_code {
             $($($($interner_name: $interner_type => $interner_method: $assoc_typ,)?)?)+
         );
         $crate::topicmodel::dictionary::metadata::loaded::metadata::create_metadata_impl!(
-            $($doc $name: $assoc_typ,)+
+            $($tt: $doc $name: $assoc_typ,)+
         );
         $crate::topicmodel::dictionary::metadata::loaded::solved::create_solved_implementation!(
             $($tt: $name $lit_name,)+
@@ -62,6 +63,9 @@ macro_rules! generate_field_code {
         );
         $crate::topicmodel::dictionary::metadata::loaded::field_denom::generate_field_denoms!(
             $($name($lit_name),)+
+        );
+        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine!(
+            $($tt: $name $(, $interner_name $(, $interner_type)?)?;)*
         );
     };
 }
@@ -125,12 +129,6 @@ generate_field_code! {
         }
     },
     interned {
-        r#"Stores the synonyms"#
-        synonyms("synonyms"): UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>)  {
-            unaltered_vocabulary_interner => intern_unaltered_vocabulary
-        }
-    },
-    interned {
         r#"Stores similar words"#
         look_at("look_at"): UnalteredVocSymbol | (Set64<UnalteredVocSymbol>, Vec<&'a str>) {
             unaltered_vocabulary_interner => intern_unaltered_vocabulary
@@ -166,13 +164,14 @@ generate_field_code! {
             unclassified_interner: UnclassifiedStringInterner => intern_unclassified
         }
     },
+    voc {
+        r#"Stores the synonyms"#
+        synonyms("synonyms"): usize | (Set64<usize>, Vec<&'a HashRef<String>>)
+    },
 }
 
 
 impl LoadedMetadataManager {
-
-
-
     pub fn domain_count(&self) -> DomainCounts {
         use std::sync::Arc;
         use itertools::Itertools;

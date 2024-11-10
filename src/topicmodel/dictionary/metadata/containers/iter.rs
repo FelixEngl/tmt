@@ -1,17 +1,26 @@
 use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple, A, B};
 use crate::topicmodel::dictionary::iterators::DictIter;
-use crate::topicmodel::dictionary::{BasicDictionaryWithMeta};
+use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary};
 use std::marker::PhantomData;
+use crate::topicmodel::vocabulary::AnonymousVocabulary;
 use super::MetadataManager;
 
-pub struct DictionaryWithMetaIter<'a, D, M> where D: BasicDictionaryWithMeta<M> + ?Sized, M: MetadataManager
+pub struct DictionaryWithMetaIter<'a, D, M, V>
+where
+    D: BasicDictionaryWithMeta<M, V> + ?Sized,
+    M: MetadataManager,
+    V: AnonymousVocabulary
 {
     dictionary_with_meta: &'a D,
     iter: DictIter<'a>,
-    _phantom: PhantomData<M>
+    _phantom: PhantomData<(M, V)>
 }
 
-impl<'a, D, M> DictionaryWithMetaIter<'a, D, M> where D: BasicDictionaryWithMeta<M> + ?Sized, M: MetadataManager
+impl<'a, D, M, V> DictionaryWithMetaIter<'a, D, M, V>
+where
+    D: BasicDictionaryWithMeta<M, V> + ?Sized,
+    M: MetadataManager,
+    V: AnonymousVocabulary
 {
     pub fn new(dictionary_with_meta: &'a D) -> Self {
         Self {
@@ -22,9 +31,11 @@ impl<'a, D, M> DictionaryWithMetaIter<'a, D, M> where D: BasicDictionaryWithMeta
     }
 }
 
-impl<'a, D, M> Iterator for DictionaryWithMetaIter<'a, D, M> where
-    D: BasicDictionaryWithMeta<M>,
-    M: MetadataManager + 'a
+impl<'a, D, M, V> Iterator for DictionaryWithMetaIter<'a, D, M, V>
+where
+    D: BasicDictionaryWithMeta<M, V> + BasicDictionaryWithVocabulary<V>,
+    M: MetadataManager + 'a,
+    V: AnonymousVocabulary + 'a
 {
     type Item = DirectionTuple<(usize, Option<M::Reference<'a>>), (usize, Option<M::Reference<'a>>)>;
 
@@ -34,20 +45,56 @@ impl<'a, D, M> Iterator for DictionaryWithMetaIter<'a, D, M> where
             match direction {
                 DirectionKind::AToB => {
                     DirectionTuple::a_to_b(
-                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
+                        (
+                            a,
+                            self.dictionary_with_meta.metadata().get_meta_ref::<A>(
+                                self.dictionary_with_meta.voc_a(),
+                                a
+                            )
+                        ),
+                        (
+                            b,
+                            self.dictionary_with_meta.metadata().get_meta_ref::<B>(
+                                self.dictionary_with_meta.voc_b(),
+                                b
+                            )
+                        )
                     )
                 }
                 DirectionKind::BToA => {
                     DirectionTuple::b_to_a(
-                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
+                        (
+                            a,
+                            self.dictionary_with_meta.metadata().get_meta_ref::<A>(
+                                self.dictionary_with_meta.voc_a(),
+                                a
+                            )
+                        ),
+                        (
+                            b,
+                            self.dictionary_with_meta.metadata().get_meta_ref::<B>(
+                                self.dictionary_with_meta.voc_b(),
+                                b
+                            )
+                        )
                     )
                 }
                 DirectionKind::Invariant => {
                     DirectionTuple::invariant(
-                        (a, self.dictionary_with_meta.metadata().get_meta_ref::<A>(a)),
-                        (b, self.dictionary_with_meta.metadata().get_meta_ref::<B>(b))
+                        (
+                            a,
+                            self.dictionary_with_meta.metadata().get_meta_ref::<A>(
+                                self.dictionary_with_meta.voc_a(),
+                                a
+                            )
+                        ),
+                        (
+                            b,
+                            self.dictionary_with_meta.metadata().get_meta_ref::<B>(
+                                self.dictionary_with_meta.voc_b(),
+                                b
+                            )
+                        )
                     )
                 }
             }

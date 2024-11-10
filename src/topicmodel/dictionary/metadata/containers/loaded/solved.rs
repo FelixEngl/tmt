@@ -1,54 +1,9 @@
-macro_rules! convert_into {
-    (set: $value:ident => $name: ident) => {
-        paste::paste! {
-            let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
-                let def = data.default.as_ref().map(|value| value.iter().map(Into::into).collect());
-                let other = data.mapped.iter().filter_map(|(k, v)|{
-                    if let Some(v) = v {
-                        Some((k.to_string(), v.iter().map(|value| value.into()).collect()))
-                    } else {
-                        None
-                    }
-                }).collect::<std::collections::HashMap<_, _>>();
-                let other = if other.is_empty() {
-                    None
-                } else {
-                    Some(other)
-                };
-                (def, other)
-            };
-        }
-    };
-    (interned: $value:ident => $name: ident) => {
-        paste::paste! {
-            let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $value.[<get_ $name>]();
-                let def = data.default.as_ref().map(|(_, v)| v.iter().map(|x| x.to_string().into()).collect());
-                let other = data.mapped.iter().filter_map(|(k, v)|{
-                    if let Some(v) = v {
-                        Some((k.to_string(), v.1.iter().map(|x| x.to_string().into()).collect()))
-                    } else {
-                        None
-                    }
-                }).collect::<std::collections::HashMap<_, _>>();
-                let other = if other.is_empty(){
-                    None
-                } else {
-                    Some(other)
-                };
-                (def, other)
-            };
-        }
-    };
-
-}
-
-pub(super) use convert_into;
-
-
-
 macro_rules! convert_to_string_call {
+    (voc: $self:ident, $f: ident, $name: ident) => {
+        $crate::topicmodel::dictionary::metadata::loaded::solved::convert_to_string_call!(
+            interned: $self, $f, $name
+        );
+    };
     (interned: $self:ident, $f: ident, $name: ident) => {
         $f = $f.nest(2);
         if let Some(ref o) = $self.$name.0 {
@@ -238,7 +193,7 @@ macro_rules! create_solved_implementation {
         #[pyo3::pyclass(frozen, name = "Metadata")]
         #[derive(Debug, Clone, Eq, PartialEq)]
         pub struct SolvedLoadedMetadata {
-            $($name: std::sync::Arc<SolvedMetadataField>,
+            $(pub(in super) $name: std::sync::Arc<SolvedMetadataField>,
             )+
         }
 
@@ -264,21 +219,6 @@ macro_rules! create_solved_implementation {
                 )+
             );
         }
-
-        impl SolvedLoadedMetadata {
-            pub fn create_from<'a>(reference: &$crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataRef<'a>) -> Self {
-                $(
-                    $crate::topicmodel::dictionary::metadata::loaded::solved::convert_into!($tt: reference => $name);
-                )+
-
-                Self {
-                    $(
-                    $name: std::sync::Arc::new($name),
-                    )+
-                }
-            }
-        }
-
 
 
         impl SolvedLoadedMetadata {
@@ -322,7 +262,7 @@ use super::*;
 
 impl<'a> From<LoadedMetadataRef<'a>> for SolvedLoadedMetadata {
     fn from(value: LoadedMetadataRef<'a>) -> Self {
-        Self::create_from(&value)
+        value.create_solved()
     }
 }
 

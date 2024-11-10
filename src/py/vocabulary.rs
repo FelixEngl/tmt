@@ -30,7 +30,7 @@ use crate::register_python;
 use crate::topicmodel::create_topic_model_specific_dictionary as create_topic_model_specific_dictionary_impl;
 use crate::topicmodel::language_hint::{LanguageHint};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
+use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary, AnonymousVocabulary, AnonymousVocabularyMut};
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -42,6 +42,23 @@ pub struct PyVocabulary {
 impl PyVocabulary {
     pub fn into_inner(self) -> Vocabulary<String> {
         self.inner
+    }
+}
+
+impl AnonymousVocabulary for PyVocabulary {
+    delegate::delegate! {
+        to self.inner {
+            fn has_entry_for(&self, word_id: usize) -> bool;
+            fn id_to_entry(&self, word_id: usize) -> Option<&HashRef<String>>;
+        }
+    }
+}
+
+impl AnonymousVocabularyMut for PyVocabulary {
+    delegate::delegate! {
+        to self.inner {
+            fn entry_to_id(&mut self, word: HashRef<String>) -> usize;
+        }
     }
 }
 

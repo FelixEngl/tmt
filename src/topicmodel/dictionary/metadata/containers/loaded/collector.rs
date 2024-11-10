@@ -21,6 +21,19 @@ macro_rules! generate_insert {
             ));
         }
     };
+    (voc: $target_dict: ident, $name: ident, $value: expr => $output: ident) => {
+        paste::paste! {
+            $output.[<add_all_to_ $name>]($target_dict, $value.into_iter().map(
+                |value|
+                match value {
+                    either::Either::Right(value) => value,
+                    _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
+                }
+            ));
+        }
+    };
+
+
     (set: $name: ident, $value: expr => $output: ident) => {
         paste::paste! {
             $output.[<add_all_to_ $name _default>]($value.into_iter().map(
@@ -33,6 +46,17 @@ macro_rules! generate_insert {
         }
     };
     (interned: $name: ident, $value: expr => $output: ident) => {
+        paste::paste! {
+            $output.[<add_all_to_ $name _default>]($value.into_iter().map(
+                |value|
+                match value {
+                    either::Either::Right(value) => value,
+                    _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
+                }
+            ));
+        }
+    };
+    (voc: $name: ident, $value: expr => $output: ident) => {
         paste::paste! {
             $output.[<add_all_to_ $name _default>]($value.into_iter().map(
                 |value|
@@ -56,6 +80,17 @@ macro_rules! generate_insert {
         }
     };
     (interned special: $name: ident, $value: expr => $output: ident) => {
+        paste::paste! {
+            $output.[<add_all_to_ $name>]($value.into_iter().map(
+                |value|
+                match value {
+                    either::Either::Right(value) => value,
+                    _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
+                }
+            ));
+        }
+    };
+    (voc special: $name: ident, $value: expr => $output: ident) => {
         paste::paste! {
             $output.[<add_all_to_ $name>]($value.into_iter().map(
                 |value|
@@ -90,6 +125,19 @@ macro_rules! generate_insert {
             ));
         }
     };
+    (voc cloning: $target_dict: ident, $name: ident, $value: expr => $output: ident) => {
+        paste::paste! {
+            $output.[<add_all_to_ $name>]($target_dict, $value.iter().map(
+                |value|
+                match value {
+                    either::Either::Right(value) => value.clone(),
+                    _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
+                }
+            ));
+        }
+    };
+
+
     (set cloning: $name: ident, $value: expr => $output: ident) => {
         paste::paste! {
             $output.[<add_all_to_ $name _default>]($value.iter().map(
@@ -102,6 +150,17 @@ macro_rules! generate_insert {
         }
     };
     (interned cloning: $name: ident, $value: expr => $output: ident) => {
+        paste::paste! {
+            $output.[<add_all_to_ $name _default>]($value.iter().map(
+                |value|
+                match value {
+                    either::Either::Right(value) => value.clone(),
+                    _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
+                }
+            ));
+        }
+    };
+    (voc cloning: $name: ident, $value: expr => $output: ident) => {
         paste::paste! {
             $output.[<add_all_to_ $name _default>]($value.iter().map(
                 |value|
@@ -165,6 +224,30 @@ macro_rules! generate_insert_builder {
             }
         }
     };
+    (voc: $name: ident: $typ: ty | $gtyp: ty) => {
+        paste::paste! {
+            pub fn [<push_ $name>](&mut self, value: $gtyp) {
+                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).push(either::Either::Right(value));
+            }
+
+            pub fn [<extend_ $name>]<I: IntoIterator<Item=$gtyp>>(&mut self, value: I) {
+                self.$name.get_or_insert(None).get_or_insert_with(Vec::new).extend(value.into_iter().map(either::Either::Right));
+            }
+
+            pub fn [<peek_ $name>](&self) -> Option<Vec<&$gtyp>> {
+                Some(self.$name.as_ref()?.as_ref()?.iter().map(|value| {
+                    match value {
+                        either::Either::Right(value) => value,
+                        _ => unreachable!("Failed to unpack right for {}", stringify!($name)),
+                    }
+                }).collect::<Vec<_>>())
+            }
+
+            pub fn [<peek_raw_ $name>](&self) -> Option<&Vec<either::Either<$typ, $gtyp>>> {
+                self.$name.as_ref()?.as_ref()
+            }
+        }
+    };
 }
 
 pub(super) use generate_insert_builder;
@@ -187,6 +270,22 @@ macro_rules! generate_getter {
         }
     };
     (interned: $name: ident: $typ: ty | $gtyp: ty) => {
+        paste::paste! {
+            pub fn [<get_ $name>]<'a>(&'a self) -> Option<Vec<&'a $gtyp>> {
+                Some(self.$name.as_ref()?.iter().map(|value| {
+                    match value {
+                        either::Either::Right(value) => value,
+                        _ => unreachable!("Failed to unpack left for {}", stringify!($name)),
+                    }
+                }).collect::<Vec<_>>())
+            }
+
+            pub fn [<get_ $name _raw>](&self) -> Option<&Vec<either::Either<$typ, $gtyp>>> {
+                self.$name.as_ref()
+            }
+        }
+    };
+    (voc: $name: ident: $typ: ty | $gtyp: ty) => {
         paste::paste! {
             pub fn [<get_ $name>]<'a>(&'a self) -> Option<Vec<&'a $gtyp>> {
                 Some(self.$name.as_ref()?.iter().map(|value| {

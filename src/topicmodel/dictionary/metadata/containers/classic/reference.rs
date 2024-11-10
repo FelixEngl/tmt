@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock};
 use itertools::Itertools;
+use tinyset::Set64;
 use crate::topicmodel::dictionary::metadata::containers::classic::metadata::ClassicMetadata;
 use crate::topicmodel::dictionary::metadata::containers::classic::ClassicMetadataManager;
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataReference};
@@ -40,6 +41,10 @@ impl<'a> MetadataReference<'a, ClassicMetadataManager> for ClassicMetadataRef<'a
 
     fn into_resolved(self) -> <ClassicMetadataManager as MetadataManager>::ResolvedMetadata {
         self.into()
+    }
+
+    fn collect_all_associated_word_ids(&self) -> Option<Set64<usize>> {
+        None
     }
 }
 

@@ -1,4 +1,32 @@
 
+macro_rules! implement_update {
+    ($targ: ident, $update: ident, $L: ident => voc: $name: ident, $($tt:tt)*) => {
+        {
+            let __update = $update.create_update::<$L>(&$targ.synonyms);
+            $targ.synonyms = __update;
+        }
+        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_update!($targ, $update, $L => $($tt)*);
+    };
+    ($targ: ident, $update: ident, $L: ident => $marker:tt: $name: ident, $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_update!($targ, $update, $L => $($tt)*);
+    };
+    ($targ: ident, $update: ident, $L: ident => $(,)?) => {}
+}
+
+pub(super) use implement_update;
+
+macro_rules! implement_id_collection {
+    ($targ: ident, $collector: ident => voc: $name: ident, $($tt:tt)*) => {
+        $collector.extend($targ.$name.iter());
+        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_id_collection!($targ, $collector => $($tt)*);
+    };
+    ($targ: ident, $collector: ident => $marker:tt: $name: ident, $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_id_collection!($targ, $collector => $($tt)*);
+    };
+    ($targ: ident, $collector: ident => $(,)?) => {}
+}
+
+pub(super) use implement_id_collection;
 
 macro_rules! impl_associated_metadata {
 
@@ -11,7 +39,7 @@ macro_rules! impl_associated_metadata {
         }
     };
 
-    ($($($doc: literal)? $name: ident: $typ: ty),+ $(,)?) => {
+    ($($tt: tt: $($doc: literal)? $name: ident: $typ: ty),+ $(,)?) => {
 
 
         paste::paste! {
@@ -77,6 +105,23 @@ macro_rules! impl_associated_metadata {
                 }
             }
             )+
+
+            pub fn update_ids<L: $crate::topicmodel::dictionary::direction::Language>(
+                &mut self,
+                update: &$crate::topicmodel::dictionary::metadata::update::WordIdUpdate
+            ) {
+                $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_update!(
+                    self, update, L => $($tt: $name,)*
+                );
+            }
+
+            pub fn collect_all_known_ids(&self) -> tinyset::Set64<usize> {
+                let mut collector = tinyset::Set64::new();
+                $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_id_collection!(
+                    self, collector => $($tt: $name,)*
+                );
+                collector
+            }
 
         }
 
@@ -159,6 +204,7 @@ macro_rules! impl_general_metadata {
         }
 
         impl LoadedMetadata {
+
             pub fn all_fields(&self) -> enum_map::EnumMap<MetaField, GeneralMetadata> {
                 enum_map::enum_map! {
                     $(
@@ -214,12 +260,6 @@ pub(super) use impl_general_metadata;
 
 macro_rules! create_metadata_impl {
     ($($tt:tt)+) => {
-        #[derive(Copy, Clone)]
-        pub enum MetadataWithOrigin<T> {
-            General(T),
-            Associated($crate::toolkit::typesafe_interner::DictionaryOriginSymbol, T)
-        }
-
         $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_associated_metadata!($($tt)+);
     };
 }
@@ -228,6 +268,25 @@ pub(super) use create_metadata_impl;
 
 
 use super::*;
+
+#[derive(Copy, Clone)]
+pub enum MetadataWithOrigin<T> {
+    General(T),
+    Associated(DictionaryOriginSymbol, T)
+}
+
+impl<T> MetadataWithOrigin<T> {
+    pub fn to_metadata(self) -> T {
+        match self {
+            MetadataWithOrigin::General(v) => {
+                v
+            }
+            MetadataWithOrigin::Associated(_, v) => {
+                v
+            }
+        }
+    }
+}
 
 /// The metadata for an entry
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
@@ -250,20 +309,28 @@ impl LoadedMetadata {
         }
     }
 
-    pub fn get_general_metadata(&self) -> &AssociatedMetadata {
+    pub fn get_general_metadata(&self) -> Option<&AssociatedMetadata> {
+        self.general_metadata.get()
+    }
+
+    pub fn get_init_general_metadata(&mut self) -> Option<&mut AssociatedMetadata> {
+        self.general_metadata.get_mut()
+    }
+
+    pub fn get_or_init_general_metadata(&self) -> &AssociatedMetadata {
         self.general_metadata.get_or_init()
     }
 
-    pub fn get_mut_general_metadata(&mut self) -> &mut AssociatedMetadata {
+    pub fn get_mut_or_init_general_metadata(&mut self) -> &mut AssociatedMetadata {
         self.general_metadata.get_mut_or_init()
     }
 
-    pub fn get_associated_metadata(&self, origin: crate::toolkit::typesafe_interner::DictionaryOriginSymbol) -> Option<&AssociatedMetadata> {
+    pub fn get_associated_metadata(&self, origin: DictionaryOriginSymbol) -> Option<&AssociatedMetadata> {
         use string_interner::Symbol;
         self.associated_metadata.get(origin.to_usize())?.get()
     }
 
-    pub fn get_mut_associated_metadata(&mut self, origin: crate::toolkit::typesafe_interner::DictionaryOriginSymbol) -> Option<&mut AssociatedMetadata> {
+    pub fn get_mut_associated_metadata(&mut self, origin: DictionaryOriginSymbol) -> Option<&mut AssociatedMetadata> {
         use string_interner::Symbol;
         self.associated_metadata.get_mut(origin.to_usize())?.get_mut()
     }
@@ -276,7 +343,7 @@ impl LoadedMetadata {
         unsafe {self.associated_metadata.get_unchecked_mut(origin)}.get_mut_or_init()
     }
 
-    pub fn get_or_create(&mut self, origin: crate::toolkit::typesafe_interner::DictionaryOriginSymbol) -> &mut AssociatedMetadata {
+    pub fn get_or_create(&mut self, origin: DictionaryOriginSymbol) -> &mut AssociatedMetadata {
         use string_interner::Symbol;
         self.get_or_create_impl(origin.to_usize())
     }
@@ -298,6 +365,20 @@ impl LoadedMetadata {
             if let Some(value) = value.get() {
                 self.get_or_create_impl(origin).update_with(value)
             }
+        }
+    }
+
+    pub fn collect_all_associated_word_ids(&self) -> Option<Set64<usize>> {
+        let mut collection = Set64::new();
+        for value in self.iter() {
+            if let Some(v) = value.to_metadata().collect_all_known_ids() {
+                collection.extend(v);
+            }
+        }
+        if collection.is_empty() {
+            None
+        } else {
+            Some(collection)
         }
     }
 }
@@ -472,6 +553,11 @@ impl LazyAssociatedMetadata {
     pub fn get_mut(&mut self) -> Option<&mut AssociatedMetadata> {
         self.inner.get_mut()
     }
+
+    #[inline(always)]
+    pub fn collect_all_known_ids(&self) -> Option<Set64<usize>> {
+        self.get()?.collect_all_known_ids()
+    }
 }
 
 impl PartialEq for LazyAssociatedMetadata {
@@ -538,5 +624,10 @@ impl AssociatedMetadata {
                 targ.update_with(other)
             }
         }
+    }
+
+    #[inline(always)]
+    pub fn collect_all_known_ids(&self) -> Option<Set64<usize>> {
+        Some(self.get()?.collect_all_known_ids())
     }
 }

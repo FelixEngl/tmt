@@ -24,7 +24,7 @@ use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Di
 use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataReference};
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::BasicVocabulary;
+use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 
 /// Iterator for a dictionary
 pub struct DictLangIter<'a, T, L, D: ?Sized, V> where L: Language {
@@ -261,7 +261,10 @@ impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq 
 
 
 /// A dict iterator with metadata
-pub struct DictionaryWithMetaIterator<D: DictionaryWithVocabulary<T, V>, T, V: BasicVocabulary<T>, M>
+pub struct DictionaryWithMetaIterator<D, T, V, M>
+where
+    D: DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T> + AnonymousVocabulary
 {
     inner: DictionaryIteratorImpl<T, V, D>,
     _meta: PhantomData<M>
@@ -269,8 +272,8 @@ pub struct DictionaryWithMetaIterator<D: DictionaryWithVocabulary<T, V>, T, V: B
 
 impl<D, T, V, M> DictionaryWithMetaIterator<D, T, V, M>
 where
-    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
-    V: BasicVocabulary<T>,
+    D: BasicDictionaryWithMeta<M, V> + DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T> + AnonymousVocabulary,
     M: MetadataManager
 {
     pub fn new(inner: D) -> Self {
@@ -287,8 +290,8 @@ where
 
 impl<D, T, V, M> Iterator for DictionaryWithMetaIterator<D, T, V, M>
 where
-    D: BasicDictionaryWithMeta<M> + DictionaryWithVocabulary<T, V>,
-    V: BasicVocabulary<T>,
+    D: BasicDictionaryWithMeta<M, V> + DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T> + AnonymousVocabulary,
     M: MetadataManager
 {
     type Item = DirectionTuple<
@@ -302,11 +305,17 @@ where
         Some(
             next.map(
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<A>(id).map(|value| value.into_resolved());
+                    let value = self.inner.inner.metadata().get_meta_ref::<A>(
+                        self.inner.inner.voc_a(),
+                        id
+                    ).map(|value| value.into_resolved());
                     (id, href, value)
                 },
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<B>(id).map(|value| value.into_resolved());
+                    let value = self.inner.inner.metadata().get_meta_ref::<B>(
+                        self.inner.inner.voc_b(),
+                        id
+                    ).map(|value| value.into_resolved());
                     (id, href, value)
                 }
             )

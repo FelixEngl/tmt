@@ -6,7 +6,7 @@ use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
 use crate::topicmodel::dictionary::metadata::DictionaryWithMetaIter;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary, VocabularyMut};
 
 /// A basic dictionary that can translate IDs
 pub trait BasicDictionary: Send + Sync {
@@ -89,14 +89,14 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
     }
 
     /// Convert ids to values
-    fn ids_to_values<'a, D: Translation>(&'a self, ids: &Vec<usize>) -> Vec<&'a HashRef<T>> where V: 'a {
+    fn ids_to_values<'a, D: Translation, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a HashRef<T>> where V: 'a {
         if D::DIRECTION.is_a_to_b() {
-            ids.iter().map(|value| unsafe {
-                self.voc_b().get_value(*value).unwrap_unchecked()
+            ids.into_iter().map(|value| unsafe {
+                self.voc_b().get_value(value).unwrap_unchecked()
             }).collect()
         } else {
-            ids.iter().map(|value| unsafe {
-                self.voc_a().get_value(*value).unwrap_unchecked()
+            ids.into_iter().map(|value| unsafe {
+                self.voc_a().get_value(value).unwrap_unchecked()
             }).collect()
         }
     }
@@ -108,7 +108,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
 
     /// Translates a single [word_id]
     fn translate_id_to_values<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<&'a HashRef<T>>> where V: 'a {
-        Some(self.ids_to_values::<D>(self.translate_id_to_ids::<D>(word_id)?))
+        Some(self.ids_to_values::<D, _>(self.translate_id_to_ids::<D>(word_id)?.iter().copied()))
     }
 
     /// Iterate language [L]
@@ -169,7 +169,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         Q: Hash + Eq,
         V: 'a + SearchableVocabulary<T>
     {
-        Some(self.ids_to_values::<D>(self.translate_value_to_ids::<D, Q>(word)?))
+        Some(self.ids_to_values::<D, _>(self.translate_value_to_ids::<D, Q>(word)?.iter().copied()))
     }
 }
 
@@ -199,10 +199,28 @@ pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash
     }
 }
 
-pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default {
-    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized;
+pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
 
-    fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a;
+    /// Filters and processes the contents of the dictionary to create a new one.
+    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    where
+        Self: Sized,
+        T: 'a,
+        Fa: Fn(&'a HashRef<T>) -> Option<HashRef<T>>,
+        Fb: Fn(&'a HashRef<T>) -> Option<HashRef<T>>;
+
+    fn filter_by_ids<Fa, Fb>(&self, filter_a: Fa, filter_b: Fb) -> Self
+    where
+        Self: Sized,
+        Fa: Fn(usize) -> bool,
+        Fb: Fn(usize) -> bool;
+
+    fn filter_by_values<'a, Fa, Fb>(&'a self, filter_a: Fa, filter_b: Fb) -> Self
+    where
+        Self: Sized,
+        T: 'a,
+        Fa: Fn(&'a HashRef<T>) -> bool,
+        Fb: Fn(&'a HashRef<T>) -> bool;
 }
 
 
@@ -212,12 +230,12 @@ pub trait FromVoc<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: B
 }
 
 
-pub trait BasicDictionaryWithMeta<M: MetadataManager>: BasicDictionary {
+pub trait BasicDictionaryWithMeta<M: MetadataManager, V: AnonymousVocabulary>: BasicDictionary {
 
     fn metadata(&self) -> &M;
     fn metadata_mut(&mut self) -> &mut M;
 
-    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M> {
+    fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M, V> {
         DictionaryWithMetaIter::new(self)
     }
 }

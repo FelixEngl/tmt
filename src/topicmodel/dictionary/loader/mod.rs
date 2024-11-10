@@ -1,7 +1,7 @@
 use crate::tokenizer::Tokenizer;
 use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE, MS_TERMS, MUSE, OMEGA, WIKTIONARY};
 use crate::topicmodel::dictionary::dicts_info::omega_wiki::OptionalOmegaWikiEntry;
-use crate::topicmodel::dictionary::direction::{Invariant, Language as DirLang, A, B};
+use crate::topicmodel::dictionary::direction::{Invariant, Language as DirLang, LanguageKind, A, B};
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
 use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictReaderError, GramaticHints, Translation};
@@ -213,7 +213,17 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             }
         };
         let lang = self.get_lang::<L>();
-        let mut meta = self.dictionary.metadata.get_or_create_meta::<L>(orth_id);
+        let mut meta = self.dictionary.metadata.get_or_create_meta::<L>(
+            match L::LANG {
+                LanguageKind::A => {
+                    &mut self.dictionary.inner.voc_a
+                }
+                LanguageKind::B => {
+                    &mut self.dictionary.inner.voc_b
+                }
+            },
+            orth_id
+        );
         meta.add_single_to_languages_default(lang);
         (orth_id, meta)
     }
@@ -340,7 +350,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 target_id,
                 word
             } in synonyms.into_iter() {
-                meta.add_single_to_synonyms(FREE_DICT, word);
+                meta.add_single_to_synonyms(FREE_DICT, &word);
                 meta.add_single_to_outgoing_ids(FREE_DICT, target_id);
             }
             for free_dict::See {

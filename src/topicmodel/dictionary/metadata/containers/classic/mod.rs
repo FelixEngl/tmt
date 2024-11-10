@@ -19,7 +19,9 @@ use crate::topicmodel::dictionary::direction::{Language, A, B};
 use crate::toolkit::typesafe_interner::{DictionaryOriginStringInterner, TagStringInterner};
 use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
-use crate::topicmodel::vocabulary::Vocabulary;
+use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
+use crate::topicmodel::vocabulary::{AnonymousVocabularyMut, AnonymousVocabularyRef, Vocabulary};
+use crate::topicmodel::vocabulary::phantom::{anonymous_mut_voc, anonymous_voc};
 
 /// Contains the metadata for the dictionary
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -76,7 +78,7 @@ impl MetadataManager for ClassicMetadataManager {
         }
     }
 
-    fn get_meta_mut<'a, L: Language>(&'a mut self, word_id: usize) -> Option<Self::MutReference<'a>> {
+    fn get_meta_mut<'a, L: Language>(&'a mut self, _: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>> {
         let ptr = self as *mut Self;
         let value = unsafe{&mut*ptr};
         let result = if L::LANG.is_a() {
@@ -88,7 +90,7 @@ impl MetadataManager for ClassicMetadataManager {
     }
 
 
-    fn get_or_create_meta<'a, L: Language>(&'a mut self, word_id: usize) -> Self::MutReference<'a> {
+    fn get_or_create_meta<'a, L: Language>(&'a mut self, _: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
         let ptr = self as *mut Self;
 
         let targ = if L::LANG.is_a() {
@@ -106,7 +108,7 @@ impl MetadataManager for ClassicMetadataManager {
         unsafe { ClassicMetadataMutRef::new(ptr, targ.get_unchecked_mut(word_id)) }
     }
 
-    fn get_meta_ref<'a, L: Language>(&'a self, word_id: usize) -> Option<Self::Reference<'a>> {
+    fn get_meta_ref<'a, L: Language>(&'a self, _: AnonymousVocabularyRef<'a>, word_id: usize) -> Option<Self::Reference<'a>> {
         Some(ClassicMetadataRef::new(self.get_meta::<L>(word_id)?, self))
     }
 
@@ -132,6 +134,14 @@ impl MetadataManager for ClassicMetadataManager {
 
     fn dictionaries(&self) -> Vec<&str> {
         self.dictionary_interner.iter().map(|value| value.1).collect()
+    }
+
+    fn update_ids(&mut self, _: &WordIdUpdate) {
+
+    }
+
+    fn optimize(&mut self) {
+
     }
 }
 
@@ -172,7 +182,10 @@ impl ClassicMetadataManager {
     }
 
     pub fn set_dictionary_for<L: Language>(&mut self, word_id: usize, dict: &str) {
-        self.get_or_create_meta::<L>(word_id).push_associated_dictionary(dict)
+        self.get_or_create_meta::<L>(
+            anonymous_mut_voc(),
+            word_id
+        ).push_associated_dictionary(dict)
     }
 
     pub fn set_dictionaries_for<L: Language>(&mut self, word_id: usize, dicts: &[impl AsRef<str>]) {
@@ -182,7 +195,7 @@ impl ClassicMetadataManager {
     }
 
     pub fn set_subject_for<L: Language>(&mut self, word_id: usize, tag: &str) {
-        self.get_or_create_meta::<L>(word_id).push_subject(tag)
+        self.get_or_create_meta::<L>(anonymous_mut_voc(), word_id).push_subject(tag)
     }
 
     pub fn set_subjects_for<L: Language>(&mut self, word_id: usize, tags: &[impl AsRef<str>]) {
@@ -192,7 +205,7 @@ impl ClassicMetadataManager {
     }
 
     pub fn set_unstemmed_word_for<L: Language>(&mut self, word_id: usize, unstemmed: impl AsRef<str>) {
-        self.get_or_create_meta::<L>(word_id).push_unstemmed(unstemmed)
+        self.get_or_create_meta::<L>(anonymous_mut_voc(), word_id).push_unstemmed(unstemmed)
     }
 
     pub fn set_unstemmed_words_for<L: Language>(&mut self, word_id: usize, unstemmed: &[impl AsRef<str>]) {
@@ -202,12 +215,12 @@ impl ClassicMetadataManager {
     }
 
     pub fn set_unstemmed_word_origin<L: Language>(&mut self, word_id: usize, unstemmed: &str, origin: &str) {
-        let mut meta =  self.get_or_create_meta::<L>(word_id);
+        let mut meta =  self.get_or_create_meta::<L>(anonymous_mut_voc(), word_id);
         meta.push_unstemmed_with_origin(unstemmed, origin);
     }
 
     pub fn set_unstemmed_words_origins_for<L: Language>(&mut self, word_id: usize, unstemmed: &str, origins: &[impl AsRef<str>]) {
-        let mut meta =  self.get_or_create_meta::<L>(word_id);
+        let mut meta =  self.get_or_create_meta::<L>(anonymous_mut_voc(), word_id);
         meta.push_unstemmed_with_origins(unstemmed, origins);
     }
 
@@ -232,7 +245,10 @@ impl Display for ClassicMetadataManager {
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_a.len() {
-                if let Some(value) = self.get_meta_ref::<A>(word_id) {
+                if let Some(value) = self.get_meta_ref::<A>(
+                    anonymous_voc(),
+                    word_id
+                ) {
                     write!(f, "    {}: {}\n", word_id, value)?;
                 }
             }
@@ -244,7 +260,10 @@ impl Display for ClassicMetadataManager {
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_b.len() {
-                if let Some(value) = self.get_meta_ref::<B>(word_id) {
+                if let Some(value) = self.get_meta_ref::<B>(
+                    anonymous_voc(),
+                    word_id
+                ) {
                     write!(f, "    {}: {}\n", word_id, value)?;
                 }
             }
@@ -260,6 +279,7 @@ mod test {
     use crate::topicmodel::dictionary::metadata::classic::ClassicMetadataManager;
     use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
     use crate::topicmodel::dictionary::metadata::MetadataManager;
+    use crate::topicmodel::vocabulary::phantom::{anonymous_voc};
 
     #[test]
     fn test_if_it_works(){
@@ -269,14 +289,14 @@ mod test {
         container.set_unstemmed_word_for::<A>(0, "test_word");
         container.set_unstemmed_word_origin::<A>(0, "test_word", "dict1");
         container.set_subject_for::<A>(0, "geo");
-        let data_a = container.get_meta_ref::<A>(0).expect("There sould be something!");
+        let data_a = container.get_meta_ref::<A>(anonymous_voc(), 0).expect("There sould be something!");
         assert_eq!(SolvedMetadata::new(
             Some(vec!["dict0".to_string(), "dict1".to_string()]),
             Some(vec!["geo".to_string()]),
             Some(HashMap::from([("test_word".to_string(), vec!["dict1".to_string()])]))
         ) , SolvedMetadata::from(data_a));
 
-        let data_b = container.get_meta_ref::<B>(0).expect("There sould be something!");
+        let data_b = container.get_meta_ref::<B>(anonymous_voc(), 0).expect("There sould be something!");
         assert_eq!(SolvedMetadata::new(
             Some(vec!["dict3".to_string()]),
             None,

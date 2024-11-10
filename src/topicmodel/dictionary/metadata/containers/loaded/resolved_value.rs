@@ -60,6 +60,17 @@ impl TryInto<u64> for ResolvedValue {
     }
 }
 
+impl TryInto<String> for ResolvedValue {
+    type Error = WrongResolvedValueError;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        match self {
+            ResolvedValue::String(value) => Ok(value),
+            other => Err(WrongResolvedValueError("String", other))
+        }
+    }
+}
+
 pub(crate) use impl_try_from_as_unpack;
 
 impl ResolvedValue {
