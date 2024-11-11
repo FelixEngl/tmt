@@ -2,7 +2,9 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use strum::ParseError;
 use thiserror::Error;
+use crate::toolkit::from_str_ex::{ParseErrorEx, ParseEx};
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::*;
 use crate::topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, GrammaticalNumber, Language, PartOfSpeech, Region, Register};
 // see https://tei-c.org/release/doc/tei-p5-doc/en/html/DI.html
@@ -121,33 +123,23 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
         ) -> Result<(), FreeDictReaderError> {
             match type_attribute {
                 TypeAttribute::Reg => {
-                    registers.push(content.parse()?);
+                    registers.push(content.parse_ex_tagged::<Register>("Register")?);
                 }
                 TypeAttribute::Colloc => {
                     colloc.push(content);
                     // collocation given to show usage
                 }
                 TypeAttribute::Dom => {
-                    domains.push(content.parse()?);
+                    domains.push(content.parse_ex_tagged::<Domain>("Domain")?);
+                    // println!("Dom: {content}");
+                    // domains.push(content.parse()?);
                 }
                 TypeAttribute::Geo => {
                     if let Ok(lang) = content.parse::<Language>() {
                         languages.push(lang);
                         return Ok(())
                     }
-                    // todo: wichtiges feld. Muss man speichern.
-                    // geographic area r.g. schw., br. am.
-                    match content.parse::<Region>() {
-                        Ok(value) => {
-                            regions.push(value);
-                        }
-                        Err(err) => {
-                            println!("geo {content}");
-                            return Err(err.into())
-                        }
-                    }
-
-
+                    regions.push(content.parse_ex_tagged::<Region>("Region")?);
                 }
                 TypeAttribute::Hint => {
                     // Wichtig!: übtr.
@@ -163,7 +155,7 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     contextual.push(content);
                 }
                 TypeAttribute::Lang => {
-                    languages.push(content.parse()?);
+                    languages.push(content.parse_ex_tagged("Lang")?);
                 }
                 TypeAttribute::Style => {
                     if let Ok(p) = content.parse::<Domain>() {
@@ -293,7 +285,7 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                     ).expect("Usg Parser had some errors.");
                 }
                 if languages.len() > 1 {
-                    panic!("{id_attribute}: hHas multiple langs {languages:?}");
+                    panic!("{id_attribute}: Has multiple langs {languages:?}");
                 }
                 let mut synonyms = Vec::new();
                 let mut see = Vec::new();
@@ -326,7 +318,7 @@ impl<R> Iterator for FreeDictReader<R> where R: BufRead {
                         &mut contextual
                     ) {
                         Err(err) => {
-                            panic!("{id_attribute}: {err}")
+                            panic!("Error: {id_attribute}: {err}")
                         }
                         _ => {}
                     }
@@ -521,7 +513,7 @@ pub enum FreeDictReaderError {
     #[error(transparent)]
     Xml(#[from] TeiReaderError),
     #[error(transparent)]
-    Strum(#[from] strum::ParseError),
+    Strum(#[from] ParseErrorEx<ParseError>),
 }
 
 pub fn read_free_dict(path: impl AsRef<Path>) -> Result<FreeDictReader<BufReader<File>>, FreeDictReaderError> {
@@ -582,9 +574,6 @@ mod test {
 
     #[test]
     fn can_run(){
-
-
-
         println!("{}", read_free_dict("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei").unwrap().map(|value| value.unwrap()).count());
         println!("{}", read_free_dict("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei").unwrap().map(|value| value.unwrap()).count());
     }

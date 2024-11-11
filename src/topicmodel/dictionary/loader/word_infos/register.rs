@@ -21,7 +21,7 @@ register_python! {
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum Register {
-    #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.", serialize = "hum")]
+    #[strum(to_string = "humor.", serialize = "humor", serialize = "hum.", serialize = "hum", serialize = "Humor")]
     Humor = 0,
     #[strum(
         to_string = "vulg.",
@@ -29,17 +29,38 @@ pub enum Register {
         serialize = "derb",
         serialize = "slur",
         serialize = "vulgar",
+        serialize = "Vulg",
     )]
     Vulg = 1,
-    #[strum(to_string = "techn.", serialize = "techn")]
+    #[strum(
+        to_string = "techn.",
+        serialize = "techn",
+        serialize = "Techn",
+    )]
     Techn = 2,
-    #[strum(to_string = "coll.", serialize = "coll", serialize = "ugs", serialize = "ugs.")]
-    #[strum(serialize = "ug")]
+    #[strum(
+        to_string = "coll.",
+        serialize = "coll",
+        serialize = "ugs",
+        serialize = "ugs.",
+        serialize = "ug",
+        serialize = "Coll",
+    )]
     Coll = 3,
     /// Gehoben
-    #[strum(to_string = "geh.", serialize = "geh")]
+    #[strum(
+        to_string = "geh.",
+        serialize = "geh",
+        serialize = "Geh",
+    )]
     Geh = 4,
-    #[strum(to_string = "slang", serialize = "slang.", serialize = "sl.", serialize = "jargon")]
+    #[strum(
+        to_string = "slang",
+        serialize = "slang.",
+        serialize = "sl.",
+        serialize = "jargon",
+        serialize = "Slang",
+    )]
     Slang = 5,
     #[strum(to_string = "iron.", serialize = "iron")]
     Iron = 6,

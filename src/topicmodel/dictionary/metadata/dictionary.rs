@@ -1,8 +1,12 @@
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
+use std::io;
+use std::io::{BufWriter, Read, Write};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use thiserror::Error;
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
@@ -15,6 +19,7 @@ use crate::topicmodel::dictionary::metadata::classic::{
 use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModel;
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin};
 use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
+use crate::topicmodel::dictionary::io::WriteMode;
 use crate::topicmodel::reference::HashRef;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -24,6 +29,7 @@ pub struct DictionaryWithMeta<T, V, C> {
     #[serde(bound(serialize = "C: Serialize", deserialize = "C: Deserialize<'de>"))]
     pub(crate) metadata: C
 }
+
 
 impl<T, V, C> DictionaryWithMeta<T, V, C> {
     fn new(inner: Dictionary<T, V>, metadata: C) -> Self {

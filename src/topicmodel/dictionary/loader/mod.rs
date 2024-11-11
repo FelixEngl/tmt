@@ -1111,6 +1111,7 @@ mod test {
     use crate::topicmodel::vocabulary::BasicVocabulary;
     use std::fs::File;
     use std::io::{BufWriter, Write};
+    use crate::topicmodel::dictionary::io::{WriteMode, WriteableDictionary};
 
     #[test]
     pub fn test(){
@@ -1221,17 +1222,9 @@ mod test {
         println!("{} delta: {}", new, current.diff(&new));
 
         let data = default.finalize();
-        let mut writer = BufWriter::new(dict_file);
-        serde_json::to_writer_pretty(&mut writer, &data).unwrap();
-        writer.flush().unwrap();
-
-        for DirectionTuple {
-            a,
-            b,
-            direction: _
-        } in data.iter_with_meta() {
-            println!("a: {}, b: {}", data.voc_a().get_value(a.0).unwrap(), data.voc_b().get_value(b.0).unwrap())
-        }
-
+        data.write_to_path(
+            WriteMode::json(false, true),
+            "dictionary.json"
+        ).unwrap();
     }
 }

@@ -17,6 +17,104 @@ register_python! {
     struct LanguageDirection;
 }
 
+
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass(name = "DictionaryLanguage", eq, eq_int, hash, frozen)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Display, EnumString, IntoStaticStr)]
+#[derive(TryFromPrimitive, IntoPrimitive)]
+#[derive(Serialize, Deserialize)]
+#[repr(u64)]
+/// The recognized
+pub enum Language {
+    #[strum(to_string = "en", serialize = "english", serialize = "English")]
+    English = 0,
+    #[strum(to_string = "de", serialize = "german", serialize = "Dt.", serialize = "German")]
+    German = 1,
+    #[strum(to_string = "it", serialize = "Italian", serialize = "italian", serialize = "Ital.")]
+    Italian = 2,
+    #[strum(to_string = "fr", serialize = "french", serialize = "from French", serialize = "French")]
+    French = 3,
+    #[strum(to_string = "latin", serialize = "Latin", serialize = "Lat.", serialize = "lat.")]
+    Latin = 4
+}
+
+impl_try_from_as_unpack! {
+    Language => Language
+}
+
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl Language {
+    fn __str__(&self) -> &'static str {
+        self.into()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        self.into()
+    }
+}
+
+impl Language {
+    pub fn to(self, other: Language) -> LanguageDirection {
+        LanguageDirection::new(self, other)
+    }
+}
+
+impl Fits64 for Language {
+    #[inline(always)]
+    unsafe fn from_u64(x: u64) -> Self {
+        Language::try_from(x).unwrap()
+    }
+
+    #[inline(always)]
+    fn to_u64(self) -> u64 {
+        self.into()
+    }
+}
+
+impl From<FreeDictLangAttribute> for Language {
+    fn from(value: FreeDictLangAttribute) -> Self {
+        match value {
+            FreeDictLangAttribute::En => {
+                Language::English
+            }
+            FreeDictLangAttribute::De => {
+                Language::German
+            }
+        }
+    }
+}
+
+impl From<IateLangAttribute> for Language {
+    fn from(value: IateLangAttribute) -> Self {
+        match value {
+            IateLangAttribute::En => {
+                Language::English
+            }
+            IateLangAttribute::De => {
+                Language::German
+            }
+        }
+    }
+}
+
+impl From<MsTermsAttribute> for Language {
+    fn from(value: MsTermsAttribute) -> Self {
+        match value {
+            MsTermsAttribute::EnGb | MsTermsAttribute::EnUs => {
+                Language::English
+            }
+            MsTermsAttribute::DeDe => {
+                Language::German
+            }
+        }
+    }
+}
+
+
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass(name = "DictionaryLanguageDirection", eq, hash, frozen)]
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -164,96 +262,3 @@ impl_py_stub!(LanguageDirectionArg {
 });
 
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
-#[pyclass(name = "DictionaryLanguage", eq, eq_int, hash, frozen)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[derive(Display, EnumString, IntoStaticStr)]
-#[derive(TryFromPrimitive, IntoPrimitive)]
-#[derive(Serialize, Deserialize)]
-#[repr(u64)]
-/// The recognized
-pub enum Language {
-    #[strum(serialize = "en", serialize = "english", serialize = "English")]
-    English = 0,
-    #[strum(serialize = "de", serialize = "german", serialize = "Dt.", serialize = "German")]
-    German = 1,
-    #[strum(serialize = "italian", serialize = "Ital.")]
-    Italian = 2,
-    #[strum(serialize = "french", serialize = "from French")]
-    French = 3,
-    #[strum(serialize = "latin", serialize = "Lat.", serialize = "lat.")]
-    Latin = 4
-}
-
-impl_try_from_as_unpack! {
-    Language => Language
-}
-
-// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
-#[pymethods]
-impl Language {
-    fn __str__(&self) -> &'static str {
-        self.into()
-    }
-
-    fn __repr__(&self) -> &'static str {
-        self.into()
-    }
-}
-
-impl Language {
-    pub fn to(self, other: Language) -> LanguageDirection {
-        LanguageDirection::new(self, other)
-    }
-}
-
-impl Fits64 for Language {
-    #[inline(always)]
-    unsafe fn from_u64(x: u64) -> Self {
-        Language::try_from(x).unwrap()
-    }
-
-    #[inline(always)]
-    fn to_u64(self) -> u64 {
-        self.into()
-    }
-}
-
-impl From<FreeDictLangAttribute> for Language {
-    fn from(value: FreeDictLangAttribute) -> Self {
-        match value {
-            FreeDictLangAttribute::En => {
-                Language::English
-            }
-            FreeDictLangAttribute::De => {
-                Language::German
-            }
-        }
-    }
-}
-
-impl From<IateLangAttribute> for Language {
-    fn from(value: IateLangAttribute) -> Self {
-        match value {
-            IateLangAttribute::En => {
-                Language::English
-            }
-            IateLangAttribute::De => {
-                Language::German
-            }
-        }
-    }
-}
-
-impl From<MsTermsAttribute> for Language {
-    fn from(value: MsTermsAttribute) -> Self {
-        match value {
-            MsTermsAttribute::EnGb | MsTermsAttribute::EnUs => {
-                Language::English
-            }
-            MsTermsAttribute::DeDe => {
-                Language::German
-            }
-        }
-    }
-}
