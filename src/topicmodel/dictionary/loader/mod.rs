@@ -20,6 +20,8 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::path::Path;
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString, IntoStaticStr};
 use thiserror::Error;
 use crate::topicmodel::dictionary::loader::wiktionary_reader::{convert_entry_to_entries, EntryConversionError, ExtractedWord, ExtractedWordValues, WiktionaryReaderError};
 
@@ -175,6 +177,35 @@ impl<P> UnifiedTranslationHelper<P> {
     }
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadInstruction<T> {
+    kind: DictionaryKind,
+    direction: LanguageDirection,
+    paths: Either<T, Vec<T>>,
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Display, EnumString, IntoStaticStr)]
+pub enum DictionaryKind {
+    #[strum(to_string = "free_dict")]
+    FreeDict,
+    #[strum(to_string = "dict_cc")]
+    DictCC,
+    #[strum(to_string = "ding")]
+    Ding,
+    #[strum(to_string = "iate")]
+    IATE,
+    #[strum(to_string = "omega_wiki")]
+    Omega,
+    #[strum(to_string = "ms_terms")]
+    MSTerms,
+    #[strum(to_string = "muse")]
+    Muse,
+    #[strum(to_string = "wiktionary")]
+    Wiktionary
+}
+
+
 pub mod constants {
     pub const FREE_DICT: &'static str = "free_dict";
     pub const DICT_CC: &'static str = "dict_cc";
@@ -184,6 +215,31 @@ pub mod constants {
     pub const MS_TERMS: &'static str = "ms_terms";
     pub const MUSE: &'static str = "muse";
     pub const WIKTIONARY: &'static str = "wiktionary";
+}
+
+#[derive(Debug, Error)]
+pub enum LoadByInstructionError {
+    #[error("Expected {expected} paths but got {actual}!")]
+    WrongNumberOfPaths {
+        expected: usize,
+        actual: usize
+    },
+    #[error(transparent)]
+    FreeDict(#[from] UnifiedTranslationError<usize, FreeDictReaderError>),
+    #[error(transparent)]
+    DictCC(#[from] UnifiedTranslationError<usize, LineReaderError<dictcc::Entry<String>>, std::io::Error>),
+    #[error(transparent)]
+    DingDict(#[from] UnifiedTranslationError<(usize, Vec<ding::entry_processing::Translation<String>>), LineDictionaryReaderError<DictionaryLineParserError<ding::DingEntry<String>>>, std::io::Error>),
+    #[error(transparent)]
+    IATE(#[from] UnifiedTranslationError<usize, IateError, IateReaderError>),
+    #[error(transparent)]
+    OmegaDict(#[from] UnifiedTranslationError<usize, LineReaderError<OptionalOmegaWikiEntry>, std::io::Error>),
+    #[error(transparent)]
+    MSTerms(#[from] UnifiedTranslationError<(usize, usize), MsTermsError, MSTermsReaderError>),
+    #[error(transparent)]
+    Muse(#[from] UnifiedTranslationError<usize, MuseError>),
+    #[error(transparent)]
+    Wiktionary(#[from] UnifiedTranslationError<WiktionaryReaderStats, WiktionaryError, std::io::Error>),
 }
 
 impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
@@ -262,6 +318,127 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 actual: other.clone()
             })
         }
+    }
+
+    pub fn read_all_by_instruction<T: AsRef<Path>>(&mut self, instructions: &[LoadInstruction<T>]) -> Result<(), Vec<LoadByInstructionError>> {
+        let mut errors = Vec::with_capacity(instructions.len());
+        for instruction in instructions {
+            match self.read_by_instruction(instruction) {
+                Ok(_) => {}
+                Err(err) => {
+                    errors.push(err);
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    pub fn read_by_instruction<T: AsRef<Path>>(&mut self, instruction: &LoadInstruction<T>) -> Result<(), LoadByInstructionError> {
+        match instruction.kind {
+            DictionaryKind::FreeDict => {
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        self.read_free_dict(value, &instruction.direction)?;
+                    }
+                    Either::Right(values) => {
+                        for value in values {
+                            self.read_free_dict(value, &instruction.direction)?;
+                        }
+                    }
+                }
+            }
+            DictionaryKind::DictCC => {
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        self.read_dict_cc(value, &instruction.direction)?;
+                    }
+                    Either::Right(values) => {
+                        for value in values {
+                            self.read_dict_cc(value, &instruction.direction)?;
+                        }
+                    }
+                }
+            }
+            DictionaryKind::Ding => {
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        self.read_ding_dict(value, &instruction.direction)?;
+                    }
+                    Either::Right(values) => {
+                        for value in values {
+                            self.read_ding_dict(value, &instruction.direction)?;
+                        }
+                    }
+                }
+            }
+            DictionaryKind::IATE => {
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        self.read_iate_dict(value, &instruction.direction)?;
+                    }
+                    Either::Right(values) => {
+                        for value in values {
+                            self.read_iate_dict(value, &instruction.direction)?;
+                        }
+                    }
+                }
+            }
+            DictionaryKind::Omega => {
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        self.read_omega_dict(value, &instruction.direction)?;
+                    }
+                    Either::Right(values) => {
+                        for value in values {
+                            self.read_omega_dict(value, &instruction.direction)?;
+                        }
+                    }
+                }
+            }
+            DictionaryKind::MSTerms => {
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        return Err(LoadByInstructionError::WrongNumberOfPaths {
+                            actual: 1,
+                            expected: 2
+                        })
+                    }
+                    Either::Right(values) => {
+                        self.read_ms_terms(values, &instruction.direction)?;
+                    }
+                }
+            }
+            DictionaryKind::Muse => {
+                let file_name = format!("dictionaries/{}-{}.txt", instruction.direction.lang_a(), instruction.direction.lang_b());
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        self.read_muse(value, file_name, &instruction.direction)?;
+                    }
+                    Either::Right(values) => {
+                        for value in values {
+                            self.read_muse(value, &file_name, &instruction.direction)?;
+                        }
+                    }
+                }
+            }
+            DictionaryKind::Wiktionary => {
+                match &instruction.paths {
+                    Either::Left(value) => {
+                        self.read_wiktionary(value)?;
+                    }
+                    Either::Right(values) => {
+                        for value in values {
+                            self.read_wiktionary(value)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
 
@@ -1105,126 +1282,105 @@ pub enum LineReaderError<T: Debug> {
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::direction::DirectionTuple;
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
-    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, UnifiedTranslationHelper};
+    use crate::topicmodel::dictionary::{LoadByInstructionError, LoadInstruction, UnifiedTranslationHelper};
     use crate::topicmodel::vocabulary::BasicVocabulary;
     use std::fs::File;
-    use std::io::{BufWriter, Write};
+    use std::io::{Write};
+    use either::Either;
+    use itertools::Itertools;
+    use rayon::prelude::*;
+    use crate::topicmodel::dictionary::DictionaryKind::*;
     use crate::topicmodel::dictionary::io::{WriteMode, WriteableDictionary};
+
+    static TARGETS: std::sync::LazyLock<Vec<LoadInstruction<&str>>> = std::sync::LazyLock::new(||vec![
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: FreeDict,
+            paths: Either::Left("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::DE_EN,
+            kind: FreeDict,
+            paths: Either::Left("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::DE_EN,
+            kind: DictCC,
+            paths: Either::Left("dictionaries/DictCC/dict.txt")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::DE_EN,
+            kind: Ding,
+            paths: Either::Left("dictionaries/ding/de-en.txt")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: IATE,
+            paths: Either::Left("dictionaries/IATE/IATE_export.tbx")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: Omega,
+            paths: Either::Left("dictionaries/dicts.info/OmegaWiki.txt")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: MSTerms,
+            paths: Either::Right(
+                vec![
+                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
+                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
+                ]
+            )
+        },
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: Muse,
+            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::DE_EN,
+            kind: Muse,
+            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: Wiktionary,
+            paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz")
+        },
+        LoadInstruction {
+            direction: LanguageDirection::DE_EN,
+            kind: Wiktionary,
+            paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz")
+        }
+    ]);
 
     #[test]
     pub fn test(){
-        let dict_file = File::options().write(true).create(true).truncate(true).open("my_dict.json").unwrap();
+        env_logger::init();
 
-        let mut default = UnifiedTranslationHelper::new(LanguageDirection::EN_DE);
-        let mut current = default.len();
+        let result = TARGETS.iter().cloned().enumerate().par_bridge().map(|(i, value)| {
+            let mut default = UnifiedTranslationHelper::new(LanguageDirection::EN_DE);
+            match default.read_by_instruction(&value) {
+                Ok(_) => {
+                    log::info!("Finished: {}", value.kind);
+                }
+                Err(err) => {
+                    log::info!("####\nHad an error while reading {}:\n{err}\n####", value.kind);
+                }
+            }
+            let data = default.finalize();
+            data.write_to_path(
+                WriteMode::json(false, true),
+                format!("dictionary_{}_{}.json", value.kind, i)
+            )
+        }).collect::<Vec<_>>();
 
-        let x = default.read_free_dict(
-            "dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei",
-            &LanguageDirection::EN_DE
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
+        for value in result {
+            println!("{value:?}");
         }
-        let new = default.len();
-        println!("{}", new);
-
-        let x = default.read_free_dict(
-            "dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei",
-            &LanguageDirection::DE_EN
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_dict_cc(
-            "dictionaries/DictCC/dict.txt",
-            &LanguageDirection::DE_EN
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_iate_dict(
-            "dictionaries/IATE/IATE_export.tbx",
-            &LanguageDirection::EN_DE
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_omega_dict(
-            "dictionaries/dicts.info/OmegaWiki.txt",
-            &LanguageDirection::EN_DE
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_ms_terms(
-            vec![
-                "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
-                "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
-            ],
-            &LanguageDirection::EN_DE
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_muse(
-            r#"dictionaries/MUSE/dictionaries.tar.gz"#,
-            "dictionaries/en-de.txt",
-            &LanguageDirection::EN_DE
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_muse(
-            r#"dictionaries/MUSE/dictionaries.tar.gz"#,
-            "dictionaries/de-en.txt",
-            &LanguageDirection::DE_EN
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        current = new;
-        let x = default.read_wiktionary(
-            "dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"
-        );
-        if let Err(err) = x {
-            println!("{:?}", err)
-        }
-        let new = default.len();
-        println!("{} delta: {}", new, current.diff(&new));
-
-        let data = default.finalize();
-        data.write_to_path(
-            WriteMode::json(false, true),
-            "dictionary.json"
-        ).unwrap();
     }
+
+
 }

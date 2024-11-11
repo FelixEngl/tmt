@@ -14,12 +14,12 @@ use crate::topicmodel::traits::ToParseableString;
 use crate::topicmodel::vocabulary::LoadVocabularyError;
 
 /// A basic vocabulary for [HashRef] elements.
-pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> {
+pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> + IntoIterator<Item=HashRef<T>> {
     /// Gets the associated language
     fn language(&self) -> Option<&LanguageHint>;
 
     /// Sets a specific language
-    fn set_language(&mut self, new: Option<impl Into<LanguageHint>>) -> Option<LanguageHint>;
+    fn set_language(&mut self, new: Option<LanguageHint>) -> Option<LanguageHint>;
 
     /// The number of entries in the vocabulary
     fn len(&self) -> usize;
@@ -37,6 +37,9 @@ pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> {
 
     /// Get the HashRef for a specific `id` or none
     fn get_value(&self, id: usize) -> Option<&HashRef<T>>;
+
+    /// Get the HashRef for a specific `id` or none
+    unsafe fn get_value_unchecked(&self, id: usize) -> &HashRef<T>;
 
     /// Check if the `id` is contained in this
     fn contains_id(&self, id: usize) -> bool;
@@ -111,6 +114,7 @@ pub trait VocabularyMut<T>: SearchableVocabulary<T> where T: Eq + Hash {
     /// Adds any `value` that can be converted into `T`
     fn add<V: Into<T>>(&mut self, value: V) -> usize;
 
+    fn add_all_hash_ref<I: IntoIterator<Item=HashRef<T>>>(&mut self, other: I);
 }
 
 /// A vocabulary that can be mapped

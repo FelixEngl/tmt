@@ -188,13 +188,21 @@ impl DerefMut for PyVocabulary {
     }
 }
 
+impl IntoIterator for PyVocabulary {
+    type Item = <Vocabulary<String> as IntoIterator>::Item;
+    type IntoIter = <Vocabulary<String> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
 
 impl BasicVocabulary<String> for PyVocabulary {
     delegate::delegate! {
         to self.inner {
             fn language(&self) -> Option<&LanguageHint>;
 
-            fn set_language(&mut self, new: Option<impl Into<LanguageHint>>) -> Option<LanguageHint>;
+            fn set_language(&mut self, new: Option<LanguageHint>) -> Option<LanguageHint>;
 
             /// The number of entries in the vocabulary
             fn len(&self) -> usize;
@@ -212,6 +220,8 @@ impl BasicVocabulary<String> for PyVocabulary {
 
             /// Get the HashRef for a specific `id` or none
             fn get_value(&self, id: usize) -> Option<&HashRef<String>>;
+
+            unsafe fn get_value_unchecked(&self, id: usize) -> &HashRef<String>;
 
             /// Check if the `id` is contained in this
             fn contains_id(&self, id: usize) -> bool;
@@ -291,6 +301,8 @@ impl VocabularyMut<String> for PyVocabulary {
 
             /// Adds any `value` that can be converted into `T`
             fn add<V: Into<String>>(&mut self, value: V) -> usize;
+
+            fn add_all_hash_ref<I: IntoIterator<Item=HashRef<String>>>(&mut self, other: I);
         }
     }
 }

@@ -229,7 +229,6 @@ impl<T, V> BasicDictionaryWithVocabulary<V> for Dictionary<T, V> {
     fn voc_b(&self) -> &V {
         &self.voc_b
     }
-
 }
 
 impl<T, V> Dictionary<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
@@ -283,6 +282,45 @@ impl<T, V> DictionaryWithVocabulary<T, V> for Dictionary<T, V> where V: BasicVoc
                 self.voc_a.get_value(value).unwrap_unchecked()
             }).collect()
         }
+    }
+}
+
+impl<T, V> MergingDictionary<T, V> for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Extend<T> {
+    fn merge(mut self, other: impl Into<Self>) -> Self
+    where
+        Self: Sized
+    {
+        let other = other.into();
+
+        for DirectionTuple{a, b, direction} in other.iter() {
+            unsafe {
+                match direction {
+                    DirectionKind::AToB => {
+                        self.insert_hash_ref::<AToB>(
+                            other.voc_a().get_value_unchecked(a).clone(),
+                            other.voc_b().get_value_unchecked(b).clone(),
+                        );
+                    }
+                    DirectionKind::BToA => {
+                        self.insert_hash_ref::<BToA>(
+                            other.voc_a().get_value_unchecked(a).clone(),
+                            other.voc_b().get_value_unchecked(b).clone(),
+                        );
+                    }
+                    DirectionKind::Invariant => {
+                        self.insert_hash_ref::<Invariant>(
+                            other.voc_a().get_value_unchecked(a).clone(),
+                            other.voc_b().get_value_unchecked(b).clone(),
+                        );
+                    }
+                }
+            }
+        }
+
+        self.voc_a.add_all_hash_ref(other.voc_a);
+        self.voc_b.add_all_hash_ref(other.voc_b);
+
+        self
     }
 }
 
@@ -395,6 +433,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
         new_dict
     }
 
+    //noinspection DuplicatedCode
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
         let mut new_dict = Dictionary::new();
 

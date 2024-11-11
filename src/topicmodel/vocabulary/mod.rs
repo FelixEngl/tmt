@@ -109,7 +109,7 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
         self.language.as_ref()
     }
 
-    fn set_language(&mut self, new: Option<impl Into<LanguageHint>>) -> Option<LanguageHint> {
+    fn set_language(&mut self, new: Option<LanguageHint>) -> Option<LanguageHint> {
         std::mem::replace(&mut self.language, new.map(|value| value.into()))
     }
 
@@ -142,6 +142,11 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
     fn get_value(&self, id: usize) -> Option<&HashRef<T>> {
         self.id2entry.get(id)
     }
+
+    unsafe fn get_value_unchecked(&self, id: usize) -> &HashRef<T> {
+        self.id2entry.get_unchecked(id)
+    }
+
 
     /// Check if the `id` is contained in this
     fn contains_id(&self, id: usize) -> bool {
@@ -294,7 +299,11 @@ impl<T> VocabularyMut<T> for Vocabulary<T> where T: Eq + Hash {
         self.add_hash_ref(value.into().into())
     }
 
-
+    fn add_all_hash_ref<I: IntoIterator<Item=HashRef<T>>>(&mut self, other: I) {
+        for value in other {
+            self.add_hash_ref(value);
+        }
+    }
 }
 
 impl<T> MappableVocabulary<T> for Vocabulary<T> where T: Eq + Hash {

@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
+use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, BasicDictionaryWithMeta, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, A, B};
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary};

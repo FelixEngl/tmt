@@ -10,7 +10,6 @@ use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, Search
 
 /// A basic dictionary that can translate IDs
 pub trait BasicDictionary: Send + Sync {
-
     fn map_a_to_b(&self) -> &Vec<Vec<usize>>;
 
     fn map_b_to_a(&self) -> &Vec<Vec<usize>>;
@@ -31,6 +30,7 @@ pub trait BasicDictionary: Send + Sync {
         DictIterImpl::new(self)
     }
 }
+
 
 
 /// A basic dictionary with a vocabulary
@@ -173,6 +173,11 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
     }
 }
 
+pub trait MergingDictionary<T, V>: DictionaryWithVocabulary<T, V> where V: BasicVocabulary<T> {
+    /// Allows to merge two similar dictionary
+    fn merge(self, other: impl Into<Self>) -> Self where Self: Sized;
+}
+
 pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
     fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint>;
 
@@ -233,6 +238,7 @@ pub trait FromVoc<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash, V: B
 pub trait BasicDictionaryWithMeta<M: MetadataManager, V: AnonymousVocabulary>: BasicDictionary {
 
     fn metadata(&self) -> &M;
+
     fn metadata_mut(&mut self) -> &mut M;
 
     fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M, V> {

@@ -18,7 +18,7 @@ use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionK
 use crate::topicmodel::dictionary::iterators::{DictIter, DictionaryWithMetaIterator};
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataManager, MetaField, SolvedLoadedMetadata};
 use crate::topicmodel::dictionary::metadata::{MetadataManager};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc, MergingDictionary};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
@@ -292,6 +292,7 @@ impl BasicDictionary for PyDictionary {
             wrapped: self.wrapped.switch_languages()
         }
     }
+
 }
 
 impl BasicDictionaryWithVocabulary<PyVocabulary> for PyDictionary {
@@ -300,6 +301,17 @@ impl BasicDictionaryWithVocabulary<PyVocabulary> for PyDictionary {
             fn voc_a(&self) -> &PyVocabulary;
 
             fn voc_b(&self) -> &PyVocabulary;
+        }
+    }
+}
+
+impl MergingDictionary<String, PyVocabulary> for PyDictionary {
+    fn merge(self, other: impl Into<Self>) -> Self
+    where
+        Self: Sized
+    {
+        Self {
+            wrapped: self.wrapped.merge(other.into().wrapped)
         }
     }
 }

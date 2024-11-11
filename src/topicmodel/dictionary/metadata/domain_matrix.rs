@@ -83,7 +83,7 @@ impl DomainModel {
     }
 
     pub fn add_single_in_place<I: DomainModelIndex>(&mut self, word: usize, index: I, value: Value) {
-
+        *(self.resize_if_necessary(word).get_mut(index)) += value
     }
 
     fn resize_if_necessary(&mut self, word: usize) -> &mut Entry {

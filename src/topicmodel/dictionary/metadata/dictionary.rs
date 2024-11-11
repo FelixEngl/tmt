@@ -1,13 +1,10 @@
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
-use std::io;
-use std::io::{BufWriter, Read, Write};
+use std::io::{Write};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
-use thiserror::Error;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc, MergingDictionary};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference, MetadataReference};
@@ -19,7 +16,6 @@ use crate::topicmodel::dictionary::metadata::classic::{
 use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModel;
 use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadata, LoadedMetadataManager, MetadataWithOrigin};
 use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
-use crate::topicmodel::dictionary::io::WriteMode;
 use crate::topicmodel::reference::HashRef;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -307,10 +303,11 @@ where
         }
     }
 }
+
 impl<T, V, M> BasicDictionaryWithMeta<M, V> for DictionaryWithMeta<T, V, M>
 where
-    V: BasicVocabulary<T> + AnonymousVocabulary,
-    M: MetadataManager
+    M: MetadataManager,
+    V: AnonymousVocabulary + BasicVocabulary<T>,
 {
     fn metadata(&self) -> &M {
         &self.metadata
@@ -320,6 +317,8 @@ where
         &mut self.metadata
     }
 }
+
+
 impl<T, V, M> BasicDictionaryWithVocabulary<V> for DictionaryWithMeta<T, V, M>
 where
     M: MetadataManager
@@ -331,6 +330,9 @@ where
         }
     }
 }
+
+
+
 impl<T, V, M> DictionaryWithMeta<T, V, M> where T: Eq + Hash, V: MappableVocabulary<T>, M: Clone {
     pub fn map<Q: Eq + Hash, Voc, F>(self, f: F) -> DictionaryWithMeta<Q, Voc, M> where F: for<'a> Fn(&'a T)-> Q, Voc: BasicVocabulary<Q> {
         DictionaryWithMeta::<Q, Voc, M>::new(
@@ -385,6 +387,9 @@ where
         self.inner.word_to_id::<D, _>(id)
     }
 }
+
+
+
 impl<T, V, M> DictionaryMut<T, V> for  DictionaryWithMeta<T, V, M>
 where
     T: Eq + Hash,
@@ -643,8 +648,8 @@ where M: Default
 
 impl<T, V, M> IntoIterator for DictionaryWithMeta<T, V, M>
 where
-    V: BasicVocabulary<T> + AnonymousVocabulary,
     T: Hash + Eq,
+    V: BasicVocabulary<T> + AnonymousVocabulary,
     M: MetadataManager
 {
     type Item = DirectionTuple<
@@ -655,5 +660,74 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         DictionaryWithMetaIterator::new(self)
+    }
+}
+
+
+impl<T, V, M> MergingDictionary<T, V> for DictionaryWithMeta<T, V, M>
+where
+    T: Eq + Hash,
+    V: BasicVocabulary<T> + From<Option<LanguageHint>> + AnonymousVocabulary + AnonymousVocabularyMut + VocabularyMut<T>,
+    M: MetadataManager
+{
+    fn merge(mut self, other: impl Into<Self>) -> Self
+    where
+        Self: Sized
+    {
+        let other = other.into();
+        let mut update = WordIdUpdate::new(
+            other.voc_a().len(),
+            other.voc_b().len()
+        );
+
+        for DirectionTuple {
+            a: (word_id_a, meta_a),
+            b: (word_id_b, meta_b),
+            direction
+        } in other.iter_with_meta() {
+            let word_a = other.voc_a().get_value(word_id_a).unwrap();
+            let word_b = other.voc_b().get_value(word_id_b).unwrap();
+            let DirectionTuple{a: word_a, b: word_b, direction: _} = match direction {
+                DirectionKind::AToB => {
+                    self.insert_hash_ref::<AToB>(word_a.clone(), word_b.clone())
+                }
+                DirectionKind::BToA => {
+                    self.insert_hash_ref::<BToA>(word_a.clone(), word_b.clone())
+                },
+                DirectionKind::Invariant => {
+                    self.insert_hash_ref::<Invariant>(word_a.clone(), word_b.clone())
+                }
+            };
+            if let Some(meta_a) = meta_a {
+                if let Some(a) = meta_a.collect_all_associated_word_ids() {
+                    for value in a.iter() {
+                        if let Some(value) = other.voc_a().get_value(value) {
+                            update.add_id::<A>(
+                                word_id_a,
+                                self.inner.voc_a.add_hash_ref(value.clone())
+                            )
+                        }
+                    }
+                }
+                self.insert_meta_for_create_subset::<A>(word_a, meta_a);
+            }
+            if let Some(meta_b) = meta_b {
+                if let Some(b) = meta_b.collect_all_associated_word_ids() {
+                    for value in b.iter() {
+                        if let Some(value) = other.voc_b().get_value(value) {
+                            update.add_id::<B>(
+                                word_id_b,
+                                self.inner.voc_b.add_hash_ref(value.clone())
+                            )
+                        }
+                    }
+                }
+                self.insert_meta_for_create_subset::<B>(word_b, meta_b);
+            }
+        }
+        self.metadata.update_ids(&update);
+        // No optimize needed because we only grow.
+        // self.metadata.optimize();
+        self
     }
 }
