@@ -1096,26 +1096,18 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                                     }
                                 }
                             } else {
+                                if enrich_with_meta {
+                                    match self.register_metadata(value, lang) {
+                                        Err(value) => {
+                                            errors.push(value);
+                                        }
+                                        _ => {}
+                                    }
+                                }
                                 if self.dir.lang_a() == lang {
                                     ct.no_lang_b += 1;
-                                    if enrich_with_meta {
-                                        match self.register_metadata(value, lang) {
-                                            Err(value) => {
-                                                errors.push(value);
-                                            }
-                                            _ => {}
-                                        }
-                                    }
                                 } else {
                                     ct.no_lang_a += 1;
-                                    if enrich_with_meta {
-                                        match self.register_metadata(value, lang) {
-                                            Err(value) => {
-                                                errors.push(value);
-                                            }
-                                            _ => {}
-                                        }
-                                    }
                                 }
                             }
                         }
