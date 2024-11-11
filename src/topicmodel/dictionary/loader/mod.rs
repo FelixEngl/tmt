@@ -183,6 +183,7 @@ pub struct LoadInstruction<T> {
     kind: DictionaryKind,
     direction: LanguageDirection,
     paths: Either<T, Vec<T>>,
+    enrich_with_meta: bool
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Display, EnumString, IntoStaticStr)]
@@ -428,11 +429,11 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             DictionaryKind::Wiktionary => {
                 match &instruction.paths {
                     Either::Left(value) => {
-                        self.read_wiktionary(value)?;
+                        self.read_wiktionary(value, instruction.enrich_with_meta)?;
                     }
                     Either::Right(values) => {
                         for value in values {
-                            self.read_wiktionary(value)?;
+                            self.read_wiktionary(value, instruction.enrich_with_meta)?;
                         }
                     }
                 }
@@ -1072,7 +1073,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         self.insert_translation_by_id(a, b, dir)
     }
 
-    pub fn read_wiktionary(&mut self, path: impl AsRef<Path>) -> Result<WiktionaryReaderStats, UnifiedTranslationError<WiktionaryReaderStats, WiktionaryError, std::io::Error>> {
+    pub fn read_wiktionary(&mut self, path: impl AsRef<Path>, enrich_with_meta: bool) -> Result<WiktionaryReaderStats, UnifiedTranslationError<WiktionaryReaderStats, WiktionaryError, std::io::Error>> {
         let reader = wiktionary_reader::read_wiktionary(path)?;
         let mut errors = Vec::new();
         let mut ct = WiktionaryReaderStats::default();
@@ -1096,9 +1097,25 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                                 }
                             } else {
                                 if self.dir.lang_a() == lang {
-                                    ct.no_lang_b += 1
+                                    ct.no_lang_b += 1;
+                                    if enrich_with_meta {
+                                        match self.register_metadata(value, lang) {
+                                            Err(value) => {
+                                                errors.push(value);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
                                 } else {
-                                    ct.no_lang_a += 1
+                                    ct.no_lang_a += 1;
+                                    if enrich_with_meta {
+                                        match self.register_metadata(value, lang) {
+                                            Err(value) => {
+                                                errors.push(value);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1120,6 +1137,56 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         } else {
             Err(UnifiedTranslationError::reader(ct, errors))
         }
+    }
+
+    fn register_metadata(
+        &mut self,
+        word: ExtractedWord,
+        language: Language
+    ) -> Result<(), WiktionaryError>{
+        let ExtractedWordValues {
+            main: (word, lang, mut content),
+            forms,
+            synonyms,
+            antonyms: _,
+            related:_,
+            translations: _
+        } = convert_entry_to_entries(word, std::slice::from_ref(&language))?;
+        content.dictionary_name(Some(WIKTIONARY));
+        content.extend_synonyms(synonyms.into_iter().map(|v| v.0));
+
+        let base_meta = {
+            let (_, mut meta) = if lang == self.dir.lang_a() {
+                unsafe{
+                    self.insert_pipeline::<A>(WIKTIONARY, &word)
+                }
+            } else {
+                unsafe{
+                    self.insert_pipeline::<B>(WIKTIONARY, &word)
+                }
+            };
+
+            let build = content.build().unwrap();
+            build.write_to(&mut meta);
+            build
+        };
+
+        for (w, mut v) in forms {
+            v.dictionary_name(Some(WIKTIONARY));
+            v.update_with(&base_meta);
+            let (_, mut meta) = if lang == self.dir.lang_a() {
+                unsafe{
+                    self.insert_pipeline::<A>(WIKTIONARY, &w)
+                }
+            } else {
+                unsafe{
+                    self.insert_pipeline::<B>(WIKTIONARY, &w)
+                }
+            };
+            v.build_consuming().unwrap().write_into(&mut meta);
+        }
+
+        Ok(())
     }
 
     fn process_wikidata_entry(&mut self, word: ExtractedWord, recognized: LanguageDirection) -> Result<usize, WiktionaryError> {
@@ -1297,32 +1364,38 @@ mod test {
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: FreeDict,
-            paths: Either::Left("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei")
+            paths: Either::Left("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: FreeDict,
-            paths: Either::Left("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei")
+            paths: Either::Left("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: DictCC,
-            paths: Either::Left("dictionaries/DictCC/dict.txt")
+            paths: Either::Left("dictionaries/DictCC/dict.txt"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Ding,
-            paths: Either::Left("dictionaries/ding/de-en.txt")
+            paths: Either::Left("dictionaries/ding/de-en.txt"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: IATE,
-            paths: Either::Left("dictionaries/IATE/IATE_export.tbx")
+            paths: Either::Left("dictionaries/IATE/IATE_export.tbx"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Omega,
-            paths: Either::Left("dictionaries/dicts.info/OmegaWiki.txt")
+            paths: Either::Left("dictionaries/dicts.info/OmegaWiki.txt"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
@@ -1332,27 +1405,32 @@ mod test {
                     "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
                     "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
                 ]
-            )
+            ),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Muse,
-            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz")
+            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Muse,
-            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz")
+            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+            enrich_with_meta: false
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Wiktionary,
-            paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz")
+            paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
+            enrich_with_meta: true
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Wiktionary,
-            paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz")
+            paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz"),
+            enrich_with_meta: true
         }
     ]);
 
@@ -1380,6 +1458,24 @@ mod test {
         for value in result {
             println!("{value:?}");
         }
+    }
+
+    #[test]
+    pub fn test2(){
+        let mut default = UnifiedTranslationHelper::new(LanguageDirection::EN_DE);
+        match default.read_all_by_instruction(&TARGETS) {
+            Ok(_) => {}
+            Err(err) => {
+                for err in err {
+                    log::info!("####\nHad an error:\n{err}\n####");
+                }
+            }
+        }
+        let data = default.finalize();
+        data.write_to_path(
+            WriteMode::binary(true),
+            "./dictionary",
+        ).unwrap();
     }
 
 
