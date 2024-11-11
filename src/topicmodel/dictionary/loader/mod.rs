@@ -13,13 +13,13 @@ use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBu
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
-use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary};
+use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary};
 use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, IntoStaticStr};
 use thiserror::Error;
@@ -110,13 +110,6 @@ impl<'b> Preprocessor for SpecialPreprocessor<'b> {
 }
 
 
-pub struct UnifiedTranslationHelper<P = DefaultPreprocessor> {
-    dictionary: DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>,
-    preprocessor: P,
-    ding_dict_id_provider: u64,
-    dir: LanguageDirection
-}
-
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Len {
     pub voc_a: usize,
@@ -142,6 +135,17 @@ impl Display for Len {
     }
 }
 
+
+
+pub struct UnifiedTranslationHelper<P = DefaultPreprocessor> {
+    dictionary: DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>,
+    preprocessor: P,
+    ding_dict_id_provider: u64,
+    dir: LanguageDirection,
+    enrich_on_finalize: Vec<LoadInstruction<PathBuf>>
+}
+
+
 impl UnifiedTranslationHelper {
     pub fn new(dir: LanguageDirection) -> Self {
         Self::with_preprocessor(dir, DefaultPreprocessor)
@@ -157,7 +161,8 @@ impl<P> UnifiedTranslationHelper<P> {
                 Some(dir.lang_b().to_string()),
             ),
             preprocessor,
-            ding_dict_id_provider: 0
+            ding_dict_id_provider: 0,
+            enrich_on_finalize: Vec::new()
         }
     }
 
@@ -177,13 +182,34 @@ impl<P> UnifiedTranslationHelper<P> {
     }
 }
 
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum EnrichOption {
+    Off,
+    All,
+    OnFinalize
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoadInstruction<T> {
+pub struct LoadInstruction<T: AsRef<Path>> {
     kind: DictionaryKind,
     direction: LanguageDirection,
     paths: Either<T, Vec<T>>,
-    enrich_with_meta: bool
+    enrich_with_meta: EnrichOption
+}
+
+impl<T> LoadInstruction<T> where T: AsRef<Path> {
+    pub fn normalize(&self) -> LoadInstruction<PathBuf> {
+        LoadInstruction {
+            kind: self.kind,
+            direction: self.direction,
+            paths: self.paths.as_ref().map_either(
+                |value| value.as_ref().to_path_buf(),
+                |values| values.iter().map(|value| value.as_ref().to_path_buf()).collect_vec()
+            ),
+            enrich_with_meta: self.enrich_with_meta,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Display, EnumString, IntoStaticStr)]
@@ -255,6 +281,28 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         self.dir.get::<L>()
     }
 
+
+    fn contains_processed_word<L: DirLang>(&self, dict: &'static str, word: &str) -> bool {
+        let preprocessed = self.preprocessor.preprocess_word::<L>(dict, word);
+        let word = match preprocessed {
+            None => {
+                Cow::Borrowed(word)
+            }
+            Some(Either::Left(value)) => {
+                value
+            }
+            Some(Either::Right((_, processed))) => {
+                processed
+            }
+        };
+
+        if L::LANG.is_a() {
+            self.dictionary.voc_a().contains(word.as_ref())
+        } else {
+            self.dictionary.voc_b().contains(word.as_ref())
+        }
+    }
+
     #[allow(clippy::needless_lifetimes)]
     unsafe fn insert_pipeline<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str) -> (usize, LoadedMetadataMutRef<'a>) {
         let preprocessed = self.preprocessor.preprocess_word::<L>(dict, word);
@@ -306,8 +354,22 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn finalize(self) -> DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager> {
-        self.dictionary
+    pub fn finalize(mut self) -> Result<DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>, (DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>, Vec<LoadByInstructionError>)> {
+        let mut errors = Vec::new();
+        for value in self.enrich_on_finalize.clone() {
+            match self.read_by_instruction_impl::<true, _>(&value) {
+                Ok(_) => {}
+                Err(value) => {
+                    errors.push(value);
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(self.dictionary)
+        } else {
+            Err((self.dictionary, errors))
+        }
     }
 
     fn assert_lang_dir<Payload: Debug, E: Error, InitError: Error>(&self, other: &LanguageDirection) -> Result<(), UnifiedTranslationError<Payload, E, InitError>> {
@@ -321,7 +383,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn read_all_by_instruction<T: AsRef<Path>>(&mut self, instructions: &[LoadInstruction<T>]) -> Result<(), Vec<LoadByInstructionError>> {
+    pub fn read_all_by_instruction<T: AsRef<Path> + Clone>(&mut self, instructions: &[LoadInstruction<T>]) -> Result<(), Vec<LoadByInstructionError>> {
         let mut errors = Vec::with_capacity(instructions.len());
         for instruction in instructions {
             match self.read_by_instruction(instruction) {
@@ -338,7 +400,14 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn read_by_instruction<T: AsRef<Path>>(&mut self, instruction: &LoadInstruction<T>) -> Result<(), LoadByInstructionError> {
+    pub fn read_by_instruction<T: AsRef<Path> + Clone>(&mut self, instruction: &LoadInstruction<T>) -> Result<(), LoadByInstructionError> {
+        if matches!(instruction.enrich_with_meta, EnrichOption::OnFinalize) {
+            self.enrich_on_finalize.push(instruction.normalize())
+        }
+        self.read_by_instruction_impl::<false, _>(instruction)
+    }
+
+    fn read_by_instruction_impl<const IS_FINALIZE: bool, T: AsRef<Path>>(&mut self, instruction: &LoadInstruction<T>) -> Result<(), LoadByInstructionError> {
         match instruction.kind {
             DictionaryKind::FreeDict => {
                 match &instruction.paths {
@@ -429,11 +498,11 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             DictionaryKind::Wiktionary => {
                 match &instruction.paths {
                     Either::Left(value) => {
-                        self.read_wiktionary(value, instruction.enrich_with_meta)?;
+                        self.read_wiktionary_impl::<IS_FINALIZE>(value, instruction.enrich_with_meta)?;
                     }
                     Either::Right(values) => {
                         for value in values {
-                            self.read_wiktionary(value, instruction.enrich_with_meta)?;
+                            self.read_wiktionary_impl::<IS_FINALIZE>(value, instruction.enrich_with_meta)?;
                         }
                     }
                 }
@@ -1073,7 +1142,15 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         self.insert_translation_by_id(a, b, dir)
     }
 
-    pub fn read_wiktionary(&mut self, path: impl AsRef<Path>, enrich_with_meta: bool) -> Result<WiktionaryReaderStats, UnifiedTranslationError<WiktionaryReaderStats, WiktionaryError, std::io::Error>> {
+    pub fn read_wiktionary(&mut self, path: impl AsRef<Path>, enrich_with_meta: EnrichOption) -> Result<WiktionaryReaderStats, UnifiedTranslationError<WiktionaryReaderStats, WiktionaryError, std::io::Error>> {
+        self.read_wiktionary_impl::<false>(path, enrich_with_meta)
+    }
+
+    fn read_wiktionary_impl<const IS_FINALIZE: bool>(
+        &mut self,
+        path: impl AsRef<Path>,
+        enrich_with_meta: EnrichOption
+    ) -> Result<WiktionaryReaderStats, UnifiedTranslationError<WiktionaryReaderStats, WiktionaryError, std::io::Error>> {
         let reader = wiktionary_reader::read_wiktionary(path)?;
         let mut errors = Vec::new();
         let mut ct = WiktionaryReaderStats::default();
@@ -1087,6 +1164,9 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                                 .filter(|value| lang.ne(value) && self.dir.contains(value))
                                 .next()
                             {
+                                if IS_FINALIZE {
+                                    continue
+                                }
                                 match self.process_wikidata_entry(value, lang.to(other_lang)) {
                                     Ok(value) => {
                                         ct.success += value;
@@ -1096,7 +1176,13 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                                     }
                                 }
                             } else {
-                                if enrich_with_meta {
+                                if self.dir.lang_a() == lang {
+                                    ct.no_lang_b += 1;
+                                } else {
+                                    ct.no_lang_a += 1;
+                                }
+
+                                if IS_FINALIZE || matches!(enrich_with_meta, EnrichOption::All) {
                                     match self.register_metadata(value, lang) {
                                         Err(value) => {
                                             errors.push(value);
@@ -1104,11 +1190,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                                         _ => {}
                                     }
                                 }
-                                if self.dir.lang_a() == lang {
-                                    ct.no_lang_b += 1;
-                                } else {
-                                    ct.no_lang_a += 1;
-                                }
+
                             }
                         }
                         _ => {
@@ -1342,8 +1424,8 @@ pub enum LineReaderError<T: Debug> {
 #[cfg(test)]
 mod test {
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
-    use crate::topicmodel::dictionary::{LoadByInstructionError, LoadInstruction, UnifiedTranslationHelper};
-    use crate::topicmodel::vocabulary::BasicVocabulary;
+    use crate::topicmodel::dictionary::{DictionaryWithMeta, EnrichOption, LoadByInstructionError, LoadInstruction, UnifiedTranslationHelper};
+    use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary};
     use std::fs::File;
     use std::io::{Write};
     use either::Either;
@@ -1351,43 +1433,44 @@ mod test {
     use rayon::prelude::*;
     use crate::topicmodel::dictionary::DictionaryKind::*;
     use crate::topicmodel::dictionary::io::{WriteMode, WriteableDictionary};
+    use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataManager;
 
     static TARGETS: std::sync::LazyLock<Vec<LoadInstruction<&str>>> = std::sync::LazyLock::new(||vec![
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: FreeDict,
             paths: Either::Left("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: FreeDict,
             paths: Either::Left("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: DictCC,
             paths: Either::Left("dictionaries/DictCC/dict.txt"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Ding,
             paths: Either::Left("dictionaries/ding/de-en.txt"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: IATE,
             paths: Either::Left("dictionaries/IATE/IATE_export.tbx"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Omega,
             paths: Either::Left("dictionaries/dicts.info/OmegaWiki.txt"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
@@ -1398,31 +1481,31 @@ mod test {
                     "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
                 ]
             ),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Muse,
             paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Muse,
             paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
-            enrich_with_meta: false
+            enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Wiktionary,
             paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
-            enrich_with_meta: true
+            enrich_with_meta: EnrichOption::OnFinalize
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Wiktionary,
             paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz"),
-            enrich_with_meta: true
+            enrich_with_meta: EnrichOption::OnFinalize
         }
     ]);
 
@@ -1440,7 +1523,14 @@ mod test {
                     log::info!("####\nHad an error while reading {}:\n{err}\n####", value.kind);
                 }
             }
-            let data = default.finalize();
+            let data = match default.finalize() {
+                Ok(value) => {
+                    value
+                }
+                Err((value, _)) => {
+                    value
+                }
+            };
             data.write_to_path(
                 WriteMode::json(false, true),
                 format!("dictionary_{}_{}.json", value.kind, i)
@@ -1463,7 +1553,14 @@ mod test {
                 }
             }
         }
-        let data = default.finalize();
+        let data = match default.finalize() {
+            Ok(value) => {
+                value
+            }
+            Err((value, _)) => {
+                value
+            }
+        };
         data.write_to_path(
             WriteMode::binary(true),
             "./dictionary",

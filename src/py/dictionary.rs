@@ -38,6 +38,7 @@ use crate::register_python;
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PyDictionary {
     wrapped: DictionaryWithMeta<String, PyVocabulary, LoadedMetadataManager>,
 }

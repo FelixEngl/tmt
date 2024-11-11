@@ -35,6 +35,7 @@ use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, Stor
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PyVocabulary {
     inner: Vocabulary<String>
 }

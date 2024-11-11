@@ -228,9 +228,21 @@ impl<D> ReadableDictionary for D where D: BasicDictionary + DeserializeOwned + S
 
     fn from_reader(mode: WriteMode, reader: impl Read) -> Result<Self, IoError> {
         let reader: Box<dyn Read> = if mode.compressed() {
-            Box::new(zstd::Decoder::new(BufReader::new(reader))?)
+            Box::new(zstd::Decoder::new(BufReader::with_capacity(
+                byte_unit::Byte::from_u64_with_unit(
+                    250,
+                    byte_unit::Unit::MB
+                ).unwrap().as_u64() as usize,
+                reader
+            ))?)
         } else {
-            Box::new(BufReader::new(reader))
+            Box::new(BufReader::with_capacity(
+                byte_unit::Byte::from_u64_with_unit(
+                    250,
+                    byte_unit::Unit::MB
+                ).unwrap().as_u64() as usize,
+                reader
+            ))
         };
         match mode {
             WriteMode::Binary { .. } => {

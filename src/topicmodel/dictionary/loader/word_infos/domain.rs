@@ -1234,7 +1234,6 @@ pub enum Domain {
         serialize = "Zoroastrianism",
         serialize = "Catholicism",
         serialize = "ethics",
-        serialize = "Hinduism",
         serialize = "Mormonism",
     )]
     Relig = 108,
