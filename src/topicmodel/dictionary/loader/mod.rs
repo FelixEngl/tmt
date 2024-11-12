@@ -1470,41 +1470,41 @@ mod test {
             paths: Either::Left("dictionaries/dicts.info/OmegaWiki.txt"),
             enrich_with_meta: EnrichOption::Off
         },
-        // LoadInstruction {
-        //     direction: LanguageDirection::EN_DE,
-        //     kind: MSTerms,
-        //     paths: Either::Right(
-        //         vec![
-        //             "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
-        //             "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
-        //         ]
-        //     ),
-        //     enrich_with_meta: EnrichOption::Off
-        // },
-        // LoadInstruction {
-        //     direction: LanguageDirection::EN_DE,
-        //     kind: Muse,
-        //     paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
-        //     enrich_with_meta: EnrichOption::Off
-        // },
-        // LoadInstruction {
-        //     direction: LanguageDirection::DE_EN,
-        //     kind: Muse,
-        //     paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
-        //     enrich_with_meta: EnrichOption::Off
-        // },
-        // LoadInstruction {
-        //     direction: LanguageDirection::EN_DE,
-        //     kind: Wiktionary,
-        //     paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
-        //     enrich_with_meta: EnrichOption::OnFinalize
-        // },
-        // LoadInstruction {
-        //     direction: LanguageDirection::DE_EN,
-        //     kind: Wiktionary,
-        //     paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz"),
-        //     enrich_with_meta: EnrichOption::OnFinalize
-        // }
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: MSTerms,
+            paths: Either::Right(
+                vec![
+                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
+                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
+                ]
+            ),
+            enrich_with_meta: EnrichOption::Off
+        },
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: Muse,
+            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+            enrich_with_meta: EnrichOption::Off
+        },
+        LoadInstruction {
+            direction: LanguageDirection::DE_EN,
+            kind: Muse,
+            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+            enrich_with_meta: EnrichOption::Off
+        },
+        LoadInstruction {
+            direction: LanguageDirection::EN_DE,
+            kind: Wiktionary,
+            paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
+            enrich_with_meta: EnrichOption::OnFinalize
+        },
+        LoadInstruction {
+            direction: LanguageDirection::DE_EN,
+            kind: Wiktionary,
+            paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz"),
+            enrich_with_meta: EnrichOption::OnFinalize
+        }
     ]);
 
     #[test]
@@ -1521,7 +1521,7 @@ mod test {
                     log::info!("####\nHad an error while reading {}:\n{err}\n####", value.kind);
                 }
             }
-            let data = match default.finalize() {
+            let data: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = match default.finalize() {
                 Ok(value) => {
                     value
                 }
@@ -1574,6 +1574,11 @@ mod test {
         data.write_to_path(
             WriteMode::binary(true),
             "./dictionary",
+        ).unwrap();
+
+
+        let read: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
+            "./dictionary.dat.zst"
         ).unwrap();
     }
 

@@ -42,10 +42,14 @@ where
         }
 
 
-        let pages = sorted_ids.into_par_iter().chunks(20).map(|chunk| {
-            let start = voc_origin.get_value(*chunk.first().unwrap()).unwrap();
-            let end = voc_origin.get_value(*chunk.last().unwrap()).unwrap();
-            let file_path = dir.join(format!("{}_{}.html", L::LANG, start));
+        let pages = sorted_ids.into_par_iter().chunks(200).map(|chunk| {
+            let start = *chunk.first().unwrap();
+            let end = *chunk.last().unwrap();
+
+            let file_path = dir.join(format!("{}_{}_{}.html", L::LANG, start, end));
+
+            let start = voc_origin.get_value(start).unwrap();
+            let end = voc_origin.get_value(end).unwrap();
 
             let html = HtmlPage::new()
                 .with_title(
@@ -126,7 +130,7 @@ where
                                                                                         TableRow::new()
                                                                                             .with_cell(TableCell::default().with_raw(field))
                                                                                             .with_cell(TableCell::default().with_raw("General"))
-                                                                                            .with_cell(TableCell::default().with_raw(entry.into_iter().join(", ")))
+                                                                                            .with_cell(TableCell::default().with_raw(format!("\"{}\"", entry.into_iter().join("\", \""))))
                                                                                     );
                                                                                 }
                                                                             }
@@ -134,13 +138,16 @@ where
                                                                                 let mut dict = Vec::from_iter(dict);
                                                                                 dict.sort_by_key(|v| v.0.clone());
                                                                                 for (dict, entries) in dict {
+                                                                                    if entries.is_empty() {
+                                                                                        continue
+                                                                                    }
                                                                                     let mut entry = Vec::from_iter(entries);
                                                                                     entry.sort();
                                                                                     subtab.add_custom_body_row(
                                                                                         TableRow::new()
                                                                                             .with_cell(TableCell::default().with_raw(field))
                                                                                             .with_cell(TableCell::default().with_raw(dict))
-                                                                                            .with_cell(TableCell::default().with_raw(entry.into_iter().join(", ")))
+                                                                                            .with_cell(TableCell::default().with_raw(format!("\"{}\"", entry.into_iter().join("\", \""))))
                                                                                     );
                                                                                 }
                                                                             }
@@ -243,9 +250,9 @@ mod test {
 
     #[test]
     fn can_generate_html(){
-        let data = PyDictionary::from_path_with_extension("E:/git/tmt/dictionary_dict_cc_2.dat").unwrap();
+        let data = PyDictionary::from_path_with_extension("dictionary.dat.zst").unwrap();
         data.generate_html(
-            "./test_html"
+            "E:/tmp/overview/test_html"
         ).unwrap()
     }
 }
