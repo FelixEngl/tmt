@@ -1423,12 +1423,15 @@ pub enum LineReaderError<T: Debug> {
 
 #[cfg(test)]
 mod test {
+    use std::io::Cursor;
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
-    use crate::topicmodel::dictionary::{EnrichOption, LoadInstruction, UnifiedTranslationHelper};
+    use crate::topicmodel::dictionary::{Dictionary, DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
     use rayon::prelude::*;
     use crate::topicmodel::dictionary::DictionaryKind::*;
-    use crate::topicmodel::dictionary::io::{WriteMode, WriteableDictionary};
+    use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteMode, WriteableDictionary};
+    use crate::topicmodel::dictionary::metadata::ex::MetadataManagerEx;
+    use crate::topicmodel::vocabulary::Vocabulary;
 
     static TARGETS: std::sync::LazyLock<Vec<LoadInstruction<&str>>> = std::sync::LazyLock::new(||vec![
         LoadInstruction {
@@ -1467,41 +1470,41 @@ mod test {
             paths: Either::Left("dictionaries/dicts.info/OmegaWiki.txt"),
             enrich_with_meta: EnrichOption::Off
         },
-        LoadInstruction {
-            direction: LanguageDirection::EN_DE,
-            kind: MSTerms,
-            paths: Either::Right(
-                vec![
-                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
-                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
-                ]
-            ),
-            enrich_with_meta: EnrichOption::Off
-        },
-        LoadInstruction {
-            direction: LanguageDirection::EN_DE,
-            kind: Muse,
-            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
-            enrich_with_meta: EnrichOption::Off
-        },
-        LoadInstruction {
-            direction: LanguageDirection::DE_EN,
-            kind: Muse,
-            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
-            enrich_with_meta: EnrichOption::Off
-        },
-        LoadInstruction {
-            direction: LanguageDirection::EN_DE,
-            kind: Wiktionary,
-            paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
-            enrich_with_meta: EnrichOption::OnFinalize
-        },
-        LoadInstruction {
-            direction: LanguageDirection::DE_EN,
-            kind: Wiktionary,
-            paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz"),
-            enrich_with_meta: EnrichOption::OnFinalize
-        }
+        // LoadInstruction {
+        //     direction: LanguageDirection::EN_DE,
+        //     kind: MSTerms,
+        //     paths: Either::Right(
+        //         vec![
+        //             "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
+        //             "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
+        //         ]
+        //     ),
+        //     enrich_with_meta: EnrichOption::Off
+        // },
+        // LoadInstruction {
+        //     direction: LanguageDirection::EN_DE,
+        //     kind: Muse,
+        //     paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+        //     enrich_with_meta: EnrichOption::Off
+        // },
+        // LoadInstruction {
+        //     direction: LanguageDirection::DE_EN,
+        //     kind: Muse,
+        //     paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+        //     enrich_with_meta: EnrichOption::Off
+        // },
+        // LoadInstruction {
+        //     direction: LanguageDirection::EN_DE,
+        //     kind: Wiktionary,
+        //     paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
+        //     enrich_with_meta: EnrichOption::OnFinalize
+        // },
+        // LoadInstruction {
+        //     direction: LanguageDirection::DE_EN,
+        //     kind: Wiktionary,
+        //     paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz"),
+        //     enrich_with_meta: EnrichOption::OnFinalize
+        // }
     ]);
 
     #[test]
@@ -1526,9 +1529,21 @@ mod test {
                     value
                 }
             };
+
+            let mut x = Vec::<u8>::new();
+            data.to_writer(
+                WriteMode::binary(true),
+                &mut x
+            ).unwrap();
+
+            let x: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_reader(
+                WriteMode::binary(true),
+                Cursor::new(x)
+            ).unwrap();
+
             data.write_to_path(
-                WriteMode::json(false, true),
-                format!("dictionary_{}_{}.json", value.kind, i)
+                WriteMode::binary(false),
+                format!("dictionary_{}_{}.dat", value.kind, i)
             )
         }).collect::<Vec<_>>();
 

@@ -202,23 +202,24 @@ impl<D> WriteableDictionary for D where D: BasicDictionary + Serialize {
     }
 
     fn to_writer(&self, mode: WriteMode, writer: impl Write) -> Result<(), IoError> {
-        let writer: Box<dyn Write> = if mode.compressed() {
-            Box::new(zstd::Encoder::new(BufWriter::new(writer), 0)?)
+        let mut writer: Box<dyn Write> = if mode.compressed() {
+            Box::new(zstd::Encoder::new(writer, 0)?)
         } else {
             Box::new(BufWriter::new(writer))
         };
         match mode {
             WriteMode::Binary { .. } => {
-                bincode::serialize_into(writer, self)?;
+                bincode::serialize_into(&mut writer, self)?;
             }
             WriteMode::Json { pretty, .. } => {
                 if pretty {
-                    serde_json::to_writer_pretty(writer, self)?;
+                    serde_json::to_writer_pretty(&mut writer, self)?;
                 } else {
-                    serde_json::to_writer(writer, self)?;
+                    serde_json::to_writer(&mut writer, self)?;
                 }
             }
         }
+        writer.flush()?;
         Ok(())
     }
 }
@@ -236,13 +237,7 @@ impl<D> ReadableDictionary for D where D: BasicDictionary + DeserializeOwned + S
 
     fn from_reader(mode: WriteMode, reader: impl Read) -> Result<Self, IoError> {
         let reader: Box<dyn Read> = if mode.compressed() {
-            Box::new(zstd::Decoder::new(BufReader::with_capacity(
-                byte_unit::Byte::from_u64_with_unit(
-                    250,
-                    byte_unit::Unit::MB
-                ).unwrap().as_u64() as usize,
-                reader
-            ))?)
+            Box::new(zstd::Decoder::new(reader)?)
         } else {
             Box::new(BufReader::with_capacity(
                 byte_unit::Byte::from_u64_with_unit(

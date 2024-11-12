@@ -77,7 +77,7 @@ macro_rules! impl_associated_metadata {
         pub struct AssociatedMetadataImpl {
             $(
                 $(#[doc=$doc])?
-                #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
+                // #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
                 $name: tinyset::Set64<$typ>,
             )+
         }
@@ -291,9 +291,9 @@ impl<T> MetadataWithOrigin<T> {
 /// The metadata for an entry
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
 pub struct MetadataEx {
-    #[serde(skip_serializing_if = "LazyAssociatedMetadata::is_not_init", default)]
+    // #[serde(skip_serializing_if = "LazyAssociatedMetadata::is_not_init", default)]
     pub(super) general_metadata: LazyAssociatedMetadata,
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "empty_vec")]
+    // #[serde(skip_serializing_if = "Vec::is_empty", default = "empty_vec")]
     pub(super) associated_metadata: Vec<LazyAssociatedMetadata>,
 }
 
@@ -505,7 +505,7 @@ impl<'a> Iterator for IterMut<'a> {
 /// A lazy loading structure for associated metadata.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq)]
 #[repr(transparent)]
-#[serde(transparent)]
+// #[serde(transparent)]
 pub(super) struct LazyAssociatedMetadata {
     #[serde(with = "crate::toolkit::once_serializer::OnceCellDef")]
     pub(super) inner: std::cell::OnceCell<AssociatedMetadata>
@@ -576,7 +576,7 @@ impl Default for MetadataEx {
 /// The associated metadata
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq)]
 #[repr(transparent)]
-#[serde(transparent)]
+// #[serde(transparent)]
 pub struct AssociatedMetadata {
     #[serde(with = "crate::toolkit::once_serializer::OnceCellDef")]
     pub(super) inner: std::cell::OnceCell<AssociatedMetadataImpl>
@@ -629,5 +629,76 @@ impl AssociatedMetadata {
     #[inline(always)]
     pub fn collect_all_known_ids(&self) -> Option<Set64<usize>> {
         Some(self.get()?.collect_all_known_ids())
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use tinyset::{Fits64, Set64};
+    use crate::toolkit::typesafe_interner::AnyIdSymbol;
+    use crate::topicmodel::dictionary::metadata::ex::{AssociatedMetadataImpl, MetadataEx};
+    use crate::topicmodel::dictionary::word_infos::PartOfSpeech;
+
+
+    /// The associated metadata
+    #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+    #[repr(transparent)]
+    #[serde(transparent)]
+    pub struct Data {
+        #[serde(with = "crate::toolkit::once_serializer::OnceCellDef")]
+        pub(super) inner: std::cell::OnceCell<Set64<PartOfSpeech>>
+    }
+
+
+    unsafe fn add_data(write: &mut AssociatedMetadataImpl) {
+        write.pos.insert(PartOfSpeech::Noun);
+        write.pos.insert(PartOfSpeech::Num);
+        write.ids.insert(AnyIdSymbol::from_u64(12));
+        write.ids.insert(AnyIdSymbol::from_u64(3));
+
+    }
+
+    #[test]
+    fn can_deser(){
+        let mut meta = MetadataEx::default();
+        {
+           unsafe {
+               add_data(meta.general_metadata.get_mut_or_init().get_mut_or_init());
+               for value in meta.associated_metadata.iter_mut() {
+                   add_data(value.get_mut_or_init().get_mut_or_init());
+               }
+           }
+        }
+
+        let ser = bincode::serialize(&meta).unwrap();
+
+        let deser: MetadataEx = bincode::deserialize(&ser).unwrap();
+
+        let mut x = Data::default();
+        x.inner.get_or_init(Set64::new);
+        x.inner.get_mut().unwrap().insert(PartOfSpeech::Num);
+        x.inner.get_mut().unwrap().insert(PartOfSpeech::Noun);
+
+        let ser = bincode::serialize(&x).unwrap();
+
+        let deser: Data = bincode::deserialize(&ser).unwrap();
+
+        for value in deser.inner.get().unwrap().iter() {
+            println!("{value}")
+        }
+
+        let mut x: Set64<PartOfSpeech> = tinyset::Set64::new();
+        x.insert(PartOfSpeech::Num);
+        x.insert(PartOfSpeech::Noun);
+
+
+
+        let ser = bincode::serialize(&x).unwrap();
+
+        let deser: Set64<PartOfSpeech> = bincode::deserialize(&ser).unwrap();
+        for value in deser {
+            println!("{value}")
+        }
     }
 }

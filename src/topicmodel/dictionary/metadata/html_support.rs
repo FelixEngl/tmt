@@ -243,7 +243,7 @@ mod test {
 
     #[test]
     fn can_generate_html(){
-        let data = PyDictionary::from_path_with_extension("E:/git/tmt/dictionary.dat.zst").unwrap();
+        let data = PyDictionary::from_path_with_extension("E:/git/tmt/dictionary_dict_cc_2.dat").unwrap();
         data.generate_html(
             "./test_html"
         ).unwrap()
