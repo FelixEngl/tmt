@@ -21,7 +21,7 @@ use crate::py::topic_model::PyTopicModel;
 use crate::py::vocabulary::PyVocabulary;
 use crate::register_python;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
-use crate::topicmodel::model::{DocumentLength, DocumentTo, Probability, TopicModel, TopicTo, WordFrequency, WordTo};
+use crate::topicmodel::model::{DocumentLength, DocumentTo, FullTopicModel, Probability, TopicModel, TopicTo, WordFrequency, WordTo};
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
 

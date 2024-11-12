@@ -16,7 +16,7 @@ use crate::py::helpers::LanguageHintValue;
 use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Language, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::{DictIter, DictionaryWithMetaIterator};
-use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataManager, MetaField, SolvedLoadedMetadata};
+use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, MetaField, SolvedLoadedMetadata};
 use crate::topicmodel::dictionary::metadata::{MetadataManager};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc, MergingDictionary};
 use crate::topicmodel::language_hint::LanguageHint;
@@ -40,7 +40,7 @@ use crate::register_python;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyDictionary {
-    wrapped: DictionaryWithMeta<String, PyVocabulary, LoadedMetadataManager>,
+    wrapped: DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>,
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -222,7 +222,7 @@ impl PyDictionary {
 }
 
 impl Deref for PyDictionary {
-    type Target = DictionaryWithMeta<String, PyVocabulary, LoadedMetadataManager>;
+    type Target = DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>;
 
     fn deref(&self) -> &Self::Target {
         &self.wrapped
@@ -232,7 +232,7 @@ impl Deref for PyDictionary {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 pub struct PyDictIter {
-    inner: DictionaryWithMetaIterator<DictionaryWithMeta<String, PyVocabulary, LoadedMetadataManager>, String, PyVocabulary, LoadedMetadataManager>,
+    inner: DictionaryWithMetaIterator<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>, String, PyVocabulary, MetadataManagerEx>,
 }
 
 unsafe impl Send for PyDictIter{}

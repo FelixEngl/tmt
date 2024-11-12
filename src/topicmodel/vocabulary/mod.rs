@@ -494,7 +494,7 @@ impl<'a, T> FromIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
         for value in iter {
             new.add_hash_ref(value.clone());
         }
-        return new;
+        new
     }
 }
 

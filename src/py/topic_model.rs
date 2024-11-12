@@ -36,7 +36,7 @@ use crate::toolkit::special_python_values::{SingleOrVec};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
+use crate::topicmodel::model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, FullTopicModel, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use crate::topicmodel::model::meta::*;
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 
@@ -48,6 +48,9 @@ pub struct PyTopicModel {
 }
 
 impl PyTopicModel {
+    pub fn wrapped(&self) -> &TopicModel<String, PyVocabulary> {
+        &self.inner
+    }
     pub fn wrap(inner: TopicModel<String, PyVocabulary>) -> Self {
         Self{inner}
     }
@@ -405,6 +408,27 @@ impl From<ReadError<Infallible>> for PyErr {
     }
 }
 
+impl FullTopicModel<String, PyVocabulary> for PyTopicModel {
+    fn new(topics: TopicTo<WordTo<Probability>>, vocabulary: PyVocabulary, used_vocab_frequency: WordTo<WordFrequency>, doc_topic_distributions: DocumentTo<TopicTo<Probability>>, document_lengths: DocumentTo<DocumentLength>) -> Self
+    where
+        Self: Sized
+    {
+        Self {
+            inner: TopicModel::new(
+                topics,
+                vocabulary,
+                used_vocab_frequency,
+                doc_topic_distributions,
+                document_lengths
+            )
+        }
+    }
+
+    fn normalize_in_place(&mut self) {
+        self.inner.normalize_in_place()
+    }
+}
+
 
 
 
@@ -415,7 +439,7 @@ mod test {
     use crate::py::helpers::LanguageHintValue;
     use crate::py::topic_model::{PyTopicModel};
     use crate::py::vocabulary::PyVocabulary;
-    use crate::topicmodel::model::TopicModel;
+    use crate::topicmodel::model::{FullTopicModel, TopicModel};
     use crate::translate::test::create_test_data;
 
     #[test]

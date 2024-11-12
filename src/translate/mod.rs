@@ -12,407 +12,38 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+mod traits;
+mod config;
+mod errors;
+mod language;
+mod phantoms;
+pub mod topic_model_specific;
+
 use std::cmp::Ordering;
-use std::collections::{HashMap};
 use std::collections::hash_map::Entry;
-use std::error::Error;
+use std::collections::HashMap;
 use std::hash::Hash;
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
-use std::ops::Deref;
-use evalexpr::{Context, context_map, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext};
-use itertools::{Itertools};
+use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext};
+use itertools::Itertools;
 use rayon::prelude::*;
-use strum::{AsRefStr, Display, EnumString, ParseError};
-use thiserror::Error;
-use crate::toolkit::evalexpr::{CombineableContext};
-use crate::topicmodel::model::{BasicTopicModel, TopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
-use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
-use crate::topicmodel::dictionary::direction::{AToB, B, BToA};
-use crate::topicmodel::vocabulary::{MappableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
-use crate::translate::LanguageOrigin::{Origin, Target};
-use crate::variable_provider::variable_names::*;
-use crate::voting::{VotingExpressionError, VotingMethod, VotingResult};
-use crate::voting::traits::VotingMethodMarker;
-use pyo3::{pyclass, pymethods, PyResult};
-use pyo3::exceptions::PyValueError;
-use crate::variable_provider::{AsVariableProvider, VariableProviderOut, VariableProvider};
-use crate::register_python;
+pub use traits::*;
+use language::*;
+pub use errors::*;
+pub use config::*;
+use crate::toolkit::evalexpr::{CombineableContext, ContextExtender};
 use crate::topicmodel::create_topic_model_specific_dictionary;
+use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::direction::{AToB, BToA, B};
 use crate::topicmodel::language_hint::LanguageHint;
+use crate::topicmodel::reference::HashRef;
+use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
+use crate::translate::phantoms::DummyAsVariableProvider;
 use crate::translate::TranslateError::IncompatibleLanguages;
-use crate::variable_provider::errors::{VariableProviderError, AsVariableProviderError};
+use crate::variable_provider::variable_names::*;
+use crate::variable_provider::{AsVariableProvider, VariableProvider, VariableProviderOut};
+use crate::voting::traits::VotingMethodMarker;
+use crate::voting::VotingMethod;
 
-/// The config for a translation
-#[derive(Debug)]
-pub struct TranslateConfig<V: VotingMethodMarker> {
-    /// The voting to be used
-    voting: V,
-    /// The epsilon to be used, if it is none it is determined heuristically.
-    epsilon: Option<f64>,
-    /// The threshold of the probabilities allowed to be used as voters
-    threshold: Option<f64>,
-    /// Set what to do with the original word
-    keep_original_word: KeepOriginalWord,
-    /// Limits the number of accepted candidates to N. If not set keep all.
-    top_candidate_limit: Option<NonZeroUsize>,
-}
-
-impl<V> TranslateConfig<V> where V: VotingMethodMarker {
-    pub fn new(voting: V, epsilon: Option<f64>, threshold: Option<f64>, keep_original_word: KeepOriginalWord, top_candidate_limit: Option<NonZeroUsize>) -> Self {
-        Self { epsilon, voting, threshold, keep_original_word, top_candidate_limit }
-    }
-}
-
-impl<'a, V> Clone for TranslateConfig<V> where V: VotingMethodMarker + Clone {
-    fn clone(&self) -> Self {
-        Self {
-            voting: self.voting.clone(),
-            epsilon: self.epsilon,
-            threshold: self.threshold,
-            keep_original_word: self.keep_original_word,
-            top_candidate_limit: self.top_candidate_limit
-        }
-    }
-}
-
-
-
-/// Setting if to keep the original word from language A
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
-#[pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
-#[derive(AsRefStr, Display, EnumString)]
-pub enum KeepOriginalWord {
-    Always,
-    IfNoTranslation,
-    #[default]
-    Never
-}
-
-// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
-#[pymethods]
-impl KeepOriginalWord {
-    pub fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    pub fn __repr__(&self) -> String {
-        self.to_string()
-    }
-
-    #[staticmethod]
-    #[pyo3(name="from_string")]
-    pub fn from_string_py(value: &str) -> PyResult<Self> {
-        value.parse().map_err(|value: ParseError | PyValueError::new_err(value.to_string()))
-    }
-
-    pub fn __reduce__(&self) -> String {
-        format!("KeepOriginalWord.{self}")
-    }
-
-    pub fn __reduce_ex__(&self, _version: usize) -> String {
-        format!("KeepOriginalWord.{self}")
-    }
-}
-
-/// An error that happened while translating
-#[derive(Debug, Error)]
-pub enum TranslateError<'a> {
-    #[error(transparent)]
-    VotingError(#[from] VotingExpressionError),
-    #[error(transparent)]
-    WithOrigin(#[from] TranslateErrorWithOrigin),
-    #[error(transparent)]
-    ProviderError(#[from] VariableProviderError),
-    #[error("The dictionary has a translation direction from {lang_a} to {lang_b}, but the topic is in {lang_b}!")]
-    IncompatibleLanguages {
-        lang_a: &'a LanguageHint,
-        lang_b: LanguageHint,
-        lang_model: &'a LanguageHint,
-    },
-    #[error(transparent)]
-    AsVariableProviderFailed(#[from] AsVariableProviderError)
-}
-
-#[derive(Debug, Error)]
-#[error("Failed with an error! ({topic_id}, {word_id}) {source}")]
-pub struct TranslateErrorWithOrigin {
-    topic_id: usize,
-    word_id: usize,
-    source: Box<dyn Error + Send + Sync>
-}
-
-/// Trait for mapping to map something to something that supports a context for topic_id and word_id
-trait MapsToTranslateErrorWithOrigin {
-    type Return;
-    fn originates_at(self, topic_id: usize, word_id: usize) -> Self::Return;
-}
-
-impl<T> MapsToTranslateErrorWithOrigin for VotingResult<T> {
-    type Return = Result<T, TranslateErrorWithOrigin>;
-
-    fn originates_at(self, topic_id: usize, word_id: usize) -> Self::Return {
-        match self {
-            Ok(value) => {
-                Ok(value)
-            }
-            Err(err) => {
-                Err(
-                    TranslateErrorWithOrigin {
-                        topic_id,
-                        word_id,
-                        source: err.into()
-                    }
-                )
-            }
-        }
-    }
-}
-
-impl MapsToTranslateErrorWithOrigin for VotingExpressionError {
-    type Return = TranslateErrorWithOrigin;
-
-    fn originates_at(self, topic_id: usize, word_id: usize) -> Self::Return {
-        TranslateErrorWithOrigin {
-            topic_id,
-            word_id,
-            source: self.into()
-        }
-    }
-}
-
-
-/// Allows to differentiate the source of the object regarding a language
-#[derive(Copy, Clone, Debug)]
-enum LanguageOrigin<T> {
-    Origin(T),
-    Target(T)
-}
-
-impl<T> Deref for LanguageOrigin<T> {
-    type Target = T;
-
-    fn deref(&self) -> &<Self as Deref>::Target {
-        match self {
-            Origin(value) => {value}
-            Target(value) => {value}
-        }
-    }
-}
-
-#[allow(dead_code)]
-struct DummyAsVariableProvider<T> {
-    _phantom: PhantomData<T>
-}
-
-impl<T> AsVariableProvider<T> for DummyAsVariableProvider<T> {
-    fn as_variable_provider_for<'a, Model, D, Voc>(&self, _: &'a Model, _: &'a D) -> Result<VariableProvider, AsVariableProviderError> where T: Hash + Eq + Ord + Clone, Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a, D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>, Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats {
-        Err(AsVariableProviderError("Never callable!".to_string()))
-    }
-}
-
-#[allow(dead_code)]
-pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
-    topic_model: &'a Model,
-    dictionary: &'a D,
-    translate_config: &TranslateConfig<V>,
-) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError<'a>> where
-    T: Hash + Eq + Ord + Clone,
-    V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
-    Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-{
-    translate_topic_model(
-        topic_model,
-        dictionary,
-        translate_config,
-        None::<&DummyAsVariableProvider<T>>
-    )
-}
-
-
-pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
-    topic_model: &'a Model,
-    dictionary: &'a D,
-    translate_config: &TranslateConfig<V>,
-    provider: Option<&P>
-) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError<'a>> where
-    T: Hash + Eq + Ord + Clone,
-    V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
-    Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-    P: AsVariableProvider<T>
-{
-
-    if let Some(lang_model) = topic_model.vocabulary().language() {
-        if let (Some(lang_a), lang_b) = dictionary.language_direction() {
-            if lang_model != lang_a {
-                let lang_b = lang_b.cloned().unwrap_or_else(|| LanguageHint::new("###"));
-                return Err(
-                    IncompatibleLanguages {
-                        lang_a,
-                        lang_b,
-                        lang_model
-                    }
-                )
-            }
-        }
-    }
-
-    let dictionary: D = create_topic_model_specific_dictionary::<D, D, T, Voc, Voc>(
-        dictionary,
-        topic_model.vocabulary()
-    );
-
-    // TODO: make clean for rust.
-    let provider = if let Some(provider) = provider {
-        Some(provider.as_variable_provider_for(topic_model, &dictionary))
-    } else {
-        None
-    }.transpose()?;
-
-    let epsilon = if let Some(value) = translate_config.epsilon {
-        value
-    } else {
-        topic_model.topics().iter().flatten().fold(
-            f64::MAX,
-            |old, other| {
-                old.min(*other)
-            }
-        ) - f64::EPSILON
-    };
-
-    let mut topic_context = context_map! {
-        EPSILON => epsilon,
-        VOCABULARY_SIZE_A => dictionary.voc_a().len() as i64,
-        VOCABULARY_SIZE_B => dictionary.voc_b().len() as i64,
-    }.unwrap();
-
-    if let Some(ref provider) = provider {
-        provider.provide_global(&mut topic_context)?;
-    }
-
-    let topic_context = topic_context
-        .to_static_with(EmptyContextWithBuiltinFunctions);
-
-
-    // topic to word id to probable translation candidates.
-    let result = topic_model
-        .topics()
-        .par_iter()
-        .zip_eq(topic_model.topic_metas())
-        .enumerate()
-        .map(|(topic_id, (topic, meta))| {
-            let mut topic_context_2 = context_map! {
-                TOPIC_MAX_PROBABILITY => meta.stats.max_value,
-                TOPIC_MIN_PROBABILITY => meta.stats.min_value,
-                TOPIC_AVG_PROBABILITY => meta.stats.average_value,
-                TOPIC_SUM_PROBABILITY => meta.stats.sum_value,
-                TOPIC_ID => topic_id as i64
-            }.unwrap();
-
-            if let Some(provider) = provider.as_ref() {
-                match provider.provide_for_topic(topic_id, &mut topic_context_2) {
-                    Ok(_) => {
-                        let topic_context_2 = topic_context_2
-                            .to_static_with(topic_context.clone());
-
-                        translate_topic(
-                            topic_model,
-                            &dictionary,
-                            topic_id,
-                            topic,
-                            topic_context_2,
-                            &translate_config,
-                            Some(provider)
-                        ).map_err(TranslateError::WithOrigin)
-                    }
-                    Err(err) => {
-                        Err(err.into())
-                    }
-                }
-            } else {
-                let topic_context_2 = topic_context_2
-                    .to_static_with(topic_context.clone());
-
-                translate_topic(
-                    topic_model,
-                    &dictionary,
-                    topic_id,
-                    topic,
-                    topic_context_2,
-                    &translate_config,
-                    None::<&VariableProvider>
-                ).map_err(TranslateError::WithOrigin)
-            }
-
-
-    }).collect::<Result<Vec<_>, _>>()?;
-
-
-    let voc_b_col = result.par_iter().flatten().map(|value| {
-        match value.candidate_word_id {
-            Origin(word_id) => {
-                dictionary.voc_a().get_value(word_id).unwrap()
-            }
-            Target(word_id) => {
-                dictionary.voc_b().get_value(word_id).unwrap()
-            }
-        }
-    }).collect_vec_list();
-
-
-    let mut voc_b = voc_b_col.iter().flatten().cloned().collect::<Vocabulary<_>>();
-    voc_b.set_language(dictionary.language::<B>().cloned());
-
-    let mut counts = vec![0u64; voc_b.len()];
-
-    for value in voc_b_col.into_iter().flatten().map(|value| voc_b.get_id(value).unwrap()) {
-        unsafe {
-            *counts.get_unchecked_mut(value) += 1;
-        }
-    }
-
-    let inner_topic_model = result.into_par_iter().map(|topic_content| {
-        let mut topic = topic_content.into_par_iter().map(|candidate| {
-            let word = match candidate.candidate_word_id {
-                Origin(word_id) => {
-                    dictionary.voc_a().get_value(word_id).unwrap()
-                }
-                Target(word_id) => {
-                    dictionary.voc_b().get_value(word_id).unwrap()
-                }
-            };
-            (voc_b.get_id(word).unwrap(), candidate.relative_score)
-        }).collect::<HashMap<_, _>>();
-
-        voc_b.ids().for_each(|value| {
-            match topic.entry(value) {
-                Entry::Vacant(entry) => {
-                    entry.insert(epsilon);
-                }
-                _ => {}
-            }
-        });
-        assert!(voc_b.ids().all(|it| topic.contains_key(&it)));
-        topic.into_iter().sorted_unstable_by_key(|value| value.0).map(|(_, b)| b).collect_vec()
-    }).collect::<Vec<_>>();
-
-    let mut translated = TopicModel::new(
-        inner_topic_model,
-        voc_b,
-        counts,
-        topic_model.doc_topic_distributions().clone(),
-        topic_model.document_lengths().clone()
-    );
-
-    translated.normalize_in_place();
-
-    Ok(translated)
-}
 
 #[derive(Debug, Clone)]
 struct Candidate {
@@ -456,26 +87,225 @@ impl Ord for Candidate {
     }
 }
 
+#[allow(dead_code)]
+pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V>(
+    target: &'a Target,
+    dictionary: &'a D,
+    translate_config: &TranslateConfig<V>,
+) -> Result<Target, TranslateError<'a>>
+where
+    T: Hash + Eq + Ord + Clone,
+    V: VotingMethodMarker,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a + for<'b> FromIterator<&'b HashRef<T>>,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
+    Target: TranslatableTopicMatrixWithCreate<T, Voc>,
+{
+    translate_topic_model(
+        target,
+        dictionary,
+        translate_config,
+        None::<&DummyAsVariableProvider<T>>
+    )
+}
 
-fn translate_topic<Model, T, V, Voc, P>(
-    topic_model: &Model,
+
+pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
+    target: &'a Target,
+    dictionary: &'a D,
+    translate_config: &TranslateConfig<V>,
+    provider: Option<&P>
+) -> Result<Target, TranslateError<'a>> where
+    T: Hash + Eq + Ord + Clone,
+    V: VotingMethodMarker,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a + for<'b> FromIterator<&'b HashRef<T>>,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
+    Target: TranslatableTopicMatrixWithCreate<T, Voc>,
+    P: AsVariableProvider<T>
+{
+
+    if let Some(lang_model) = target.vocabulary().language() {
+        if let (Some(lang_a), lang_b) = dictionary.language_direction() {
+            if lang_model != lang_a {
+                let lang_b = lang_b.cloned().unwrap_or_else(|| LanguageHint::new("###"));
+                return Err(
+                    IncompatibleLanguages {
+                        lang_a,
+                        lang_b,
+                        lang_model
+                    }
+                )
+            }
+        }
+    }
+
+    let dictionary: D = create_topic_model_specific_dictionary::<D, D, T, Voc, Voc>(
+        dictionary,
+        target.vocabulary()
+    );
+
+    // TODO: make clean for rust.
+    let provider = if let Some(provider) = provider {
+        Some(provider.as_variable_provider_for(target, &dictionary))
+    } else {
+        None
+    }.transpose()?;
+
+    let epsilon = if let Some(value) = translate_config.epsilon {
+        value
+    } else {
+        target.matrix().iter().flat_map(|value| value.iter()).fold(
+            f64::MAX,
+            |old, other| {
+                old.min(*other)
+            }
+        ) - f64::EPSILON
+    };
+
+    let mut topic_context = context_map! {
+        EPSILON => epsilon,
+        VOCABULARY_SIZE_A => dictionary.voc_a().len() as i64,
+        VOCABULARY_SIZE_B => dictionary.voc_b().len() as i64,
+    }.unwrap();
+
+    if let Some(ref provider) = provider {
+        provider.provide_global(&mut topic_context)?;
+    }
+
+    let topic_context = topic_context
+        .to_static_with(EmptyContextWithBuiltinFunctions);
+
+
+    // topic to word id to probable translation candidates.
+    let result = target
+        .matrix()
+        .par_iter()
+        .zip_eq(target.matrix_meta().par_iter())
+        .enumerate()
+        .map(|(topic_id, (topic, meta))| {
+            let mut topic_context_2 = context_map! {
+                TOPIC_MAX_PROBABILITY => meta.max_score(),
+                TOPIC_MIN_PROBABILITY => meta.min_score(),
+                TOPIC_AVG_PROBABILITY => meta.avg_score(),
+                TOPIC_SUM_PROBABILITY => meta.sum_score(),
+                TOPIC_ID => topic_id as i64
+            }.unwrap();
+            meta.extend_context(&mut topic_context_2);
+
+            if let Some(provider) = provider.as_ref() {
+                match provider.provide_for_topic(topic_id, &mut topic_context_2) {
+                    Ok(_) => {
+                        let topic_context_2 = topic_context_2
+                            .to_static_with(topic_context.clone());
+
+                        translate_topic(
+                            target,
+                            &dictionary,
+                            topic_id,
+                            topic,
+                            topic_context_2,
+                            &translate_config,
+                            Some(provider)
+                        ).map_err(TranslateError::WithOrigin)
+                    }
+                    Err(err) => {
+                        Err(err.into())
+                    }
+                }
+            } else {
+                let topic_context_2 = topic_context_2
+                    .to_static_with(topic_context.clone());
+
+                translate_topic(
+                    target,
+                    &dictionary,
+                    topic_id,
+                    topic,
+                    topic_context_2,
+                    &translate_config,
+                    None::<&VariableProvider>
+                ).map_err(TranslateError::WithOrigin)
+            }
+
+
+        }).collect::<Result<Vec<_>, _>>()?;
+
+
+    let voc_b_col = result.par_iter().flatten().map(|value| {
+        match value.candidate_word_id {
+            LanguageOrigin::Origin(word_id) => {
+                dictionary.voc_a().get_value(word_id).unwrap()
+            }
+            LanguageOrigin::Target(word_id) => {
+                dictionary.voc_b().get_value(word_id).unwrap()
+            }
+        }
+    }).collect_vec_list();
+
+
+    let mut voc_b = voc_b_col.iter().flatten().cloned().collect::<Voc>();
+    voc_b.set_language(dictionary.language::<B>().cloned());
+
+    let mut counts = vec![0u64; voc_b.len()];
+
+    for value in voc_b_col.into_iter().flatten().map(|value| voc_b.get_id(value).unwrap()) {
+        unsafe {
+            *counts.get_unchecked_mut(value) += 1;
+        }
+    }
+
+    let inner_topic_model = result.into_par_iter().map(|topic_content| {
+        let mut topic = topic_content.into_par_iter().map(|candidate| {
+            let word = match candidate.candidate_word_id {
+                LanguageOrigin::Origin(word_id) => {
+                    dictionary.voc_a().get_value(word_id).unwrap()
+                }
+                LanguageOrigin::Target(word_id) => {
+                    dictionary.voc_b().get_value(word_id).unwrap()
+                }
+            };
+            (voc_b.get_id(word).unwrap(), candidate.relative_score)
+        }).collect::<HashMap<_, _>>();
+
+        voc_b.ids().for_each(|value| {
+            match topic.entry(value) {
+                Entry::Vacant(entry) => {
+                    entry.insert(epsilon);
+                }
+                _ => {}
+            }
+        });
+        assert!(voc_b.ids().all(|it| topic.contains_key(&it)));
+        topic.into_iter().sorted_unstable_by_key(|value| value.0).map(|(_, b)| b).collect_vec()
+    }).collect::<Vec<_>>();
+
+    Ok(Target::create_new_from(
+        inner_topic_model,
+        voc_b,
+        counts,
+        target
+    ))
+}
+
+
+
+fn translate_topic<Target, T, V, Voc, P>(
+    target: &Target,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
-    topic: &Vec<f64>,
+    topic: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
     topic_context: impl Context + Send + Sync + IterateVariablesContext,
     config: &TranslateConfig<V>,
     provider: Option<&P>
 ) -> Result<Vec<Candidate>, TranslateErrorWithOrigin>
-    where V: VotingMethodMarker,
-          Voc: BasicVocabulary<T>,
-          Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-          P: VariableProviderOut
+where V: VotingMethodMarker,
+      Voc: BasicVocabulary<T> ,
+      Target: TranslatableTopicMatrix<T, Voc>,
+      P: VariableProviderOut
 {
     topic
         .par_iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
-
             if let Some(provider) = provider {
                 let mut context = HashMapContext::new();
                 match provider.provide_for_word_a(original_word_id, &mut context) {
@@ -484,7 +314,7 @@ fn translate_topic<Model, T, V, Voc, P>(
                             Ok(_) => {
                                 let combined = topic_context.combine_with(&context);
                                 translate_single_candidate(
-                                    topic_model,
+                                    target,
                                     dictionary,
                                     topic_id,
                                     &combined,
@@ -509,7 +339,7 @@ fn translate_topic<Model, T, V, Voc, P>(
                 }
             } else {
                 translate_single_candidate(
-                    topic_model,
+                    target,
                     dictionary,
                     topic_id,
                     &topic_context,
@@ -524,145 +354,165 @@ fn translate_topic<Model, T, V, Voc, P>(
     })
 }
 
+
+
 #[inline(always)]
-fn translate_single_candidate<Model, T, V, Voc, P>(
-    topic_model: &Model,
+fn translate_single_candidate<Target, T, V, Voc, P>(
+    target: &Target,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
     topic_context: &(impl Context + Send + Sync + IterateVariablesContext),
     config: &TranslateConfig<V>,
-    original_word_id: usize,
+    original_voter_id: usize,
     probability: f64,
     provider: Option<&P>
 ) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>>
-    where V: VotingMethodMarker,
-          Voc: BasicVocabulary<T> ,
-          Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-          P: VariableProviderOut
+where V: VotingMethodMarker,
+      Voc: BasicVocabulary<T> ,
+      Target: TranslatableTopicMatrix<T, Voc>,
+      P: VariableProviderOut
 {
-    let candidates = if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_word_id) {
-        Some(candidates.par_iter().cloned().filter_map( |candidate|
-            match dictionary.translate_id_to_ids::<BToA>(candidate) {
-                None  => None,
-                Some(voters) if voters.is_empty() => None,
-                Some(voters) => {
-                    let mapped = voters
-                        .iter()
-                        .filter_map(|word_id_a_retrans| {
-                            topic_model.get_word_meta(topic_id, *word_id_a_retrans)
-                        });
+    let candidates =
+        if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_voter_id) {
+            Some(candidates.par_iter().cloned().filter_map( |candidate|
+                match dictionary.translate_id_to_ids::<BToA>(candidate) {
+                    None  => None,
+                    Some(voters) if voters.is_empty() => None,
+                    Some(voters) => {
+                        let mapped = voters
+                            .iter()
+                            .filter_map(|voter_id_a_retrans| {
+                                target.get_voter_meta(topic_id, *voter_id_a_retrans)
+                            });
 
-                    let mapped = if let Some(threshold) = config.threshold {
-                        mapped.filter(|value| value.probability >= threshold).collect_vec()
-                    } else {
-                        mapped.collect_vec()
-                    };
+                        let mapped = if let Some(threshold) = config.threshold {
+                            mapped.filter(|value| value.score() >= threshold).collect_vec()
+                        } else {
+                            mapped.collect_vec()
+                        };
 
 
-                    let mut context = context_map! {
-                        COUNT_OF_VOTERS => mapped.len() as i64,
-                        HAS_TRANSLATION => true,
-                        IS_ORIGIN_WORD => false,
-                        SCORE_CANDIDATE => probability,
-                        CANDIDATE_ID => candidate as i64
-                    }.unwrap();
+                        let mut context = context_map! {
+                            COUNT_OF_VOTERS => mapped.len() as i64,
+                            HAS_TRANSLATION => true,
+                            IS_ORIGIN_WORD => false,
+                            SCORE_CANDIDATE => probability,
+                            CANDIDATE_ID => candidate as i64
+                        }.unwrap();
 
-                    let mut context = context.combine_with_mut(topic_context);
+                        let mut context = context.combine_with_mut(topic_context);
 
-                    let voters = mapped
-                        .iter()
-                        .map(|value| {
-                            let mut m = context_map! {
-                                RECIPROCAL_RANK => 1./ value.importance_rank() as f64,
-                                REAL_RECIPROCAL_RANK => 1./ value.rank() as f64,
-                                RANK => value.rank() as i64,
-                                IMPORTANCE => value.importance_rank() as i64,
-                                SCORE => value.probability,
-                                VOTER_ID => value.word_id as i64
-                            }.unwrap();
-                            if let Some(provider) = provider {
-                                match provider.provide_for_word_a(value.word_id, &mut m) {
-                                    Ok(_) => {
-                                        match provider.provide_for_word_in_topic_a(topic_id, value.word_id, &mut m) {
-                                            Ok(_) => {
-                                                Ok(m)
+                        let voters = mapped
+                            .iter()
+                            .map(|voter_a| {
+                                let mut context_voter_a = context_map! {
+                                    RECIPROCAL_RANK => 1./ voter_a.importance() as f64,
+                                    REAL_RECIPROCAL_RANK => 1./ voter_a.rank() as f64,
+                                    RANK => voter_a.rank() as i64,
+                                    IMPORTANCE => voter_a.importance() as i64,
+                                    SCORE => voter_a.score(),
+                                    VOTER_ID => voter_a.voter_id() as i64
+                                }.unwrap();
+                                voter_a.extend_context(&mut context_voter_a);
+                                if let Some(provider) = provider {
+                                    match provider.provide_for_word_a(voter_a.voter_id(), &mut context_voter_a) {
+                                        Ok(_) => {
+                                            match provider.provide_for_word_in_topic_a(topic_id, voter_a.voter_id(), &mut context_voter_a) {
+                                                Ok(_) => {
+                                                    Ok(context_voter_a)
+                                                }
+                                                Err(err) => {Err(err)}
                                             }
-                                            Err(err) => {Err(err)}
+                                        }
+                                        Err(err) => {
+                                            Err(err)
                                         }
                                     }
-                                    Err(err) => {
-                                        Err(err)
+                                } else {
+                                    Ok(context_voter_a)
+                                }
+                            })
+                            .collect::<Result<Vec<_>, _>>();
+
+                        Some(
+                            match voters {
+                                Ok(mut voters) => {
+                                    context.set_value(
+                                        NUMBER_OF_VOTERS.to_string(),
+                                        (voters.len() as i64).into()
+                                    ).expect("This should not fail!");
+                                    match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
+                                        Ok(result) => {
+                                            Ok(Candidate::new(LanguageOrigin::Target(candidate), result, original_voter_id))
+                                        }
+                                        Err(err) => {
+                                            Err(err.originates_at(topic_id, original_voter_id))
+                                        }
                                     }
                                 }
-                            } else {
-                                Ok(m)
-                            }
-                        })
-                        .collect::<Result<Vec<_>, _>>();
-
-                    Some(
-                        match voters {
-                            Ok(mut voters) => {
-                                context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into()).expect("This should not fail!");
-                                match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
-                                    Ok(result) => {
-                                        Ok(Candidate::new(Target(candidate), result, original_word_id))
-                                    }
-                                    Err(err) => {
-                                        Err(err.originates_at(topic_id, original_word_id))
-                                    }
+                                Err(err) => {
+                                    Err(TranslateErrorWithOrigin {
+                                        topic_id,
+                                        word_id: original_voter_id,
+                                        source: err.into()
+                                    })
                                 }
                             }
-                            Err(err) => {
-                                Err(TranslateErrorWithOrigin {
-                                    topic_id,
-                                    word_id: original_word_id,
-                                    source: err.into()
-                                })
-                            }
-                        }
 
-                    )
+                        )
+                    }
                 }
-            }
-        ).collect::<Result<Vec<Candidate>, TranslateErrorWithOrigin>>())
-    } else {
-        // Unknown
-        None
-    };
+            ).collect::<Result<Vec<Candidate>, TranslateErrorWithOrigin>>())
+        } else {
+            // Unknown
+            None
+        };
 
 
-    fn vote_for_origin<'a>(topic_model: &'a impl BasicTopicModel, topic_context: &(impl Context + Send + Sync + IterateVariablesContext), has_translation: bool, topic_id: usize, word_id: usize, probability: f64, voting: &(impl VotingMethod + Sync + Send)) -> Result<Candidate, TranslateErrorWithOrigin> {
+    fn vote_for_origin<'a>(
+        target: &'a impl VoterInfoProvider,
+        topic_context: &(impl Context + Send + Sync + IterateVariablesContext),
+        has_translation: bool,
+        topic_id: usize,
+        voter_id: usize,
+        probability: f64,
+        voting: &(impl VotingMethod + Sync + Send)
+    ) -> Result<Candidate, TranslateErrorWithOrigin> {
         let mut context = context_map! {
             COUNT_OF_VOTERS => 1,
             HAS_TRANSLATION => has_translation,
             IS_ORIGIN_WORD => true,
             SCORE_CANDIDATE => probability,
-            CANDIDATE_ID => word_id as i64,
+            CANDIDATE_ID => voter_id as i64,
             NUMBER_OF_VOTERS => 1
         }.unwrap();
 
         let mut context = context.combine_with_mut(topic_context);
 
-        let original_meta = topic_model.get_word_meta(topic_id, word_id).unwrap();
+        let original_meta = target.get_voter_meta(topic_id, voter_id).unwrap();
+
+        assert_eq!(original_meta.voter_id(), voter_id, "The voter ids differ!");
 
         let mut voters = vec![
             context_map! {
-                RECIPROCAL_RANK => 1./ original_meta.importance_rank() as f64,
+                RECIPROCAL_RANK => 1./ original_meta.importance() as f64,
                 REAL_RECIPROCAL_RANK => 1./ original_meta.rank() as f64,
                 RANK => original_meta.rank() as i64,
-                IMPORTANCE => original_meta.importance_rank() as i64,
-                SCORE => original_meta.probability,
-                VOTER_ID => word_id as i64
-            }.unwrap()
+                IMPORTANCE => original_meta.importance() as i64,
+                SCORE => original_meta.score(),
+                VOTER_ID => voter_id as i64
+            }.and_then(|mut value| {
+                original_meta.extend_context(&mut value);
+                Ok(value)
+            }).unwrap()
         ];
 
         match voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
             Ok(result) => {
-                Ok(Candidate::new(Origin(word_id), result, word_id))
+                Ok(Candidate::new(LanguageOrigin::Origin(voter_id), result, voter_id))
             }
             Err(err) => {
-                Err(err.originates_at(topic_id, word_id))
+                Err(err.originates_at(topic_id, voter_id))
             }
         }
     }
@@ -671,11 +521,11 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
         KeepOriginalWord::Always => {
             Some(if let Some(Ok(mut candidates)) = candidates {
                 match vote_for_origin(
-                    topic_model,
+                    target,
                     topic_context,
                     true,
                     topic_id,
-                    original_word_id,
+                    original_voter_id,
                     probability,
                     &config.voting
                 ) {
@@ -687,11 +537,11 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
                 }
             } else {
                 match vote_for_origin(
-                    topic_model,
+                    target,
                     topic_context,
                     false,
                     topic_id,
-                    original_word_id,
+                    original_voter_id,
                     probability,
                     &config.voting
                 ) {
@@ -708,11 +558,11 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
             if candidates.is_none() {
                 Some(
                     match vote_for_origin(
-                        topic_model,
+                        target,
                         topic_context,
                         false,
                         topic_id,
-                        original_word_id,
+                        original_voter_id,
                         probability,
                         &config.voting
                     ) {
@@ -755,20 +605,19 @@ fn translate_single_candidate<Model, T, V, Voc, P>(
 
 
 
-
-
 #[cfg(test)]
 pub(crate) mod test {
-    use std::num::NonZeroUsize;
-    use crate::topicmodel::dictionary::{Dictionary, DictionaryMut};
     use crate::topicmodel::dictionary::direction::Invariant;
-    use crate::topicmodel::model::{TopicModel};
+    use crate::topicmodel::dictionary::{Dictionary, DictionaryMut};
+    use crate::topicmodel::model::{FullTopicModel, TopicModel};
     use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
+    use crate::translate::translate_topic_model_without_provider;
     use crate::translate::KeepOriginalWord::Never;
-    use crate::translate::{translate_topic_model_without_provider, TranslateConfig};
-    use crate::voting::spy::{IntoSpy};
-    use Extend;
+    use crate::translate::TranslateConfig;
+    use crate::voting::spy::IntoSpy;
     use crate::voting::BuildInVoting;
+    use std::num::NonZeroUsize;
+    use Extend;
 
     pub fn create_test_data() -> (Vocabulary<String>, Vocabulary<String>, Dictionary<String, Vocabulary<String>>){
         let mut voc_a = Vocabulary::<String>::default();
@@ -870,15 +719,8 @@ pub(crate) mod test {
             &config,
         ).unwrap();
 
+        model_a.show_10().unwrap();
+        println!("----");
         model_b.show_10().unwrap();
     }
-}
-
-// pub(crate) fn register_py_translate(m: &Bound<'_, PyModule>) -> PyResult<()> {
-//     m.add_class::<KeepOriginalWord>()?;
-//     Ok(())
-// }
-
-register_python! {
-    enum KeepOriginalWord;
 }

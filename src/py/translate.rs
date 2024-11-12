@@ -21,14 +21,12 @@ use crate::py::dictionary::PyDictionary;
 use crate::py::helpers::{KeepOriginalWordArg, VotingArg};
 use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
-use crate::py::vocabulary::PyVocabulary;
 use crate::py::voting::{PyVoting, PyVotingRegistry};
 use crate::register_python;
 use crate::translate::{KeepOriginalWord, TranslateConfig};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
-use crate::topicmodel::model::MappableTopicModel;
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
 use crate::voting::py::PyVotingModel;
 use crate::voting::traits::VotingMethodMarker;
@@ -139,7 +137,7 @@ pub fn translate_topic_model<'a>(
     let cfg =config.to_translation_config(voting, voting_registry)?;
     match translate(topic_model, dictionary, &cfg, provider) {
         Ok(result) => {
-            Ok(PyTopicModel::wrap(result.map::<PyVocabulary>()))
+            Ok(result)
         }
         Err(err) => {
             Err(PyValueError::new_err(err.to_string()))

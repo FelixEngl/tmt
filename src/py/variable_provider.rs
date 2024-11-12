@@ -14,15 +14,14 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::hash::Hash;
 use evalexpr::{Value};
 use pyo3::{pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use crate::variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
 use crate::register_python;
-use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
-use crate::topicmodel::model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
-use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
+use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary};
+use crate::topicmodel::vocabulary::{SearchableVocabulary};
+use crate::translate::TranslatableTopicMatrix;
 use crate::voting::py::PyExprValue;
 
 impl From<VariableProviderError> for PyErr {
@@ -132,9 +131,18 @@ impl PyVariableProvider {
 }
 
 impl AsVariableProvider<String> for PyVariableProvider {
-    fn as_variable_provider_for<'a, Model, D, Voc>(&self, topic_model: &'a Model, dictionary: &'a D) -> Result<VariableProvider, AsVariableProviderError> where String: Hash + Eq + Ord + Clone, Voc: VocabularyMut<String> + MappableVocabulary<String> + Clone + 'a, D: DictionaryWithVocabulary<String, Voc> + DictionaryMut<String, Voc> + FromVoc<String, Voc>, Model: TopicModelWithVocabulary<String, Voc> + TopicModelWithDocumentStats {
+    fn as_variable_provider_for<'a, Target, D, Voc>(
+        &self,
+        target: &'a Target,
+        dictionary: &'a D
+    ) -> Result<VariableProvider, AsVariableProviderError>
+    where
+        Voc: SearchableVocabulary<String>,
+        D: BasicDictionaryWithVocabulary<Voc>,
+        Target: TranslatableTopicMatrix<String, Voc>
+    {
         let variable_provider = VariableProvider::new(
-            topic_model.k(),
+            target.len(),
             dictionary.voc_a().len(),
             dictionary.voc_b().len()
         );

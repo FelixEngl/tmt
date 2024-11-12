@@ -36,7 +36,7 @@ macro_rules! generate_field_denoms {
         $($field: ident($lit_name:literal)),+ $(,)+
     ) => {
         paste::paste!{
-            $crate::topicmodel::dictionary::metadata::loaded::field_denom::generate_enum!(
+            $crate::topicmodel::dictionary::metadata::ex::field_denom::generate_enum!(
                 $([<$field:camel>] $field $lit_name,
                 )+
             );

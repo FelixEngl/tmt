@@ -33,7 +33,7 @@ macro_rules! impl_try_from_as_unpack {
     ($($i: ident => $a: ty);+ $(;)?) => {
         $(
         const _: () = {
-            use $crate::topicmodel::dictionary::metadata::loaded::{ResolvedValue, WrongResolvedValueError};
+            use $crate::topicmodel::dictionary::metadata::ex::{ResolvedValue, WrongResolvedValueError};
             impl TryFrom<ResolvedValue> for $a {
                 type Error = WrongResolvedValueError;
 

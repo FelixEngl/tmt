@@ -18,6 +18,7 @@ pub mod meta;
 mod traits;
 mod classic_serialisation;
 mod inferencer;
+mod translate_ext;
 
 pub use inferencer::*;
 pub use traits::*;
@@ -30,13 +31,13 @@ use std::hash::Hash;
 use std::io;
 use std::io::{ErrorKind, Write};
 use std::marker::PhantomData;
-use std::ops::{Range};
+use std::ops::Range;
 use std::sync::Arc;
 
 use crate::toolkit::normal_number::IsNormalNumber;
 use crate::topicmodel::model::meta::*;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
 use itertools::Itertools;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -99,28 +100,12 @@ impl<T, V> Clone for TopicModel<T, V> where V: Clone {
 
 impl<T, V> TopicModel<T, V> where
     T: Hash + Eq + Ord,
-    V: VocabularyMut<T>
+    V: SearchableVocabulary<T>
 {
-    pub fn new(
-        topics: TopicTo<WordTo<Probability>>,
-        vocabulary: V,
-        used_vocab_frequency: WordTo<WordFrequency>,
-        doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
-        document_lengths: DocumentTo<DocumentLength>,
-    ) -> Self {
-        let topic_content = unsafe {
-            Self::calculate_topic_metas(&topics, &vocabulary)
+    fn recalculate_statistics(&mut self) {
+        self.topic_metas = unsafe {
+            Self::calculate_topic_metas(&self.topics, &self.vocabulary)
         };
-
-        Self {
-            topics,
-            vocabulary,
-            used_vocab_frequency,
-            doc_topic_distributions,
-            document_lengths,
-            topic_metas: topic_content,
-            _word_type: PhantomData
-        }
     }
 
     unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &impl BasicVocabulary<T>) -> TopicTo<TopicMeta> {
@@ -181,17 +166,18 @@ impl<T, V> TopicModel<T, V> where
 
 
         topics.par_iter().enumerate().map(|(topic_id, topic)| {
-            let position_to_word_id_and_prob = topic
-                .iter()
-                .copied()
-                .enumerate()
-                .sorted_by_key(|(word_id, prob)| Reverse(SortHelper {
-                    word_id: *word_id,
-                    probability: *prob,
-                    vocabulary: vocabulary,
-                    _word_type: PhantomData
-                }))
-                .collect_vec();
+            let position_to_word_id_and_prob =
+                topic
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .sorted_by_key(|(word_id, prob)| Reverse(SortHelper {
+                        word_id: *word_id,
+                        probability: *prob,
+                        vocabulary: vocabulary,
+                        _word_type: PhantomData
+                    }))
+                    .collect_vec();
 
             let mut current_value = position_to_word_id_and_prob.first().unwrap().1;
             let mut current_sink = Vec::new();
@@ -225,25 +211,41 @@ impl<T, V> TopicModel<T, V> where
                 .sorted_by_key(|(word_id, _, _)| *word_id)
                 .collect_vec();
 
-            let mut topic_content = word_id_to_position.into_iter().zip_eq(word_id_to_importance.into_iter()).map(|((word_id_1, prob, position), (importance, word_id_2))| {
-                assert_eq!(word_id_1, word_id_2, "Word ids {} {} are not compatible!", word_id_1, word_id_2);
-                (word_id_1, prob, position, importance)
-            }).zip_eq(topic.into_iter().enumerate()).map(|((word_id_1, probability_1, position, importance), (word_id, probability))| {
-                assert_eq!(word_id, word_id_1, "Word ids {} {} are not compatible in zipping!", word_id, word_id_1);
-                assert_eq!(*probability, probability_1,
-                           "Probabilities fir the ids {}({}) {}({}) are not compatible in zipping!",
-                           word_id, probability,
-                           word_id_1, probability_1);
-                Arc::new(
-                    WordMeta {
-                        topic_id,
+            let mut topic_content = word_id_to_position
+                .into_iter()
+                .zip_eq(word_id_to_importance.into_iter())
+                .map(|((word_id_1, prob, position), (importance, word_id_2))| {
+                    assert_eq!(word_id_1, word_id_2, "Word ids {} {} are not compatible!", word_id_1, word_id_2);
+                    (word_id_1, prob, position, importance)
+                })
+                .zip_eq(topic.into_iter().enumerate())
+                .map(|((word_id_1, probability_1, position, importance), (word_id, probability))| {
+                    assert_eq!(
                         word_id,
-                        probability: probability_1,
-                        position,
-                        importance,
-                    }
-                )
-            }).collect_vec();
+                        word_id_1,
+                        "Word ids {} {} are not compatible in zipping!",
+                        word_id,
+                        word_id_1
+                    );
+                    assert_eq!(
+                        *probability,
+                        probability_1,
+                        "Probabilities fir the ids {}({}) {}({}) are not compatible in zipping!",
+                        word_id,
+                        probability,
+                        word_id_1,
+                        probability_1
+                    );
+                    Arc::new(
+                        WordMeta {
+                            topic_id,
+                            word_id,
+                            probability: probability_1,
+                            position,
+                            importance,
+                        }
+                    )
+                }).collect_vec();
             topic_content.shrink_to_fit();
             (topic_id, topic_content)
         }).map(|(topic_id, topic_content)| {
@@ -280,15 +282,13 @@ impl<T, V> TopicModel<T, V> where
             TopicMeta::new(stats, topic_content, position_to_meta, importance_to_meta)
         }).collect()
     }
+}
 
-
-    fn recalculate_statistics(&mut self) {
-        self.topic_metas = unsafe {
-            Self::calculate_topic_metas(&self.topics, &self.vocabulary)
-        };
-    }
-
-    pub fn normalize_in_place(&mut self) {
+impl<T, V> FullTopicModel<T, V> for TopicModel<T, V> where
+    T: Hash + Eq + Ord,
+    V: SearchableVocabulary<T>
+{
+    fn normalize_in_place(&mut self) {
         for topic in self.topics.iter_mut() {
             let sum: f64 = topic.iter().sum();
             topic.iter_mut().for_each(|value| {
@@ -305,7 +305,30 @@ impl<T, V> TopicModel<T, V> where
 
         self.recalculate_statistics();
     }
+
+    fn new(
+        topics: TopicTo<WordTo<Probability>>,
+        vocabulary: V,
+        used_vocab_frequency: WordTo<WordFrequency>,
+        doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
+        document_lengths: DocumentTo<DocumentLength>,
+    ) -> Self {
+        let topic_content = unsafe {
+            Self::calculate_topic_metas(&topics, &vocabulary)
+        };
+
+        Self {
+            topics,
+            vocabulary,
+            used_vocab_frequency,
+            doc_topic_distributions,
+            document_lengths,
+            topic_metas: topic_content,
+            _word_type: PhantomData
+        }
+    }
 }
+
 
 impl<T, V> TopicModel<T, V> where T: Hash + Eq + Ord, V: Clone + VocabularyMut<T> {
     pub fn normalize(&self) -> Self {
@@ -580,7 +603,7 @@ impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash +
 #[cfg(test)]
 pub mod test {
     use crate::topicmodel::enums::TopicModelVersion;
-    use crate::topicmodel::model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
+    use crate::topicmodel::model::{FullTopicModel, TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
     use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary, VocabularyMut};
     use itertools::{assert_equal, Itertools};
 

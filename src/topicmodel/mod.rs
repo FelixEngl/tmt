@@ -76,7 +76,7 @@ where
 
     insert_into::<B, _, _>(&mut new_dict, &retranslations);
 
-    return new_dict;
+    new_dict
 }
 
 #[cfg(test)]

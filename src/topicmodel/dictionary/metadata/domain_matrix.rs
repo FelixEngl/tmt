@@ -6,7 +6,7 @@ use pyo3::{pyclass, pymethods, FromPyObject};
 use strum::EnumCount;
 use thiserror::Error;
 use crate::{impl_py_stub, register_python};
-use crate::topicmodel::dictionary::metadata::loaded::{AssociatedMetadata, SolvedLoadedMetadata};
+use crate::topicmodel::dictionary::metadata::ex::{AssociatedMetadata, SolvedLoadedMetadata};
 use crate::topicmodel::dictionary::word_infos::{Domain, Register};
 
 

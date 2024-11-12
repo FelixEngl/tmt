@@ -1,10 +1,10 @@
-use std::hash::Hash;
-use evalexpr::ContextWithMutableVariables;
-use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
-use crate::topicmodel::model::{TopicModelWithDocumentStats, TopicModelWithVocabulary};
-use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
+use crate::topicmodel::dictionary::BasicDictionaryWithVocabulary;
+use crate::topicmodel::vocabulary::SearchableVocabulary;
+use crate::translate::TranslatableTopicMatrix;
 use crate::variable_provider::AsVariableProviderError;
 use crate::variable_provider::{VariableProvider, VariableProviderResult};
+use evalexpr::ContextWithMutableVariables;
+use std::hash::Hash;
 
 pub trait VariableProviderOut: Sync + Send {
     fn provide_global(&self, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()>;
@@ -17,9 +17,14 @@ pub trait VariableProviderOut: Sync + Send {
 
 
 pub trait AsVariableProvider<T> {
-    fn as_variable_provider_for<'a, Model, D, Voc>(&self, topic_model: &'a Model, dictionary: &'a D) -> Result<VariableProvider, AsVariableProviderError> where
-        T: Hash + Eq + Ord + Clone,
-        Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
-        D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
-        Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats;
+    fn as_variable_provider_for<'a, Target, D, Voc>(
+        &self,
+        topic_model: &'a Target,
+        dictionary: &'a D
+    ) -> Result<VariableProvider, AsVariableProviderError>
+    where
+        T: Hash + Eq,
+        Voc: SearchableVocabulary<T>,
+        D: BasicDictionaryWithVocabulary<Voc>,
+        Target: TranslatableTopicMatrix<T, Voc>;
 }

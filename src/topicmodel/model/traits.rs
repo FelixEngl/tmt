@@ -172,6 +172,24 @@ pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc
     ;
 }
 
+
+pub trait FullTopicModel<T, Voc>: BasicTopicModelWithVocabulary<T, Voc>
+where
+    Voc: BasicVocabulary<T>
+{
+    /// Create a new topic model
+    fn new(
+        topics: TopicTo<WordTo<Probability>>,
+        vocabulary: Voc,
+        used_vocab_frequency: WordTo<WordFrequency>,
+        doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
+        document_lengths: DocumentTo<DocumentLength>,
+    ) -> Self where Self: Sized;
+
+    /// Normalizes the topic model in place.
+    fn normalize_in_place(&mut self);
+}
+
 /// A topic model that allows basic show methods
 pub trait DisplayableTopicModel<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where T: Display, Voc: BasicVocabulary<T> + Display {
     fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {

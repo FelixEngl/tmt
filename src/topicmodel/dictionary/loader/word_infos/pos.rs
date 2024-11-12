@@ -6,7 +6,7 @@ use tinyset::Fits64;
 use crate::register_python;
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::EPosElement;
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::ETermNoteElement;
-use crate::topicmodel::dictionary::metadata::loaded::impl_try_from_as_unpack;
+use crate::topicmodel::dictionary::metadata::ex::impl_try_from_as_unpack;
 
 register_python!(
     enum PartOfSpeech;

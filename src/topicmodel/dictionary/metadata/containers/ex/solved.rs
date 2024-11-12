@@ -1,6 +1,6 @@
 macro_rules! convert_to_string_call {
     (voc: $self:ident, $f: ident, $name: ident) => {
-        $crate::topicmodel::dictionary::metadata::loaded::solved::convert_to_string_call!(
+        $crate::topicmodel::dictionary::metadata::ex::solved::convert_to_string_call!(
             interned: $self, $f, $name
         );
     };
@@ -207,7 +207,7 @@ macro_rules! create_solved_implementation {
 
 
         paste::paste! {
-            $crate::topicmodel::dictionary::metadata::loaded::solved::create_python_getter!(
+            $crate::topicmodel::dictionary::metadata::ex::solved::create_python_getter!(
                 $($tt:
                 name: $name
                 lit_name: $lit_name
@@ -227,7 +227,7 @@ macro_rules! create_solved_implementation {
                 let mut result = RcDoc::text("Metadata {");
                 $(
                 result = result.nest(2).append(RcDoc::text(stringify!($name))).append(RcDoc::text(":")).append(RcDoc::hardline());
-                $crate::topicmodel::dictionary::metadata::loaded::solved::convert_to_string_call!(
+                $crate::topicmodel::dictionary::metadata::ex::solved::convert_to_string_call!(
                         $tt: self, result, $name
                 );
                 result = result.append(RcDoc::hardline()).nest(-2);
@@ -235,7 +235,7 @@ macro_rules! create_solved_implementation {
                 result.append(RcDoc::text("}"))
             }
 
-            pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef) -> Result<(), WrongResolvedValueError> {
+            pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx) -> Result<(), WrongResolvedValueError> {
                 $(
                     paste::paste! {
                         if let Some(ref $name) = self.$name.0 {
@@ -260,8 +260,8 @@ pub(super) use create_solved_implementation;
 
 use super::*;
 
-impl<'a> From<LoadedMetadataRef<'a>> for SolvedLoadedMetadata {
-    fn from(value: LoadedMetadataRef<'a>) -> Self {
+impl<'a> From<MetadataRefEx<'a>> for SolvedLoadedMetadata {
+    fn from(value: MetadataRefEx<'a>) -> Self {
         value.create_solved()
     }
 }

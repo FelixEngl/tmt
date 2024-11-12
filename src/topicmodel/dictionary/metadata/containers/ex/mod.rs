@@ -43,28 +43,28 @@ macro_rules! generate_field_code {
         ),+
         $(,)?
     ) => {
-        $crate::topicmodel::dictionary::metadata::loaded::reference::create_ref_implementation!(
+        $crate::topicmodel::dictionary::metadata::ex::reference::create_ref_implementation!(
             $($tt: $name $(, $interner_name)?: $cache_typ | $assoc_typ,)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::reference_mut::create_mut_ref_implementation!(
+        $crate::topicmodel::dictionary::metadata::ex::reference_mut::create_mut_ref_implementation!(
             $($tt: $name $(, $interner_name, $interner_method)?: $assoc_typ,)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::manager::create_managed_implementation!(
+        $crate::topicmodel::dictionary::metadata::ex::manager::create_managed_implementation!(
             $($($($interner_name: $interner_type => $interner_method: $assoc_typ,)?)?)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::metadata::create_metadata_impl!(
+        $crate::topicmodel::dictionary::metadata::ex::metadata::create_metadata_impl!(
             $($tt: $doc $name: $assoc_typ,)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::solved::create_solved_implementation!(
+        $crate::topicmodel::dictionary::metadata::ex::solved::create_solved_implementation!(
             $($tt: $name $lit_name,)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::collector::create_collector_implementation!(
+        $crate::topicmodel::dictionary::metadata::ex::collector::create_collector_implementation!(
             $($tt: $name: $assoc_typ,)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::field_denom::generate_field_denoms!(
+        $crate::topicmodel::dictionary::metadata::ex::field_denom::generate_field_denoms!(
             $($name($lit_name),)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine!(
+        $crate::topicmodel::dictionary::metadata::ex::manager::update_routine!(
             $($tt: $name $(, $interner_name $(, $interner_type)?)?;)*
         );
     };
@@ -171,7 +171,7 @@ generate_field_code! {
 }
 
 
-impl LoadedMetadataManager {
+impl MetadataManagerEx {
     pub fn domain_count(&self) -> DomainCounts {
         use std::sync::Arc;
         use itertools::Itertools;
@@ -180,9 +180,9 @@ impl LoadedMetadataManager {
         use super::super::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE;
 
         #[repr(transparent)]
-        struct Wrap<'a>(&'a LoadedMetadata);
+        struct Wrap<'a>(&'a MetadataEx);
         impl<'a> Deref for Wrap<'a> {
-            type Target = &'a LoadedMetadata;
+            type Target = &'a MetadataEx;
             fn deref(&self) -> &Self::Target {
                 &self.0
             }
@@ -190,7 +190,7 @@ impl LoadedMetadataManager {
 
         unsafe impl Sync for Wrap<'_> {}
 
-        fn sum_up_meta(pool: Arc<LinearObjectPool<[u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]>>, meta: &[LoadedMetadata]) -> [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
+        fn sum_up_meta(pool: Arc<LinearObjectPool<[u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]>>, meta: &[MetadataEx]) -> [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
             meta.iter().map(|v| Wrap(v)).collect_vec().into_par_iter().map(|value| {
                 let mut ct = pool.pull_owned();
                 for value in value.iter() {

@@ -4,9 +4,9 @@ macro_rules! create_struct {
         pub type DomainCounts = ([u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE], [u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE]);
 
         #[derive(Clone, serde::Serialize, serde::Deserialize)]
-        pub struct LoadedMetadataManager {
-            meta_a: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
-            meta_b: Vec<$crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata>,
+        pub struct MetadataManagerEx {
+            meta_a: Vec<$crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx>,
+            meta_b: Vec<$crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx>,
             pub(in crate::topicmodel::dictionary) dictionary_interner: $crate::toolkit::typesafe_interner::DictionaryOriginStringInterner,
             #[serde(default, skip)]
             changed: bool,
@@ -16,10 +16,10 @@ macro_rules! create_struct {
             )*
         }
 
-        impl std::fmt::Debug for LoadedMetadataManager {
+        impl std::fmt::Debug for MetadataManagerEx {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 use itertools::Itertools;
-                f.debug_struct(stringify!(LoadedMetadataManager))
+                f.debug_struct(stringify!(MetadataManagerEx))
                 .field(
                     "meta_a",
                     &format!("(len: {})", self.meta_a.len())
@@ -50,7 +50,7 @@ macro_rules! create_struct {
         }
 
 
-        impl Default for LoadedMetadataManager {
+        impl Default for MetadataManagerEx {
             fn default() -> Self {
                 Self {
                     meta_a: Vec::new(),
@@ -64,11 +64,11 @@ macro_rules! create_struct {
             }
         }
 
-        impl $crate::topicmodel::dictionary::metadata::MetadataManager for LoadedMetadataManager {
-            type Metadata = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata;
-            type ResolvedMetadata = $crate::topicmodel::dictionary::metadata::containers::loaded::SolvedLoadedMetadata;
-            type Reference<'a> = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataRef<'a> where Self: 'a;
-            type MutReference<'a> = $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef<'a> where Self: 'a;
+        impl $crate::topicmodel::dictionary::metadata::MetadataManager for MetadataManagerEx {
+            type Metadata = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx;
+            type ResolvedMetadata = $crate::topicmodel::dictionary::metadata::containers::ex::SolvedLoadedMetadata;
+            type Reference<'a> = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataRefEx<'a> where Self: 'a;
+            type MutReference<'a> = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataMutRefEx<'a> where Self: 'a;
 
             fn meta_a(&self) -> &[Self::Metadata] {
                 self.meta_a.as_slice()
@@ -114,7 +114,7 @@ macro_rules! create_struct {
                 let vocabulary = unsafe {
                     std::mem::transmute::<_, &'static mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut>(vocabulary)
                 } as *mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut;
-                Some($crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataMutRef::new(
+                Some($crate::topicmodel::dictionary::metadata::containers::ex::MetadataMutRefEx::new(
                     vocabulary,
                     ptr,
                     result
@@ -137,7 +137,7 @@ macro_rules! create_struct {
                 if word_id >= targ.len() {
                     targ.resize_with(
                         word_id + 1,
-                        $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default
+                        $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx::default
                     );
                 }
 
@@ -147,7 +147,7 @@ macro_rules! create_struct {
 
                 self.changed = true;
                 unsafe{
-                    LoadedMetadataMutRef::new(
+                    MetadataMutRefEx::new(
                         vocabulary,
                         ptr,
                         targ.get_unchecked_mut(word_id)
@@ -160,18 +160,18 @@ macro_rules! create_struct {
                 vocabulary: $crate::topicmodel::vocabulary::AnonymousVocabularyRef<'a>,
                 word_id: usize
             ) -> Option<Self::Reference<'a>> {
-                Some(LoadedMetadataRef::new(self.get_meta::<L>(word_id)?, self, vocabulary))
+                Some(MetadataRefEx::new(self.get_meta::<L>(word_id)?, self, vocabulary))
             }
 
             fn resize(&mut self, meta_a: usize, meta_b: usize) {
                 if meta_a > self.meta_a.len() {
                     self.changed = true;
-                    self.meta_a.resize(meta_a, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default());
+                    self.meta_a.resize(meta_a, $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx::default());
                 }
 
                 if meta_b > self.meta_a.len() {
                     self.changed = true;
-                    self.meta_b.resize(meta_b, $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata::default());
+                    self.meta_b.resize(meta_b, $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx::default());
                 }
             }
 
@@ -209,7 +209,7 @@ pub(super) use create_struct;
 
 macro_rules! create_manager_interns {
     ($($name: ident => $method: ident: $r_typ: ty),+ $(,)?) => {
-        impl LoadedMetadataManager {
+        impl MetadataManagerEx {
             $(
                 paste::paste! {
                     pub fn [<$method _static>](&mut self, voc_entry: &'static str) -> $r_typ {
@@ -228,10 +228,10 @@ pub(super) use create_manager_interns;
 
 macro_rules! create_managed_implementation {
     ($($name: ident $(: $ty:ident)? => $method: ident: $r_typ: ty),+ $(,)?) => {
-        $crate::topicmodel::dictionary::metadata::loaded::manager::create_struct!(
+        $crate::topicmodel::dictionary::metadata::ex::manager::create_struct!(
             $($($name: $ty => $method: $r_typ,)?)+
         );
-        $crate::topicmodel::dictionary::metadata::loaded::manager::create_manager_interns!(
+        $crate::topicmodel::dictionary::metadata::ex::manager::create_manager_interns!(
             $($name => $method: $r_typ,)+
         );
     }
@@ -242,13 +242,13 @@ pub(super) use create_managed_implementation;
 macro_rules! update_routine_declaration_implementation {
     (interned: $field: ident, $t:ident; $($tt:tt)*) => {
         let mut $field: $t = $t::new();
-        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_declaration_implementation!($($tt)*);
     };
     (interned: $field: ident; $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_declaration_implementation!($($tt)*);
     };
     ($marker:tt: ; $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_declaration_implementation!($($tt)*);
     };
     ($(;)?) => {
 
@@ -259,13 +259,13 @@ pub(super) use update_routine_declaration_implementation;
 macro_rules! update_routine_set_implementation {
     (interned: $TSelf:ident, $intern_name: ident, $t:ident; $($tt:tt)*) => {
         $TSelf.$intern_name = $intern_name;
-        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_set_implementation!($($tt)*);
     };
     (interned: $TSelf:ident, $intern_name: ident; $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_set_implementation!($($tt)*);
     };
     ($marker:tt: $TSelf:ident; $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_set_implementation!($($tt)*);
     };
     ($(;)?) => {
 
@@ -288,19 +288,19 @@ macro_rules! implement_filter_set {
             }
             $target.$field_name = [<$field_name _value>];
         }
-        $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!(
+        $crate::topicmodel::dictionary::metadata::ex::manager::implement_filter_set!(
             $($tt)*
         );
     };
 
     ($marker:tt : $TSelf:ident, $target:ident, $field_name: ident, $intern_name: ident; $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!(
+        $crate::topicmodel::dictionary::metadata::ex::manager::implement_filter_set!(
             $($tt)*
         );
     };
 
     ($marker:tt: $TSelf:ident, $target:ident, $field_name: ident; $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::manager::implement_filter_set!($($tt)*);
     };
     ($(;)?) => {
 
@@ -310,22 +310,22 @@ pub(super) use implement_filter_set;
 
 macro_rules! update_routine {
     ($($marker:tt: $target_field: ident $(, $target_intern: ident $(, $ty: ident)?)?;)*) => {
-        impl LoadedMetadataManager {
+        impl MetadataManagerEx {
             fn optimize_impl(&mut self) {
-                $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_declaration_implementation!(
+                $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_declaration_implementation!(
                     $($marker: $($target_intern $(, $ty)?)?;)*
                 );
                 for value in self.meta_a.iter_mut() {
                     for value in value.iter_mut() {
                         let metadata = value.to_metadata();
                         if let Some(targ) = metadata.get_mut() {
-                            $crate::topicmodel::dictionary::metadata::loaded::manager::implement_filter_set!(
+                            $crate::topicmodel::dictionary::metadata::ex::manager::implement_filter_set!(
                                 $($marker: self, targ, $target_field $(, $target_intern)?;)*
                             );
                         }
                     }
                 }
-                $crate::topicmodel::dictionary::metadata::loaded::manager::update_routine_set_implementation!(
+                $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_set_implementation!(
                     $($marker: self $(, $target_intern $(, $ty)?)?;)*
                 );
             }
@@ -341,7 +341,7 @@ use super::*;
 
 
 
-impl LoadedMetadataManager {
+impl MetadataManagerEx {
     pub fn intern_dictionary_origin_static(&mut self, dict_origin: &'static str) -> DictionaryOriginSymbol {
         self.dictionary_interner.get_or_intern_static(dict_origin)
     }

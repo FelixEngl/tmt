@@ -670,7 +670,7 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWi
 pub mod entry_processing {
     use crate::topicmodel::dictionary::loader::ding;
     use crate::topicmodel::dictionary::loader::ding::{Abbreviation, DingAlternatingWord, DingAlternatingWordValue, DingWordEntry, DingWordEntryElement, WordInfo};
-    use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollection, LoadedMetadataCollectionBuilder};
+    use crate::topicmodel::dictionary::metadata::ex::{MetadataCollection, MetadataCollectionBuilder};
     use crate::topicmodel::dictionary::word_infos::*;
     use itertools::Itertools;
     use std::borrow::Cow;
@@ -686,7 +686,7 @@ pub mod entry_processing {
 
     fn try_parse_string<'a, T: AsRef<str>>(
         s: &'a str,
-        builder: &mut LoadedMetadataCollectionBuilder<T>
+        builder: &mut MetadataCollectionBuilder<T>
     ) -> Option<Vec<&'a str>> {
         let s = s.trim();
         match s {
@@ -788,7 +788,7 @@ pub mod entry_processing {
         ///     -> atomic scientist
         ///     -> nuclear scientist
         /// ```
-        pub fn create_alternatives(&self) -> (Vec<Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>>>, Vec<Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>>>) {
+        pub fn create_alternatives(&self) -> (Vec<Vec<Vec<(String, MetadataCollectionBuilder<String>)>>>, Vec<Vec<Vec<(String, MetadataCollectionBuilder<String>)>>>) {
             (self.a.create_alternatives(), self.b.create_alternatives())
         }
     }
@@ -803,7 +803,7 @@ pub mod entry_processing {
     }
 
     impl<T: AsRef<str> + Clone> Entries<T> {
-        pub fn create_alternatives(&self) -> Vec<Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>>> {
+        pub fn create_alternatives(&self) -> Vec<Vec<Vec<(String, MetadataCollectionBuilder<String>)>>> {
             self.entries.iter().map(|value| {
                 value.create_alternatives()
             }).collect()
@@ -822,14 +822,14 @@ pub mod entry_processing {
     }
 
     impl<T: AsRef<str> + Clone> AlternativeWords<T> {
-        pub fn create_alternatives(&self) -> Vec<Vec<(String, LoadedMetadataCollectionBuilder<String>)>> {
+        pub fn create_alternatives(&self) -> Vec<Vec<(String, MetadataCollectionBuilder<String>)>> {
             let mut data = self.words.iter().map(|value| value.create_alternatives().into_iter().map(
                 |(value, meta)| {
                     (value, meta.map(|value| value.as_ref().to_string()))
                 }
             ).collect_vec()).collect_vec();
             for value in data.iter_mut() {
-                let mut normalized_meta = LoadedMetadataCollectionBuilder::with_name(None);
+                let mut normalized_meta = MetadataCollectionBuilder::with_name(None);
                 for (_, b) in value.iter_mut() {
                     if let Some(x) = b.peek_domains() {
                         normalized_meta.extend_domains(x.into_iter().copied())
@@ -854,11 +854,11 @@ pub mod entry_processing {
     #[derive(Debug)]
     pub struct WordEntry<T> {
         pub word_pattern_elements: Vec<WordElement<T>>,
-        pub metadata: LoadedMetadataCollection<T>
+        pub metadata: MetadataCollection<T>
     }
 
     impl<T: AsRef<str> + Clone> WordEntry<T> {
-        fn create_interchange_entries<'a>(value_to_add: &Cow<'a, str>, targets: &[(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)]) -> Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)> {
+        fn create_interchange_entries<'a>(value_to_add: &Cow<'a, str>, targets: &[(Vec<Cow<'a, str>>, MetadataCollectionBuilder<T>)]) -> Vec<(Vec<Cow<'a, str>>, MetadataCollectionBuilder<T>)> {
             let mut new_to_add = Vec::new();
             for (words, meta) in targets.iter() {
                 let mut cp = words.clone();
@@ -871,9 +871,9 @@ pub mod entry_processing {
         }
 
         fn handle_add_word<'a>(
-            meta: &LoadedMetadataCollection<T>,
+            meta: &MetadataCollection<T>,
             value_to_add: Cow<'a, str>,
-            output: &mut Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)>,
+            output: &mut Vec<(Vec<Cow<'a, str>>, MetadataCollectionBuilder<T>)>,
             is_interchange: bool,
         ) {
             if output.is_empty() {
@@ -898,9 +898,9 @@ pub mod entry_processing {
         }
 
         unsafe fn handle_containing_word<'a>(
-            meta: &LoadedMetadataCollection<T>,
+            meta: &MetadataCollection<T>,
             value: &'a WordElement<T>,
-            word_patterns_and_meta: &mut Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)>,
+            word_patterns_and_meta: &mut Vec<(Vec<Cow<'a, str>>, MetadataCollectionBuilder<T>)>,
             has_interchange: bool,
         ) {
             match value {
@@ -940,8 +940,8 @@ pub mod entry_processing {
             }
         }
 
-        pub fn create_alternatives<'a>(&'a self) -> Vec<(String, LoadedMetadataCollectionBuilder<T>)> {
-            let mut word_patterns_and_meta: Vec<(Vec<Cow<'a, str>>, LoadedMetadataCollectionBuilder<T>)> = Vec::new();
+        pub fn create_alternatives<'a>(&'a self) -> Vec<(String, MetadataCollectionBuilder<T>)> {
+            let mut word_patterns_and_meta: Vec<(Vec<Cow<'a, str>>, MetadataCollectionBuilder<T>)> = Vec::new();
             let mut iter = self.word_pattern_elements.iter();
             let mut has_interchange = false;
 
@@ -1041,7 +1041,7 @@ pub mod entry_processing {
 
 
 
-    fn process_word_element<T: AsRef<str>>(content: DingWordEntryElement<T>, builder: &mut LoadedMetadataCollectionBuilder<T>) -> Option<WordElement<T>> {
+    fn process_word_element<T: AsRef<str>>(content: DingWordEntryElement<T>, builder: &mut MetadataCollectionBuilder<T>) -> Option<WordElement<T>> {
         match content {
             DingWordEntryElement::Category(category) => {
                 if let Some(_) = try_parse_string(
@@ -1111,7 +1111,7 @@ pub mod entry_processing {
             }
             DingWordEntryElement::AlternatingWords(DingAlternatingWord(alternating_words)) => {
                 let alts = alternating_words.into_iter().map(|DingAlternatingWordValue(alternative)| {
-                    let mut collected = LoadedMetadataCollectionBuilder::with_name(None);
+                    let mut collected = MetadataCollectionBuilder::with_name(None);
                     let data = alternative.into_iter().filter_map(|value| {
                         process_word_element(value, &mut collected)
                     }).collect_vec();
@@ -1158,7 +1158,7 @@ pub mod entry_processing {
                 let complete = format!("{word_entries}");
                 let result =  word_entries.0.into_iter().map(
                     |DingWordEntry(entry_content)| {
-                        let mut builder = LoadedMetadataCollectionBuilder::with_name(None);
+                        let mut builder = MetadataCollectionBuilder::with_name(None);
                         let words = entry_content.into_iter().filter_map(
                             |value| { process_word_element(value, &mut builder) }
                         ).collect_vec();

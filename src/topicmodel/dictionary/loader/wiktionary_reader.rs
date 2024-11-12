@@ -9,7 +9,7 @@ use flate2::bufread::GzDecoder;
 use rayon::iter::{IterBridge, Map};
 use rayon::prelude::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use thiserror::Error;
-use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataCollectionBuilder;
+use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
 use crate::topicmodel::dictionary::word_infos::{AnyWordInfo, Domain, Language, PartOfSpeech, PartOfSpeechTag};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -421,18 +421,18 @@ macro_rules! try_parse_without_prefix {
 
 
 pub struct ExtractedWordValues<S> {
-    pub main: (String, Language, LoadedMetadataCollectionBuilder<S>),
+    pub main: (String, Language, MetadataCollectionBuilder<S>),
     /// Variants of the word
-    pub forms: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
+    pub forms: Vec<(String, MetadataCollectionBuilder<S>)>,
     /// Synonyms of the word
-    pub synonyms: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
-    pub antonyms: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
-    pub related: Vec<(String, LoadedMetadataCollectionBuilder<S>)>,
-    pub translations: Vec<(String, Language, LoadedMetadataCollectionBuilder<S>)>,
+    pub synonyms: Vec<(String, MetadataCollectionBuilder<S>)>,
+    pub antonyms: Vec<(String, MetadataCollectionBuilder<S>)>,
+    pub related: Vec<(String, MetadataCollectionBuilder<S>)>,
+    pub translations: Vec<(String, Language, MetadataCollectionBuilder<S>)>,
 }
 
 impl<S> ExtractedWordValues<S> {
-    pub fn new(main: (String, Language, LoadedMetadataCollectionBuilder<S>)) -> Self {
+    pub fn new(main: (String, Language, MetadataCollectionBuilder<S>)) -> Self {
         Self {
             main,
             forms: Vec::new(),
@@ -479,7 +479,7 @@ pub fn convert_entry_to_entries(
 ) -> Result<ExtractedWordValues<String>, EntryConversionError> {
 
 
-    fn parse_categories(word_meta_builder: &mut LoadedMetadataCollectionBuilder<String>, categories: Vec<String>) {
+    fn parse_categories(word_meta_builder: &mut MetadataCollectionBuilder<String>, categories: Vec<String>) {
         for cat in categories {
             match cat.parse::<AnyWordInfo>() {
                 Ok(value) => {
@@ -503,7 +503,7 @@ pub fn convert_entry_to_entries(
             }
         }
     }
-    fn parse_tags(word_meta_builder: &mut LoadedMetadataCollectionBuilder<String>, tags: Vec<String>) {
+    fn parse_tags(word_meta_builder: &mut MetadataCollectionBuilder<String>, tags: Vec<String>) {
         for tag in tags {
             match tag.parse::<AnyWordInfo>() {
                 Ok(value) => {
@@ -515,7 +515,7 @@ pub fn convert_entry_to_entries(
             }
         }
     }
-    fn parse_topics(word_meta_builder: &mut LoadedMetadataCollectionBuilder<String>, topics: Vec<String>) {
+    fn parse_topics(word_meta_builder: &mut MetadataCollectionBuilder<String>, topics: Vec<String>) {
         for topic in topics {
             match topic.parse::<Domain>() {
                 Ok(value) => {
@@ -530,8 +530,8 @@ pub fn convert_entry_to_entries(
 
     // Base and senses
     let mut result = {
-        let lang = lang.parse::<Language>().map_err(|value| EntryConversionError::WrongLanguageError(lang))?;
-        let mut word_meta_builder = LoadedMetadataCollectionBuilder::with_name(None);
+        let lang = lang.parse::<Language>().map_err(|_| EntryConversionError::WrongLanguageError(lang))?;
+        let mut word_meta_builder = MetadataCollectionBuilder::with_name(None);
         word_meta_builder.push_languages(lang);
         parse_categories(&mut word_meta_builder, categories);
         parse_topics(&mut word_meta_builder, topics);
@@ -551,7 +551,7 @@ pub fn convert_entry_to_entries(
             tags,
             categories,
             topics,
-            alt_of,
+            alt_of: _,
             _form_of,
             // No relevant found with a translation
             translations: _,
@@ -585,7 +585,7 @@ pub fn convert_entry_to_entries(
             // Unused, this are strange tags
             raw_tags: _
         } in forms {
-            let mut meta = LoadedMetadataCollectionBuilder::with_name(None);
+            let mut meta = MetadataCollectionBuilder::with_name(None);
             parse_tags(&mut meta, tags);
             result.forms.push((form, meta))
         }
@@ -615,7 +615,7 @@ pub fn convert_entry_to_entries(
             if !target_languages.contains(&lang) {
                 continue
             }
-            let mut meta = LoadedMetadataCollectionBuilder::with_name(None);
+            let mut meta = MetadataCollectionBuilder::with_name(None);
             parse_tags(&mut meta, tags);
             if let Some(sense) = sense {
                 meta.push_contextual_informations(sense);
@@ -638,7 +638,7 @@ pub fn convert_entry_to_entries(
     }
 
 
-    fn process_linkage_list(list: Vec<Linkage>) -> Option<Vec<(String, LoadedMetadataCollectionBuilder<String>)>> {
+    fn process_linkage_list(list: Vec<Linkage>) -> Option<Vec<(String, MetadataCollectionBuilder<String>)>> {
         if list.is_empty() {
             return None
         }
@@ -653,7 +653,7 @@ pub fn convert_entry_to_entries(
             topics,
             word
         } in list {
-            let mut meta = LoadedMetadataCollectionBuilder::with_name(None);
+            let mut meta = MetadataCollectionBuilder::with_name(None);
             parse_tags(&mut meta, tags);
             parse_topics(&mut meta, topics);
             if let Some(tax) = taxonomic {

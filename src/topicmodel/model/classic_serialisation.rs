@@ -12,7 +12,7 @@ use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::enums::ReadError::NotFinishedError;
 use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite};
 use crate::topicmodel::io::TopicModelIOError::PathNotFound;
-use crate::topicmodel::model::TopicModel;
+use crate::topicmodel::model::{FullTopicModel, TopicModel};
 use crate::topicmodel::traits::ToParseableString;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, StoreableVocabulary, Vocabulary, VocabularyMut};
 

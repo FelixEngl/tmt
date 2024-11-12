@@ -309,7 +309,7 @@ macro_rules! create_collector_implementation {
 
     ($($tt:tt: $name: ident: $collect_type: ty),+ $(,)?) => {
         #[derive(Debug, derive_builder::Builder)]
-        pub struct LoadedMetadataCollection<T> {
+        pub struct MetadataCollection<T> {
             #[builder(setter(custom))]
             pub dictionary_name: Option<&'static str>,
             $(#[builder(setter(custom), default)]
@@ -317,22 +317,22 @@ macro_rules! create_collector_implementation {
             )+
         }
 
-        impl<T> LoadedMetadataCollection<T> {
+        impl<T> MetadataCollection<T> {
             $(
-                crate::topicmodel::dictionary::metadata::loaded::collector::generate_getter!(
+                crate::topicmodel::dictionary::metadata::ex::collector::generate_getter!(
                     $tt: $name: $collect_type | T
                 );
             )+
 
-            pub fn to_builder(self) -> LoadedMetadataCollectionBuilder<T> {
-                LoadedMetadataCollectionBuilder {
+            pub fn to_builder(self) -> MetadataCollectionBuilder<T> {
+                MetadataCollectionBuilder {
                     dictionary_name: Some(self.dictionary_name),
                     $($name: self.$name.map(Option::Some),)+
                 }
             }
         }
 
-        impl<T: std::hash::Hash + std::clone::Clone + std::cmp::Eq> LoadedMetadataCollection<T> {
+        impl<T: std::hash::Hash + std::clone::Clone + std::cmp::Eq> MetadataCollection<T> {
             pub fn shrink(&mut self) {
                 use itertools::Itertools;
                 $(
@@ -341,8 +341,8 @@ macro_rules! create_collector_implementation {
             }
         }
 
-        impl<T> LoadedMetadataCollection<T> {
-            pub fn map<R, F>(self, mut mapping: F) -> LoadedMetadataCollection<R> where F: std::ops::FnMut(T) -> R {
+        impl<T> MetadataCollection<T> {
+            pub fn map<R, F>(self, mut mapping: F) -> MetadataCollection<R> where F: std::ops::FnMut(T) -> R {
                 $(
                 let $name = if let Some($name) = self.$name {
                     let mut new = Vec::with_capacity($name.len());
@@ -357,26 +357,26 @@ macro_rules! create_collector_implementation {
                     None
                 };
                 )+
-                LoadedMetadataCollection {
+                MetadataCollection {
                     dictionary_name: self.dictionary_name,
                     $($name,)+
                 }
             }
         }
 
-        impl<T: AsRef<str>> LoadedMetadataCollection<T> {
-            pub fn write_into(self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef) {
+        impl<T: AsRef<str>> MetadataCollection<T> {
+            pub fn write_into(self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx) {
                 if let Some(dictionary_name) = self.dictionary_name {
                     $(
                     if let Some(content) = self.$name {
-                        crate::topicmodel::dictionary::metadata::loaded::collector::generate_insert!(
+                        crate::topicmodel::dictionary::metadata::ex::collector::generate_insert!(
                         $tt: dictionary_name, $name, content => target);
                     }
                     )+
                 } else {
                     $(
                     if let Some(content) = self.$name {
-                        crate::topicmodel::dictionary::metadata::loaded::collector::generate_insert!(
+                        crate::topicmodel::dictionary::metadata::ex::collector::generate_insert!(
                         $tt: $name, content => target);
                     }
                     )+
@@ -384,19 +384,19 @@ macro_rules! create_collector_implementation {
             }
         }
 
-        impl<T: AsRef<str> + Clone> LoadedMetadataCollection<T> {
-            pub fn write_to(&self, target: &mut $crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef) {
+        impl<T: AsRef<str> + Clone> MetadataCollection<T> {
+            pub fn write_to(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx) {
                 if let Some(ref dictionary_name) = self.dictionary_name {
                     $(
                     if let Some(ref content) = self.$name {
-                        crate::topicmodel::dictionary::metadata::loaded::collector::generate_insert!(
+                        crate::topicmodel::dictionary::metadata::ex::collector::generate_insert!(
                         $tt cloning: dictionary_name, $name, content => target);
                     }
                     )+
                 } else {
                     $(
                     if let Some(ref content) = self.$name {
-                        crate::topicmodel::dictionary::metadata::loaded::collector::generate_insert!(
+                        crate::topicmodel::dictionary::metadata::ex::collector::generate_insert!(
                         $tt cloning: $name, content => target);
                     }
                     )+
@@ -404,7 +404,7 @@ macro_rules! create_collector_implementation {
             }
         }
 
-        impl<T: Clone> Clone for LoadedMetadataCollection<T> {
+        impl<T: Clone> Clone for MetadataCollection<T> {
             fn clone(&self) -> Self {
                 Self {
                     dictionary_name: self.dictionary_name.clone(),
@@ -414,8 +414,8 @@ macro_rules! create_collector_implementation {
             }
         }
 
-        impl<'a, T: ToOwned> LoadedMetadataCollection<&'a T> {
-            pub fn into_owned(self) -> LoadedMetadataCollection<<T as ToOwned>::Owned> {
+        impl<'a, T: ToOwned> MetadataCollection<&'a T> {
+            pub fn into_owned(self) -> MetadataCollection<<T as ToOwned>::Owned> {
                 self.map(|value| value.to_owned())
             }
         }
@@ -423,7 +423,7 @@ macro_rules! create_collector_implementation {
 
 
 
-        impl<T: std::hash::Hash + std::clone::Clone + std::cmp::Eq> LoadedMetadataCollectionBuilder<T> {
+        impl<T: std::hash::Hash + std::clone::Clone + std::cmp::Eq> MetadataCollectionBuilder<T> {
             pub fn shrink(&mut self) {
                 use itertools::Itertools;
                 $(
@@ -432,8 +432,8 @@ macro_rules! create_collector_implementation {
             }
         }
 
-        impl<T> LoadedMetadataCollectionBuilder<T> {
-            pub fn map<R, F>(self, mut mapping: F) -> LoadedMetadataCollectionBuilder<R> where F: std::ops::FnMut(T) -> R {
+        impl<T> MetadataCollectionBuilder<T> {
+            pub fn map<R, F>(self, mut mapping: F) -> MetadataCollectionBuilder<R> where F: std::ops::FnMut(T) -> R {
                 $(
                 let $name = match self.$name {
                     None => None,
@@ -450,15 +450,15 @@ macro_rules! create_collector_implementation {
                     }
                 };
                 )+
-                LoadedMetadataCollectionBuilder {
+                MetadataCollectionBuilder {
                     dictionary_name: self.dictionary_name,
                     $($name,)+
                 }
             }
         }
 
-        impl<T: Clone> LoadedMetadataCollectionBuilder<T> {
-            pub fn update_with(&mut self, other: &LoadedMetadataCollection<T>) {
+        impl<T: Clone> MetadataCollectionBuilder<T> {
+            pub fn update_with(&mut self, other: &MetadataCollection<T>) {
                 if self.dictionary_name != Some(other.dictionary_name) {
                     self.dictionary_name(other.dictionary_name);
                 }
@@ -466,7 +466,7 @@ macro_rules! create_collector_implementation {
             }
 
             /// Updates the builder but ignores the name check.
-            pub fn update_fields_with(&mut self, other: &LoadedMetadataCollection<T>) {
+            pub fn update_fields_with(&mut self, other: &MetadataCollection<T>) {
                 $(
                 paste::paste! {
                     if let Some(other) = other.[<get_ $name>]() {
@@ -476,7 +476,7 @@ macro_rules! create_collector_implementation {
                 )+
             }
 
-            pub fn update_with_other(&mut self, other: &LoadedMetadataCollectionBuilder<T>) -> Result<(), LoadedMetadataCollectionBuilderError> {
+            pub fn update_with_other(&mut self, other: &MetadataCollectionBuilder<T>) -> Result<(), MetadataCollectionBuilderError> {
                 // if self.ti != other.dictionary_name {
                 //     // self.dictionary_name(other.dictionary_name)?;
                 // }
@@ -488,7 +488,7 @@ macro_rules! create_collector_implementation {
             }
 
             /// Updates the builder but ignores the name check.
-            pub fn update_fields_with_other(&mut self, other: &LoadedMetadataCollectionBuilder<T>) {
+            pub fn update_fields_with_other(&mut self, other: &MetadataCollectionBuilder<T>) {
                 $(
                 paste::paste! {
                     if let Some(other) = other.[<peek_ $name>]() {
@@ -499,7 +499,7 @@ macro_rules! create_collector_implementation {
             }
         }
 
-        impl<T> LoadedMetadataCollectionBuilder<T> {
+        impl<T> MetadataCollectionBuilder<T> {
             pub fn new() -> Self {
                 Self {
                     dictionary_name: None,
@@ -536,28 +536,28 @@ macro_rules! create_collector_implementation {
 
 
 
-            pub fn build_and_clear(&mut self) -> Result<LoadedMetadataCollection<T>, LoadedMetadataCollectionBuilderError> {
-                Ok(LoadedMetadataCollection {
+            pub fn build_and_clear(&mut self) -> Result<MetadataCollection<T>, MetadataCollectionBuilderError> {
+                Ok(MetadataCollection {
                     dictionary_name: match(self.dictionary_name.take()){
                         Some(value) => value,
-                        None => return Err(LoadedMetadataCollectionBuilderError::UninitializedField("dictionary_name"))
+                        None => return Err(MetadataCollectionBuilderError::UninitializedField("dictionary_name"))
                     },
                     $($name: self.$name.take().flatten(),)+
                 })
             }
 
-            pub fn build_consuming(self) -> Result<LoadedMetadataCollection<T>, LoadedMetadataCollectionBuilderError> {
-                Ok(LoadedMetadataCollection{
+            pub fn build_consuming(self) -> Result<MetadataCollection<T>, MetadataCollectionBuilderError> {
+                Ok(MetadataCollection{
                     dictionary_name: match(self.dictionary_name){
                         Some(value) => value,
-                        None => return Err(LoadedMetadataCollectionBuilderError::UninitializedField("dictionary_name"))
+                        None => return Err(MetadataCollectionBuilderError::UninitializedField("dictionary_name"))
                     },
                     $($name: self.$name.flatten(),)+
                 })
             }
 
 
-            $(crate::topicmodel::dictionary::metadata::loaded::collector::generate_insert_builder!($tt: $name: $collect_type | T);
+            $(crate::topicmodel::dictionary::metadata::ex::collector::generate_insert_builder!($tt: $name: $collect_type | T);
             )+
         }
     };
@@ -567,7 +567,7 @@ pub(super) use create_collector_implementation;
 
 use super::*;
 
-impl<T> LoadedMetadataCollectionBuilder<T> {
+impl<T> MetadataCollectionBuilder<T> {
     pub fn push_any_word_info(&mut self, word_info: AnyWordInfo) {
         match word_info {
             AnyWordInfo::Language(v) => {

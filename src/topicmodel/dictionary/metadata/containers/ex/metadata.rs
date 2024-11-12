@@ -5,10 +5,10 @@ macro_rules! implement_update {
             let __update = $update.create_update::<$L>(&$targ.synonyms);
             $targ.synonyms = __update;
         }
-        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_update!($targ, $update, $L => $($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::metadata::implement_update!($targ, $update, $L => $($tt)*);
     };
     ($targ: ident, $update: ident, $L: ident => $marker:tt: $name: ident, $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_update!($targ, $update, $L => $($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::metadata::implement_update!($targ, $update, $L => $($tt)*);
     };
     ($targ: ident, $update: ident, $L: ident => $(,)?) => {}
 }
@@ -18,10 +18,10 @@ pub(super) use implement_update;
 macro_rules! implement_id_collection {
     ($targ: ident, $collector: ident => voc: $name: ident, $($tt:tt)*) => {
         $collector.extend($targ.$name.iter());
-        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_id_collection!($targ, $collector => $($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::metadata::implement_id_collection!($targ, $collector => $($tt)*);
     };
     ($targ: ident, $collector: ident => $marker:tt: $name: ident, $($tt:tt)*) => {
-        $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_id_collection!($targ, $collector => $($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::metadata::implement_id_collection!($targ, $collector => $($tt)*);
     };
     ($targ: ident, $collector: ident => $(,)?) => {}
 }
@@ -43,7 +43,7 @@ macro_rules! impl_associated_metadata {
 
 
         paste::paste! {
-            $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_general_metadata!(
+            $crate::topicmodel::dictionary::metadata::ex::metadata::impl_general_metadata!(
                 $($name, [<$name:camel>], $typ;)+
             );
         }
@@ -89,7 +89,7 @@ macro_rules! impl_associated_metadata {
                 )+
             }
 
-            $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_associated_metadata!{__is_empty $($name)+}
+            $crate::topicmodel::dictionary::metadata::ex::metadata::impl_associated_metadata!{__is_empty $($name)+}
 
             $(
             pub fn $name(&self) -> &tinyset::Set64<$typ> {
@@ -110,14 +110,14 @@ macro_rules! impl_associated_metadata {
                 &mut self,
                 update: &$crate::topicmodel::dictionary::metadata::update::WordIdUpdate
             ) {
-                $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_update!(
+                $crate::topicmodel::dictionary::metadata::ex::metadata::implement_update!(
                     self, update, L => $($tt: $name,)*
                 );
             }
 
             pub fn collect_all_known_ids(&self) -> tinyset::Set64<usize> {
                 let mut collector = tinyset::Set64::new();
-                $crate::topicmodel::dictionary::metadata::loaded::metadata::implement_id_collection!(
+                $crate::topicmodel::dictionary::metadata::ex::metadata::implement_id_collection!(
                     self, collector => $($tt: $name,)*
                 );
                 collector
@@ -125,7 +125,7 @@ macro_rules! impl_associated_metadata {
 
         }
 
-        impl LoadedMetadata {
+        impl MetadataEx {
             $(
                 paste::paste! {
                     /// Get all values of a specific field.
@@ -203,7 +203,7 @@ macro_rules! impl_general_metadata {
             }
         }
 
-        impl LoadedMetadata {
+        impl MetadataEx {
 
             pub fn all_fields(&self) -> enum_map::EnumMap<MetaField, GeneralMetadata> {
                 enum_map::enum_map! {
@@ -260,7 +260,7 @@ pub(super) use impl_general_metadata;
 
 macro_rules! create_metadata_impl {
     ($($tt:tt)+) => {
-        $crate::topicmodel::dictionary::metadata::loaded::metadata::impl_associated_metadata!($($tt)+);
+        $crate::topicmodel::dictionary::metadata::ex::metadata::impl_associated_metadata!($($tt)+);
     };
 }
 
@@ -290,7 +290,7 @@ impl<T> MetadataWithOrigin<T> {
 
 /// The metadata for an entry
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
-pub struct LoadedMetadata {
+pub struct MetadataEx {
     #[serde(skip_serializing_if = "LazyAssociatedMetadata::is_not_init", default)]
     pub(super) general_metadata: LazyAssociatedMetadata,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "empty_vec")]
@@ -301,7 +301,7 @@ fn empty_vec() -> Vec<LazyAssociatedMetadata> {
     Vec::with_capacity(0)
 }
 
-impl LoadedMetadata {
+impl MetadataEx {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             general_metadata: LazyAssociatedMetadata::new(),
@@ -357,7 +357,7 @@ impl LoadedMetadata {
     }
 
 
-    pub fn update_with(&mut self, other: &LoadedMetadata) {
+    pub fn update_with(&mut self, other: &MetadataEx) {
         if let Some(targ) = other.general_metadata.get() {
             self.general_metadata.get_mut_or_init().update_with(targ);
         }
@@ -383,7 +383,7 @@ impl LoadedMetadata {
     }
 }
 
-impl crate::topicmodel::dictionary::metadata::Metadata for LoadedMetadata{}
+impl crate::topicmodel::dictionary::metadata::Metadata for MetadataEx{}
 
 
 /// Static extensions for MetadataWithOrigin
@@ -412,15 +412,15 @@ impl<T> MetadataWithOrigin<T> where T: Copy {
 }
 
 
-/// An iterator for LoadedMetadata
+/// An iterator for MetadataEx
 pub struct Iter<'a> {
-    src: &'a LoadedMetadata,
+    src: &'a MetadataEx,
     general_metadata: bool,
     pos: usize
 }
 
 impl<'a> Iter<'a> {
-    pub fn new(src: &'a LoadedMetadata) -> Self {
+    pub fn new(src: &'a MetadataEx) -> Self {
         Self { src, general_metadata: false, pos: 0 }
     }
 }
@@ -445,7 +445,7 @@ impl<'a> Iterator for Iter<'a> {
                 if let Some(meta) = targ.get() {
                     self.pos = idx;
                     return Some(MetadataWithOrigin::Associated(
-                        crate::toolkit::typesafe_interner::DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
+                        DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
                         meta
                     ))
                 }
@@ -457,15 +457,15 @@ impl<'a> Iterator for Iter<'a> {
 }
 
 
-/// A mutable iterator over LoadedMetadata
+/// A mutable iterator over MetadataEx
 pub struct IterMut<'a> {
-    src: &'a mut LoadedMetadata,
+    src: &'a mut MetadataEx,
     general_metadata: bool,
     pos: usize
 }
 
 impl<'a> IterMut<'a> {
-    pub fn new(src: &'a mut LoadedMetadata) -> Self {
+    pub fn new(src: &'a mut MetadataEx) -> Self {
         Self { src, general_metadata: false, pos: 0 }
     }
 }
@@ -566,7 +566,7 @@ impl PartialEq for LazyAssociatedMetadata {
     }
 }
 
-impl Default for LoadedMetadata {
+impl Default for MetadataEx {
     fn default() -> Self {
         Self::with_capacity(0)
     }

@@ -2,7 +2,7 @@ macro_rules! convert_into {
     (voc: $reference:ident => $name: ident) => {
         paste::paste! {
             let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $reference.[<get_ $name>]();
+                let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
                 let def = data.default.as_ref().map(|(_, v)| v.iter().map(|x| x.to_string().into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
@@ -23,7 +23,7 @@ macro_rules! convert_into {
     (set: $reference:ident => $name: ident) => {
         paste::paste! {
             let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $reference.[<get_ $name>]();
+                let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
                 let def = data.default.as_ref().map(|value| value.iter().map(Into::into).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
@@ -44,7 +44,7 @@ macro_rules! convert_into {
     (interned: $reference:ident => $name: ident) => {
         paste::paste! {
             let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::loaded::Storage<_> = $reference.[<get_ $name>]();
+                let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
                 let def = data.default.as_ref().map(|(_, v)| v.iter().map(|x| x.to_string().into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
@@ -116,7 +116,7 @@ macro_rules! create_cached_getter {
                 self.[<get_ $ident _impl>]()
             }
         }
-        $crate::topicmodel::dictionary::metadata::loaded::reference::create_cached_getter!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::reference::create_cached_getter!($($tt)*);
     };
     (set: $ident:ident: $ty:ty, $($tt:tt)*) => {
         paste::paste! {
@@ -141,7 +141,7 @@ macro_rules! create_cached_getter {
                 })
             }
         }
-        $crate::topicmodel::dictionary::metadata::loaded::reference::create_cached_getter!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::reference::create_cached_getter!($($tt)*);
     };
 
     (voc: $ident:ident: $ty:ty, $($tt:tt)*) => {
@@ -192,7 +192,7 @@ macro_rules! create_cached_getter {
             }
         }
 
-        $crate::topicmodel::dictionary::metadata::loaded::reference::create_cached_getter!($($tt)*);
+        $crate::topicmodel::dictionary::metadata::ex::reference::create_cached_getter!($($tt)*);
     };
     () => {}
 }
@@ -203,27 +203,27 @@ pub(super) use create_cached_getter;
 macro_rules! create_ref_implementation {
     ($($tt:tt: $name: ident $(, $interner_name: ident)?: $ty: ty | $ty_sub:ty),* $(,)?) => {
         #[derive(Clone)]
-        pub struct LoadedMetadataRef<'a> {
-            pub(in super) raw: &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata,
-            pub(in super) manager_ref: &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager,
+        pub struct MetadataRefEx<'a> {
+            pub(in super) raw: &'a $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx,
+            pub(in super) manager_ref: &'a $crate::topicmodel::dictionary::metadata::containers::ex::MetadataManagerEx,
             pub(in super) vocabulary: &'a dyn $crate::topicmodel::vocabulary::AnonymousVocabulary,
-            $(pub(in super) $name: std::sync::Arc<std::sync::OnceLock<$crate::topicmodel::dictionary::metadata::containers::loaded::Storage<'a, $ty>>>,
+            $(pub(in super) $name: std::sync::Arc<std::sync::OnceLock<$crate::topicmodel::dictionary::metadata::containers::ex::Storage<'a, $ty>>>,
             )*
         }
 
-        impl std::fmt::Debug for LoadedMetadataRef<'_> {
+        impl std::fmt::Debug for MetadataRefEx<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct(stringify!(LoadedMetadataRef))
+                f.debug_struct(stringify!(MetadataRefEx))
                 $(.field(stringify!($name), &self.$name.get().is_some())
                 )*
                 .finish_non_exhaustive()
             }
         }
 
-        impl<'a> LoadedMetadataRef<'a> {
+        impl<'a> MetadataRefEx<'a> {
             pub fn new(
-                raw: &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadata,
-                manager_ref: &'a $crate::topicmodel::dictionary::metadata::containers::loaded::LoadedMetadataManager,
+                raw: &'a $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx,
+                manager_ref: &'a $crate::topicmodel::dictionary::metadata::containers::ex::MetadataManagerEx,
                 vocabulary: &'a dyn $crate::topicmodel::vocabulary::AnonymousVocabulary
             ) -> Self {
                 Self {
@@ -237,18 +237,18 @@ macro_rules! create_ref_implementation {
         }
 
 
-        impl<'a> LoadedMetadataRef<'a> {
-            $crate::topicmodel::dictionary::metadata::loaded::reference::create_cached_getter!($($tt: $name $(, $interner_name)?: $ty_sub,)*);
+        impl<'a> MetadataRefEx<'a> {
+            $crate::topicmodel::dictionary::metadata::ex::reference::create_cached_getter!($($tt: $name $(, $interner_name)?: $ty_sub,)*);
         }
 
-        impl<'a> LoadedMetadataRef<'a> {
-            /// Create a solved loaded metadata
+        impl<'a> MetadataRefEx<'a> {
+            /// Create a solved ex metadata
             pub fn create_solved(&self) -> SolvedLoadedMetadata {
                 $(
-                    $crate::topicmodel::dictionary::metadata::loaded::reference::convert_into!($tt: self => $name);
+                    $crate::topicmodel::dictionary::metadata::ex::reference::convert_into!($tt: self => $name);
                 )+
 
-                $crate::topicmodel::dictionary::metadata::loaded::SolvedLoadedMetadata {
+                $crate::topicmodel::dictionary::metadata::ex::SolvedLoadedMetadata {
                     $(
                     $name: std::sync::Arc::new($name),
                     )+
@@ -272,8 +272,8 @@ pub(in crate::topicmodel::dictionary::metadata::containers) struct Storage<'a, T
     pub mapped: Vec<(&'a str, Option<T>)>
 }
 
-impl<'a> Deref for LoadedMetadataRef<'a>  {
-    type Target = LoadedMetadata;
+impl<'a> Deref for MetadataRefEx<'a>  {
+    type Target = MetadataEx;
 
     fn deref(&self) -> &Self::Target {
         self.raw
@@ -281,24 +281,24 @@ impl<'a> Deref for LoadedMetadataRef<'a>  {
 }
 
 
-impl<'a> MetadataReference<'a, LoadedMetadataManager> for LoadedMetadataRef<'a> {
+impl<'a> MetadataReference<'a, MetadataManagerEx> for MetadataRefEx<'a> {
     #[inline(always)]
-    fn raw(&self) -> &'a <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
+    fn raw(&self) -> &'a <MetadataManagerEx as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
         self.raw
     }
 
     #[inline(always)]
-    fn meta_manager(&self) -> &'a LoadedMetadataManager {
+    fn meta_manager(&self) -> &'a MetadataManagerEx {
         self.manager_ref
     }
 
     #[inline(always)]
-    fn into_owned(self) -> <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
+    fn into_owned(self) -> <MetadataManagerEx as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
         self.raw.clone()
     }
 
     #[inline(always)]
-    fn into_resolved(self) -> <LoadedMetadataManager as crate::topicmodel::dictionary::metadata::MetadataManager>::ResolvedMetadata {
+    fn into_resolved(self) -> <MetadataManagerEx as crate::topicmodel::dictionary::metadata::MetadataManager>::ResolvedMetadata {
         self.into()
     }
 

@@ -3,7 +3,7 @@ use std::collections::hash_map::{Entry};
 use pyo3::FromPyObject;
 use crate::impl_py_stub;
 use crate::toolkit::special_python_values::{SingleOrVec};
-use crate::topicmodel::dictionary::metadata::loaded::{MetaField, ResolvedValue};
+use crate::topicmodel::dictionary::metadata::ex::{MetaField, ResolvedValue};
 
 
 pub type SolvedMetadataField = (Option<HashSet<ResolvedValue>>, Option<HashMap<String, HashSet<ResolvedValue>>>);

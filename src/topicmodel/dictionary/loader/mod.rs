@@ -8,8 +8,8 @@ use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictR
 use crate::topicmodel::dictionary::loader::iate_reader::IateReaderError;
 use crate::topicmodel::dictionary::loader::ms_terms_reader::{MSTermsReaderError, MergingReader, MergingReaderFinishedMode, MsTermsEntry, TermDefinition};
 use crate::topicmodel::dictionary::loader::muse::MuseError;
-use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataMutRef;
-use crate::topicmodel::dictionary::metadata::loaded::{LoadedMetadataCollectionBuilder, LoadedMetadataManager};
+use crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx;
+use crate::topicmodel::dictionary::metadata::ex::{MetadataCollectionBuilder, MetadataManagerEx};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
@@ -138,7 +138,7 @@ impl Display for Len {
 
 
 pub struct UnifiedTranslationHelper<P = DefaultPreprocessor> {
-    dictionary: DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>,
+    dictionary: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>,
     preprocessor: P,
     ding_dict_id_provider: u64,
     dir: LanguageDirection,
@@ -304,7 +304,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    unsafe fn insert_pipeline<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str) -> (usize, LoadedMetadataMutRef<'a>) {
+    unsafe fn insert_pipeline<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str) -> (usize, MetadataMutRefEx<'a>) {
         let preprocessed = self.preprocessor.preprocess_word::<L>(dict, word);
         let orth_id = match preprocessed {
             None => {
@@ -334,7 +334,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    fn insert<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str, dir: &LanguageDirection) -> (usize, LoadedMetadataMutRef<'a>) {
+    fn insert<'a, L: DirLang>(&'a mut self, dict: &'static str, word: &str, dir: &LanguageDirection) -> (usize, MetadataMutRefEx<'a>) {
         unsafe {
             if self.check_dir_lang::<L>(dir) {
                 self.insert_pipeline::<L>(dict, word)
@@ -354,7 +354,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn finalize(mut self) -> Result<DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>, (DictionaryWithMeta<String, Vocabulary<String>, LoadedMetadataManager>, Vec<LoadByInstructionError>)> {
+    pub fn finalize(mut self) -> Result<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>, (DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>, Vec<LoadByInstructionError>)> {
         let mut errors = Vec::new();
         for value in self.enrich_on_finalize.clone() {
             match self.read_by_instruction_impl::<true, _>(&value) {
@@ -471,7 +471,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             }
             DictionaryKind::MSTerms => {
                 match &instruction.paths {
-                    Either::Left(value) => {
+                    Either::Left(_) => {
                         return Err(LoadByInstructionError::WrongNumberOfPaths {
                             actual: 1,
                             expected: 2
@@ -718,7 +718,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         let mut id_b = Vec::with_capacity(words_b.len());
 
         fn extend<V: AsRef<str> + Display>(
-            meta: &mut LoadedMetadataMutRef,
+            meta: &mut MetadataMutRefEx,
             unchanged: &str,
             general_register: &[Register],
             general_pos: &[PartOfSpeech],
@@ -824,7 +824,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         Ok(())
     }
 
-    fn process_ding_interchangeable<L: DirLang, V: AsRef<str> + Clone + Display>(&mut self, interchangeables: Vec<Vec<(String, LoadedMetadataCollectionBuilder<V>)>>, dir: &LanguageDirection) -> Vec<Vec<usize>> {
+    fn process_ding_interchangeable<L: DirLang, V: AsRef<str> + Clone + Display>(&mut self, interchangeables: Vec<Vec<(String, MetadataCollectionBuilder<V>)>>, dir: &LanguageDirection) -> Vec<Vec<usize>> {
         let mut ids = Vec::new();
         let interchangeable_id = self.get_ding_id();
         for value in interchangeables {
@@ -870,7 +870,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
 
     fn process_iate(&mut self, element: iate_reader::IateElement, dir: &LanguageDirection) {
         let (id, contextual, domains, registers, mut words) = iate_reader::process_element(element);
-        let mut builder = LoadedMetadataCollectionBuilder::with_name(Some(IATE));
+        let mut builder = MetadataCollectionBuilder::with_name(Some(IATE));
         builder.extend_contextual_informations(contextual);
         builder.extend_domains(domains);
         builder.push_internal_ids(id);
@@ -1055,7 +1055,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             region,
             defintition
         }) in terms {
-            let mut builder =  LoadedMetadataCollectionBuilder::with_name(Some(MS_TERMS));
+            let mut builder =  MetadataCollectionBuilder::with_name(Some(MS_TERMS));
             if let Some(reg) = region {
                 builder.push_regions(reg);
             }
@@ -1424,16 +1424,11 @@ pub enum LineReaderError<T: Debug> {
 #[cfg(test)]
 mod test {
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
-    use crate::topicmodel::dictionary::{DictionaryWithMeta, EnrichOption, LoadByInstructionError, LoadInstruction, UnifiedTranslationHelper};
-    use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary};
-    use std::fs::File;
-    use std::io::{Write};
+    use crate::topicmodel::dictionary::{EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
-    use itertools::Itertools;
     use rayon::prelude::*;
     use crate::topicmodel::dictionary::DictionaryKind::*;
     use crate::topicmodel::dictionary::io::{WriteMode, WriteableDictionary};
-    use crate::topicmodel::dictionary::metadata::loaded::LoadedMetadataManager;
 
     static TARGETS: std::sync::LazyLock<Vec<LoadInstruction<&str>>> = std::sync::LazyLock::new(||vec![
         LoadInstruction {

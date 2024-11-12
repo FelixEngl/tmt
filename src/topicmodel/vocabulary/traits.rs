@@ -135,7 +135,7 @@ pub trait StoreableVocabulary<T> where T: ToParseableString {
     fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize>;
 }
 
-/// A vocabulary that can be loaded.
+/// A vocabulary that can be ex.
 pub trait LoadableVocabulary<T, E> where T: Hash + Eq + FromStr<Err=E>, E: Debug, Self: From<Vec<T>> {
     /// Loads from a `path` in the list format
     fn load_from_file(path: impl AsRef<Path>) -> Result<Self, LoadVocabularyError<E>> {

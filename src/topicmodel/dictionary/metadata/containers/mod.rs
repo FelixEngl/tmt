@@ -1,7 +1,7 @@
 pub mod classic;
 mod with_dict;
 mod iter;
-pub mod loaded;
+pub mod ex;
 pub mod update;
 
 pub use with_dict::*;

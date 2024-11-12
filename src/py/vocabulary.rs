@@ -346,6 +346,14 @@ impl From<Option<LanguageHint>> for  PyVocabulary {
     }
 }
 
+impl<'a> FromIterator<&'a HashRef<String>> for PyVocabulary {
+    fn from_iter<I: IntoIterator<Item=&'a HashRef<String>>>(iter: I) -> Self {
+        PyVocabulary {
+            inner: iter.into_iter().collect()
+        }
+    }
+}
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone)]

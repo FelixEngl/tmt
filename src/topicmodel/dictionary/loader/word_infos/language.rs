@@ -9,7 +9,7 @@ use crate::topicmodel::dictionary::direction::{Language as DirLang, LanguageKind
 use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{LangAttribute as FreeDictLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
 use crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute};
-use crate::topicmodel::dictionary::metadata::loaded::impl_try_from_as_unpack;
+use crate::topicmodel::dictionary::metadata::ex::impl_try_from_as_unpack;
 
 
 register_python! {
