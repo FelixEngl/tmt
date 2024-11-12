@@ -6,7 +6,7 @@ use pyo3::{pyclass, pymethods, FromPyObject};
 use strum::EnumCount;
 use thiserror::Error;
 use crate::{impl_py_stub, register_python};
-use crate::topicmodel::dictionary::metadata::ex::{AssociatedMetadata, SolvedLoadedMetadata};
+use crate::topicmodel::dictionary::metadata::ex::{AssociatedMetadata, LoadedMetadataEx};
 use crate::topicmodel::dictionary::word_infos::{Domain, Register};
 
 
@@ -214,7 +214,7 @@ impl Entry {
 
 impl Entry {
 
-    pub fn from_meta(meta: &SolvedLoadedMetadata) -> Self {
+    pub fn from_meta(meta: &LoadedMetadataEx) -> Self {
         let mut new = Self::new();
         {
             let (a, b) = meta.domains();

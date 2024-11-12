@@ -1275,7 +1275,7 @@ impl PyAlignedArticleProcessor {
             if let Some(content) = art.0.content() {
                 if let Some(tokenizer) = tokenizers.get(&lang) {
                     let tokens = tokenizer
-                        .phrase(content.as_str())
+                        .process(content.as_str())
                         .map(|(original, value)| (original.to_string(), value.into()))
                         .collect_vec();
                     (lang, PyTokenizedArticleUnion::Tokenized(
@@ -1308,7 +1308,7 @@ impl PyAlignedArticleProcessor {
             if let Some(content) = art.0.content() {
                 if let Some(tokenizer) = tokenizers.get(&lang) {
                     let tokens = tokenizer
-                        .phrase(content.as_str())
+                        .process(content.as_str())
                         .map(|(original, value)| (original.to_string(), value.into()))
                         .collect_vec();
                     if filter.is_in_count_range(tokens.len()) {
@@ -1343,6 +1343,10 @@ impl PyAlignedArticleProcessor {
             Self::process_article_with(value, &unsafe{self.create_tokenizer_map()})
         }
     }
+
+    pub fn get_tokenizers_for(&self, hint: &LanguageHint) -> Option<Tokenizer> {
+        Some(self.builders.get(hint)?.build_tokenizer())
+    }
 }
 
 
@@ -1373,7 +1377,7 @@ impl PyAlignedArticleProcessor {
     fn process_string(&self, language_hint: LanguageHintValue, value: &str) -> Option<Vec<(String, PyToken)>> {
         let lh: LanguageHint = language_hint.into();
         let token = self.builders.get(&lh)?.build_tokenizer();
-        Some(token.phrase(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
+        Some(token.process(value).map(|(original, value)| { (original.to_string(), value.into()) }).collect())
     }
 
     fn to_json(&self) -> PyResult<String> {
@@ -2559,7 +2563,7 @@ mod test {
         for value in stream {
             let x = value.unwrap();
             let artivle = x.0.articles().get(&LanguageHint::new("en")).unwrap();
-            for (origin, value) in tokenizer.phrase(artivle.0.content().as_ref().unwrap()) {
+            for (origin, value) in tokenizer.process(artivle.0.content().as_ref().unwrap()) {
                 println!("{origin} -- {value:?}")
             }
             println!("########")

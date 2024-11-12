@@ -7,22 +7,23 @@ use string_interner::Symbol;
 use thiserror::Error;
 use crate::{impl_py_stub};
 use crate::topicmodel::dictionary::word_infos::*;
+use strum::Display;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Serialize, Deserialize)]
 #[derive(FromPyObject)]
-#[derive(From)]
+#[derive(From, Display)]
 pub enum ResolvedValue {
-    Language(Language),
-    Domain(Domain),
-    Register(Register),
-    GrammaticalGender(GrammaticalGender),
-    PartOfSpeech(PartOfSpeech),
-    PartOfSpeechTag(PartOfSpeechTag),
-    Region(Region),
-    GrammaticalNumber(GrammaticalNumber),
-    RawId(u64),
-    String(String),
+    #[strum(to_string = "{0}")] Language(Language),
+    #[strum(to_string = "{0}")] Domain(Domain),
+    #[strum(to_string = "{0}")] Register(Register),
+    #[strum(to_string = "{0}")] GrammaticalGender(GrammaticalGender),
+    #[strum(to_string = "{0}")] PartOfSpeech(PartOfSpeech),
+    #[strum(to_string = "{0}")] PartOfSpeechTag(PartOfSpeechTag),
+    #[strum(to_string = "{0}")] Region(Region),
+    #[strum(to_string = "{0}")] GrammaticalNumber(GrammaticalNumber),
+    #[strum(to_string = "{0}")] RawId(u64),
+    #[strum(to_string = "{0}")] String(String),
 }
 
 #[derive(Debug, Clone, Error)]
@@ -92,25 +93,6 @@ impl ResolvedValue {
 impl From<&str> for ResolvedValue {
     fn from(value: &str) -> Self {
         Self::String(value.to_string())
-    }
-}
-
-impl Display for ResolvedValue {
-    delegate::delegate! {
-        to match self {
-            ResolvedValue::Language(value) => value,
-            ResolvedValue::Domain(value) => value,
-            ResolvedValue::Register(value) => value,
-            ResolvedValue::GrammaticalGender(value) => value,
-            ResolvedValue::PartOfSpeech(value) => value,
-            ResolvedValue::PartOfSpeechTag(value) => value,
-            ResolvedValue::Region(value) => value,
-            ResolvedValue::GrammaticalNumber(value) => value,
-            ResolvedValue::String(value) => value,
-            ResolvedValue::RawId(value) => value,
-        } {
-            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result;
-        }
     }
 }
 

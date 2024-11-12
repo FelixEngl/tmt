@@ -7,6 +7,7 @@ use std::ops::Range;
 use std::path::Path;
 use std::slice::Iter;
 use std::str::FromStr;
+use itertools::Itertools;
 use trie_rs::map::{Trie, TrieBuilder};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
@@ -68,6 +69,20 @@ pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> + IntoIterato
         builder.build()
     }
 }
+
+pub trait AlphabeticalVocabulary<T>: BasicVocabulary<T> where T: Ord {
+    fn ids_in_alphabetical_order(&self) -> Vec<usize> {
+        let mut sorted_entries = self.ids().collect_vec();
+        sorted_entries.sort_by_key(|value| unsafe{self.get_value_unchecked(*value)});
+        sorted_entries
+    }
+}
+
+impl<T, V> AlphabeticalVocabulary<T> for V
+where
+    V: BasicVocabulary<T>,
+    T: Ord
+{}
 
 /// Allows to search a vocabulary by a query
 pub trait SearchableVocabulary<T>: BasicVocabulary<T> where T: Eq + Hash {

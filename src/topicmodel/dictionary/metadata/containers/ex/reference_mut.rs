@@ -275,7 +275,7 @@ impl<'a> MetadataMutRefEx<'a> {
         self.meta_container_mut().intern_dictionary_origin(name)
     }
 
-    pub fn update_with_solved(&mut self, solved: &SolvedLoadedMetadata) -> Result<(), WrongResolvedValueError> {
+    pub fn update_with_solved(&mut self, solved: &LoadedMetadataEx) -> Result<(), WrongResolvedValueError> {
         solved.write_into(self)
     }
 

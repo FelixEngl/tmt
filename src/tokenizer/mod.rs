@@ -142,7 +142,9 @@ impl<'tb, A: AsRef<[u8]>> TokenizerBuilder<'tb, A>  {
 }
 
 
-
+/// The tokenizer for TMT.
+///
+/// Has some hidden public methods to make discerning the important and less relevant methods easier.
 pub struct Tokenizer<'tb> {
     unicode: bool,
     tokenizer: CTokenizer<'tb>,
@@ -156,7 +158,13 @@ impl<'tb> Tokenizer<'tb> {
         Self { unicode, tokenizer, stemmer, trie, normalizer_option }
     }
 
+    /// Runs the tokenizer in phrase mode
+    pub fn process<'t, 'o>(&'t self, original: &'o str) -> PhraseRecognizerIter<'o, 't> {
+        self.phrase(original)
+    }
+
     /// Allows to wrap a tokenizer for phrase recognition
+    #[doc(hidden)]
     pub fn phrase<'t, 'o>(&'t self, original: &'o str) -> PhraseRecognizerIter<'o, 't> {
         PhraseRecognizerIter::new(
             self.trie.as_ref().map(|value| value.as_ref()),
@@ -165,6 +173,8 @@ impl<'tb> Tokenizer<'tb> {
         )
     }
 
+    /// Applies some kind of stemming.
+    #[doc(hidden)]
     pub fn stem<'t, 'o>(&'t self, original: &'o str) -> StemmedTokenIter<'o, 't> {
         StemmedTokenIter::new(self.reconstruct(original), self.stemmer.as_ref())
     }
@@ -174,11 +184,13 @@ impl<'tb> Tokenizer<'tb> {
     /// The provided text is segmented creating tokens,
     /// then tokens are normalized and classified depending on the list of normalizers and classifiers in [`normalizer::NORMALIZERS`].
     #[inline(always)]
+    #[doc(hidden)]
     pub fn tokenize<'t, 'o>(&'t self, original: &'o str) -> NormalizedTokenIter<'o, 't> {
         self.tokenizer.tokenize(original)
     }
 
     /// Same as [`tokenize`] but attaches each [`Token`] to its corresponding portion of the original text.
+    #[doc(hidden)]
     pub fn reconstruct<'t, 'o>(&'t self, original: &'o str) -> SegmentedIter<'o, 't> {
         if self.unicode {
             SegmentedIter::Unicode(UnicodeSegmenterTokenIter::new(original, &self.normalizer_option))
@@ -189,12 +201,14 @@ impl<'tb> Tokenizer<'tb> {
 
     /// Segments the provided text creating an Iterator over [`Token`].
     #[inline(always)]
+    #[doc(hidden)]
     pub fn segment<'t, 'o>(&'t self, original: &'o str) -> SegmentedTokenIter<'o, 't> {
         self.tokenizer.segment(original)
     }
 
     /// Segments the provided text creating an Iterator over `&str`.
     #[inline(always)]
+    #[doc(hidden)]
     pub fn segment_str<'t, 'o>(&'t self, original: &'o str) -> SegmentedStrIter<'o, 't> {
         self.tokenizer.segment_str(original)
     }

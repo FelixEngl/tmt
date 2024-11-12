@@ -1,6 +1,8 @@
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
+
+use camino::{Utf8Path, Utf8PathBuf};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc, MergingDictionary};
@@ -8,7 +10,7 @@ use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionK
 use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference, MetadataReference};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{AlphabeticalVocabulary, AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 use crate::topicmodel::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
@@ -24,6 +26,9 @@ pub struct DictionaryWithMeta<T, V, C> {
     #[serde(bound(serialize = "C: Serialize", deserialize = "C: Deserialize<'de>"))]
     pub(crate) metadata: C
 }
+
+unsafe impl<T, V, M> Send for DictionaryWithMeta<T, V, M>{}
+unsafe impl<T, V, M> Sync for DictionaryWithMeta<T, V, M>{}
 
 
 impl<T, V, C> DictionaryWithMeta<T, V, C> {
@@ -144,10 +149,8 @@ impl<T, V, M> DictionaryWithMeta<T, V, M> where V: BasicVocabulary<T> + Anonymou
     pub fn known_dictionaries(&self) -> Vec<&str> {
         self.metadata.dictionaries()
     }
-}
-unsafe impl<T, V, M> Send for DictionaryWithMeta<T, V, M>{}
-unsafe impl<T, V, M> Sync for DictionaryWithMeta<T, V, M>{}
 
+}
 
 
 impl<T, V, M> DictionaryWithMeta<T, V, M>
@@ -421,12 +424,12 @@ where
     T: Hash + Eq,
     M: MetadataManager
 {
-    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    fn filter_and_process<'a, Fa, Fb, E>(&'a self, f_a: Fa, f_b: Fb) -> Result<Self, E>
     where
         Self: Sized,
         T: 'a,
-        Fa: Fn(&'a HashRef<T>) -> Option<HashRef<T>>,
-        Fb: Fn(&'a HashRef<T>) -> Option<HashRef<T>>
+        Fa: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>,
+        Fb: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>
     {
         let mut new = Self {
             inner: Dictionary::new_with(
@@ -446,8 +449,8 @@ where
             b: (word_id_b, meta_b),
             direction
         } in self.iter_with_meta() {
-            if let Some(a) = f_a(self.voc_a().get_value(word_id_a).unwrap()) {
-                if let Some(b) = f_b(self.voc_b().get_value(word_id_b).unwrap()) {
+            if let Some(a) = f_a(self.voc_a().get_value(word_id_a).unwrap())? {
+                if let Some(b) = f_b(self.voc_b().get_value(word_id_b).unwrap())? {
                     let DirectionTuple{a: word_a, b: word_b, direction: _} = match direction {
                         DirectionKind::AToB => {
                             new.insert_hash_ref::<AToB>(a, b)
@@ -463,7 +466,7 @@ where
                         if let Some(a) = meta_a.collect_all_associated_word_ids() {
                             for value in a.iter() {
                                 if let Some(value) = self.voc_a().get_value(value) {
-                                    if let Some(value) = f_a(value) {
+                                    if let Some(value) = f_a(value)? {
                                         update.add_id::<A>(
                                             word_id_a,
                                             new.inner.voc_a.add_hash_ref(value.clone())
@@ -478,7 +481,7 @@ where
                         if let Some(b) = meta_b.collect_all_associated_word_ids() {
                             for value in b.iter() {
                                 if let Some(value) = self.voc_b().get_value(value) {
-                                    if let Some(value) = f_b(value) {
+                                    if let Some(value) = f_b(value)? {
                                         update.add_id::<B>(
                                             word_id_b,
                                             new.inner.voc_b.add_hash_ref(value)
@@ -497,7 +500,7 @@ where
 
         new.metadata.update_ids(&update);
         new.metadata.optimize();
-        new
+        Ok(new)
     }
 
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {

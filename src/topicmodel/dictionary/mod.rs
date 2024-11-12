@@ -19,7 +19,7 @@ pub mod direction;
 pub mod iterators;
 mod traits;
 mod loader;
-mod io;
+pub mod io;
 
 pub use loader::*;
 pub use traits::*;
@@ -395,17 +395,17 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
     }
 }
 impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default  {
-    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    fn filter_and_process<'a, Fa, Fb, E>(&'a self, f_a: Fa, f_b: Fb) -> Result<Self, E>
     where
         Self: Sized,
         T: 'a,
-        Fa: Fn(&'a HashRef<T>) -> Option<HashRef<T>>,
-        Fb: Fn(&'a HashRef<T>) -> Option<HashRef<T>>
+        Fa: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>,
+        Fb: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>
     {
         let mut new_dict = Dictionary::new();
         for DirectionTuple{a, b, direction} in self.iter() {
-            if let Some(a) = f_a(self.id_to_word::<A>(a).unwrap()) {
-                if let Some(b) = f_b(self.id_to_word::<B>(b).unwrap()) {
+            if let Some(a) = f_a(self.id_to_word::<A>(a).unwrap())? {
+                if let Some(b) = f_b(self.id_to_word::<B>(b).unwrap())? {
                     match direction {
                         DirectionKind::AToB => {
                             new_dict.insert_hash_ref::<AToB>(
@@ -430,7 +430,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
             }
         }
 
-        new_dict
+        Ok(new_dict)
     }
 
     //noinspection DuplicatedCode

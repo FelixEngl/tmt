@@ -171,7 +171,6 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
             entry2id
         }
     }
-
 }
 
 impl<T> Default for Vocabulary<T> {

@@ -16,7 +16,7 @@ use crate::py::helpers::LanguageHintValue;
 use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Language, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::{DictIter, DictionaryWithMetaIterator};
-use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, MetaField, SolvedLoadedMetadata};
+use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, MetaField, LoadedMetadataEx};
 use crate::topicmodel::dictionary::metadata::{MetadataManager};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc, MergingDictionary};
 use crate::topicmodel::language_hint::LanguageHint;
@@ -31,9 +31,14 @@ use std::borrow::Borrow;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, BufWriter, Write};
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::PathBuf;
+use camino::Utf8PathBuf;
+use crate::py::tokenizer::PyAlignedArticleProcessor;
 use crate::register_python;
+use crate::tokenizer::Tokenizer;
+use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteMode, WriteableDictionary};
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -107,8 +112,8 @@ impl PyDictionary {
 
     pub fn add(
         &mut self,
-        word_a: (String, LanguageHintValue, SolvedLoadedMetadata),
-        word_b: (String, LanguageHintValue, SolvedLoadedMetadata)
+        word_a: (String, LanguageHintValue, LoadedMetadataEx),
+        word_b: (String, LanguageHintValue, LoadedMetadataEx)
     ) -> (usize, usize, DirectionKind) {
         let (a_word, a_hint, a_solved) = word_a;
         let (b_word, b_hint, b_solved) = word_b;
@@ -149,30 +154,26 @@ impl PyDictionary {
         // self.inner.to_string()
     }
 
-    pub fn save(&self, path: PathBuf) -> PyResult<()> {
-        let writer = File::options().write(true).create_new(true).open(path)?;
-        let mut writer = BufWriter::with_capacity(1024*32, writer);
-        match serde_json::to_writer(&mut writer, &self) {
-            Ok(_) => {
-                writer.flush()?;
-                Ok(())
-            }
-            Err(err) => {
-                return Err(PyValueError::new_err(err.to_string()))
-            }
-        }
+    #[pyo3(signature = (path, mode=None))]
+    pub fn save(&self, path: PathBuf, mode: Option<WriteMode>) -> PyResult<()> {
+        let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
+        if let Some(mode) = mode {
+            self.write_to_path(mode, path)
+        } else {
+            self.write_to_path_with_extension(path)
+        }.map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(())
     }
 
     #[staticmethod]
-    pub fn load(path: PathBuf) -> PyResult<Self> {
-        let reader = File::options().read(true).open(path)?;
-        let mut reader = BufReader::with_capacity(1024*32, reader);
-        match serde_json::from_reader(&mut reader) {
-            Ok(result) => {Ok(result)}
-            Err(err) => {
-                return Err(PyValueError::new_err(err.to_string()))
-            }
-        }
+    #[pyo3(signature = (path, mode=None))]
+    pub fn load(path: PathBuf, mode: Option<WriteMode>) -> PyResult<Self> {
+        let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
+        if let Some(mode) = mode {
+            Self::from_path(mode, path)
+        } else {
+            Self::from_path_with_extension(path)
+        }.map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
     fn to_json(&self) -> PyResult<String> {
@@ -194,12 +195,12 @@ impl PyDictionary {
         let created = self.wrapped.create_subset_with_filters(
             |dict, word, meta|{
                 let value = dict.id_to_word::<A>(word).unwrap().to_string();
-                let solved = meta.cloned().map(SolvedLoadedMetadata::from);
+                let solved = meta.cloned().map(LoadedMetadataEx::from);
                 filter_a.call1((value, solved)).expect("This should not fail!").extract::<bool>().expect("You can only return a boolean!")
             },
             |dict, word, meta|{
                 let value = dict.id_to_word::<B>(word).unwrap().to_string();
-                let solved = meta.cloned().map(SolvedLoadedMetadata::from);
+                let solved = meta.cloned().map(LoadedMetadataEx::from);
                 filter_b.call1((value, solved)).expect("This should not fail!").extract::<bool>().expect("You can only return a boolean!")
             },
         );
@@ -207,16 +208,70 @@ impl PyDictionary {
         Ok(PyDictionary { wrapped: created })
     }
 
-    pub fn get_meta_a_of(&self, word: &str) -> Option<SolvedLoadedMetadata> {
+    pub fn get_meta_a_of(&self, word: &str) -> Option<LoadedMetadataEx> {
         let word_id = self.wrapped.voc_a().get_id(word)?;
         let meta = self.wrapped.metadata().get_meta_ref::<A>(self.voc_a(), word_id)?;
         Some(meta.into())
     }
 
-    pub fn get_meta_b_of(&self, word: &str) -> Option<SolvedLoadedMetadata> {
+    pub fn get_meta_b_of(&self, word: &str) -> Option<LoadedMetadataEx> {
         let word_id = self.wrapped.voc_b().get_id(word)?;
         let meta = self.wrapped.metadata().get_meta_ref::<B>(self.voc_b(), word_id)?;
         Some(meta.into())
+    }
+
+    pub fn process_with_tokenizer(
+        &self,
+        processor: PyAlignedArticleProcessor
+    ) -> PyResult<Self> {
+        match self.language_direction() {
+            (Some(a), Some(b)) => {
+                let a_tok = if let Some(a) = processor.get_tokenizers_for(a) {
+                    a
+                } else {
+                    return Err(PyValueError::new_err(format!("Language A ({a}) is unknown to the processor!")))
+                };
+
+                let b_tok = if let Some(b) = processor.get_tokenizers_for(b) {
+                    b
+                } else {
+                    return Err(PyValueError::new_err(format!("Language B ({b}) is unknown to the processor!")))
+                };
+
+                fn apply_tokenizer_and_filer(tokenizer: &Tokenizer, value: &str) -> Result<Option<HashRef<String>>, ()> {
+                    let result = tokenizer.process(value).filter(|value| !value.1.lemma.is_empty() && value.1.is_word()).collect_vec();
+                    if result.is_empty() {
+                        Ok(None)
+                    } else {
+                        Ok(
+                            Some(
+                                HashRef::new(
+                                    result.iter().map(|value| value.1.lemma()).join(" ")
+                                )
+                            )
+                        )
+                    }
+                }
+
+                Ok(self.filter_and_process(
+                    |value| {
+                        apply_tokenizer_and_filer(&a_tok, value.as_str())
+                    },
+                    |value| {
+                        apply_tokenizer_and_filer(&b_tok, value.as_str())
+                    }
+                ).unwrap())
+            }
+            (Some(_), None) => {
+                Err(PyValueError::new_err("Language B is unknown!"))
+            }
+            (None, Some(_)) => {
+                Err(PyValueError::new_err("Language A is unknown!"))
+            }
+            _ => {
+                Err(PyValueError::new_err("Language A and B are unknown!"))
+            }
+        }
     }
 
 }
@@ -257,7 +312,7 @@ impl PyDictIter {
         slf
     }
 
-    fn __next__(&mut self) -> Option<((usize, String, Option<SolvedLoadedMetadata>), (usize, String, Option<SolvedLoadedMetadata>), DirectionKind)> {
+    fn __next__(&mut self) -> Option<((usize, String, Option<LoadedMetadataEx>), (usize, String, Option<LoadedMetadataEx>), DirectionKind)> {
         let DirectionTuple{
             a: (a, word_a, meta_a),
             b: (b, word_b, meta_b),
@@ -376,16 +431,18 @@ impl DictionaryWithVocabulary<String, PyVocabulary> for PyDictionary {
 }
 
 impl DictionaryFilterable<String, PyVocabulary> for PyDictionary {
-    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    fn filter_and_process<'a, Fa, Fb, E>(&'a self, f_a: Fa, f_b: Fb) -> Result<Self, E>
     where
         Self: Sized,
         String: 'a,
-        Fa: Fn(&'a HashRef<String>) -> Option<HashRef<String>>,
-        Fb: Fn(&'a HashRef<String>) -> Option<HashRef<String>>
+        Fa: Fn(&'a HashRef<String>) -> Result<Option<HashRef<String>>, E>,
+        Fb: Fn(&'a HashRef<String>) -> Result<Option<HashRef<String>>, E>
     {
-        Self {
-            wrapped: self.wrapped.filter_and_process(f_a, f_b)
-        }
+        Ok(
+            Self {
+                wrapped: self.wrapped.filter_and_process(f_a, f_b)?
+            }
+        )
     }
 
 

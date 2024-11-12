@@ -207,12 +207,12 @@ pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V> where T: Eq + Hash
 pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
 
     /// Filters and processes the contents of the dictionary to create a new one.
-    fn filter_and_process<'a, Fa, Fb>(&'a self, f_a: Fa, f_b: Fb) -> Self
+    fn filter_and_process<'a, Fa, Fb, E>(&'a self, f_a: Fa, f_b: Fb) -> Result<Self, E>
     where
         Self: Sized,
         T: 'a,
-        Fa: Fn(&'a HashRef<T>) -> Option<HashRef<T>>,
-        Fb: Fn(&'a HashRef<T>) -> Option<HashRef<T>>;
+        Fa: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>,
+        Fb: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>;
 
     fn filter_by_ids<Fa, Fb>(&self, filter_a: Fa, filter_b: Fb) -> Self
     where

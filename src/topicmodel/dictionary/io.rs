@@ -3,12 +3,20 @@ use std::io;
 use std::io::{BufReader, BufWriter, Read, Write};
 use camino::{Utf8Path, Utf8PathBuf};
 use itertools::Itertools;
+use pyo3::pyclass;
 use sealed::sealed;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
+use crate::register_python;
 use crate::topicmodel::dictionary::BasicDictionary;
 
+register_python! {
+    enum WriteMode;
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyclass]
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum WriteMode {
     Binary {

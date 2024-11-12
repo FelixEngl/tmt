@@ -291,7 +291,7 @@ mod test {
         builder.set_phraser(Some(trie));
 
         let tokenizer = builder.build();
-        for (original, value) in tokenizer.phrase("a b c d e") {
+        for (original, value) in tokenizer.process("a b c d e") {
             println!("{original} {}", value.lemma());
         }
     }

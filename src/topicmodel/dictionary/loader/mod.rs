@@ -71,7 +71,7 @@ impl<'b> SpecialPreprocessor<'b> {
         use std::fmt::Write;
         let mut original = String::new();
         let mut processed = Vec::new();
-        for (pos, (o, p)) in tokenizer.phrase(word).with_position() {
+        for (pos, (o, p)) in tokenizer.process(word).with_position() {
             match pos {
                 Position::First | Position::Only => {
                     write!(original, "{o}").unwrap();

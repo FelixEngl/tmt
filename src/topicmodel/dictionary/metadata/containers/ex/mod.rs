@@ -27,7 +27,7 @@ use std::ops::Deref;
 use crate::topicmodel::reference::HashRef;
 
 register_python! {
-    struct SolvedLoadedMetadata;
+    struct LoadedMetadataEx;
     struct MetaField;
 }
 

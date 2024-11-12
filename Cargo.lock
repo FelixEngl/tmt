@@ -220,6 +220,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "build_html"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "225eb82ce9e70dcc0cfa6e404d0f353326b6e163bf500ec4711cec317d11935c"
+
+[[package]]
 name = "bumpalo"
 version = "3.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1137,6 +1143,7 @@ dependencies = [
  "aho-corasick",
  "approx",
  "bincode",
+ "build_html",
  "byte-unit",
  "camino",
  "charabia",

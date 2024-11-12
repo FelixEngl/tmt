@@ -243,12 +243,12 @@ macro_rules! create_ref_implementation {
 
         impl<'a> MetadataRefEx<'a> {
             /// Create a solved ex metadata
-            pub fn create_solved(&self) -> SolvedLoadedMetadata {
+            pub fn create_solved(&self) -> LoadedMetadataEx {
                 $(
                     $crate::topicmodel::dictionary::metadata::ex::reference::convert_into!($tt: self => $name);
                 )+
 
-                $crate::topicmodel::dictionary::metadata::ex::SolvedLoadedMetadata {
+                $crate::topicmodel::dictionary::metadata::ex::LoadedMetadataEx {
                     $(
                     $name: std::sync::Arc::new($name),
                     )+

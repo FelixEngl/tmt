@@ -81,7 +81,7 @@ byte-unit = "5.1"
 # Plugin System
 inventory = { version = "0.3" }
 pyo3-stub-gen = { version = "0.6.0", optional = true }
-
+build_html = "2.5.0"
 
 [build-dependencies]
 xml2code = {path = "xml2code"}

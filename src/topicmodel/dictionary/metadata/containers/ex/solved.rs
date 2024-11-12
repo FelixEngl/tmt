@@ -70,7 +70,7 @@ macro_rules! create_python_getter {
     associated_enum: $enum_name: ident
     )+) => {
 
-        impl SolvedLoadedMetadata {
+        impl LoadedMetadataEx {
             paste::paste! {
                 $(
                 fn $fn_impl_name_single(&self, dictionary: Option<String>) -> Option<&std::collections::HashSet<ResolvedValue>> {
@@ -94,7 +94,7 @@ macro_rules! create_python_getter {
 
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
         #[pyo3::pymethods]
-        impl SolvedLoadedMetadata {
+        impl LoadedMetadataEx {
             #[new]
             fn py_new(
                 values: NewSolvedArgs
@@ -192,12 +192,12 @@ macro_rules! create_solved_implementation {
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
         #[pyo3::pyclass(frozen, name = "Metadata")]
         #[derive(Debug, Clone, Eq, PartialEq)]
-        pub struct SolvedLoadedMetadata {
+        pub struct LoadedMetadataEx {
             $(pub(in super) $name: std::sync::Arc<SolvedMetadataField>,
             )+
         }
 
-        impl SolvedLoadedMetadata {
+        impl LoadedMetadataEx {
             $(
                 pub fn $name(&self) -> &SolvedMetadataField {
                     &self.$name
@@ -221,7 +221,7 @@ macro_rules! create_solved_implementation {
         }
 
 
-        impl SolvedLoadedMetadata {
+        impl LoadedMetadataEx {
             pub fn get_doc(&self) -> pretty::RcDoc {
                 use pretty::*;
                 let mut result = RcDoc::text("Metadata {");
@@ -260,13 +260,13 @@ pub(super) use create_solved_implementation;
 
 use super::*;
 
-impl<'a> From<MetadataRefEx<'a>> for SolvedLoadedMetadata {
+impl<'a> From<MetadataRefEx<'a>> for LoadedMetadataEx {
     fn from(value: MetadataRefEx<'a>) -> Self {
         value.create_solved()
     }
 }
 
-impl std::fmt::Display for SolvedLoadedMetadata {
+impl std::fmt::Display for LoadedMetadataEx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.get_doc().render_fmt(80, f)
     }

@@ -4,7 +4,7 @@ macro_rules! generate_enum {
     ) => {
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
         #[pyo3::pyclass(eq, eq_int, hash, frozen)]
-        #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
         #[derive(strum::Display, strum::EnumString, strum::IntoStaticStr, strum::EnumCount, strum::EnumIter)]
         #[derive(serde::Serialize, serde::Deserialize)]
         #[derive(enum_map::Enum)]
