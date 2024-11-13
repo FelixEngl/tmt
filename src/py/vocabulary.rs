@@ -404,7 +404,7 @@ mod test {
 
     #[test]
     fn load_test(){
-        let loaded = PyDictionary::load("E:\\git\\ptmt\\data\\experiment1\\my_dictionary.dict".parse::<PathBuf>().unwrap(), None).unwrap();
+        let loaded = PyDictionary::load("E:\\git\\ptmt\\data\\experiment1\\my_dictionary.dict".parse::<PathBuf>().unwrap()).unwrap();
         println!("{}", loaded.iter().count())
     }
 }

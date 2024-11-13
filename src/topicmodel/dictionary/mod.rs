@@ -20,7 +20,7 @@ pub mod iterators;
 mod traits;
 mod loader;
 pub mod io;
-mod len;
+pub mod len;
 
 use std::borrow::Borrow;
 pub use loader::*;

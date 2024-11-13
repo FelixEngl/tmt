@@ -37,6 +37,7 @@ use crate::py::tokenizer::PyAlignedArticleProcessor;
 use crate::{define_py_method, register_python};
 use crate::tokenizer::Tokenizer;
 use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
+use crate::topicmodel::dictionary::len::Len;
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -47,11 +48,10 @@ pub struct PyDictionary {
 }
 
 
-#[pymethods]
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
 impl PyDictionary {
     #[new]
-    #[pyo3(signature = (language_a=None, language_b=None))]
     pub fn new(language_a: Option<LanguageHintValue>, language_b: Option<LanguageHintValue>) -> Self {
         Self {
             wrapped: DictionaryWithMeta::new_with(
@@ -165,38 +165,41 @@ impl PyDictionary {
     }
 
     fn __str__(&self) -> String {
-        todo!()
-        // self.inner.to_string()
+        format!("PyDictionary({:?})", self.wrapped)
     }
 
-    /// Writes the dictionary to the path with the
-    #[pyo3(signature = (path, mode=None))]
-    pub fn save(&self, path: PathBuf, mode: Option<WriteModeLiteral>) -> PyResult<()> {
+    /// Writes the dictionary to the path, the mode is chosen based on the file ending.
+    pub fn save(&self, path: PathBuf, mode: WriteModeLiteral) -> PyResult<()> {
         let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
-        if let Some(mode) = mode {
-            self.write_to_path(
-                mode.parse().map_err(|err| { PyValueError::new_err(format!("{err}")) })?,
-                path
-            )
-        } else {
-            self.write_to_path_with_extension(path)
-        }.map_err(|err| PyValueError::new_err(err.to_string()))?;
+        self.write_to_path_with_extension(path).map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(())
+    }
+
+    /// Writes the dictionary to the path with the chosen mode
+    pub fn save_as(&self, path: PathBuf, mode: WriteModeLiteral) -> PyResult<()> {
+        let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
+        self.write_to_path(
+            mode.parse().map_err(|err| { PyValueError::new_err(format!("{err}")) })?,
+            path
+        ).map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(())
     }
 
     /// Loads the dictionary from the path with the provided mode
     #[staticmethod]
-    #[pyo3(signature = (path, mode=None))]
-    pub fn load(path: PathBuf, mode: Option<WriteModeLiteral>) -> PyResult<Self> {
+    pub fn load(path: PathBuf) -> PyResult<Self> {
         let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
-        if let Some(mode) = mode {
-            Self::from_path(
-                mode.parse().map_err(|err| { PyValueError::new_err(format!("{err}")) })?,
-                path
-            )
-        } else {
-            Self::from_path_with_extension(path)
-        }.map_err(|value| PyValueError::new_err(value.to_string()))
+        Self::from_path_with_extension(path).map_err(|value| PyValueError::new_err(value.to_string()))
+    }
+
+    /// Loads the dictionary from the path with the provided mode
+    #[staticmethod]
+    pub fn load_as(path: PathBuf, mode: WriteModeLiteral) -> PyResult<Self> {
+        let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
+        Self::from_path(
+            mode.parse().map_err(|err| { PyValueError::new_err(format!("{err}")) })?,
+            path
+        ).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
     fn to_json(&self) -> PyResult<String> {
@@ -308,6 +311,13 @@ impl PyDictionary {
         self.generate_html(
             Utf8PathBuf::from_path_buf(target).map_err(|err| PyValueError::new_err(format!("Failed to convert the path to utf8! {err:?}")))?
         ).map_err(|err| PyValueError::new_err(format!("{err}")))
+    }
+
+
+    /// Returns a len object, containing the counts of the single parts
+    #[pyo3(name = "len")]
+    fn len_py(&self) -> Len {
+        self.wrapped.len()
     }
 
 }

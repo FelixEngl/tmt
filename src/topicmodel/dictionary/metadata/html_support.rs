@@ -7,17 +7,49 @@ use crate::topicmodel::dictionary::direction::{Language, A, B};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AlphabeticalVocabulary, AnonymousVocabulary, BasicVocabulary};
-use build_html::{Container, Html, HtmlContainer, HtmlPage, Table, TableCell, TableRow};
+use build_html::{Container, ContainerType, Html, HtmlContainer, HtmlPage, Table, TableCell, TableRow};
 use build_html::ContainerType::*;
 use itertools::Itertools;
 use rayon::prelude::*;
 use crate::topicmodel::dictionary::metadata::ex::{LoadedMetadataEx, MetadataManagerEx};
+
+
+macro_rules! div {
+    ($lit: literal $b: expr $(;+ $other: expr)* $(;)?) => {
+        Container::default().with_attributes([("class", $lit)])
+            .with_container($b)
+            $(.with_container($other))*
+    };
+    ($lit: literal $(+ $b: expr $(;+ $other: expr)*)? $(;)?) => {
+        Container::default().with_attributes([("class", $lit)])
+        $(.with_container($b)$(.with_container($other))*)?
+    };
+    ([$attrs: expr] $b: expr $(;+ $other: expr)* $(;)?) => {
+        Container::default().with_attributes($attrs)
+        .with_container($b)
+        $(.with_container($other))*
+    };
+    ($b: expr $(;+ $other: expr)* $(;)?) => {
+        Container::default()
+        .with_container($b)
+        $(.with_container($other))*
+    };
+    () => {
+        Container::default()
+    };
+}
+
+use div;
+
 
 impl<T, V> DictionaryWithMeta<T, V, MetadataManagerEx>
 where
     T: Ord + Display,
     V: BasicVocabulary<T> + AnonymousVocabulary,
 {
+
+
+
     fn generate_directed<L: Language>(&self, dir: impl AsRef<Utf8Path>) -> Result<Vec<(HashRef<T>, HashRef<T>, Utf8PathBuf)>, std::io::Error> {
 
 
@@ -70,21 +102,16 @@ where
                 .with_container(
                     Container::new(Main)
                         .with_container(
-                            Container::default().with_attributes([("class", "container-fluid")])
-                                .with_container(Container::default().with_attributes([("id", "go-back"), ("class", "row")]).with_link("../index.html", "Main"))
-                                .with_container(
-                                    Container::default().with_attributes([("class", "row")])
-                                        .with_container(
-                                            Container::default().with_attributes([("class", "col-xs-3")]).with_header(3, voc_origin.language().map(|value| value.to_string()).unwrap_or_else(|| L::LANG.to_string()))
-                                        )
-                                        .with_container(
-                                            Container::default().with_attributes([("class", "col-xs-3")]).with_header(3, voc_target.language().map(|value| value.to_string()).unwrap_or_else(|| L::OPPOSITE::LANG.to_string()))
-                                        )
-                                        .with_container(
-                                            Container::default().with_attributes([("class", "col-xs-6")]).with_header(3, "Metadata")
-                                        )
-                                )
-                                .with_container({
+                            div! {
+                                "container-fluid"
+                                + div!("row").with_link("../index.html", "Main");
+                                + div! {
+                                    "row"
+                                    + div!("col-xs-3").with_header(3, voc_origin.language().map(|value| value.to_string()).unwrap_or_else(|| L::LANG.to_string()));
+                                    + div!("col-xs-3").with_header(3, voc_target.language().map(|value| value.to_string()).unwrap_or_else(|| L::OPPOSITE::LANG.to_string()));
+                                    + div!("col-xs-6").with_header(3, "Metadata");
+                                };
+                                + {
                                     let mut table = Container::default();
                                     for id_a in chunk.iter().copied() {
                                         let mut translations = unsafe{
@@ -92,90 +119,109 @@ where
                                         }.collect_vec();
                                         translations.sort();
                                         table.add_container(
-                                            Container::default().with_attributes([("class", "row")])
-                                                .with_container(
-                                                    Container::default().with_attributes([("class", "col-xs-3")]).with_raw(unsafe{format!("{} ({})", voc_origin.get_value_unchecked(id_a), id_a)})
-                                                )
-                                                .with_container(
-                                                    Container::default().with_attributes([("class", "col-xs-3")]).with_container(
-                                                        {
-                                                            let mut cont = Container::new(UnorderedList).with_attributes(
+                                            div! {
+                                                "row"
+                                                + div!("col-xs-3").with_raw(unsafe{format!("{} ({})", voc_origin.get_value_unchecked(id_a), id_a)});
+                                                + div!{
+                                                    "col-xs-3" {
+                                                        let mut cont = Container::new(UnorderedList).with_attributes(
                                                                 [("class", "list-unstyled")]
                                                             );
                                                             for t in translations {
                                                                 cont.add_paragraph(t);
                                                             }
                                                             cont
-                                                        }
-                                                    )
-                                                )
-                                                .with_container(
-                                                    Container::default().with_attributes([("class", "col-xs-6")]).with_container(
-                                                        {
-                                                            let v: &dyn AnonymousVocabulary = voc_origin;
-                                                            if let Some(cont) = self.metadata.get_meta_ref::<L>(v, id_a) {
-                                                                Container::default().with_table(
-                                                                    {
-                                                                        let mut subtab = Table::new()
-                                                                            .with_attributes([("class", "table table-bordered")])
-                                                                            .with_header_row(["MetaField", "Origin", "Data"]);
-                                                                        let mut loaded = LoadedMetadataEx::from(cont).as_dict().into_iter().collect_vec();
-                                                                        loaded.sort_by_key(|value| value.0);
-                                                                        for (field, (general, dict)) in loaded {
-                                                                            if let Some(general) = general  {
-                                                                                if !general.is_empty() {
-                                                                                    let mut entry = Vec::from_iter(general);
-                                                                                    entry.sort();
-                                                                                    subtab.add_custom_body_row(
-                                                                                        TableRow::new()
-                                                                                            .with_cell(TableCell::default().with_raw(field))
-                                                                                            .with_cell(TableCell::default().with_raw("General"))
-                                                                                            .with_cell(TableCell::default().with_raw(format!("\"{}\"", entry.into_iter().join("\", \""))))
-                                                                                    );
-                                                                                }
-                                                                            }
-                                                                            if let Some(dict) = dict {
-                                                                                let mut dict = Vec::from_iter(dict);
-                                                                                dict.sort_by_key(|v| v.0.clone());
-                                                                                for (dict, entries) in dict {
-                                                                                    if entries.is_empty() {
-                                                                                        continue
-                                                                                    }
-                                                                                    let mut entry = Vec::from_iter(entries);
-                                                                                    entry.sort();
-                                                                                    subtab.add_custom_body_row(
-                                                                                        TableRow::new()
-                                                                                            .with_cell(TableCell::default().with_raw(field))
-                                                                                            .with_cell(TableCell::default().with_raw(dict))
-                                                                                            .with_cell(TableCell::default().with_raw(format!("\"{}\"", entry.into_iter().join("\", \""))))
-                                                                                    );
-                                                                                }
+                                                    }
+                                                };
+                                                + div! {
+                                                    "col-xs-6" {
+                                                        let v: &dyn AnonymousVocabulary = voc_origin;
+                                                        if let Some(cont) = self.metadata.get_meta_ref::<L>(v, id_a) {
+                                                            Container::default().with_table(
+                                                                {
+                                                                    let mut subtab = Table::new()
+                                                                        .with_attributes([("class", "table table-bordered")])
+                                                                        .with_header_row(["MetaField", "Origin", "Data"]);
+                                                                    let mut loaded = LoadedMetadataEx::from(cont).as_dict().into_iter().collect_vec();
+                                                                    loaded.sort_by_key(|value| value.0);
+                                                                    for (field, (general, dict)) in loaded {
+                                                                        if let Some(general) = general  {
+                                                                            if !general.is_empty() {
+                                                                                let mut entry = Vec::from_iter(general);
+                                                                                entry.sort();
+                                                                                subtab.add_custom_body_row(
+                                                                                    TableRow::new()
+                                                                                        .with_cell(TableCell::default().with_raw(field))
+                                                                                        .with_cell(TableCell::default().with_raw("General"))
+                                                                                        .with_cell(TableCell::default().with_raw(format!("\"{}\"", entry.into_iter().join("\", \""))))
+                                                                                );
                                                                             }
                                                                         }
-                                                                        subtab
+                                                                        if let Some(dict) = dict {
+                                                                            let mut dict = Vec::from_iter(dict);
+                                                                            dict.sort_by_key(|v| v.0.clone());
+                                                                            for (dict, entries) in dict {
+                                                                                if entries.is_empty() {
+                                                                                    continue
+                                                                                }
+                                                                                let mut entry = Vec::from_iter(entries);
+                                                                                entry.sort();
+                                                                                subtab.add_custom_body_row(
+                                                                                    TableRow::new()
+                                                                                        .with_cell(TableCell::default().with_raw(field))
+                                                                                        .with_cell(TableCell::default().with_raw(dict))
+                                                                                        .with_cell(TableCell::default().with_raw(format!("\"{}\"", entry.into_iter().join("\", \""))))
+                                                                                );
+                                                                            }
+                                                                        }
                                                                     }
-                                                                )
-                                                            } else {
-                                                                Container::default().with_paragraph("No metadata!")
-                                                            }
+                                                                    subtab
+                                                                }
+                                                            )
+                                                        } else {
+                                                            Container::default().with_paragraph("No metadata!")
                                                         }
-                                                    )
-                                                )
+                                                    }
+                                                }
+                                            }
                                         )
                                     }
                                     table
-                                })
+                                }
+                            }
                         )
-
                 )
                 .to_html_string();
-
             File::options().create(true).truncate(true).write(true).open(&file_path)
                 .and_then(|file| BufWriter::new(file).write_all(html.as_bytes()))
                 .map(|_|(start.clone(), end.clone(), file_path))
         }).collect::<Result<Vec<_>, _>>();
 
         pages
+    }
+
+    fn generate_statistics(&self, dir: impl AsRef<Utf8Path>) -> Result<Utf8PathBuf, std::io::Error> {
+
+        HtmlPage::new()
+            .with_title("Metadata")
+            .with_head_link_attr(
+                "https://cdn.jsdelivr.net/npm/bootstrap@3.4.1/dist/css/bootstrap.min.css",
+                "stylesheet",
+                [
+                    ("integrity", "sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu"),
+                    ("crossorigin", "anonymous"),
+                ]
+            )
+            .with_container(div! {
+                "container-fluid" div! {
+                    "row" div! {
+                        div!().with_paragraph("Test")
+                    }
+                }
+            })  ;
+
+
+        todo!()
     }
 
     pub fn generate_html(&self, dir: impl AsRef<Utf8Path>) -> Result<(), std::io::Error> {
@@ -195,48 +241,50 @@ where
                 ]
             )
             .with_container(
-                Container::default()
-                    .with_attributes([("class", "container-fluid")])
-                    .with_container(
-                        Container::default()
-                            .with_attributes([("class", "row")])
-                            .with_container(
-                                Container::default().with_attributes([("class", "col-xs-6")])
-                                    .with_header(
-                                        2,
-                                        format!(
-                                            "{} to {}",
-                                            self.voc_a().language().map(|value| value.to_string()).unwrap_or_else(|| "A".to_string()),
-                                            self.voc_b().language().map(|value| value.to_string()).unwrap_or_else(|| "B".to_string()),
-                                        )
-                                    )
-                                    .with_container({
-                                        let mut data = Container::new(UnorderedList).with_attributes([("class", "list-unstyled")]);
-                                        for (start, end, path) in a {
-                                            data.add_link(path.strip_prefix(d).unwrap(), format!("{} .. {}", start, end))
-                                        }
-                                        data
-                                    })
+                div! {
+                    "container-fluid" div! {
+                        "row"
+                        + {
+                            div!("col-xs-6")
+                            .with_header(
+                                2,
+                                format!(
+                                    "{} to {}",
+                                    self.voc_a().language().map(|value| value.to_string()).unwrap_or_else(|| "A".to_string()),
+                                    self.voc_b().language().map(|value| value.to_string()).unwrap_or_else(|| "B".to_string())
+                                )
                             )
                             .with_container(
-                                Container::default().with_attributes([("class", "col-xs-6")])
-                                    .with_header(
-                                        2,
-                                        format!(
-                                            "{} to {}",
-                                            self.voc_b().language().map(|value| value.to_string()).unwrap_or_else(|| "B".to_string()),
-                                            self.voc_a().language().map(|value| value.to_string()).unwrap_or_else(|| "A".to_string()),
-                                        )
-                                    )
-                                    .with_container({
-                                        let mut data = Container::new(UnorderedList).with_attributes([("class", "list-unstyled")]);
-                                        for (start, end, path) in b {
-                                            data.add_link(path.strip_prefix(d).unwrap(), format!("{} .. {}", start, end))
-                                        }
-                                        data
-                                    })
+                                {
+                                     let mut data = Container::new(UnorderedList).with_attributes([("class", "list-unstyled")]);
+                                     for (start, end, path) in a {
+                                         data.add_link(path.strip_prefix(d).unwrap(), format!("{} .. {}", start, end))
+                                     }
+                                     data
+                                 }
                             )
-                    )
+                        };
+                        + {
+                            div!("col-xs-6")
+                            .with_header(
+                                2,
+                                format!(
+                                    "{} to {}",
+                                    self.voc_b().language().map(|value| value.to_string()).unwrap_or_else(|| "B".to_string()),
+                                    self.voc_a().language().map(|value| value.to_string()).unwrap_or_else(|| "A".to_string()),
+                                )
+                            )
+                            .with_container({
+                                let mut data = Container::new(UnorderedList).with_attributes([("class", "list-unstyled")]);
+                                for (start, end, path) in b {
+                                    data.add_link(path.strip_prefix(d).unwrap(), format!("{} .. {}", start, end))
+                                }
+                                data
+                            })
+                        };
+                    }
+                }
+
             )
             .to_html_string();
         let mut outp = BufWriter::new(File::options().write(true).create(true).truncate(true).open(main)?);
@@ -251,9 +299,9 @@ mod test {
 
     #[test]
     fn can_generate_html(){
-        let data = PyDictionary::from_path_with_extension("dictionary.dat.zst").unwrap();
+        let data = PyDictionary::from_path_with_extension("dictionary2.dat.zst").unwrap();
         data.generate_html(
-            "E:/tmp/overview/test_html"
+            "E:/tmp/dict_view2"
         ).unwrap()
     }
 }
