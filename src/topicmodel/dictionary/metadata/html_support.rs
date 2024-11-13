@@ -7,11 +7,11 @@ use crate::topicmodel::dictionary::direction::{Language, A, B};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AlphabeticalVocabulary, AnonymousVocabulary, BasicVocabulary};
-use build_html::{Container, ContainerType, Html, HtmlContainer, HtmlPage, Table, TableCell, TableCellType, TableRow};
+use build_html::{Container, Html, HtmlContainer, HtmlPage, Table, TableCell, TableRow};
 use build_html::ContainerType::*;
 use itertools::Itertools;
 use rayon::prelude::*;
-use crate::topicmodel::dictionary::metadata::ex::{GeneralMetadata, LoadedMetadataEx, MetadataManagerEx};
+use crate::topicmodel::dictionary::metadata::ex::{LoadedMetadataEx, MetadataManagerEx};
 
 impl<T, V> DictionaryWithMeta<T, V, MetadataManagerEx>
 where
@@ -177,6 +177,7 @@ where
 
         pages
     }
+
     pub fn generate_html(&self, dir: impl AsRef<Utf8Path>) -> Result<(), std::io::Error> {
         let d = dir.as_ref();
         std::fs::create_dir_all(d)?;

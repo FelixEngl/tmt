@@ -20,7 +20,9 @@ pub mod iterators;
 mod traits;
 mod loader;
 pub mod io;
+mod len;
 
+use std::borrow::Borrow;
 pub use loader::*;
 pub use traits::*;
 
@@ -82,7 +84,7 @@ use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation, A, B};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Dictionary<T, V> {
@@ -228,6 +230,14 @@ impl<T, V> BasicDictionaryWithVocabulary<V> for Dictionary<T, V> {
 
     fn voc_b(&self) -> &V {
         &self.voc_b
+    }
+
+    fn voc_a_mut(&mut self) -> &mut V {
+        &mut self.voc_a
+    }
+
+    fn voc_b_mut(&mut self) -> &mut V {
+        &mut self.voc_b
     }
 }
 
@@ -392,6 +402,25 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
         let id_b = self.voc_b.add_hash_ref(word_b);
         unsafe { self.insert_raw_values::<D>(id_a, id_b); }
         DirectionTuple::new(id_a, id_b, D::DIRECTION)
+    }
+
+    fn delete_translation<L: Language, Q: ?Sized>(&mut self, value: &Q) -> bool
+    where
+        T: Borrow<Q> + Eq + Hash,
+        Q: Hash + Eq,
+        V: SearchableVocabulary<T>
+    {
+        match self.voc::<L>().get_id(value) {
+            None => false,
+            Some(id) => {
+                if let Some(target) = self.map_a_to_b.get_mut(id) {
+                    target.clear();
+                    true
+                } else {
+                    false
+                }
+            }
+        }
     }
 }
 impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default  {

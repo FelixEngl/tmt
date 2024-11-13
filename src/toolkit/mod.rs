@@ -25,6 +25,7 @@ pub mod special_python_values;
 pub mod pystub;
 pub mod register_python;
 pub mod from_str_ex;
+pub mod py_helpers;
 
 #[cfg(not(feature = "gen_python_api"))]
 #[macro_export]

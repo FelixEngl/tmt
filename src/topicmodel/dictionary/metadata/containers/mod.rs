@@ -15,6 +15,7 @@ use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut}
 
 pub trait MetadataManager: Default + Clone {
     type Metadata: Sized + Metadata;
+    type UpdateError: Sized + 'static;
     type ResolvedMetadata: Sized + 'static;
     type Reference<'a>: MetadataReference<'a, Self> where Self: 'a;
     type MutReference<'a>: MetadataMutReference<'a, Self> where Self: 'a;
@@ -53,7 +54,12 @@ pub trait MetadataReference<'a, M: MetadataManager>: Clone + Deref<Target: Metad
 }
 
 pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadata> {
-    fn update_with_reference<'b, L: Language>(&mut self, update: <M as MetadataManager>::Reference<'b>);
+
+
+    fn update_with_reference<'b>(&mut self, update: <M as MetadataManager>::Reference<'b>);
+
+    fn update_with_resolved(&mut self, update: &<M as MetadataManager>::ResolvedMetadata) -> Result<(), <M as MetadataManager>::UpdateError>;
+
     fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <M as MetadataManager>::Metadata;
 
     fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut M;

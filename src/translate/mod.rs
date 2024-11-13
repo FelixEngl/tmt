@@ -175,6 +175,7 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         .to_static_with(EmptyContextWithBuiltinFunctions);
 
 
+
     // topic to word id to probable translation candidates.
     let result = target
         .matrix()

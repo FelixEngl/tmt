@@ -1,18 +1,16 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use itertools::Itertools;
-use pyo3::{pyclass, pymethods};
-use crate::register_python;
 use crate::topicmodel::dictionary::metadata::classic::reference::ClassicMetadataRef;
 
 
-register_python! {
-    enum MetadataPyStateValues;
-    struct SolvedMetadata;
-}
+// register_python! {
+//     enum MetadataPyStateValues;
+//     struct SolvedMetadata;
+// }
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
-#[pyclass]
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+// #[pyclass]
 #[derive(Debug, Clone)]
 pub enum MetadataPyStateValues {
     InternedVec(Vec<usize>),
@@ -20,8 +18,8 @@ pub enum MetadataPyStateValues {
 }
 
 /// A completely memory save copy of some [Metadata]
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
-#[pyclass]
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+// #[pyclass]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SolvedMetadata {
     associated_dictionaries: Option<Vec<String>>,
@@ -47,23 +45,23 @@ impl SolvedMetadata {
     }
 }
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
-#[pymethods]
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+// #[pymethods]
 impl SolvedMetadata {
-    #[getter]
-    #[pyo3(name = "associated_dictionaries")]
+    // #[getter]
+    // #[pyo3(name = "associated_dictionaries")]
     pub fn associated_dictionaries_py(&self) -> Option<Vec<String>> {
         self.associated_dictionaries.clone()
     }
 
-    #[getter]
-    #[pyo3(name = "subjects")]
+    // #[getter]
+    // #[pyo3(name = "subjects")]
     pub fn subjects_py(&self) -> Option<Vec<String>> {
         self.subjects.clone()
     }
 
-    #[getter]
-    #[pyo3(name = "unstemmed")]
+    // #[getter]
+    // #[pyo3(name = "unstemmed")]
     pub fn unstemmed_py(&self) -> Option<HashMap<String, Vec<String>>> {
         self.unstemmed.clone()
     }

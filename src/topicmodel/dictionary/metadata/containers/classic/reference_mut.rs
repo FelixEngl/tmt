@@ -29,7 +29,7 @@ impl<'a> DerefMut for ClassicMetadataMutRef<'a> {
 }
 
 impl<'a> MetadataMutReference<'a, ClassicMetadataManager> for ClassicMetadataMutRef<'a> {
-    fn update_with_reference<'b, L: Language>(&mut self, associated: <ClassicMetadataManager as MetadataManager>::Reference<'b>) {
+    fn update_with_reference<'b>(&mut self, associated: <ClassicMetadataManager as MetadataManager>::Reference<'b>) {
         let tags = associated.raw.subjects.get();
         let dics = associated.raw.associated_dictionaries.get();
         let unstemmed = associated.raw.unstemmed.get();
@@ -47,6 +47,10 @@ impl<'a> MetadataMutReference<'a, ClassicMetadataManager> for ClassicMetadataMut
         if let Some(unstemmed) = unstemmed {
             self.meta.add_all_unstemmed(unstemmed)
         }
+    }
+
+    fn update_with_resolved(&mut self, update: &<ClassicMetadataManager as MetadataManager>::ResolvedMetadata) -> Result<(), ()> {
+        todo!()
     }
 
     fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <ClassicMetadataManager as MetadataManager>::Metadata {

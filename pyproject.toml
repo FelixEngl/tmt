@@ -13,6 +13,6 @@ classifiers = [
 dynamic = ["version"]
 
 [tool.maturin]
-python-source = "python"
-module-name = "ldatranslate.main_mod"
+#python-source = "python"
+module-name = "ldatranslate"
 features = ["pyo3/extension-module"]

@@ -246,7 +246,7 @@ macro_rules! create_mut_ref_implementation {
 pub(super) use create_mut_ref_implementation;
 
 use super::*;
-use crate::topicmodel::dictionary::metadata::MetadataMutReference;
+use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataMutReference};
 use crate::topicmodel::vocabulary::AnonymousVocabularyMut;
 
 pub struct MetadataMutRefEx<'a> {
@@ -275,10 +275,6 @@ impl<'a> MetadataMutRefEx<'a> {
         self.meta_container_mut().intern_dictionary_origin(name)
     }
 
-    pub fn update_with_solved(&mut self, solved: &LoadedMetadataEx) -> Result<(), WrongResolvedValueError> {
-        solved.write_into(self)
-    }
-
     #[inline(always)]
     pub(in super) fn dict_mut<'b: 'a>(&'b self) -> &'a mut dyn AnonymousVocabularyMut {
         unsafe { &mut *self.voc_ref }
@@ -290,15 +286,19 @@ impl<'a> MetadataMutRefEx<'a> {
 impl<'a> MetadataMutReference<'a, MetadataManagerEx> for MetadataMutRefEx<'a> {
     #[allow(clippy::needless_lifetimes)]
     #[inline(always)]
-    fn update_with_reference<'b, L: crate::topicmodel::dictionary::direction::Language>(
+    fn update_with_reference<'b>(
         &mut self, 
-        associated: <MetadataManagerEx as crate::topicmodel::dictionary::metadata::MetadataManager>::Reference<'b>
+        associated: <MetadataManagerEx as MetadataManager>::Reference<'b>
     ) {
         self.meta.update_with(associated.raw)
     }
 
+    fn update_with_resolved(&mut self, update: &<MetadataManagerEx as MetadataManager>::ResolvedMetadata) -> Result<(), WrongResolvedValueError> {
+        update.write_into(self)
+    }
+
     #[inline(always)]
-    fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <MetadataManagerEx as crate::topicmodel::dictionary::metadata::MetadataManager>::Metadata {
+    fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <MetadataManagerEx as MetadataManager>::Metadata {
         self.meta
     }
 

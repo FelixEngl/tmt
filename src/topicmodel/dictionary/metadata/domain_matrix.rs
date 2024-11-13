@@ -15,6 +15,18 @@ register_python!(
     struct Entry;
 );
 
+
+
+
+pub struct DomainVotingModel {
+    model: Vec<Vec<f64>>,
+
+}
+
+
+
+
+
 pub trait DomainModelIndex where Self: Sized + Copy {
     fn get(self) -> usize;
 }
@@ -34,13 +46,16 @@ pub enum DomainModelErrors {
     WrongLenError(#[from] WrongLenError),
 }
 
+#[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, PartialEq, Eq, Debug)]
-#[repr(transparent)]
 pub struct DomainModel {
     matrix: Vec<Entry>
 }
 
+
+
+#[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl DomainModel {
     #[new]
@@ -57,8 +72,8 @@ impl DomainModel {
         self.to_string()
     }
 
-    pub fn to_list(&self) -> Vec<Vec<Value>> {
-        self.matrix.iter().map(|value| value.to_list()).collect()
+    pub fn to_list(&self) -> Vec<Entry> {
+        self.matrix.iter().copied().collect()
     }
 }
 
@@ -497,7 +512,7 @@ impl DivAssign<Value> for Entry {
 
 
 impl Deref for Entry {
-    type Target = [Value; Domain::COUNT + Register::COUNT];
+    type Target = [Value];
 
     fn deref(&self) -> &Self::Target {
         &self.inner

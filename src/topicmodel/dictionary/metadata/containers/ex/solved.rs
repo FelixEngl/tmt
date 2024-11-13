@@ -92,8 +92,8 @@ macro_rules! create_python_getter {
 
 
 
-        #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
         #[pyo3::pymethods]
+        #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
         impl LoadedMetadataEx {
             #[new]
             fn py_new(
@@ -125,11 +125,13 @@ macro_rules! create_python_getter {
                 )
             }
 
+            /// Returns a domain vector.
             pub fn domain_vector(&self) -> $crate::topicmodel::dictionary::metadata::domain_matrix::Entry {
                 $crate::topicmodel::dictionary::metadata::domain_matrix::Entry::from_meta(&self)
             }
 
             $(
+            /// Get the whole field
             #[pyo3(name = $lit_name)]
             #[getter]
             fn $fn_name(&self) -> SolvedMetadataField {
@@ -138,7 +140,9 @@ macro_rules! create_python_getter {
             )+
 
             $(
-            #[pyo3(signature = (dictionary= None), text_signature = "dictionary: None | str = None")]
+            /// Retrieves the value for this specific field. If a dictionary name is provided, it returns the value of this specific dictionary.
+            /// Otherwise None returns the general information.
+            #[pyo3(signature = (dictionary))]
             fn $fn_name_single(&self, dictionary: Option<String>) -> Option<std::collections::HashSet<ResolvedValue>> {
                 self.$fn_impl_name_single(dictionary).cloned()
             }
@@ -148,6 +152,8 @@ macro_rules! create_python_getter {
                 self.to_string()
             }
 
+            /// Retrieves the value for a specific field. If a dictionary name is provided, it returns the values of this specific dictionary.
+            /// Otherwise None returns the general information.
             #[pyo3(signature = (field, dictionary))]
             fn get_single_field(&self, field: MetaField, dictionary: Option<String>) -> Option<std::collections::HashSet<ResolvedValue>> {
                 match field {
@@ -159,6 +165,7 @@ macro_rules! create_python_getter {
                 }
             }
 
+            /// Get the metadata of this specific field.
             #[pyo3(signature = (field))]
             fn get_field(&self, field: MetaField) -> SolvedMetadataField {
                 match field {
@@ -170,6 +177,7 @@ macro_rules! create_python_getter {
                 }
             }
 
+            /// Returns the metadata as dict.
             pub fn as_dict(&self) -> std::collections::HashMap<MetaField, SolvedMetadataField> {
                 use strum::EnumCount;
                 let mut result = std::collections::HashMap::with_capacity(MetaField::COUNT);
@@ -190,7 +198,7 @@ pub(super) use create_python_getter;
 macro_rules! create_solved_implementation {
     ($($tt:tt: $name: ident $lit_name:literal),+ $(,)?) => {
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
-        #[pyo3::pyclass(frozen, name = "Metadata")]
+        #[pyo3::pyclass(frozen)]
         #[derive(Debug, Clone, Eq, PartialEq)]
         pub struct LoadedMetadataEx {
             $(pub(in super) $name: std::sync::Arc<SolvedMetadataField>,

@@ -12,17 +12,17 @@ use crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx;
 use crate::topicmodel::dictionary::metadata::ex::{MetadataCollectionBuilder, MetadataManagerEx};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
 use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary};
 use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
+use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, IntoStaticStr};
 use thiserror::Error;
+use crate::topicmodel::dictionary::len::Len;
 use crate::topicmodel::dictionary::loader::wiktionary_reader::{convert_entry_to_entries, EntryConversionError, ExtractedWord, ExtractedWordValues, WiktionaryReaderError};
 
 mod ding;
@@ -110,30 +110,6 @@ impl<'b> Preprocessor for SpecialPreprocessor<'b> {
 }
 
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-pub struct Len {
-    pub voc_a: usize,
-    pub voc_b: usize,
-    pub map_a_to_b: usize,
-    pub map_b_to_a: usize,
-}
-
-impl Len {
-    pub fn diff(&self, other: &Len) -> Self {
-        Self {
-            voc_a: self.voc_a.abs_diff(other.voc_a),
-            voc_b: self.voc_b.abs_diff(other.voc_b),
-            map_a_to_b: self.map_a_to_b.abs_diff(other.map_a_to_b),
-            map_b_to_a: self.map_b_to_a.abs_diff(other.map_b_to_a),
-        }
-    }
-}
-
-impl Display for Len {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self, f)
-    }
-}
 
 
 
@@ -318,17 +294,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             }
         };
         let lang = self.get_lang::<L>();
-        let mut meta = self.dictionary.metadata.get_or_create_meta::<L>(
-            match L::LANG {
-                LanguageKind::A => {
-                    &mut self.dictionary.inner.voc_a
-                }
-                LanguageKind::B => {
-                    &mut self.dictionary.inner.voc_b
-                }
-            },
-            orth_id
-        );
+        let mut meta = self.dictionary.get_or_create_meta_for::<L>(orth_id);
         meta.add_single_to_languages_default(lang);
         (orth_id, meta)
     }
@@ -1425,7 +1391,7 @@ pub enum LineReaderError<T: Debug> {
 mod test {
     use std::io::Cursor;
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
-    use crate::topicmodel::dictionary::{Dictionary, DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
+    use crate::topicmodel::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
     use rayon::prelude::*;
     use crate::topicmodel::dictionary::DictionaryKind::*;
@@ -1573,13 +1539,15 @@ mod test {
         };
         data.write_to_path(
             WriteMode::binary(true),
-            "./dictionary",
+            "./dictionary2",
         ).unwrap();
 
 
         let read: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
-            "./dictionary.dat.zst"
+            "./dictionary2.dat.zst"
         ).unwrap();
+
+
     }
 
 

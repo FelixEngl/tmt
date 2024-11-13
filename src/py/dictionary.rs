@@ -14,31 +14,29 @@
 
 use crate::py::helpers::LanguageHintValue;
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Language, Translation, A, B};
+use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::{DictIter, DictionaryWithMetaIterator};
-use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, MetaField, LoadedMetadataEx};
+use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, MetaField, LoadedMetadataEx, WrongResolvedValueError};
 use crate::topicmodel::dictionary::metadata::{MetadataManager};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc, MergingDictionary};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc, MergingDictionary, MutableDictionaryWithMeta};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
 use itertools::Itertools;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::{PyAnyMethods};
-use pyo3::{pyclass, pymethods, Bound, PyAny, PyRef, PyResult};
+use pyo3::{pyclass, pymethods, PyRef, PyResult};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::fs::File;
 use std::hash::Hash;
-use std::io::{BufReader, BufWriter, Write};
-use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::PathBuf;
 use camino::Utf8PathBuf;
+use either::Either;
 use crate::py::tokenizer::PyAlignedArticleProcessor;
-use crate::register_python;
+use crate::{define_py_method, register_python};
 use crate::tokenizer::Tokenizer;
-use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteMode, WriteableDictionary};
+use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -48,8 +46,9 @@ pub struct PyDictionary {
     wrapped: DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>,
 }
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+
 #[pymethods]
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 impl PyDictionary {
     #[new]
     #[pyo3(signature = (language_a=None, language_b=None))]
@@ -62,46 +61,50 @@ impl PyDictionary {
         }
     }
 
+    /// Returns the dictionaries contained in this dictionary.
     #[getter]
     fn known_dictionaries(&self) -> Vec<String> {
         self.wrapped.known_dictionaries().into_iter().map(|value| value.to_string()).collect_vec()
     }
 
-    fn get_all_values_from(&self, field: MetaField) {
-        
-    }
-
+    /// Returns the translation direction. It goes from A to B (A, B)
     #[getter]
     fn translation_direction(&self) -> (Option<LanguageHint>, Option<LanguageHint>) {
         (self.deref().language::<A>().cloned(), self.deref().language::<B>().cloned())
     }
 
+    /// Allows to set the translation languages. This is usually not necessary, except youbuild your own.
     #[setter]
     fn set_translation_direction(&mut self, option: (Option<LanguageHintValue>, Option<LanguageHintValue>)) {
         self.wrapped.set_language::<A>(option.0.map(|value| value.into()));
         self.wrapped.set_language::<B>(option.1.map(|value| value.into()));
     }
 
+    /// Returns the vocabulary a
     #[getter]
     #[pyo3(name = "voc_a")]
     fn voc_a_py(&self) -> PyVocabulary {
         self.wrapped.voc_a().clone()
     }
 
+    /// Returns the vocabulary b
     #[getter]
     #[pyo3(name = "voc_b")]
     fn voc_b_py(&self) -> PyVocabulary {
         self.wrapped.voc_b().clone()
     }
 
+    /// Returns true if voc a contains the value
     fn voc_a_contains(&self, value: &str) -> bool {
         self.wrapped.voc_a().contains(value)
     }
 
+    /// Returns true if voc a contains the value
     fn voc_b_contains(&self, value: &str) -> bool {
         self.wrapped.voc_b().contains(value)
     }
 
+    /// Returns true if any voc contains the value
     fn __contains__(&self, value: &str) -> bool {
         self.voc_a_contains(value) || self.voc_b_contains(value)
     }
@@ -110,19 +113,30 @@ impl PyDictionary {
         self.clone().switch_languages()
     }
 
+    /// Insert a translation from word a to b with
     pub fn add(
         &mut self,
-        word_a: (String, LanguageHintValue, LoadedMetadataEx),
-        word_b: (String, LanguageHintValue, LoadedMetadataEx)
-    ) -> (usize, usize, DirectionKind) {
-        let (a_word, a_hint, a_solved) = word_a;
-        let (b_word, b_hint, b_solved) = word_b;
-        if let Some(hint) = self.language::<A>() {
-
+        word_a: (String, Option<LoadedMetadataEx>),
+        word_b: (String, Option<LoadedMetadataEx>)
+    ) -> PyResult<(usize, usize, DirectionKind)> {
+        let (a_word, a_solved) = word_a;
+        let (b_word, b_solved) = word_b;
+        match self.wrapped.insert_translation_ref_with_meta::<Invariant>(
+            HashRef::new(a_word),
+            a_solved.as_ref(),
+            HashRef::new(b_word),
+            b_solved.as_ref(),
+        ) {
+            Ok((a, b)) => {
+                Ok((a, b, DirectionKind::Invariant))
+            }
+            Err((_, err)) => {
+                Err(PyValueError::new_err(format!("{err}")))
+            }
         }
-        todo!()
     }
 
+    /// Returns the translations of the word, from a to b
     fn get_translation_a_to_b(&self, word: &str) -> Option<Vec<String>> {
         self.wrapped
             .translate_value_to_values::<AToB, _>(word)
@@ -134,6 +148,7 @@ impl PyDictionary {
             )
     }
 
+    /// Returns the translations of the word, from b to a
     fn get_translation_b_to_a(&self, word: &str) -> Option<Vec<String>> {
         self.wrapped
             .translate_value_to_values::<BToA, _>(word)
@@ -154,23 +169,31 @@ impl PyDictionary {
         // self.inner.to_string()
     }
 
+    /// Writes the dictionary to the path with the
     #[pyo3(signature = (path, mode=None))]
-    pub fn save(&self, path: PathBuf, mode: Option<WriteMode>) -> PyResult<()> {
+    pub fn save(&self, path: PathBuf, mode: Option<WriteModeLiteral>) -> PyResult<()> {
         let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
         if let Some(mode) = mode {
-            self.write_to_path(mode, path)
+            self.write_to_path(
+                mode.parse().map_err(|err| { PyValueError::new_err(format!("{err}")) })?,
+                path
+            )
         } else {
             self.write_to_path_with_extension(path)
         }.map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(())
     }
 
+    /// Loads the dictionary from the path with the provided mode
     #[staticmethod]
     #[pyo3(signature = (path, mode=None))]
-    pub fn load(path: PathBuf, mode: Option<WriteMode>) -> PyResult<Self> {
+    pub fn load(path: PathBuf, mode: Option<WriteModeLiteral>) -> PyResult<Self> {
         let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
         if let Some(mode) = mode {
-            Self::from_path(mode, path)
+            Self::from_path(
+                mode.parse().map_err(|err| { PyValueError::new_err(format!("{err}")) })?,
+                path
+            )
         } else {
             Self::from_path_with_extension(path)
         }.map_err(|value| PyValueError::new_err(value.to_string()))
@@ -191,35 +214,40 @@ impl PyDictionary {
         PyDictIter::new(self.clone())
     }
 
-    fn filter<'py>(&self, filter_a: Bound<'py, PyAny>, filter_b: Bound<'py, PyAny>) -> PyResult<Self> {
+    /// Filters a dictionary by the defined methods and returns a new instance.
+    fn filter<'py>(&self, filter_a: FilterDictionaryMethod<'py>, filter_b: FilterDictionaryMethod<'py>) -> PyResult<Self> {
         let created = self.wrapped.create_subset_with_filters(
             |dict, word, meta|{
                 let value = dict.id_to_word::<A>(word).unwrap().to_string();
                 let solved = meta.cloned().map(LoadedMetadataEx::from);
-                filter_a.call1((value, solved)).expect("This should not fail!").extract::<bool>().expect("You can only return a boolean!")
+                filter_a.call(value, solved).expect("This should not fail!")
             },
             |dict, word, meta|{
                 let value = dict.id_to_word::<B>(word).unwrap().to_string();
                 let solved = meta.cloned().map(LoadedMetadataEx::from);
-                filter_b.call1((value, solved)).expect("This should not fail!").extract::<bool>().expect("You can only return a boolean!")
+                filter_b.call(value, solved).expect("This should not fail!")
             },
         );
 
         Ok(PyDictionary { wrapped: created })
     }
 
+    /// Returns the meta for a specific word in a
     pub fn get_meta_a_of(&self, word: &str) -> Option<LoadedMetadataEx> {
         let word_id = self.wrapped.voc_a().get_id(word)?;
         let meta = self.wrapped.metadata().get_meta_ref::<A>(self.voc_a(), word_id)?;
         Some(meta.into())
     }
 
+    /// Returns the meta for a specific word in b
     pub fn get_meta_b_of(&self, word: &str) -> Option<LoadedMetadataEx> {
         let word_id = self.wrapped.voc_b().get_id(word)?;
         let meta = self.wrapped.metadata().get_meta_ref::<B>(self.voc_b(), word_id)?;
         Some(meta.into())
     }
 
+    /// Creates a new dictionary where the processor was applied.
+    ///Requires that both languages (a+b) are properly set.
     pub fn process_with_tokenizer(
         &self,
         processor: PyAlignedArticleProcessor
@@ -274,7 +302,20 @@ impl PyDictionary {
         }
     }
 
+
+    /// Creates an html view of the vocabulary in this folder.
+    fn create_html_view_in(&self, target: PathBuf) -> PyResult<()> {
+        self.generate_html(
+            Utf8PathBuf::from_path_buf(target).map_err(|err| PyValueError::new_err(format!("Failed to convert the path to utf8! {err:?}")))?
+        ).map_err(|err| PyValueError::new_err(format!("{err}")))
+    }
+
 }
+
+define_py_method!{
+    FilterDictionary(word: String, loaded: Option<LoadedMetadataEx>) -> bool
+}
+
 
 impl Deref for PyDictionary {
     type Target = DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>;
@@ -357,6 +398,10 @@ impl BasicDictionaryWithVocabulary<PyVocabulary> for PyDictionary {
             fn voc_a(&self) -> &PyVocabulary;
 
             fn voc_b(&self) -> &PyVocabulary;
+
+            fn voc_a_mut(&mut self) -> &mut PyVocabulary;
+
+            fn voc_b_mut(&mut self) -> &mut PyVocabulary;
         }
     }
 }
@@ -490,6 +535,15 @@ impl DictionaryMut<String, PyVocabulary> for PyDictionary {
     #[inline(always)]
     fn insert<D: Direction>(&mut self, word_a: impl Into<String>, word_b: impl Into<String>) -> DirectionTuple<usize, usize> {
         self.wrapped.insert::<D>(word_a, word_b)
+    }
+
+    fn delete_translation<L: Language, Q: ?Sized>(&mut self, value: &Q) -> bool
+    where
+        String: Borrow<Q> + Eq + Hash,
+        Q: Hash + Eq,
+        PyVocabulary: SearchableVocabulary<String>
+    {
+        todo!()
     }
 }
 

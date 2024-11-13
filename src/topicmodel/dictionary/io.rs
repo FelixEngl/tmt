@@ -1,22 +1,18 @@
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::str::FromStr;
 use camino::{Utf8Path, Utf8PathBuf};
 use itertools::Itertools;
-use pyo3::pyclass;
 use sealed::sealed;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-use crate::register_python;
+use crate::{define_py_literal};
 use crate::topicmodel::dictionary::BasicDictionary;
 
-register_python! {
-    enum WriteMode;
-}
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
-#[pyclass]
+
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum WriteMode {
     Binary {
@@ -28,6 +24,85 @@ pub enum WriteMode {
     }
 }
 
+
+
+#[derive(Debug, Error, Clone)]
+pub enum WriteModeParseError {
+    #[error("The value {0:?} is not valid for write mode because it needs either 'binary' or 'json'!")]
+    NoTypeSet(String),
+    #[error("The value {0:?} is not valid for write mode because it has both 'binary' and 'json' but only one is allowed!")]
+    TooManyTypesSet(String),
+    #[error("The value {0:?} contains an invalid parameter {1:?}.")]
+    InvalidValue(String, String)
+}
+
+impl FromStr for WriteMode {
+    type Err = WriteModeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut compressed = false;
+        let mut pretty = None;
+        let mut json = false;
+        let mut binary = false;
+
+        for value in s.split('+').map(str::trim) {
+            match &value[0..1] {
+                "j" => json = true,
+                "b" => binary = true,
+                "p" => pretty = Some(value),
+                "c" => compressed = true,
+                _ => return Err(WriteModeParseError::InvalidValue(s.to_string(), value.to_string()))
+            }
+        }
+
+        if json == binary {
+            if !json {
+                Err(WriteModeParseError::NoTypeSet(s.to_string()))
+            } else {
+                Err(WriteModeParseError::TooManyTypesSet(s.to_string()))
+            }
+        } else {
+            if json {
+                Ok(
+                    WriteMode::Json {
+                        compressed,
+                        pretty: pretty.is_some()
+                    }
+                )
+            } else {
+                if let Some(pretty) = pretty {
+                    Err(WriteModeParseError::InvalidValue(s.to_string(), pretty.to_string()))
+                } else {
+                    Ok(
+                        WriteMode::Binary {
+                            compressed
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+define_py_literal!(
+    pub WriteModeLiteral[
+        "b",
+        "binary",
+        "b+c",
+        "binary+compressed",
+        "json",
+        "j",
+        "json+compressed",
+        "j+c",
+        "json+pretty",
+        "j+p",
+        "json+pretty+compressed",
+        "j+p+c",
+    ] into WriteMode
+);
+
+
 impl Default for WriteMode {
     fn default() -> Self {
         Self::Binary {
@@ -35,6 +110,16 @@ impl Default for WriteMode {
         }
     }
 }
+
+// impl_py_stub! {
+//     WriteMode {
+//         output: {
+//             builder()
+//             .
+//             .build_output()
+//         }
+//     }
+// }
 
 
 impl WriteMode {

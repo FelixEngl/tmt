@@ -38,13 +38,14 @@ impl<'a> FromPyObject<'a> for PyVotingModel<'a> {
 
 impl_py_stub!(PyVotingModel<'_> {
         output: {
-            let input_typ = PyContextWithMutableVariables::type_output();
+            let mut input_typ = PyContextWithMutableVariables::type_output();
             let output_typ = PyExprValue::type_output();
             let name = format!(
                 "typing.Callable[[{inp}, list[{inp}]], {out}]",
                 inp=input_typ.name,
                 out=output_typ.name
             );
+            input_typ.import.insert("typing".into());
             TypeInfo {
                 name,
                 import: input_typ.import

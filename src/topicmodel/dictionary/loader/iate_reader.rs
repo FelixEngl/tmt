@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::define_aho_matcher;
 use crate::topicmodel::dictionary::loader::iate_reader;
 use crate::topicmodel::dictionary::loader::toolkit::replace_none_or_panic;
-use crate::topicmodel::dictionary::word_infos::{Domain, Language, Register};
+use crate::topicmodel::dictionary::word_infos::{AnyWordInfo, Domain, Language, Register};
 use super::helper::gen_iate_tbx_reader::iter::ConceptEntryElementIter;
 use super::helper::gen_iate_tbx_reader::*;
 
@@ -374,6 +374,21 @@ pub fn process_element(
                 "transport" => domain.push(Domain::Transp);
             }
         };
+
+        if let Ok(value) = value.parse::<AnyWordInfo>() {
+            match value {
+                AnyWordInfo::Domain(dom) => {
+                    domain.push(dom);
+                }
+                AnyWordInfo::Register(reg) => {
+                    register.push(reg);
+                }
+                other => {
+                    log::info!("Failed to store {other}!")
+                }
+            }
+        }
+
         contextual.push(value);
     }
 

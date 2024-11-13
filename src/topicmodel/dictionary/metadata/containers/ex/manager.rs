@@ -65,6 +65,7 @@ macro_rules! create_struct {
         }
 
         impl $crate::topicmodel::dictionary::metadata::MetadataManager for MetadataManagerEx {
+            type UpdateError = $crate::topicmodel::dictionary::metadata::containers::ex::WrongResolvedValueError;
             type Metadata = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx;
             type ResolvedMetadata = $crate::topicmodel::dictionary::metadata::containers::ex::LoadedMetadataEx;
             type Reference<'a> = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataRefEx<'a> where Self: 'a;

@@ -1,4 +1,5 @@
 pub mod vec_ext;
+pub mod standard;
 
 use rayon::prelude::*;
 use crate::topicmodel::vocabulary::BasicVocabulary;

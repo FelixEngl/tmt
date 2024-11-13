@@ -1,4 +1,3 @@
-use std::fmt::{Display, Formatter};
 use std::hash::BuildHasher;
 use derive_more::From;
 use pyo3::{FromPyObject, IntoPy, PyObject, Python};

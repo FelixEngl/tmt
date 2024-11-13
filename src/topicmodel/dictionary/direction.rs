@@ -15,6 +15,7 @@
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash};
 use pyo3::{pyclass};
+use sealed::sealed;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs, EnumString, IntoStaticStr};
 use crate::register_python;
@@ -144,32 +145,30 @@ impl<Ta: Display, Tb: Display> Display for  DirectionTuple<Ta, Tb>  {
     }
 }
 
-mod private {
-    pub(crate) trait Sealed{}
-}
-
 /// A direction for a translation
 #[allow(private_bounds)]
-pub trait Direction: private::Sealed {
+#[sealed]
+pub trait Direction {
     type INVERSE: Direction;
     const DIRECTION: DirectionKind;
 }
 
 ///
 #[allow(private_bounds)]
-pub trait Translation: Direction + private::Sealed {}
+#[sealed]
+pub trait Translation: Direction {}
 
 #[allow(private_bounds)]
-pub trait Language: Translation + Direction + private::Sealed {
+#[sealed]
+pub trait Language: Translation + Direction {
     type OPPOSITE: Language;
     const LANG: LanguageKind;
-
-
 }
 
 /// Language A
 pub struct A;
-impl private::Sealed for A{}
+
+#[sealed]
 impl Language for A {
     type OPPOSITE = B;
     const LANG: LanguageKind = LanguageKind::A;
@@ -177,15 +176,19 @@ impl Language for A {
 
 /// A to B
 pub type AToB = A;
+
+#[sealed]
 impl Direction for AToB {
     type INVERSE = BToA;
     const DIRECTION: DirectionKind = DirectionKind::AToB;
 }
+
+#[sealed]
 impl Translation for AToB {}
 
 /// Language B
 pub struct B;
-impl private::Sealed for B{}
+#[sealed]
 impl Language for B {
     type OPPOSITE = A;
     const LANG: LanguageKind = LanguageKind::B;
@@ -193,16 +196,18 @@ impl Language for B {
 
 /// B to A
 pub type BToA = B;
+#[sealed]
 impl Direction for BToA {
     type INVERSE = AToB;
     const DIRECTION: DirectionKind = DirectionKind::BToA;
 }
+#[sealed]
 impl Translation for BToA {}
 
 
 /// Both directions
 pub struct Invariant;
-impl private::Sealed for Invariant {}
+#[sealed]
 impl Direction for Invariant {
     type INVERSE = Invariant;
     const DIRECTION: DirectionKind = DirectionKind::Invariant;

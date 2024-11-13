@@ -2,15 +2,14 @@ use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
-use camino::{Utf8Path, Utf8PathBuf};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc, MergingDictionary};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc, MergingDictionary};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, Direction, DirectionKind, DirectionTuple, Invariant, Language, LanguageKind, Translation, A, B};
 use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference, MetadataReference};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::vocabulary::{AlphabeticalVocabulary, AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
+use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 use crate::topicmodel::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
@@ -164,7 +163,6 @@ where
         word_id: usize,
         metadata_ref: M::Reference<'a>
     ) {
-
         let mut meta = self.metadata.get_or_create_meta::<L>(
             match L::LANG {
                 LanguageKind::A => {
@@ -176,7 +174,7 @@ where
             },
             word_id
         );
-        meta.update_with_reference::<L>(metadata_ref)
+        meta.update_with_reference(metadata_ref)
     }
 
     pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V, M>
@@ -318,6 +316,20 @@ where
     fn metadata_mut(&mut self) -> &mut M {
         &mut self.metadata
     }
+
+    fn get_meta_for<'a, L: Language>(&'a mut self, word_id: usize) -> Option<<M as MetadataManager>::Reference<'a>> {
+        self.metadata.get_meta_ref::<L>(
+            match L::LANG {
+                LanguageKind::A => {
+                    &self.inner.voc_a
+                }
+                LanguageKind::B => {
+                    &self.inner.voc_b
+                }
+            },
+            word_id
+        )
+    }
 }
 
 
@@ -329,6 +341,8 @@ where
         to self.inner {
             fn voc_a(&self) -> &V;
             fn voc_b(&self) -> &V;
+            fn voc_a_mut(&mut self) -> &mut V;
+            fn voc_b_mut(&mut self) -> &mut V;
         }
     }
 }
@@ -416,6 +430,15 @@ where
 
     fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
         self.inner.insert_hash_ref::<D>(word_a, word_b)
+    }
+
+    fn delete_translation<L: Language, Q: ?Sized>(&mut self, value: &Q) -> bool
+    where
+        T: Borrow<Q> + Eq + Hash,
+        Q: Hash + Eq,
+        V: SearchableVocabulary<T>
+    {
+        self.inner.delete_translation::<L, _>(value)
     }
 }
 impl<T, V, M> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V, M>
@@ -731,5 +754,41 @@ where
         // No optimize needed because we only grow.
         // self.metadata.optimize();
         self
+    }
+}
+
+
+impl<T, V, M> BasicDictionaryWithMutMeta<M, V> for DictionaryWithMeta<T, V, M>
+where
+    M: MetadataManager,
+    V: AnonymousVocabulary + AnonymousVocabularyMut + BasicVocabulary<T>,
+{
+    fn get_mut_meta_for<'a, L: Language>(&'a mut self, word_id: usize) -> Option<<M as MetadataManager>::MutReference<'a>> {
+        self.metadata.get_meta_mut::<L>(
+            match L::LANG {
+                LanguageKind::A => {
+                    &mut self.inner.voc_a
+                }
+                LanguageKind::B => {
+                    &mut self.inner.voc_b
+                }
+            },
+            word_id
+        )
+    }
+
+
+    fn get_or_create_meta_for<'a, L: Language>(&'a mut self, word_id: usize) -> <M as MetadataManager>::MutReference<'a> {
+        self.metadata.get_or_create_meta::<L>(
+            match L::LANG {
+                LanguageKind::A => {
+                    &mut self.inner.voc_a
+                }
+                LanguageKind::B => {
+                    &mut self.inner.voc_b
+                }
+            },
+            word_id
+        )
     }
 }

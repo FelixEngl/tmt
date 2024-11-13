@@ -48,6 +48,7 @@ impl Default for ClassicMetadataManager {
 
 impl MetadataManager for ClassicMetadataManager {
     type Metadata = ClassicMetadata;
+    type UpdateError = ();
     type ResolvedMetadata = SolvedMetadata;
     type Reference<'a> = ClassicMetadataRef<'a>;
     type MutReference<'a> = ClassicMetadataMutRef<'a>;
