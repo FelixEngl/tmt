@@ -35,6 +35,7 @@ use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
+use crate::topicmodel::dictionary::*;
 
 #[allow(dead_code)]
 pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
@@ -72,7 +73,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
 {
 
     if let Some(lang_model) = topic_model.vocabulary().language() {
-        if let (Some(lang_a), lang_b) = dictionary.language_direction() {
+        if let (Some(lang_a), lang_b) = dictionary.language_direction_a_to_b() {
             if lang_model != lang_a {
                 let lang_b = lang_b.cloned().unwrap_or_else(|| LanguageHint::new("###"));
                 return Err(

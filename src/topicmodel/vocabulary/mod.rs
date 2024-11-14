@@ -50,20 +50,20 @@ macro_rules! voc {
     (for $lang: tt;) => {
         $crate::topicmodel::vocabulary::Vocabulary::new_for($lang)
     };
-    (for $lang: tt: $($value: tt),+) => {
+    (for $lang: tt: $($value: tt),+ $(,)?) => {
         {
             let mut __voc = $crate::topicmodel::vocabulary::Vocabulary::new_for($lang);
             $(
-                $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value);
+                $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value.into());
             )+
             __voc
         }
     };
-    ($($value: tt),+) => {
+    ($($value: tt),+ $(,)?) => {
         {
             let mut __voc = $crate::topicmodel::vocabulary::Vocabulary::default();
             $(
-                $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value);
+                $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value.into());
             )+
             __voc
         }

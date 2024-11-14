@@ -15,7 +15,7 @@
 use std::hash::Hash;
 use rayon::prelude::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-use crate::topicmodel::dictionary::{DictionaryMut, FromVoc};
+use crate::topicmodel::dictionary::{DictionaryMut, DictionaryMutGen, FromVoc};
 use crate::topicmodel::dictionary::direction::*;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
@@ -41,14 +41,14 @@ where
     D1: DictionaryMut<T, V1>,
     D2: DictionaryMut<T, V2> + FromVoc<T, V2>
 {
-    let mut new_dict: D2 = D2::from_voc_lang::<A>(
+    let mut new_dict: D2 = D2::from_voc_lang_a(
         vocabulary.clone().map(|value| value.clone()),
-        dictionary.language::<B>().cloned()
+        dictionary.language_b().cloned()
     );
 
     let translations: Vec<(HashRef<T>, Option<Vec<&HashRef<T>>>)> = {
         new_dict.voc_a().as_ref().par_iter().map(|value| {
-            (value.clone(), dictionary.translate_value_to_values::<AToB, _>(value))
+            (value.clone(), dictionary.translate_word_a_to_words_b(value))
         }).collect::<Vec<_>>()
     };
 
@@ -71,7 +71,7 @@ where
     insert_into::<A, _, _>(&mut new_dict, &translations);
 
     let retranslations = new_dict.voc_b().as_ref().par_iter().map(|value| {
-        (value.clone(), dictionary.translate_value_to_values::<BToA, _>(value))
+        (value.clone(), dictionary.translate_word_b_to_words_a(value))
     }).collect::<Vec<_>>();
 
     insert_into::<B, _, _>(&mut new_dict, &retranslations);

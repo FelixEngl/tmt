@@ -78,11 +78,15 @@ zstd = "0.13"
 camino = "1.1"
 byte-unit = "5.1"
 #ciborium = "0.2"
+pathdiff = { version = "0.2", features = ["camino"] }
+walkdir = "2.5.0"
+crc32fast = "1.4.2"
 
 # Plugin System
 inventory = { version = "0.3" }
 pyo3-stub-gen = { version = "0.6.0", optional = true }
 build_html = "2.5.0"
+pyo3-log = "0.11"
 
 [build-dependencies]
 xml2code = {path = "xml2code"}

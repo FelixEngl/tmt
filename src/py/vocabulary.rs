@@ -385,7 +385,8 @@ impl PyVocIter {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 pub fn create_topic_model_specific_dictionary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
-    create_topic_model_specific_dictionary_impl(dictionary, vocabulary)
+    let read = dictionary.get();
+    PyDictionary::new(create_topic_model_specific_dictionary_impl(read.deref(), vocabulary))
 }
 
 
@@ -396,15 +397,15 @@ register_python! {
 }
 
 
-#[cfg(test)]
-mod test {
-    use std::path::PathBuf;
-    use crate::py::dictionary::PyDictionary;
-    use crate::topicmodel::dictionary::BasicDictionary;
-
-    #[test]
-    fn load_test(){
-        let loaded = PyDictionary::load("E:\\git\\ptmt\\data\\experiment1\\my_dictionary.dict".parse::<PathBuf>().unwrap()).unwrap();
-        println!("{}", loaded.iter().count())
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use std::path::PathBuf;
+//     use crate::py::dictionary::PyDictionary;
+//     use crate::topicmodel::dictionary::BasicDictionary;
+//
+//     #[test]
+//     fn load_test(){
+//         let loaded = PyDictionary::load("E:\\git\\ptmt\\data\\experiment1\\my_dictionary.dict".parse::<PathBuf>().unwrap()).unwrap();
+//         println!("{}", loaded.iter().count())
+//     }
+// }

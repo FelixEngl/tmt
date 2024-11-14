@@ -152,6 +152,10 @@ macro_rules! create_python_getter {
                 self.to_string()
             }
 
+            fn __repr__(&self) -> String {
+                format!("{self:?}")
+            }
+
             /// Retrieves the value for a specific field. If a dictionary name is provided, it returns the values of this specific dictionary.
             /// Otherwise None returns the general information.
             #[pyo3(signature = (field, dictionary))]

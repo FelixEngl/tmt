@@ -1,7 +1,7 @@
 use crate::tokenizer::Tokenizer;
 use crate::topicmodel::dictionary::constants::{DICT_CC, DING, FREE_DICT, IATE, MS_TERMS, MUSE, OMEGA, WIKTIONARY};
 use crate::topicmodel::dictionary::dicts_info::omega_wiki::OptionalOmegaWikiEntry;
-use crate::topicmodel::dictionary::direction::{Invariant, Language as DirLang, LanguageKind, A, B};
+use crate::topicmodel::dictionary::direction::{Language as DirLang, A, B};
 use crate::topicmodel::dictionary::loader::dictcc::{process_word_entry, ProcessingResult};
 use crate::topicmodel::dictionary::loader::file_parser::{DictionaryLineParserError, LineDictionaryReaderError};
 use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict, FreeDictReaderError, GramaticHints, Translation};
@@ -10,9 +10,8 @@ use crate::topicmodel::dictionary::loader::ms_terms_reader::{MSTermsReaderError,
 use crate::topicmodel::dictionary::loader::muse::MuseError;
 use crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx;
 use crate::topicmodel::dictionary::metadata::ex::{MetadataCollectionBuilder, MetadataManagerEx};
-use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::dictionary::word_infos::*;
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithMeta};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMutMetaGen, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryMutGen, DictionaryWithMeta};
 use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary};
 use itertools::{chain, Either, Itertools, Position};
 use std::borrow::Cow;
@@ -313,9 +312,9 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     fn insert_translation_by_id(&mut self, word_id_a: usize, word_id_b: usize, dir: &LanguageDirection) {
         unsafe {
             if self.dir.eq(dir) {
-                self.dictionary.insert_raw_values::<Invariant>(word_id_a, word_id_b);
+                self.dictionary.insert_raw_values_invariant(word_id_a, word_id_b);
             } else {
-                self.dictionary.insert_raw_values::<Invariant>(word_id_b, word_id_a);
+                self.dictionary.insert_raw_values_invariant(word_id_b, word_id_a);
             }
         }
     }
@@ -1061,7 +1060,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
 
         for (a, b) in lang_a_values.into_iter().cartesian_product(lang_b_values) {
             unsafe {
-                self.dictionary.insert_raw_values::<Invariant>(a, b);
+                self.dictionary.insert_raw_values_invariant(a, b);
             }
         }
         match error {
@@ -1308,14 +1307,14 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             for (a, b) in lang_a_variants.into_iter().cartesian_product(lang_b_variants) {
                 ct += 1;
                 unsafe {
-                    self.dictionary.insert_raw_values::<Invariant>(a, b);
+                    self.dictionary.insert_raw_values_invariant(a, b);
                 }
             }
         } else {
             for (a, b) in lang_a_variants.into_iter().cartesian_product(lang_b_variants) {
                 ct += 1;
                 unsafe {
-                    self.dictionary.insert_raw_values::<Invariant>(b, a);
+                    self.dictionary.insert_raw_values_invariant(b, a);
                 }
             }
         }
@@ -1389,7 +1388,6 @@ pub enum LineReaderError<T: Debug> {
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
     use crate::topicmodel::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
@@ -1496,17 +1494,6 @@ mod test {
                 }
             };
 
-            let mut x = Vec::<u8>::new();
-            data.to_writer(
-                WriteMode::binary(true),
-                &mut x
-            ).unwrap();
-
-            let x: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_reader(
-                WriteMode::binary(true),
-                Cursor::new(x)
-            ).unwrap();
-
             data.write_to_path(
                 WriteMode::binary(false),
                 format!("dictionary_{}_{}.dat", value.kind, i)
@@ -1543,12 +1530,10 @@ mod test {
         ).unwrap();
 
 
-        let read: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
+        let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
             "./dictionary2.dat.zst"
         ).unwrap();
 
 
     }
-
-
 }

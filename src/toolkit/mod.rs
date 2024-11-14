@@ -26,6 +26,10 @@ pub mod pystub;
 pub mod register_python;
 pub mod from_str_ex;
 pub mod py_helpers;
+mod crc32_for_reader;
+pub mod sync_ext;
+
+pub use crc32_for_reader::crc32;
 
 #[cfg(not(feature = "gen_python_api"))]
 #[macro_export]

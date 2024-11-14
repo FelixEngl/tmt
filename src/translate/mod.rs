@@ -32,7 +32,7 @@ pub use errors::*;
 pub use config::*;
 use crate::toolkit::evalexpr::{CombineableContext, ContextExtender};
 use crate::topicmodel::create_topic_model_specific_dictionary;
-use crate::topicmodel::dictionary::{DictionaryMut, DictionaryWithVocabulary, FromVoc};
+use crate::topicmodel::dictionary::*;
 use crate::topicmodel::dictionary::direction::{AToB, BToA, B};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
@@ -124,7 +124,7 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
 {
 
     if let Some(lang_model) = target.vocabulary().language() {
-        if let (Some(lang_a), lang_b) = dictionary.language_direction() {
+        if let (Some(lang_a), lang_b) = dictionary.language_direction_a_to_b() {
             if lang_model != lang_a {
                 let lang_b = lang_b.cloned().unwrap_or_else(|| LanguageHint::new("###"));
                 return Err(
@@ -609,7 +609,7 @@ where V: VotingMethodMarker,
 #[cfg(test)]
 pub(crate) mod test {
     use crate::topicmodel::dictionary::direction::Invariant;
-    use crate::topicmodel::dictionary::{Dictionary, DictionaryMut};
+    use crate::topicmodel::dictionary::{Dictionary, DictionaryMutGen};
     use crate::topicmodel::model::{FullTopicModel, TopicModel};
     use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
     use crate::translate::translate_topic_model_without_provider;
@@ -653,7 +653,7 @@ pub(crate) mod test {
             "Motorflugzeug".to_string(),
         ]);
 
-        let mut dict = Dictionary::new();
+        let mut dict = Dictionary::default();
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
         dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);

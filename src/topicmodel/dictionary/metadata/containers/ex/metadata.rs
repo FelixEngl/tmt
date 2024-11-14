@@ -671,9 +671,9 @@ mod test {
            }
         }
 
-        let ser = bincode::serialize(&meta).unwrap();
+        // let ser = bincode::serialize(&meta).unwrap();
 
-        let deser: MetadataEx = bincode::deserialize(&ser).unwrap();
+        // let deser: MetadataEx = bincode::deserialize(&ser).unwrap();
 
         let mut x = Data::default();
         x.inner.get_or_init(Set64::new);

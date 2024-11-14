@@ -18,13 +18,11 @@ register_python!(
 
 
 
+
+
 pub struct DomainVotingModel {
     model: Vec<Vec<f64>>,
-
 }
-
-
-
 
 
 pub trait DomainModelIndex where Self: Sized + Copy {
@@ -531,11 +529,3 @@ impl Display for Entry {
     }
 }
 
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn test_entry(){
-
-    }
-}

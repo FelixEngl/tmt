@@ -16,43 +16,51 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::iter::{Chain, Cloned, Enumerate, FlatMap, Map};
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::slice::Iter;
 use itertools::{Itertools, Unique};
 use strum::EnumIs;
+use crate::toolkit::sync_ext::OwnedOrArcRw;
 use crate::toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
-use crate::topicmodel::dictionary::direction::{A, B, DirectionKind, DirectionTuple, Language};
+use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple, Language, LanguageKind};
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataReference};
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 
 /// Iterator for a dictionary
-pub struct DictLangIter<'a, T, L, D: ?Sized, V> where L: Language {
+pub struct DictLangIter<'a, T, D: ?Sized, V> {
     iter: Enumerate<Iter<'a, HashRef<T>>>,
     dict: &'a D,
-    _language: PhantomData<(L, V)>
+    direction: LanguageKind,
+    _phantom: PhantomData<V>
 }
 
-impl<'a, T, L, D: ?Sized, V> DictLangIter<'a, T, L, D, V> where L: Language, V: BasicVocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
-    pub(in crate::topicmodel::dictionary) fn new(dict: &'a D) -> Self {
+impl<'a, T, D: ?Sized, V> DictLangIter<'a, T, D, V> where V: BasicVocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
+    pub(in crate::topicmodel::dictionary) fn new<L: Language>(dict: &'a D) -> Self {
         Self {
-            iter: if L::DIRECTION.is_a_to_b() {
+            iter: if L::LANG.is_a() {
                 dict.voc_a().iter().enumerate()
             } else {
                 dict.voc_b().iter().enumerate()
             },
             dict,
-            _language: PhantomData
+            direction: L::LANG,
+            _phantom: PhantomData
         }
     }
 }
 
-impl<'a, T, L, D, V> Iterator for DictLangIter<'a, T, L, D, V> where L: Language, V: BasicVocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
+impl<'a, T, D, V> Iterator for DictLangIter<'a, T, D, V> where V: BasicVocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
     type Item = (usize, &'a HashRef<T>, Option<Vec<(usize, &'a HashRef<T>)>>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let (id, next) = self.iter.next()?;
-        let translation = self.dict.translate_id::<L>(id);
+        let translation = if self.direction.is_a() {
+            self.dict.translate_id_a_to_entries_b(id)
+        } else {
+            self.dict.translate_id_b_to_entries_a(id)
+        };
         Some((id, next, translation))
     }
 }
@@ -110,6 +118,8 @@ impl<'a> Iterator for DictIterImpl<'a> {
 
 
 
+
+
 /// The state of the dict iterator
 #[derive(Debug, Copy, Clone, EnumIs)]
 enum DictionaryIteratorPointerState {
@@ -133,39 +143,37 @@ pub struct DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, 
     pos: usize,
     index: usize,
     state: DictionaryIteratorPointerState,
-    pub(in crate::topicmodel::dictionary) inner: D,
+    inner: OwnedOrArcRw<D>,
     used: HashMap<(usize, usize), ()>,
     _types: PhantomData<fn(T, V)->()>
 }
 
 impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T> {
-    pub(in crate::topicmodel::dictionary) fn new(inner: D) -> Self {
+    pub(in crate::topicmodel::dictionary) fn new(inner: impl Into<OwnedOrArcRw<D>>) -> Self {
         let mut new = Self {
             pos: 0,
             index: 0,
             state: DictionaryIteratorPointerState::NextAB,
-            inner,
+            inner: inner.into(),
             used: HashMap::new(),
             _types: PhantomData
         };
-        if !new.inner.map_a_to_b().get(new.pos).is_some_and(|found| !found.is_empty()) {
+        if !new.inner.get().map_a_to_b().get(new.pos).is_some_and(|found| !found.is_empty()) {
             new.increment_pos_and_idx();
         }
-        return new
+        new
     }
 
 
-    pub fn into_inner(self) -> D {
-        self.inner
-    }
 
     fn increment_pos_and_idx(&mut self) -> bool {
+        let read = self.inner.get();
         let targ = match self.state {
             DictionaryIteratorPointerState::NextAB => {
-                self.inner.map_a_to_b()
+                read.map_a_to_b()
             }
             DictionaryIteratorPointerState::NextBA => {
-                self.inner.map_b_to_a()
+                read.map_b_to_a()
             }
             DictionaryIteratorPointerState::Finished => {return false}
         };
@@ -180,6 +188,7 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
         if new_pos < targ.len() {
             self.index = 0;
             if unsafe{targ.get_unchecked(self.pos)}.is_empty() {
+                drop(read);
                 self.pos = 0;
                 self.state = self.state.next();
                 self.increment_pos_and_idx()
@@ -188,6 +197,7 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
                 true
             }
         } else {
+            drop(read);
             self.state = self.state.next();
             self.increment_pos_and_idx()
         }
@@ -195,22 +205,23 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
 
     /// This one should only be called when `self.state` is not finished!
     fn get_current(&self) -> Option<DirectionTuple<(usize, HashRef<T>), (usize, HashRef<T>)>> {
+        let read = self.inner.get();
         match self.state {
             DictionaryIteratorPointerState::NextAB => {
-                let b = *self.inner.map_a_to_b().get(self.pos)?.get(self.index)?;
-                let a_value = (self.pos, self.inner.id_to_word::<A>(self.pos).unwrap().clone());
-                let b_value = (b, self.inner.id_to_word::<B>(b).unwrap().clone());
-                Some(if self.inner.map_b_to_a()[b].contains(&self.pos) {
+                let b = *read.map_a_to_b().get(self.pos)?.get(self.index)?;
+                let a_value = (self.pos, read.convert_id_a_to_word(self.pos).unwrap().clone());
+                let b_value = (b, read.convert_id_b_to_word(b).unwrap().clone());
+                Some(if read.map_b_to_a()[b].contains(&self.pos) {
                     DirectionTuple::invariant(a_value, b_value)
                 } else {
                     DirectionTuple::a_to_b(a_value, b_value)
                 })
             }
             DictionaryIteratorPointerState::NextBA => {
-                let a = *self.inner.map_b_to_a().get(self.pos)?.get(self.index)?;
-                let a_value = (a, self.inner.id_to_word::<A>(a).unwrap().clone());
-                let b_value = (self.pos, self.inner.id_to_word::<B>(self.pos).unwrap().clone());
-                Some(if self.inner.map_a_to_b()[a].contains(&self.pos) {
+                let a = *read.map_b_to_a().get(self.pos)?.get(self.index)?;
+                let a_value = (a, read.convert_id_a_to_word(a).unwrap().clone());
+                let b_value = (self.pos, read.convert_id_b_to_word(self.pos).unwrap().clone());
+                Some(if read.map_a_to_b()[a].contains(&self.pos) {
                     DirectionTuple::invariant(a_value, b_value)
                 } else {
                     DirectionTuple::b_to_a(a_value, b_value)
@@ -276,15 +287,11 @@ where
     V: BasicVocabulary<T> + AnonymousVocabulary,
     M: MetadataManager
 {
-    pub fn new(inner: D) -> Self {
+    pub fn new(inner: impl Into<OwnedOrArcRw<D>>) -> Self {
         Self {
             inner: DictionaryIteratorImpl::new(inner),
             _meta: PhantomData
         }
-    }
-
-    pub fn into_inner(self) -> D {
-        self.inner.inner
     }
 }
 
@@ -301,21 +308,20 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next()?;
-
+        let read_owned = self.inner.inner.get();
+        let red = read_owned.deref();
         Some(
             next.map(
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<A>(
-                        self.inner.inner.voc_a(),
-                        id
-                    ).map(|value| value.into_resolved());
+                    let value = red
+                        .get_meta_for_a(id)
+                        .map(|value| value.into_resolved());
                     (id, href, value)
                 },
                 |(id, href)| {
-                    let value = self.inner.inner.metadata().get_meta_ref::<B>(
-                        self.inner.inner.voc_b(),
-                        id
-                    ).map(|value| value.into_resolved());
+                    let value = red
+                        .get_meta_for_b(id)
+                        .map(|value| value.into_resolved());
                     (id, href, value)
                 }
             )

@@ -91,22 +91,15 @@ macro_rules! create_struct {
                 }
             }
 
-            fn get_meta<L: $crate::topicmodel::dictionary::direction::Language>(&self, word_id: usize) -> Option<&Self::Metadata> {
-                if L::LANG.is_a() {
-                    self.meta_a.get(word_id)
-                } else {
-                    self.meta_b.get(word_id)
-                }
-            }
-
-            fn get_meta_mut<'a, L: $crate::topicmodel::dictionary::direction::Language>(
+            fn get_meta_mut_for<'a>(
                 &'a mut self,
+                lang: $crate::topicmodel::dictionary::direction::LanguageKind,
                 vocabulary: &'a mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut,
                 word_id: usize
             ) -> Option<Self::MutReference<'a>> {
                 let ptr = self as *mut Self;
                 let value = unsafe{&mut*ptr};
-                let result = if L::LANG.is_a() {
+                let result = if lang.is_a() {
                     value.meta_a.get_mut(word_id)
                 } else {
                     value.meta_b.get_mut(word_id)
@@ -122,14 +115,15 @@ macro_rules! create_struct {
                 ))
             }
 
-            fn get_or_create_meta<'a, L: $crate::topicmodel::dictionary::direction::Language>(
+            fn get_or_create_meta_for<'a>(
                 &'a mut self,
+                lang: $crate::topicmodel::dictionary::direction::LanguageKind,
                 vocabulary: &'a mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut,
                 word_id: usize
             ) -> Self::MutReference<'a> {
                 let ptr = self as *mut Self;
 
-                let targ = if L::LANG.is_a() {
+                let targ = if lang.is_a() {
                     &mut self.meta_a
                 } else {
                     &mut self.meta_b
@@ -156,12 +150,13 @@ macro_rules! create_struct {
                 }
             }
 
-            fn get_meta_ref<'a, L: $crate::topicmodel::dictionary::direction::Language>(
+            fn get_meta_ref_for<'a>(
                 &'a self,
+                lang: $crate::topicmodel::dictionary::direction::LanguageKind,
                 vocabulary: $crate::topicmodel::vocabulary::AnonymousVocabularyRef<'a>,
                 word_id: usize
             ) -> Option<Self::Reference<'a>> {
-                Some(MetadataRefEx::new(self.get_meta::<L>(word_id)?, self, vocabulary))
+                Some(MetadataRefEx::new(self.get_meta_for(lang, word_id)?, self, vocabulary))
             }
 
             fn resize(&mut self, meta_a: usize, meta_b: usize) {

@@ -1,4 +1,4 @@
-use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple, A, B};
+use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple};
 use crate::topicmodel::dictionary::iterators::DictIter;
 use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary};
 use std::marker::PhantomData;
@@ -49,14 +49,14 @@ where
                     DirectionTuple::a_to_b(
                         (
                             a,
-                            self.dictionary_with_meta.metadata().get_meta_ref::<A>(
+                            self.dictionary_with_meta.metadata().get_meta_ref_a(
                                 self.dictionary_with_meta.voc_a(),
                                 a
                             )
                         ),
                         (
                             b,
-                            self.dictionary_with_meta.metadata().get_meta_ref::<B>(
+                            self.dictionary_with_meta.metadata().get_meta_ref_b(
                                 self.dictionary_with_meta.voc_b(),
                                 b
                             )
@@ -67,14 +67,14 @@ where
                     DirectionTuple::b_to_a(
                         (
                             a,
-                            self.dictionary_with_meta.metadata().get_meta_ref::<A>(
+                            self.dictionary_with_meta.metadata().get_meta_ref_a(
                                 self.dictionary_with_meta.voc_a(),
                                 a
                             )
                         ),
                         (
                             b,
-                            self.dictionary_with_meta.metadata().get_meta_ref::<B>(
+                            self.dictionary_with_meta.metadata().get_meta_ref_b(
                                 self.dictionary_with_meta.voc_b(),
                                 b
                             )
@@ -85,14 +85,14 @@ where
                     DirectionTuple::invariant(
                         (
                             a,
-                            self.dictionary_with_meta.metadata().get_meta_ref::<A>(
+                            self.dictionary_with_meta.metadata().get_meta_ref_a(
                                 self.dictionary_with_meta.voc_a(),
                                 a
                             )
                         ),
                         (
                             b,
-                            self.dictionary_with_meta.metadata().get_meta_ref::<B>(
+                            self.dictionary_with_meta.metadata().get_meta_ref_b(
                                 self.dictionary_with_meta.voc_b(),
                                 b
                             )

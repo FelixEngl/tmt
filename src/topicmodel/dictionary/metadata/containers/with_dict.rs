@@ -2,7 +2,6 @@ use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, BasicDictionaryWithMeta, DictionaryWithVocabulary};
-use crate::topicmodel::dictionary::direction::{AToB, BToA, A, B};
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 
@@ -66,11 +65,11 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_a().len() {
-                if let Some(value) = self.get_meta_ref::<A>(
+                if let Some(value) = self.get_meta_ref_a(
                     self.dict().voc_a(),
                     word_id
                 ) {
-                    write!(f, "    {}: {}\n", self.dict().id_to_word::<AToB>(word_id).unwrap(), value)?;
+                    write!(f, "    {}: {}\n", self.dict().convert_id_a_to_word(word_id).unwrap(), value)?;
                 }
             }
         }
@@ -81,11 +80,11 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_b().len() {
-                if let Some(value) = self.get_meta_ref::<B>(
+                if let Some(value) = self.get_meta_ref_b(
                     self.dict().voc_b(),
                     word_id
                 ) {
-                    write!(f, "    {}: {}\n", self.dict().id_to_word::<BToA>(word_id).unwrap(), value)?;
+                    write!(f, "    {}: {}\n", self.dict().convert_id_b_to_word(word_id).unwrap(), value)?;
                 }
             }
         }
@@ -162,11 +161,11 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_a().len() {
-                if let Some(value) = self.get_meta_ref::<A>(
+                if let Some(value) = self.get_meta_ref_a(
                     self.dict().voc_a(),
                     word_id
                 ) {
-                    write!(f, "    {}: {}\n", self.dict().id_to_word::<AToB>(word_id).unwrap(), value)?;
+                    write!(f, "    {}: {}\n", self.dict().convert_id_a_to_word(word_id).unwrap(), value)?;
                 }
             }
         }
@@ -177,11 +176,11 @@ where
             write!(f, "  ==UNSET==\n")?;
         } else {
             for word_id in 0..self.meta_b().len() {
-                if let Some(value) = self.get_meta_ref::<B>(
+                if let Some(value) = self.get_meta_ref_b(
                     self.dict().voc_b(),
                     word_id
                 ) {
-                    write!(f, "    {}: {}\n", self.dict().id_to_word::<BToA>(word_id).unwrap(), value)?;
+                    write!(f, "    {}: {}\n", self.dict().convert_id_b_to_word(word_id).unwrap(), value)?;
                 }
             }
         }

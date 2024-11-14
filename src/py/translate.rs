@@ -13,6 +13,7 @@
 //limitations under the License.
 
 use std::num::NonZeroUsize;
+use std::ops::Deref;
 use derive_more::From;
 use evalexpr::{Value};
 use pyo3::{pyclass, pyfunction, pymethods, PyResult};
@@ -135,7 +136,8 @@ pub fn translate_topic_model<'a>(
     voting_registry: Option<PyVotingRegistry>
 ) -> PyResult<PyTopicModel> {
     let cfg =config.to_translation_config(voting, voting_registry)?;
-    match translate(topic_model, dictionary, &cfg, provider) {
+    let read = dictionary.get();
+    match translate(topic_model, read.deref(), &cfg, provider) {
         Ok(result) => {
             Ok(result)
         }

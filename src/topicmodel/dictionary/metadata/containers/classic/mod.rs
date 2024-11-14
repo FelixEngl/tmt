@@ -15,10 +15,11 @@ pub use reference_mut::{
 
 use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
-use crate::topicmodel::dictionary::direction::{Language, A, B};
+use crate::topicmodel::dictionary::direction::{Language, LanguageKind, A, B};
 use crate::toolkit::typesafe_interner::{DictionaryOriginStringInterner, TagStringInterner};
 use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
+use crate::topicmodel::dictionary::metadata::MetadataManagerGen;
 use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
 use crate::topicmodel::vocabulary::{AnonymousVocabularyMut, AnonymousVocabularyRef, Vocabulary};
 use crate::topicmodel::vocabulary::phantom::{anonymous_mut_voc, anonymous_voc};
@@ -71,18 +72,10 @@ impl MetadataManager for ClassicMetadataManager {
         }
     }
 
-    fn get_meta<L: Language>(&self, word_id: usize) -> Option<&ClassicMetadata> {
-        if L::LANG.is_a() {
-            self.meta_a.get(word_id)
-        } else {
-            self.meta_b.get(word_id)
-        }
-    }
-
-    fn get_meta_mut<'a, L: Language>(&'a mut self, _: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>> {
+    fn get_meta_mut_for<'a>(&'a mut self, lang: LanguageKind, _: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>> {
         let ptr = self as *mut Self;
         let value = unsafe{&mut*ptr};
-        let result = if L::LANG.is_a() {
+        let result = if lang.is_a() {
             value.meta_a.get_mut(word_id)
         } else {
             value.meta_b.get_mut(word_id)
@@ -91,10 +84,10 @@ impl MetadataManager for ClassicMetadataManager {
     }
 
 
-    fn get_or_create_meta<'a, L: Language>(&'a mut self, _: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
+    fn get_or_create_meta_for<'a>(&'a mut self, lang: LanguageKind, _: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
         let ptr = self as *mut Self;
 
-        let targ = if L::LANG.is_a() {
+        let targ = if lang.is_a() {
             &mut self.meta_a
         } else {
             &mut self.meta_b
@@ -109,8 +102,8 @@ impl MetadataManager for ClassicMetadataManager {
         unsafe { ClassicMetadataMutRef::new(ptr, targ.get_unchecked_mut(word_id)) }
     }
 
-    fn get_meta_ref<'a, L: Language>(&'a self, _: AnonymousVocabularyRef<'a>, word_id: usize) -> Option<Self::Reference<'a>> {
-        Some(ClassicMetadataRef::new(self.get_meta::<L>(word_id)?, self))
+    fn get_meta_ref_for<'a>(&'a self, lang: LanguageKind, _: AnonymousVocabularyRef<'a>, word_id: usize) -> Option<Self::Reference<'a>> {
+        Some(ClassicMetadataRef::new(self.get_meta_for(lang, word_id)?, self))
     }
 
     fn resize(&mut self, meta_a: usize, meta_b: usize){
@@ -279,7 +272,7 @@ mod test {
     use crate::topicmodel::dictionary::direction::{A, B};
     use crate::topicmodel::dictionary::metadata::classic::ClassicMetadataManager;
     use crate::topicmodel::dictionary::metadata::classic::python::SolvedMetadata;
-    use crate::topicmodel::dictionary::metadata::MetadataManager;
+    use crate::topicmodel::dictionary::metadata::{MetadataManagerGen};
     use crate::topicmodel::vocabulary::phantom::{anonymous_voc};
 
     #[test]

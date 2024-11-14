@@ -9,9 +9,10 @@ pub use iter::*;
 
 use std::ops::{Deref, DerefMut};
 use tinyset::Set64;
-use crate::topicmodel::dictionary::direction::Language;
+use crate::topicmodel::dictionary::direction::{Language, LanguageKind};
 use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut};
+
 
 pub trait MetadataManager: Default + Clone {
     type Metadata: Sized + Metadata;
@@ -24,15 +25,81 @@ pub trait MetadataManager: Default + Clone {
     fn meta_a(&self) -> &[Self::Metadata];
     fn meta_b(&self) -> &[Self::Metadata];
     fn switch_languages(self) -> Self;
-    fn get_meta<L: Language>(&self, word_id: usize) -> Option<&Self::Metadata>;
-    fn get_meta_mut<'a, L: Language>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>>;
-    fn get_or_create_meta<'a, L: Language>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a>;
-    fn get_meta_ref<'a, L: Language>(&'a self, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>>;
+
+    fn get_meta_a(&self, word_id: usize) -> Option<&Self::Metadata> {
+        self.meta_a().get(word_id)
+    }
+    fn get_meta_b(&self, word_id: usize) -> Option<&Self::Metadata> {
+        self.meta_b().get(word_id)
+    }
+    fn get_meta_for(&self, lang: LanguageKind, word_id: usize) -> Option<&Self::Metadata> {
+        if lang.is_a() {
+            self.get_meta_a(word_id)
+        } else {
+            self.get_meta_b(word_id)
+        }
+    }
+
+
+    fn get_meta_mut_a<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>> {
+        self.get_meta_mut_for(LanguageKind::A, vocabulary, word_id)
+    }
+    fn get_meta_mut_b<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>>{
+        self.get_meta_mut_for(LanguageKind::B, vocabulary, word_id)
+    }
+    fn get_meta_mut_for<'a>(&'a mut self, lang: LanguageKind, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>>;
+
+    fn get_or_create_meta_a<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
+        self.get_or_create_meta_for(LanguageKind::A, vocabulary, word_id)
+    }
+    fn get_or_create_meta_b<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
+        self.get_or_create_meta_for(LanguageKind::B, vocabulary, word_id)
+    }
+    fn get_or_create_meta_for<'a>(&'a mut self, lang: LanguageKind, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a>;
+
+
+    fn get_meta_ref_a<'a>(&'a self, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>> {
+        self.get_meta_ref_for(LanguageKind::A, vocabulary, word_id)
+    }
+    fn get_meta_ref_b<'a>(&'a self, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>> {
+        self.get_meta_ref_for(LanguageKind::B, vocabulary, word_id)
+    }
+    fn get_meta_ref_for<'a>(&'a self, lang: LanguageKind, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>>;
+
     fn resize(&mut self, meta_a: usize, meta_b: usize);
     fn copy_keep_vocabulary(&self) -> Self;
     fn dictionaries(&self) -> Vec<&str>;
     fn update_ids(&mut self, update: &WordIdUpdate);
     fn optimize(&mut self);
+}
+
+pub trait MetadataManagerGen: MetadataManager {
+    fn get_meta<L: Language>(&self, word_id: usize) -> Option<&Self::Metadata>;
+    fn get_meta_mut<'a, L: Language>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>>;
+    fn get_or_create_meta<'a, L: Language>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a>;
+    fn get_meta_ref<'a, L: Language>(&'a self, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>>;
+}
+
+impl<M> MetadataManagerGen for M where M: MetadataManager {
+    fn get_meta<L: Language>(&self, word_id: usize) -> Option<&Self::Metadata> {
+        if L::LANG.is_a() {
+            self.get_meta_a(word_id)
+        } else {
+            self.get_meta_b(word_id)
+        }
+    }
+
+    fn get_meta_mut<'a, L: Language>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>> {
+        self.get_meta_mut_for(L::LANG, vocabulary, word_id)
+    }
+
+    fn get_or_create_meta<'a, L: Language>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
+        self.get_or_create_meta_for(L::LANG, vocabulary, word_id)
+    }
+
+    fn get_meta_ref<'a, L: Language>(&'a self, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>> {
+        self.get_meta_ref_for(L::LANG, vocabulary, word_id)
+    }
 }
 
 pub trait Metadata: Clone + Default + Eq + PartialEq {

@@ -1,7 +1,6 @@
 use std::ops::{Deref, DerefMut};
 use itertools::Itertools;
 use crate::toolkit::typesafe_interner::DictionaryOriginSymbol;
-use crate::topicmodel::dictionary::direction::Language;
 use crate::topicmodel::dictionary::metadata::containers::classic::metadata::ClassicMetadata;
 use crate::topicmodel::dictionary::metadata::containers::classic::ClassicMetadataManager;
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataMutReference};
@@ -49,7 +48,7 @@ impl<'a> MetadataMutReference<'a, ClassicMetadataManager> for ClassicMetadataMut
         }
     }
 
-    fn update_with_resolved(&mut self, update: &<ClassicMetadataManager as MetadataManager>::ResolvedMetadata) -> Result<(), ()> {
+    fn update_with_resolved(&mut self, _: &<ClassicMetadataManager as MetadataManager>::ResolvedMetadata) -> Result<(), ()> {
         todo!()
     }
 

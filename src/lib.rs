@@ -14,6 +14,8 @@
 
 extern crate core;
 
+use env_logger::Target;
+use log::{LevelFilter};
 use pyo3::{pymodule, Bound, PyResult};
 use pyo3::prelude::PyModule;
 
@@ -31,9 +33,14 @@ pub mod variable_provider;
 /// import the module.
 #[pymodule]
 pub fn ldatranslate(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let _ = env_logger::builder()
+        .target(Target::Stdout)
+        .filter_level(LevelFilter::Info)
+        .init();
     for x in inventory::iter::<toolkit::register_python::PythonRegistration> {
         (&x.register)(m)?;
     }
+    log::info!("ldatranslate loaded.");
     Ok(())
 }
 

@@ -383,6 +383,9 @@ class LoadedMetadataEx:
     def __str__(self) -> str:
         ...
 
+    def __repr__(self) -> str:
+        ...
+
     def get_single_field(self, field:MetaField, dictionary:typing.Optional[str]) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the value for a specific field. If a dictionary name is provided, it returns the values of this specific dictionary.
@@ -961,7 +964,7 @@ class PyDictionary:
     def __str__(self) -> str:
         ...
 
-    def save(self, path:str | os.PathLike | pathlib.Path, mode:typing.Literal["b", "binary", "b+c", "binary+compressed", "json", "j", "json+compressed", "j+c", "json+pretty", "j+p", "json+pretty+compressed", "j+p+c"]) -> None:
+    def save(self, path:str | os.PathLike | pathlib.Path) -> None:
         r"""
         Writes the dictionary to the path, the mode is chosen based on the file ending.
         """
@@ -1022,9 +1025,19 @@ class PyDictionary:
         """
         ...
 
-    def create_html_view_in(self, target:str | os.PathLike | pathlib.Path) -> None:
+    def create_html_view_in(self, path,crc32 = ...,thread_limit = ...) -> None:
         r"""
         Creates an html view of the vocabulary in this folder.
+        If the thread limit is not set, the global thread pool will try to use the optimal number
+        of threads for this CPU for complete usage.
+        If the thread_limit is set to zero the number of threads will be chosen automatically.
+        If the thread limit is grater than 0 this function will spawn n threads to create the necessary files.
+        
+        If crc32 is set to false, it does noch check the file contents before overriding it.
+        Otherwise it it uses crc32 before overriding a file, to check if it is similar or not. (default)
+        The algorithm used is the fast, SIMD-accelerated CRC32 (IEEE) checksum computation.
+        
+        The probability for a collision can be found here: https://preshing.com/20110504/hash-collision-probabilities/
         """
         ...
 
