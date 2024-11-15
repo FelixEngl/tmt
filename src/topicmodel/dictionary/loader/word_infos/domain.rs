@@ -1799,7 +1799,7 @@ impl crate::topicmodel::dictionary::loader::word_infos::Domain {
 
 impl DomainModelIndex for crate::topicmodel::dictionary::loader::word_infos::Domain {
     #[inline(always)]
-    fn get(self) -> usize {
+    fn as_index(self) -> usize {
         (self as u64) as usize
     }
 }

@@ -89,12 +89,10 @@ macro_rules! create_python_getter {
             }
         }
 
-
-
-
         #[pyo3::pymethods]
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
         impl LoadedMetadataEx {
+            /// Creates some new metadata for a word.
             #[new]
             fn py_new(
                 values: NewSolvedArgs
@@ -125,13 +123,20 @@ macro_rules! create_python_getter {
                 )
             }
 
-            /// Returns a domain vector.
-            pub fn domain_vector(&self) -> $crate::topicmodel::dictionary::metadata::domain_matrix::Entry {
-                $crate::topicmodel::dictionary::metadata::domain_matrix::Entry::from_meta(&self)
+            /// Returns a domain vector. The returned TopicVector consists of the counts of the
+            /// single topics [Domain] and [Register].
+            pub fn domain_vector(&self) -> $crate::topicmodel::dictionary::metadata::domain_matrix::TopicVector {
+                $crate::topicmodel::dictionary::metadata::domain_matrix::TopicVector::from_meta(&self)
             }
 
             $(
-            /// Get the whole field
+            /// Get the content of a specific field, the tuple consists of two values:
+            /// The first is the general information, not bound to any dictionary.
+            ///
+            /// The second value contains a dict with metadata from specific dictionaries.
+            ///
+            /// Please note: The general metadata is NOT a superset of the dictionary associated
+            /// metadata. They can differ greatly.
             #[pyo3(name = $lit_name)]
             #[getter]
             fn $fn_name(&self) -> SolvedMetadataField {
@@ -140,8 +145,8 @@ macro_rules! create_python_getter {
             )+
 
             $(
-            /// Retrieves the value for this specific field. If a dictionary name is provided, it returns the value of this specific dictionary.
-            /// Otherwise None returns the general information.
+            /// Retrieves the general value for this specific field.
+            /// If a dictionary name is provided, it returns the value of this specific dictionary.
             #[pyo3(signature = (dictionary))]
             fn $fn_name_single(&self, dictionary: Option<String>) -> Option<std::collections::HashSet<ResolvedValue>> {
                 self.$fn_impl_name_single(dictionary).cloned()
@@ -149,15 +154,17 @@ macro_rules! create_python_getter {
             )+
 
             fn __str__(&self) -> String {
-                self.to_string()
+                format!("{self}")
             }
 
             fn __repr__(&self) -> String {
                 format!("{self:?}")
             }
 
-            /// Retrieves the value for a specific field. If a dictionary name is provided, it returns the values of this specific dictionary.
+            /// Retrieves the value for a specific field. If a dictionary name is provided,
+            /// it returns the values of this specific dictionary.
             /// Otherwise None returns the general information.
+            ///
             #[pyo3(signature = (field, dictionary))]
             fn get_single_field(&self, field: MetaField, dictionary: Option<String>) -> Option<std::collections::HashSet<ResolvedValue>> {
                 match field {
@@ -201,6 +208,10 @@ pub(super) use create_python_getter;
 
 macro_rules! create_solved_implementation {
     ($($tt:tt: $name: ident $lit_name:literal),+ $(,)?) => {
+        /// The metadata for a specific word.
+        ///
+        /// It contains general metadata, usually set by users and associated metadata,
+        /// extracted from the original dictionaries.
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
         #[pyo3::pyclass(frozen)]
         #[derive(Debug, Clone, Eq, PartialEq)]

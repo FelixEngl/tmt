@@ -40,6 +40,7 @@ pub fn ldatranslate(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for x in inventory::iter::<toolkit::register_python::PythonRegistration> {
         (&x.register)(m)?;
     }
+
     log::info!("ldatranslate loaded.");
     Ok(())
 }

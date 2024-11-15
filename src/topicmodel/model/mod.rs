@@ -31,7 +31,7 @@ use std::hash::Hash;
 use std::io;
 use std::io::{ErrorKind, Write};
 use std::marker::PhantomData;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::sync::Arc;
 
 use crate::toolkit::normal_number::IsNormalNumber;
@@ -492,7 +492,7 @@ impl<T, V> TopicModelWithVocabulary<T, V> for TopicModel<T, V> where T: Hash + E
         self.topic_count() == other.topic_count()
             && self.vocabulary_size() == other.vocabulary_size()
             && self.vocabulary.iter().enumerate().all(|(word_id, word)| {
-            if let Some(found) = other.get_id(word.as_ref()) {
+            if let Some(found) = other.get_id(word.deref()) {
                 self.used_vocab_frequency.get(word_id) == other.used_vocab_frequency().get(found)
             } else {
                 false

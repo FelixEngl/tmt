@@ -63,7 +63,8 @@ macro_rules! define_py_method {
 
         impl<'py> $name<'py> {
             pub fn call(&self, $pname0: $ty0 $(,$pname: $ty)*) -> pyo3::PyResult<$ret> {
-                self.inner.call1(($pname0 $(, $pname)+)).and_then(|value| value.extract::<$ret>())
+                use pyo3::types::PyAnyMethods;
+                self.inner.call1(($pname0 $(, $pname)*)).and_then(|value| value.extract::<$ret>())
             }
 
             pub fn as_py_function(&self) -> &pyo3::Bound<'py, pyo3::types::PyFunction> {

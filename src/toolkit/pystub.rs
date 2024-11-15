@@ -316,7 +316,7 @@ macro_rules! impl_py_stub {
     };
 
     (
-        $ty: ty: $($t2: ty),+ $(,)?
+        $ty: ty: $($t2: ty),+ $(,)? $(;)?
     ) => {
         $crate::impl_py_stub!(
             $ty: $($t2,)+ {

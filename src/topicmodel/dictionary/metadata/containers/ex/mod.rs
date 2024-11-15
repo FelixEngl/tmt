@@ -199,12 +199,12 @@ impl MetadataManagerEx {
                         | MetadataWithOrigin::Associated(_, value) => {
                             if let Some(reg) = value.registers() {
                                 for value in reg.iter() {
-                                    ct[value.get()] += 1;
+                                    ct[value.as_index()] += 1;
                                 }
                             }
                             if let Some(dom) = value.domains() {
                                 for value in dom.iter() {
-                                    ct[value.get()] += 1;
+                                    ct[value.as_index()] += 1;
                                 }
                             }
                         }

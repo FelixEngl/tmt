@@ -18,6 +18,9 @@ use crate::topicmodel::dictionary::metadata::ex::{MetadataEx, MetadataManagerEx,
 use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
 use crate::topicmodel::reference::HashRef;
 
+pub type StringDictWithMeta<V> = DictionaryWithMeta<String, V, MetadataManagerEx>;
+pub type StringDictWithMetaDefault = DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>;
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct DictionaryWithMeta<T, V, C> {
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
@@ -472,14 +475,24 @@ where
         Ok(new)
     }
 
-    fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
+    fn filter_by_ids<Fa, Fb>(&self, filter_a: Fa, filter_b: Fb) -> Self
+    where
+        Self: Sized,
+        Fa: Fn(usize) -> bool,
+        Fb: Fn(usize) -> bool
+    {
         self.create_subset_with_filters(
             |_, a, _| filter_a(a),
             |_, b, _| filter_b(b)
         )
     }
 
-    fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
+    fn filter_by_values<'a, Fa, Fb>(&'a self, filter_a: Fa, filter_b: Fb) -> Self
+    where
+        Self: Sized, T: 'a,
+        Fa: Fn(&'a HashRef<T>) -> bool,
+        Fb: Fn(&'a HashRef<T>) -> bool
+    {
         let voc_a = self.voc_a();
         let voc_b = self.voc_b();
         self.create_subset_with_filters(

@@ -24,7 +24,6 @@ use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
 use itertools::Itertools;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::prelude::{PyAnyMethods};
 use pyo3::{pyclass, pymethods, PyRef, PyResult};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::ops::Deref;
@@ -37,30 +36,29 @@ use crate::tokenizer::Tokenizer;
 use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 use crate::topicmodel::dictionary::len::Len;
 
-pub type DefaultDict = DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>;
+pub type DefaultDict = StringDictWithMeta<PyVocabulary>;
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default)]
-#[repr(transparent)]
 pub struct PyDictionary {
-    wrapped: Arc<RwLock<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>>>,
+    inner: Arc<RwLock<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>>>,
 }
 
 
 impl PyDictionary {
     pub fn new(dict: DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>) -> Self {
         Self {
-            wrapped: Arc::new(RwLock::new(dict))
+            inner: Arc::new(RwLock::new(dict))
         }
     }
 
     pub fn get<'a>(&'a self) -> RwLockReadGuard<'a, DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>> {
-        self.wrapped.read().unwrap()
+        self.inner.read().unwrap()
     }
 
     pub fn get_mut<'a>(&'a mut self) -> RwLockWriteGuard<'a, DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>> {
-        self.wrapped.write().unwrap()
+        self.inner.write().unwrap()
     }
 }
 
@@ -83,13 +81,15 @@ impl<'de> Deserialize<'de> for PyDictionary {
 }
 
 
+
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyDictionary {
     #[new]
     pub fn new_py(language_a: Option<LanguageHintValue>, language_b: Option<LanguageHintValue>) -> Self {
         Self {
-            wrapped: Arc::new(
+            inner: Arc::new(
                 RwLock::new(
                     DictionaryWithMeta::new_with(
                         language_a,
@@ -99,6 +99,18 @@ impl PyDictionary {
             )
         }
     }
+
+
+    // ///
+    // fn search(&self, word: &str, language: Option<LanguageHintValue>) {
+    //     /// Regex
+    // }
+    //
+    // fn search_reg(&self, word: &str, language: Option<LanguageHintValue>) {
+    //
+    // }
+
+
 
     /// Returns the dictionaries contained in this dictionary.
     #[getter]
@@ -153,7 +165,7 @@ impl PyDictionary {
 
     fn switch_a_to_b(&self) -> Self {
         Self {
-            wrapped: Arc::new(
+            inner: Arc::new(
                 RwLock::new(
                     DictionaryWithMeta::clone(&self.get()).switch_languages()
                 )
@@ -161,7 +173,7 @@ impl PyDictionary {
         }
     }
 
-    /// Insert a translation from word a to b with
+    /// Insert a translation from word a to b with the provided data.
     pub fn add(
         &mut self,
         word_a: (String, Option<LoadedMetadataEx>),
@@ -170,7 +182,7 @@ impl PyDictionary {
         let (a_word, a_solved) = word_a;
         let (b_word, b_solved) = word_b;
 
-        let mut write = self.wrapped.write().unwrap();
+        let mut write = self.inner.write().unwrap();
 
         match write.insert_translation_ref_with_meta_invariant(
             HashRef::new(a_word),
@@ -212,11 +224,11 @@ impl PyDictionary {
     }
 
     fn __repr__(&self) -> String {
-        format!("PyDictionary({:?})", self.wrapped)
+        format!("PyDictionary({:?})", self.inner)
     }
 
     fn __str__(&self) -> String {
-        format!("PyDictionary({:?})", self.wrapped)
+        format!("PyDictionary({:?})", self.inner)
     }
 
     /// Writes the dictionary to the path, the mode is chosen based on the file ending.
@@ -290,7 +302,7 @@ impl PyDictionary {
             },
         );
 
-        Ok(PyDictionary { wrapped: Arc::new(RwLock::new(created)) })
+        Ok(PyDictionary { inner: Arc::new(RwLock::new(created)) })
     }
 
     /// Returns the meta for a specific word in a
@@ -348,7 +360,7 @@ impl PyDictionary {
 
                 Ok(
                     Self {
-                        wrapped: Arc::new(RwLock::new(read.filter_and_process(
+                        inner: Arc::new(RwLock::new(read.filter_and_process(
                             |value| {
                                 apply_tokenizer_and_filer(&a_tok, value.as_str())
                             },
@@ -404,17 +416,17 @@ impl PyDictionary {
 
 }
 
-impl From<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>> for PyDictionary {
-    fn from(value: DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>) -> Self {
-        Self::new(value)
-    }
-}
-
 
 define_py_method!{
     FilterDictionary(word: String, loaded: Option<LoadedMetadataEx>) -> bool
 }
 
+
+impl From<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>> for PyDictionary {
+    fn from(value: DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>) -> Self {
+        Self::new(value)
+    }
+}
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -428,7 +440,7 @@ unsafe impl Sync for PyDictIter{}
 impl PyDictIter {
     pub fn new(inner: &PyDictionary) -> Self {
         Self {
-            inner: DictionaryWithMetaIterator::new(inner.wrapped.clone())
+            inner: DictionaryWithMetaIterator::new(inner.inner.clone())
         }
     }
 }
@@ -458,33 +470,33 @@ impl PyDictIter {
 
 impl From<Dictionary<String, Vocabulary<String>>> for PyDictionary {
     fn from(value: Dictionary<String, Vocabulary<String>>) -> Self {
-        Self { wrapped: Arc::new(RwLock::new(value.map(|value| value.clone()).into())) }
+        Self { inner: Arc::new(RwLock::new(value.map(|value| value.clone()).into())) }
     }
 }
 
 impl From<Dictionary<String, PyVocabulary>> for PyDictionary {
     #[inline(always)]
     fn from(inner: Dictionary<String, PyVocabulary>) -> Self {
-        Self { wrapped: Arc::new(RwLock::new(inner.into())) }
+        Self { inner: Arc::new(RwLock::new(inner.into())) }
     }
 }
 
 impl FromVoc<String, PyVocabulary> for PyDictionary {
     fn from_voc(voc_a: PyVocabulary, voc_b: PyVocabulary) -> Self {
         Self {
-            wrapped: Arc::new(RwLock::new(DictionaryWithMeta::from_voc(voc_a, voc_b)))
+            inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc(voc_a, voc_b)))
         }
     }
 
     fn from_voc_lang_a(voc: PyVocabulary, other_lang: Option<LanguageHint>) -> Self {
         Self {
-            wrapped: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_a(voc, other_lang)))
+            inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_a(voc, other_lang)))
         }
     }
 
     fn from_voc_lang_b(other_lang: Option<LanguageHint>, voc: PyVocabulary) -> Self {
         Self {
-            wrapped: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_b(other_lang, voc)))
+            inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_b(other_lang, voc)))
         }
     }
 }

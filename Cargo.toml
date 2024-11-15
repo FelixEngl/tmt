@@ -81,6 +81,10 @@ byte-unit = "5.1"
 pathdiff = { version = "0.2", features = ["camino"] }
 walkdir = "2.5.0"
 crc32fast = "1.4.2"
+strsim = "0.11"
+
+# For future use?
+#arcstr = "1.2"
 
 # Plugin System
 inventory = { version = "0.3" }

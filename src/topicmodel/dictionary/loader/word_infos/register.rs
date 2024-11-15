@@ -177,7 +177,7 @@ impl Register {
 
 impl DomainModelIndex for Register {
     #[inline(always)]
-    fn get(self) -> usize {
+    fn as_index(self) -> usize {
         Domain::COUNT + (self as u64) as usize
     }
 }

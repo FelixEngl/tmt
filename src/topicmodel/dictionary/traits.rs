@@ -4,7 +4,10 @@ pub use generic_traits::*;
 
 use std::borrow::Borrow;
 use std::hash::Hash;
+use itertools::Itertools;
+use crate::tokenizer::Tokenizer;
 use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple, A, B};
+use crate::topicmodel::dictionary::hacks::ABMutReference;
 use crate::topicmodel::dictionary::iterators::{DictIter, DictIterImpl, DictLangIter};
 use crate::topicmodel::dictionary::len::Len;
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
@@ -337,13 +340,13 @@ where
     }
 
 
-    fn insert_value_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         self.insert_hash_ref_a_to_b(HashRef::new(word_a), HashRef::new(word_b))
     }
-    fn insert_value_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         self.insert_hash_ref_b_to_a(HashRef::new(word_a), HashRef::new(word_b))
     }
-    fn insert_value_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         self.insert_hash_ref_invariant(HashRef::new(word_a), HashRef::new(word_b))
     }
     fn insert_value_dir(&mut self, dir: DirectionKind, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
@@ -351,13 +354,13 @@ where
     }
 
     fn insert_a_to_b(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
-        self.insert_value_a_to_b(word_a.into(), word_b.into())
+        self.insert_word_a_to_b(word_a.into(), word_b.into())
     }
     fn insert_b_to_a(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
-        self.insert_value_b_to_a(word_a.into(), word_b.into())
+        self.insert_word_b_to_a(word_a.into(), word_b.into())
     }
     fn insert_invariant(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
-        self.insert_value_invariant(word_a.into(), word_b.into())
+        self.insert_word_invariant(word_a.into(), word_b.into())
     }
     fn insert_dir(&mut self, dir: DirectionKind, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
         self.insert_value_dir(dir, word_a.into(), word_b.into())
@@ -400,6 +403,33 @@ pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V:
         T: 'a,
         Fa: Fn(&'a HashRef<T>) -> bool,
         Fb: Fn(&'a HashRef<T>) -> bool;
+
+
+    fn filter_by_tokenizer(&self, tokenizer_a: &Tokenizer, tokenizer_b: &Tokenizer) -> Self
+    where
+        Self: Sized,
+        T: AsRef<str> + From<String>
+    {
+        fn apply_tokenizer_and_filer<U>(tokenizer: &Tokenizer, value: &str) -> Result<Option<HashRef<U>>, ()> where U: From<String> {
+            let result = tokenizer.process(value).filter(|value| !value.1.lemma.is_empty() && value.1.is_word()).collect_vec();
+            if result.is_empty() {
+                Ok(None)
+            } else {
+                Ok(
+                    Some(
+                        HashRef::new(
+                            result.iter().map(|value| value.1.lemma()).join(" ").into()
+                        )
+                    )
+                )
+            }
+        }
+
+        self.filter_and_process(
+            |value| apply_tokenizer_and_filer::<T>(tokenizer_a, value.as_ref().as_ref()),
+            |value| apply_tokenizer_and_filer::<T>(tokenizer_b, value.as_ref().as_ref())
+        ).expect("This should never fail!")
+    }
 }
 
 
@@ -441,8 +471,11 @@ where
 
     fn get_or_create_meta_a<'a>(&'a mut self, word_id: usize) -> <M as MetadataManager>::MutReference<'a>;
     fn get_or_create_meta_b<'a>(&'a mut self, word_id: usize) -> <M as MetadataManager>::MutReference<'a>;
-}
 
+    fn get_or_create_meta_a_and_b<'a>(&'a mut self, word_id_a: usize, word_id_b: usize) -> ABMutReference<'a, M> {
+        ABMutReference::extract_from(self, word_id_a, word_id_b)
+    }
+}
 
 
 
@@ -452,6 +485,52 @@ where
     V: AnonymousVocabulary + AnonymousVocabularyMut + VocabularyMut<T>,
     T: Eq + Hash,
 {
+
+    fn push_hash_ref_a_to_b<'a>(&'a mut self, a: HashRef<T>, b: HashRef<T>) -> ABMutReference<'a, M> {
+        let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_a_to_b(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_hash_ref_b_to_a<'a>(&'a mut self, a: HashRef<T>, b: HashRef<T>) -> ABMutReference<'a, M> {
+        let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_b_to_a(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_hash_ref_invariant<'a>(&'a mut self, a: HashRef<T>, b: HashRef<T>) -> ABMutReference<'a, M> {
+        let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_invariant(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_word_a_to_b<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M>  {
+        let DirectionTuple { a, b, direction: _ } = self.insert_word_a_to_b(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_word_b_to_a<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M>  {
+        let DirectionTuple { a, b, direction: _ } = self.insert_word_b_to_a(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_word_invariant<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M>  {
+        let DirectionTuple { a, b, direction: _ } = self.insert_word_invariant(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_a_to_b<'a>(&'a mut self, a: impl Into<T>, b: impl Into<T>) -> ABMutReference<'a, M>  {
+        let DirectionTuple { a, b, direction: _ } = self.insert_a_to_b(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_b_to_a<'a>(&'a mut self, a: impl Into<T>, b: impl Into<T>) -> ABMutReference<'a, M>  {
+        let DirectionTuple { a, b, direction: _ } = self.insert_b_to_a(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
+    fn push_invariant<'a>(&'a mut self, a: impl Into<T>, b: impl Into<T>) -> ABMutReference<'a, M>  {
+        let DirectionTuple { a, b, direction: _ } = self.insert_invariant(a, b);
+        self.get_or_create_meta_a_and_b(a, b)
+    }
+
     fn insert_single_ref_with_meta_to_a(
         &mut self,
         word: HashRef<T>,

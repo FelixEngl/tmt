@@ -140,7 +140,7 @@ impl PyVocabulary {
     }
 
     pub fn id_to_word(&self, id: usize) -> Option<&String> {
-        self.inner.get_value(id).map(|value| value.as_ref())
+        self.inner.get_value(id).map(|value| value.deref())
     }
 
     /// Save the vocabulary in a standardisized way

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .ldatranslate import PyTopicModel, PyVocabulary, LanguageHint
+from . import PyTopicModel, PyVocabulary, LanguageHint
 from typing import Protocol, Iterable, Any
 
 class TomotopyDocAlike(Protocol):

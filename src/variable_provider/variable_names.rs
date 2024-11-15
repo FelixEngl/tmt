@@ -16,20 +16,20 @@ macro_rules! declare_variable_names_internal {
     ($variable_name: ident: $name: literal) => {
         pub const $variable_name: &str = $name;
         #[cfg(feature = "gen_python_api")]
-        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
+        pyo3_stub_gen::module_variable!("ldatranslate.variable_names", stringify!($variable_name), &'static str);
     };
 
     (doc = $doc: literal $variable_name: ident: $name: literal) => {
         #[doc = $doc]
         pub const $variable_name: &str = $name;
         #[cfg(feature = "gen_python_api")]
-        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
+        pyo3_stub_gen::module_variable!("ldatranslate.variable_names", stringify!($variable_name), &'static str);
     };
 
     ($variable_name: ident: $name: literal, $($tt:tt)+) => {
         pub const $variable_name: &str = $name;
         #[cfg(feature = "gen_python_api")]
-        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
+        pyo3_stub_gen::module_variable!("ldatranslate.variable_names", stringify!($variable_name), &'static str);
         declare_variable_names_internal!($($tt)+);
     };
 
@@ -37,7 +37,7 @@ macro_rules! declare_variable_names_internal {
         #[doc = $doc]
         pub const $variable_name: &str = $name;
         #[cfg(feature = "gen_python_api")]
-        pyo3_stub_gen::module_variable!("ldatranslate", stringify!($variable_name), &'static str);
+        pyo3_stub_gen::module_variable!("ldatranslate.variable_names", stringify!($variable_name), &'static str);
         declare_variable_names_internal!($($tt)+);
     };
 }

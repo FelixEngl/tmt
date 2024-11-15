@@ -14,17 +14,17 @@
 
 // Inspired by https://github.com/billyrieger/bimap-rs/blob/main/src/mem.rs
 
-use std::cmp::Ordering;
+use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
+use std::hash::{Hash};
+use std::ops::{Bound, Deref};
 use std::sync::Arc;
 
 /// A ref that supplies the Hash and Eq method of the underlying struct.
 /// It is threadsafe and allows a simple cloning as well as ordering
 /// and dereferencing of the underlying value.
-#[repr(transparent)]
-pub struct HashRef<T: ?Sized> {
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct HashRef<T> {
     inner: Arc<T>
 }
 
@@ -40,34 +40,9 @@ impl<T> HashRef<T> {
     }
 }
 
-impl<T: Hash> Hash for HashRef<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.deref().hash(state)
-    }
-}
-
 impl<T: Display> Display for HashRef<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.inner.fmt(f)
-    }
-}
-
-impl<T: ?Sized + PartialEq> PartialEq for HashRef<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner.eq(&other.inner)
-    }
-}
-impl<T: ?Sized + Eq> Eq for HashRef<T> {}
-
-impl<T: ?Sized + PartialOrd> PartialOrd for HashRef<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.inner.partial_cmp(&other.inner)
-    }
-}
-
-impl<T: ?Sized + Ord> Ord for HashRef<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.inner.cmp(&other.inner)
     }
 }
 
@@ -77,7 +52,7 @@ impl<T> Clone for HashRef<T> {
     }
 }
 
-impl<T: ? Sized> Deref for HashRef<T> {
+impl<T> Deref for HashRef<T> {
     type Target = T;
 
     #[inline]
@@ -86,38 +61,50 @@ impl<T: ? Sized> Deref for HashRef<T> {
     }
 }
 
-// impl<T: ?Sized> Borrow<T> for HashRef<T> where T: Eq + Hash {
-//     #[inline]
-//     fn borrow(&self) -> &T {
-//         self.inner.borrow()
-//     }
-// }
-
-// impl<Q: ?Sized, T: ?Sized> Borrow<Q> for HashRef<T> where Q: Eq + Hash, T: Borrow<Q> {
-//     #[inline]
-//     fn borrow(&self) -> &Q {
-//         let v: &T = self.inner.borrow();
-//         v.borrow()
-//     }
-// }
-
-impl<T: ?Sized> AsRef<T> for HashRef<T>  {
-    fn as_ref(&self) -> &T {
-        self.inner.as_ref()
-    }
-}
-
-impl<T: ?Sized + Debug> Debug for HashRef<T>  {
+impl<T: Debug> Debug for HashRef<T>  {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.inner.fmt(f)
     }
 }
 
 
-
 impl<T> From<T> for HashRef<T>  {
     #[inline]
     fn from(value: T) -> Self {
         Self::new(value)
+    }
+}
+
+
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct Wrapper<T: ?Sized>(pub T);
+
+impl<T: ?Sized> Wrapper<T> {
+    pub fn wrap(value: &T) -> &Self {
+        unsafe { &*(value as *const T as *const Self) }
+    }
+
+    pub fn wrap_bound(bound: Bound<&T>) -> Bound<&Self> {
+        match bound {
+            Bound::Included(t) => Bound::Included(Self::wrap(t)),
+            Bound::Excluded(t) => Bound::Excluded(Self::wrap(t)),
+            Bound::Unbounded => Bound::Unbounded,
+        }
+    }
+}
+
+impl<K, Q> Borrow<Wrapper<Q>> for HashRef<K>
+where
+    K: Borrow<Q>,
+    Q: ?Sized,
+{
+    fn borrow(&self) -> &Wrapper<Q> {
+        // Rc<K>: Borrow<K>
+        let k: &K = self.inner.borrow();
+        // K: Borrow<Q>
+        let q: &Q = k.borrow();
+
+        Wrapper::wrap(q)
     }
 }

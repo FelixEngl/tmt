@@ -376,7 +376,7 @@ impl MetadataManagerEx {
         }
     }
 
-    fn optimize_impl2(&mut self) {
+    pub fn drop_original_words(&mut self) {
         let mut original_entry_interner: OriginalEntryStringInterner = OriginalEntryStringInterner::new();
         for value in self.meta_a.iter_mut() {
             for value in value.iter_mut() {

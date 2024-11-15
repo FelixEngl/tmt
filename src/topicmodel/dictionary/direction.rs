@@ -24,7 +24,7 @@ use crate::register_python;
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
+#[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash, Ord, PartialOrd, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
 pub enum LanguageKind {
     A,
     B

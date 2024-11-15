@@ -26,7 +26,7 @@ use std::collections::hash_map::{Entry};
 use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
-use std::ops::{Bound, Deref, Range};
+use std::ops::{Deref, Range};
 use std::slice::Iter;
 use std::str::FromStr;
 use std::vec::IntoIter;
@@ -37,7 +37,7 @@ use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};
 use thiserror::Error;
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
+use crate::topicmodel::reference::{HashRef, Wrapper};
 use crate::topicmodel::traits::ToParseableString;
 
 pub type StringVocabulary = Vocabulary<String>;
@@ -222,7 +222,7 @@ impl<T: Eq + Hash> SearchableVocabulary<T> for Vocabulary<T> {
         T: Borrow<Q>,
         Q: Hash + Eq
     {
-        return self.entry2id.get(Wrapper::wrap(value)).cloned()
+        self.entry2id.get(Wrapper::wrap(value)).copied()
     }
 
     /// Retrieves the id for `value`
@@ -309,7 +309,7 @@ impl<T> MappableVocabulary<T> for Vocabulary<T> where T: Eq + Hash {
     fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&T) -> Q, V: BasicVocabulary<Q> {
         V::create_from(
             self.language,
-            self.id2entry.into_iter().map(|value| mapping(value.as_ref())).collect::<Vec<_>>()
+            self.id2entry.into_iter().map(|value| mapping(value.deref())).collect::<Vec<_>>()
         )
     }
 }
@@ -380,13 +380,13 @@ impl<T: Serialize> Serialize for Vocabulary<T> {
             )?;
             st.serialize_field(
                 "id2entry",
-                &self.id2entry.iter().map(|it| it.as_ref()).collect_vec()
+                &self.id2entry.iter().map(|it| it.deref()).collect_vec()
             )?;
             st.end()
         } else {
             let mut st = serializer.serialize_seq(Some(2))?;
             st.serialize_element(&self.language)?;
-            st.serialize_element(&self.id2entry.iter().map(|it| it.as_ref()).collect_vec())?;
+            st.serialize_element(&self.id2entry.iter().map(|it| it.deref()).collect_vec())?;
             st.end()
         }
 
@@ -505,7 +505,7 @@ impl<T> FromParallelIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
                 new.add_hash_ref(value);
             }
         }
-        return new;
+        new
     }
 }
 
@@ -517,7 +517,7 @@ impl<'a, T> FromParallelIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash
                 new.add_hash_ref(value.clone());
             }
         }
-        return new;
+        new
     }
 }
 
@@ -536,42 +536,6 @@ impl AnonymousVocabularyMut for Vocabulary<String> {
         self.add_hash_ref(word)
     }
 }
-
-/// Used for hash lookup
-#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-struct Wrapper<T: ?Sized> {
-    inner: T
-}
-
-impl<T: ?Sized> Wrapper<T> {
-    #[inline]
-    pub fn wrap(value: &T) -> &Self {
-        // safe because Wrapper<T> is #[repr(transparent)]
-        unsafe { &*(value as *const T as *const Self) }
-    }
-
-    pub fn wrap_bound(bound: Bound<&T>) -> Bound<&Self> {
-        match bound {
-            Bound::Included(t) => Bound::Included(Self::wrap(t)),
-            Bound::Excluded(t) => Bound::Excluded(Self::wrap(t)),
-            Bound::Unbounded => Bound::Unbounded,
-        }
-    }
-}
-
-impl<K, Q> Borrow<Wrapper<Q>> for HashRef<K>
-where
-    K: Borrow<Q>,
-    Q: ?Sized,
-{
-    fn borrow(&self) -> &Wrapper<Q> {
-        let b: &K = self.deref();
-        let b: &Q = b.borrow();
-        Wrapper::wrap(b)
-    }
-}
-
 
 
 #[cfg(test)]

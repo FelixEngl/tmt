@@ -21,6 +21,7 @@ mod traits;
 mod loader;
 pub mod io;
 pub mod len;
+pub mod hacks;
 
 use std::borrow::Borrow;
 pub use loader::*;
@@ -294,7 +295,7 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
                 found.push(id_b)
             }
         } else {
-            self.reserve_for_single_value_a(id_b);
+            self.reserve_for_single_value_a(id_a);
             unsafe { self.map_a_to_b.get_unchecked_mut(id_a).push(id_b); }
         }
     }
