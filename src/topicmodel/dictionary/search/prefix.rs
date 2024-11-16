@@ -9,6 +9,8 @@ use crate::topicmodel::dictionary::DictionaryWithVocabulary;
 use crate::topicmodel::reference::HashRefSlice;
 use crate::topicmodel::vocabulary::{BasicVocabulary};
 
+
+
 #[derive(Debug)]
 pub struct PrefixDictSearch {
     is_complete: bool,
