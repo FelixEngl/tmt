@@ -1193,9 +1193,11 @@ dependencies = [
  "rayon",
  "regex",
  "rust-stemmers",
+ "safer_owning_ref",
  "sealed",
  "serde",
  "serde_json",
+ "stable_deref_trait",
  "statrs",
  "string-interner",
  "strsim",
@@ -2383,6 +2385,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "safer_owning_ref"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af21b9de2df966f61c07b5b541c81c98225b86e48ababd43366a642654de30ef"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2507,6 +2518,12 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "static_assertions"

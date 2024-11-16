@@ -82,7 +82,8 @@ pathdiff = { version = "0.2", features = ["camino"] }
 walkdir = "2.5.0"
 crc32fast = "1.4.2"
 strsim = "0.11"
-
+safer_owning_ref = "0.5.0"
+stable_deref_trait = "1.2.0"
 # For future use?
 #arcstr = "1.2"
 

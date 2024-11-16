@@ -84,7 +84,7 @@ impl PyTopicModelBuilder {
     #[pyo3(signature = (language=None))]
     pub fn new(language: Option<LanguageHintValue>) -> Self {
         Self {
-            voc: Vocabulary::new(language.map(Into::into)),
+            voc: Vocabulary::empty(language.map(Into::into)),
             topics: Default::default(),
             used_vocab_frequency: Default::default(),
             doc_topic_distributions: Default::default(),

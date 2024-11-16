@@ -74,7 +74,7 @@ impl PyVocabulary {
         match size {
             None => {
                 Self {
-                    inner: Vocabulary::new(language)
+                    inner: Vocabulary::empty(language)
                 }
             }
             Some(value) => {
@@ -248,8 +248,8 @@ impl MappableVocabulary<String> for PyVocabulary {
     }
 }
 
-impl AsRef<Vec<HashRef<String>>> for PyVocabulary {
-    fn as_ref(&self) -> &Vec<HashRef<String>> {
+impl AsRef<[HashRef<String>]> for PyVocabulary {
+    fn as_ref(&self) -> &[HashRef<String>] {
         self.inner.as_ref()
     }
 }

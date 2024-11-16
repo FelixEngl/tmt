@@ -48,11 +48,11 @@ macro_rules! voc {
         $crate::topicmodel::vocabulary::Vocabulary::default()
     };
     (for $lang: tt;) => {
-        $crate::topicmodel::vocabulary::Vocabulary::new_for($lang)
+        $crate::topicmodel::vocabulary::Vocabulary:new_forr($lang)
     };
     (for $lang: tt: $($value: tt),+ $(,)?) => {
         {
-            let mut __voc = $crate::topicmodel::vocabulary::Vocabulary::new_for($lang);
+            let mut __voc = $crate::topicmodel::vocabulary::Vocabulary:new_forr($lang);
             $(
                 $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value.into());
             )+
@@ -75,31 +75,42 @@ macro_rules! voc {
 #[derive(Clone, Debug)]
 pub struct Vocabulary<T> {
     language: Option<LanguageHint>,
+    id2entry: Vec<HashRef<T>>,
     entry2id: HashMap<HashRef<T>, usize>,
-    id2entry: Vec<HashRef<T>>
 }
 
 impl <T> Vocabulary<T> {
-    /// Create a new vocabulary with the default sizes
-    pub fn new_for(language: impl Into<LanguageHint>) -> Self {
-        Self::new(Some(language.into()))
-    }
 
     /// Create a new vocabulary with the default sizes
-    pub fn new(language: Option<LanguageHint>) -> Self {
+    pub fn new(language: Option<LanguageHint>, id2entry: Vec<HashRef<T>>, entry2id: HashMap<HashRef<T>, usize>) -> Self {
         Self {
             language,
-            entry2id: Default::default(),
-            id2entry: Default::default()
+            id2entry,
+            entry2id,
         }
     }
 
+    /// Create a new vocabulary with the default sizes
+    pub fn empty_from(language: impl Into<LanguageHint>) -> Self {
+        Self::empty(Some(language.into()))
+    }
+
+    /// Create a new empty vocabulary.
+    pub fn empty(language: Option<LanguageHint>) -> Self {
+        Self::new(
+            language,
+            Default::default(),
+            Default::default()
+        )
+    }
+
+    /// Create a new empty vocabulary but sets the [capacity] of the mappings.
     pub fn with_capacity(language: Option<LanguageHint>, capacity: usize) -> Self {
-        Self {
+        Self::new(
             language,
-            entry2id: HashMap::with_capacity(capacity),
-            id2entry: Vec::with_capacity(capacity)
-        }
+            Vec::with_capacity(capacity),
+            HashMap::with_capacity(capacity),
+        )
     }
 }
 
@@ -154,50 +165,43 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
     }
 
     fn create(language: Option<LanguageHint>) -> Self where Self: Sized {
-        Self {
-            language,
-            id2entry: Default::default(),
-            entry2id: Default::default()
-        }
+        Self::empty(language)
     }
 
 
     fn create_from(language: Option<LanguageHint>, voc: Vec<T>) -> Self where Self: Sized, T: Eq + Hash {
         let id2entry = voc.into_iter().map(|value| HashRef::new(value)).collect_vec();
         let entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
-        Self {
+        Self::new(
             language,
             id2entry,
-            entry2id
-        }
+            entry2id,
+        )
     }
 }
+
 
 impl<T> Default for Vocabulary<T> {
     fn default() -> Self {
-        Self {
-            language: Default::default(),
-            id2entry: Default::default(),
-            entry2id: Default::default(),
-        }
+        Self::empty(Default::default())
     }
 }
 
-impl<T> AsRef<Vec<HashRef<T>>> for Vocabulary<T> {
-    fn as_ref(&self) -> &Vec<HashRef<T>> {
+impl<T> AsRef<[HashRef<T>]> for Vocabulary<T> {
+    fn as_ref(&self) -> &[HashRef<T>] {
         &self.id2entry
     }
 }
 
 impl<T> From<LanguageHint> for Vocabulary<T> {
     fn from(value: LanguageHint) -> Self {
-        Self::new_for(value)
+        Self::empty_from(value)
     }
 }
 
 impl<T> From<Option<LanguageHint>> for Vocabulary<T> {
     fn from(value: Option<LanguageHint>) -> Self {
-        Self::new(value)
+        Self::empty(value)
     }
 }
 
@@ -544,7 +548,7 @@ mod test {
 
     #[test]
     fn can_insert_and_retrieve() {
-        let mut voc = StringVocabulary::new_for("MyLang");
+        let mut voc = StringVocabulary::empty_from("MyLang");
         voc.add("Hello World".to_string());
         voc.add("Wasimodo".to_string());
 

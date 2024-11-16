@@ -18,18 +18,25 @@ use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash};
 use std::ops::{Bound, Deref};
-use std::sync::Arc;
+use std::slice::SliceIndex;
+use std::sync::{Arc};
+use owning_ref::OwningRef;
+use stable_deref_trait::{CloneStableDeref, StableDeref};
 
 /// A ref that supplies the Hash and Eq method of the underlying struct.
 /// It is threadsafe and allows a simple cloning as well as ordering
 /// and dereferencing of the underlying value.
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(transparent)]
 pub struct HashRef<T> {
     inner: Arc<T>
 }
 
 unsafe impl<T> Sync for HashRef<T>{}
 unsafe impl<T> Send for HashRef<T>{}
+unsafe impl<T> StableDeref for HashRef<T>{}
+unsafe impl<T> CloneStableDeref for HashRef<T>{}
+
 
 impl<T> HashRef<T> {
     #[inline]
@@ -39,6 +46,26 @@ impl<T> HashRef<T> {
         }
     }
 }
+
+pub type HashRefSlice<T, S> = OwningRef<'static, HashRef<T>, S>;
+
+impl<T, Slice> HashRef<T> where
+    T: Deref<Target=Slice> + 'static,
+    Slice: ?Sized
+{
+   pub fn slice_owned<SliceIdx>(&self, idx: SliceIdx) -> HashRefSlice<T, Slice>
+   where
+       Slice: std::ops::Index<SliceIdx, Output=Slice>,
+       SliceIdx: SliceIndex<Slice, Output=Slice>,
+   {
+       let or = OwningRef::new(self.clone());
+       let or = or.map(|reference| { &reference.deref()[idx] });
+       or
+   }
+}
+
+
+
 
 impl<T: Display> Display for HashRef<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -108,3 +135,5 @@ where
         Wrapper::wrap(q)
     }
 }
+
+

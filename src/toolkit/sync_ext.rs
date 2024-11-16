@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-
+#[derive(Debug)]
 pub enum OwnedOrArcRw<T> {
     Owned(T),
     Arc(Arc<RwLock<T>>)
@@ -15,6 +15,17 @@ impl<T> OwnedOrArcRw<T> {
             }
             OwnedOrArcRw::Arc(value) => {
                 OwnedOrArcRwRef::Arc(value.read().unwrap())
+            }
+        }
+    }
+
+    pub fn to_arc(self) -> Arc<RwLock<T>> {
+        match self {
+            OwnedOrArcRw::Owned(value) => {
+                Arc::new(RwLock::new(value))
+            }
+            OwnedOrArcRw::Arc(value) => {
+                value
             }
         }
     }

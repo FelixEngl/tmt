@@ -22,6 +22,7 @@ mod loader;
 pub mod io;
 pub mod len;
 pub mod hacks;
+pub mod search;
 
 use std::borrow::Borrow;
 pub use loader::*;

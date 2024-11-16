@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufRead, BufReader, Write};
-use std::ops::Range;
+use std::ops::{Range};
 use std::path::Path;
 use std::slice::Iter;
 use std::str::FromStr;
@@ -15,7 +15,7 @@ use crate::topicmodel::traits::ToParseableString;
 use crate::topicmodel::vocabulary::LoadVocabularyError;
 
 /// A basic vocabulary for [HashRef] elements.
-pub trait BasicVocabulary<T>: Send + Sync + AsRef<Vec<HashRef<T>>> + IntoIterator<Item=HashRef<T>> {
+pub trait BasicVocabulary<T>: Send + Sync + AsRef<[HashRef<T>]> + IntoIterator<Item=HashRef<T>> {
     /// Gets the associated language
     fn language(&self) -> Option<&LanguageHint>;
 
@@ -167,4 +167,3 @@ pub trait LoadableVocabulary<T, E> where T: Hash + Eq + FromStr<Err=E>, E: Debug
         Ok(Self::from(id2entry))
     }
 }
-
