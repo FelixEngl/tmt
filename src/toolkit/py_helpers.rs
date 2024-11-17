@@ -1,6 +1,7 @@
 use std::fmt::{Debug};
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::str::FromStr;
 use pyo3::{Bound, FromPyObject, PyAny, PyResult};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::{PyFunction};
@@ -91,6 +92,7 @@ macro_rules! define_py_method {
                         <$ty0 as pyo3_stub_gen::PyStubType>::type_input()
                         $(, <$ty as pyo3_stub_gen::PyStubType>::type_input())*
                     ];
+                    use itertools::Itertools;
                     let output = <$ret as pyo3_stub_gen::PyStubType>::type_output();
                     let name = format!(
                         "typing.Callable[[{}], {}]",
@@ -198,6 +200,7 @@ macro_rules! define_py_literal {
         impl<'py> pyo3::FromPyObject<'py> for $name {
             fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
                 use pyo3::types::PyAnyMethods;
+                use itertools::Itertools;
                 let inner: String = ob.extract::<String>()?;
                 if !$name::is_valid_string(&inner) {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!("The value \"{}\" is not in [\"{}\"]", inner, Self::VARIANTS.into_iter().join("\", \""))))
@@ -247,6 +250,22 @@ macro_rules! define_py_literal {
             fn try_into(self) -> Result<$ty, Self::Error> {
                 use $crate::toolkit::from_str_ex::ParseEx;
                 self.inner.parse_ex()
+            }
+        }
+    };
+    
+    ($vis: vis $name: ident for<$target: ty> [$l0: literal = $value0: expr $(, $l: literal = $value: expr)* $(,)?]) => {
+        $crate::define_py_literal!($vis $name [$l0 $(, $l)*] into $target);
+        
+        impl FromStr for $target {
+            type Error = strum::ParseError;
+            
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {  
+                    $l0 => $value0,
+                    $($l => $value,)*
+                    _ => Err(strum::ParseError::VariantNotFound)
+                }
             }
         }
     }

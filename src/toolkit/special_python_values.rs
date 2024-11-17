@@ -58,8 +58,8 @@ impl<L, R> Into<Either<L, R>> for PyEither<L, R> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum VecOrSet<T> {
-    Set(#[serde(bound(serialize = "T: Serialize + Hash + Eq", deserialize = "T: Deserialize<'de> + Hash + Eq"))] HashSet<T>),
-    Vec(#[serde(bound(serialize = "T: Serialize + Hash + Eq", deserialize = "T: Deserialize<'de> + Hash + Eq"))] Vec<T>),
+    SetValue(#[serde(bound(serialize = "T: Serialize + Hash + Eq", deserialize = "T: Deserialize<'de> + Hash + Eq"))] HashSet<T>),
+    VecValue(#[serde(bound(serialize = "T: Serialize + Hash + Eq", deserialize = "T: Deserialize<'de> + Hash + Eq"))] Vec<T>),
 }
 
 impl<'py, T, > ::pyo3::FromPyObject<'py> for VecOrSet<T>
@@ -68,13 +68,13 @@ where
 {
     fn extract_bound(obj: &Bound<'py, pyo3::PyAny>) -> PyResult<Self> {
         let errors = [{
-            let maybe_ret = || -> PyResult<Self>   { pyo3::impl_::frompyobject::extract_tuple_struct_field(obj, "SetOrVec::Set", 0).map(VecOrSet::Set) }();
+            let maybe_ret = || -> PyResult<Self>   { pyo3::impl_::frompyobject::extract_tuple_struct_field(obj, "SetOrVec::Set", 0).map(VecOrSet::SetValue) }();
             match maybe_ret {
                 ok @ Ok(_) => return ok,
                 Err(err) => err
             }
         }, {
-            let maybe_ret = || -> PyResult<Self>   { pyo3::impl_::frompyobject::extract_tuple_struct_field(obj, "SetOrVec::Vec", 0).map(VecOrSet::Vec) }();
+            let maybe_ret = || -> PyResult<Self>   { pyo3::impl_::frompyobject::extract_tuple_struct_field(obj, "SetOrVec::Vec", 0).map(VecOrSet::VecValue) }();
             match maybe_ret {
                 ok @ Ok(_) => return ok,
                 Err(err) => err
@@ -98,21 +98,21 @@ impl<T> PyStubType for VecOrSet<T> where T: PyStubType {
 impl<T> VecOrSet<T> where T: Hash + Eq {
     pub fn to_vec(self) -> Vec<T> {
         match self {
-            VecOrSet::Set(value) => {
+            VecOrSet::SetValue(value) => {
                 let mut v = Vec::with_capacity(value.len());
                 v.extend(value);
                 v
             }
-            VecOrSet::Vec(value) => {value}
+            VecOrSet::VecValue(value) => {value}
         }
     }
 
     pub fn to_set(self) -> HashSet<T> {
         match self {
-            VecOrSet::Set(value) => {
+            VecOrSet::SetValue(value) => {
                 value
             }
-            VecOrSet::Vec(value) => {
+            VecOrSet::VecValue(value) => {
                 let mut set = HashSet::with_capacity(value.len());
                 set.extend(value);
                 set
@@ -121,7 +121,7 @@ impl<T> VecOrSet<T> where T: Hash + Eq {
     }
 
     pub fn as_set(&self) -> Option<&HashSet<T>> {
-        if let Self::Set(v) = self {
+        if let Self::SetValue(v) = self {
             Some(v)
         } else {
             None
@@ -129,7 +129,7 @@ impl<T> VecOrSet<T> where T: Hash + Eq {
     }
 
     pub fn as_vec(&self) -> Option<&Vec<T>> {
-        if let Self::Vec(v) = self {
+        if let Self::VecValue(v) = self {
             Some(v)
         } else {
             None
@@ -140,10 +140,10 @@ impl<T> VecOrSet<T> where T: Hash + Eq {
 impl<T> IntoPy<PyObject> for VecOrSet<T> where T: IntoPy<PyObject> + Eq + Hash {
     fn into_py(self, py: Python<'_>) -> PyObject {
         match self {
-            VecOrSet::Set(value) => {
+            VecOrSet::SetValue(value) => {
                 value.into_py(py)
             }
-            VecOrSet::Vec(values) => {
+            VecOrSet::VecValue(values) => {
                 values.into_py(py)
             }
         }
@@ -152,13 +152,13 @@ impl<T> IntoPy<PyObject> for VecOrSet<T> where T: IntoPy<PyObject> + Eq + Hash {
 
 impl<T> From<Vec<T>> for VecOrSet<T> {
     fn from(value: Vec<T>) -> Self {
-        Self::Vec(value)
+        Self::VecValue(value)
     }
 }
 
 impl<T> From<HashSet<T>> for VecOrSet<T> {
     fn from(value: HashSet<T>) -> Self {
-        Self::Set(value)
+        Self::SetValue(value)
     }
 }
 
