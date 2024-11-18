@@ -33,6 +33,7 @@ impl TrieSearcher {
             .as_ref()
             .par_iter()
             .enumerate()
+            .filter(|(_, value)| !value.is_empty())
             .map(|(id, value)| {
                 if let Some(prefix_length) = prefix_length {
                     if let Some((pos, _)) = value.char_indices().skip(prefix_length).next() {
