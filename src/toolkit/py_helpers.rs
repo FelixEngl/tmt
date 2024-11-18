@@ -1,7 +1,6 @@
 use std::fmt::{Debug};
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::str::FromStr;
 use pyo3::{Bound, FromPyObject, PyAny, PyResult};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::{PyFunction};
@@ -164,6 +163,22 @@ macro_rules! define_py_method {
 
 #[macro_export]
 macro_rules! define_py_literal {
+    ($vis: vis $name: ident for $target: ty [$l0: literal => $value0: expr $(, $l: literal => $value: expr)* $(,)?]) => {
+        $crate::define_py_literal!($vis $name [$l0 $(, $l)*] into $target);
+
+        impl std::str::FromStr for $target {
+            type Err = strum::ParseError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $l0 => Ok($value0),
+                    $($l => Ok($value),)*
+                    _ => Err(strum::ParseError::VariantNotFound)
+                }
+            }
+        }
+    };
+
     ($vis: vis $name: ident [$l0: literal $(, $l: literal)* $(,)?]) => {
         #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         #[repr(transparent)]
@@ -233,6 +248,7 @@ macro_rules! define_py_literal {
         $crate::impl_py_stub!(
             $name {
                 output: {
+                    use itertools::Itertools;
                     builder()
                     .add_name(format!("typing.Literal[\"{}\"]", Self::VARIANTS.into_iter().join("\", \"")))
                     .add_import("typing")
@@ -253,21 +269,90 @@ macro_rules! define_py_literal {
             }
         }
     };
-    
-    ($vis: vis $name: ident for<$target: ty> [$l0: literal = $value0: expr $(, $l: literal = $value: expr)* $(,)?]) => {
-        $crate::define_py_literal!($vis $name [$l0 $(, $l)*] into $target);
-        
-        impl FromStr for $target {
-            type Error = strum::ParseError;
-            
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                match s {  
-                    $l0 => $value0,
-                    $($l => $value,)*
-                    _ => Err(strum::ParseError::VariantNotFound)
-                }
+}
+
+
+macro_rules! __type_def_wrapper_name_helper {
+    ($name: ident, $name_as_str: ident) => {
+        $crate::toolkit::py_helpers::__type_def_wrapper_name_helper!{
+            c $name, stringify!($name_as_str)
+        }
+    };
+    (c $name: ident, $name_as_str: literal) => {
+        $crate::impl_py_stub! {
+            $name {
+                name: $name_as_str,
             }
         }
-    }
+    };
+}
 
+pub(crate) use __type_def_wrapper_name_helper;
+
+
+#[macro_export]
+macro_rules! type_def_wrapper {
+    ($v: vis $name: ident <$ty: ty>) => {
+        #[repr(transparent)]
+        $v struct $name(pub $ty);
+
+        impl $name {
+            pub fn into_inner(self) -> $ty {
+                self.0
+            }
+        }
+
+        impl From<$ty> for $name {
+            fn from(t: $ty) -> Self {
+                Self(t)
+            }
+        }
+
+        impl Into<$ty> for $name {
+            fn into(self) -> $ty {
+                self.0
+            }
+        }
+
+        impl<'py> pyo3::FromPyObject<'py> for $name {
+            fn extract_bound(pob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+                use pyo3::prelude::PyAnyMethods;
+                Ok(Self(pob.extract()?))
+            }
+        }
+
+        const _: () = {
+            paste::paste! {
+                $crate::impl_py_type_def! {
+                    [<$name Type>]; : $ty
+                }
+            }
+
+
+            paste::paste! {
+
+                $crate::impl_py_stub! {
+                    $name {
+                        output: {
+                            builder().add_name(stringify!([<$name Type>])).build_output()
+                        }
+                    }
+                }
+            }
+
+        };
+
+
+    };
+
+    ($v: vis $name: ident <$ty: ty> with into) => {
+
+        $crate::type_def_wrapper!($v $name <$ty>);
+
+        impl pyo3::IntoPy<pyo3::PyObject> for $name {
+            fn into_py(self, py: pyo3::Python<'_>) -> pyo3::PyObject {
+                self.0.into_py(py)
+            }
+        }
+    };
 }

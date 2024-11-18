@@ -36,7 +36,7 @@ impl<'a> FromPyObject<'a> for PyVotingModel<'a> {
     }
 }
 
-impl_py_stub!(PyVotingModel<'_> {
+impl_py_stub!(PyVotingModel<'_>  {
         output: {
             let mut input_typ = PyContextWithMutableVariables::type_output();
             let output_typ = PyExprValue::type_output();
@@ -86,7 +86,6 @@ pub enum PyExprValue {
     /// An empty value.
     Empty,
 }
-
 
 
 impl_py_type_def! {

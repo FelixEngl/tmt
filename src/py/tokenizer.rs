@@ -1522,7 +1522,7 @@ impl PyTokenizerBuilder {
 
 
 
-        builder.set_phraser(self.vocabulary.as_ref().map(PyVocabulary::create_trie));
+        builder.set_phraser(self.vocabulary.as_ref().map(|value| value.get().create_trie()));
 
         builder.stemmer(self.stemmer.map(|(k, v)| (k.into(), v)));
 

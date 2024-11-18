@@ -1,3 +1,4 @@
+use std::cmp::{min};
 use crate::topicmodel::dictionary::direction::LanguageKind;
 use crate::topicmodel::vocabulary::BasicVocabulary;
 use itertools::Itertools;
@@ -13,53 +14,9 @@ use trie_rs::map::TrieBuilder;
 pub struct TrieSearcher {
     is_exact: bool,
     target_voc: LanguageKind,
+    voc_len: usize,
     prefix_length: Option<usize>,
     search: trie_rs::map::Trie<u8, Entry>,
-}
-
-impl TrieSearcher {
-    pub fn search_for_common_prefix<S, Q, M>(&self, prefix: Q) -> Vec<(S, &Entry)>
-    where
-        Q: AsRef<[u8]>,
-        S: Clone + trie_rs::try_collect::TryFromIterator<u8, M>,
-    {
-        self.search.common_prefix_search(prefix).collect_vec()
-    }
-
-    pub fn predict_for_prefix<S, Q, M>(&self, prefix: Q) -> Vec<(S, &Entry)>
-    where
-        Q: AsRef<[u8]>,
-        S: Clone + trie_rs::try_collect::TryFromIterator<u8, M>,
-    {
-        self.search.predictive_search(prefix).collect_vec()
-    }
-
-    pub fn search_for_postfix<S, Q, M>(&self, postfix: Q) -> Vec<(S, &Entry)>
-    where
-        Q: AsRef<[u8]>,
-        S: Clone + trie_rs::try_collect::TryFromIterator<u8, M>,
-    {
-        self.search.postfix_search(postfix).collect_vec()
-    }
-
-    pub fn search_exact<Q>(&self, prefix: Q) -> Option<&Entry>
-    where
-        Q: AsRef<[u8]>,
-    {
-        self.search.exact_match(prefix)
-    }
-
-    pub fn is_exact(&self) -> bool {
-        self.is_exact
-    }
-    
-    pub fn target_voc(&self) -> LanguageKind {
-        self.target_voc
-    }
-    
-    pub fn prefix_length(&self) -> Option<usize> {
-        self.prefix_length
-    }
 }
 
 impl TrieSearcher {
@@ -105,10 +62,88 @@ impl TrieSearcher {
         }
         Ok(Self {
             search: new.build(),
+            voc_len: voc.len(),
             is_exact,
             prefix_length,
             target_voc: language,
         })
+    }
+
+    /// Returns true if the searcher is valid for the provided prefix and vocabulary.
+    /// This check is relatively simple, it only checks for vocabulary lengths.
+    ///
+    /// For a better test use [is_valid].
+    pub fn is_valid_fast<V, T>(&self, prefix_length: Option<usize>, voc: &V) -> bool
+    where
+        V: BasicVocabulary<T>
+    {
+        self.prefix_length == prefix_length && self.voc_len == voc.len()
+    }
+
+
+    /// Returns true iff the searcher is valid for the provided prefix and vocabulary.
+    /// This check is relatively simple, it only checks for vocabulary lengths.
+    pub fn is_valid<V>(&self, prefix_length: Option<usize>, voc: &V) -> bool
+    where
+        V: BasicVocabulary<String>
+    {
+        self.is_valid_fast(prefix_length, voc) && {
+            voc.as_ref().par_iter().enumerate().all(|(idx, value)| {
+                if let Some(prefix_length) = prefix_length {
+                    self.search.exact_match(&value[..min(prefix_length, value.len())])
+                } else {
+                    self.search.exact_match(value.as_str())
+                }.is_some_and(|value| value.contains(&idx))
+            })
+        }
+    }
+
+
+    pub fn search_for_common_prefix<S, Q, M>(&self, prefix: Q) -> Vec<(S, &Entry)>
+    where
+        Q: AsRef<[u8]>,
+        S: Clone + trie_rs::try_collect::TryFromIterator<u8, M>,
+    {
+        self.search.common_prefix_search(prefix).collect_vec()
+    }
+
+    pub fn predict_for_prefix<S, Q, M>(&self, prefix: Q) -> Vec<(S, &Entry)>
+    where
+        Q: AsRef<[u8]>,
+        S: Clone + trie_rs::try_collect::TryFromIterator<u8, M>,
+    {
+        self.search.predictive_search(prefix).collect_vec()
+    }
+
+    pub fn search_for_postfix<S, Q, M>(&self, postfix: Q) -> Vec<(S, &Entry)>
+    where
+        Q: AsRef<[u8]>,
+        S: Clone + trie_rs::try_collect::TryFromIterator<u8, M>,
+    {
+        self.search.postfix_search(postfix).collect_vec()
+    }
+
+    pub fn search_exact<Q>(&self, prefix: Q) -> Option<&Entry>
+    where
+        Q: AsRef<[u8]>,
+    {
+        self.search.exact_match(prefix)
+    }
+
+    pub fn is_exact(&self) -> bool {
+        self.is_exact
+    }
+    
+    pub fn target_voc(&self) -> LanguageKind {
+        self.target_voc
+    }
+    
+    pub fn prefix_length(&self) -> Option<usize> {
+        self.prefix_length
+    }
+
+    pub fn voc_len(&self) -> usize {
+        self.voc_len
     }
 }
 

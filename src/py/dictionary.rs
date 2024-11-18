@@ -12,17 +12,18 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::collections::{HashMap, HashSet};
 use crate::py::helpers::LanguageHintValue;
 use crate::py::vocabulary::PyVocabulary;
-use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple};
+use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple, LanguageKind};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator};
 use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetadataEx};
 use crate::topicmodel::dictionary::metadata::{MetadataManager};
 use crate::topicmodel::dictionary::*;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
-use itertools::Itertools;
+use crate::topicmodel::vocabulary::{AnonymousVocabulary, SearchableVocabulary, Vocabulary};
+use itertools::{EitherOrBoth, Itertools};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::{pyclass, pymethods, PyRef, PyResult};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -30,34 +31,39 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use camino::Utf8PathBuf;
+use either::Either;
 use crate::py::tokenizer::PyAlignedArticleProcessor;
-use crate::{define_py_method, register_python};
+use crate::{define_py_method, impl_py_type_def, register_python, type_def_wrapper};
 use crate::tokenizer::Tokenizer;
+use crate::toolkit::from_str_ex::ParseEx;
+use crate::toolkit::special_python_values::{PyEither, PyEitherOrBoth};
 use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 use crate::topicmodel::dictionary::len::Len;
+use crate::topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
 
-pub type DefaultDict = StringDictWithMeta<PyVocabulary>;
+pub type DefaultDict = StringDictWithMeta<Vocabulary<String>>;
 
+/// A dictionary for bidirectional dictionaries.
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default)]
 pub struct PyDictionary {
-    inner: Arc<RwLock<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>>>,
+    inner: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
 }
 
 
 impl PyDictionary {
-    pub fn new(dict: DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>) -> Self {
+    pub fn new(dict: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(dict))
         }
     }
 
-    pub fn get<'a>(&'a self) -> RwLockReadGuard<'a, DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>> {
+    pub fn get<'a>(&'a self) -> RwLockReadGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>> {
         self.inner.read().unwrap()
     }
 
-    pub fn get_mut<'a>(&'a mut self) -> RwLockWriteGuard<'a, DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>> {
+    pub fn get_mut<'a>(&'a mut self) -> RwLockWriteGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>> {
         self.inner.write().unwrap()
     }
 }
@@ -76,12 +82,18 @@ impl<'de> Deserialize<'de> for PyDictionary {
     where
         D: Deserializer<'de>
     {
-        Ok(DefaultDict::deserialize(deserializer)?.into())
+        Ok(PyDictionary::new(DefaultDict::deserialize(deserializer)?))
     }
 }
 
 
+type_def_wrapper!(
+    SearchResultContainer<PyEitherOrBoth<PyEither<Vec<String>, HashMap<String, HashMap<String, HashSet<String>>>>, PyEither<Vec<String>, HashMap<String, HashMap<String, HashSet<String>>>>>> with into
+);
 
+type_def_wrapper!(
+      SearchTypeUnion<PyEither<SearchType, SearchTypeLiteral>>
+);
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
@@ -100,19 +112,162 @@ impl PyDictionary {
         }
     }
 
+    /// A search function for the dictionary, requires a query or matcher as first argument.
+    ///
+    /// :param query: The query can be a single words, multiple words or a matcher function.
+    ///
+    /// :param search_type: Determines which kind of search is execute. (default: SearchType.ExactMatch)
+    ///                     See SearchType for more search types.
+    ///                     Typing is not supported when using a matcher as query.
+    ///
+    /// :param threshold: The threshold is needed when using any kind of distance in as search.
+    ///
+    /// :param target_language: The target language can either be A, B or None and determines which vocabularies are searched. (see LanguageKind)
+    ///                         None indicates to search in both vocabularies. (default: None)
+    ///
+    /// :param ignores_ascii_case: If the flag is set, the most searches ignore the case while comparing words. (default: false)
+    ///                            The feature is not available for autocompletion or when using a custom matcher.
+    /// :returns: Returns a tuple that can look like this (depending on the query):
+    ///     When no target language is set:
+    ///         - For simple query types: (list[str], list[str])
+    ///         - For complex query types: (dict[str, dict[str, set[str]]], dict[str, dict[str, set[str]]])
+    ///     When A is set as target language:
+    ///         - For simple query types: (list[str], None)
+    ///         - For complex query types: (dict[str, dict[str, set[str]]], None)
+    ///     When B is set as target language:
+    ///         - For simple query types: (None, list[str])
+    ///         - For complex query types: (None, dict[str, dict[str, set[str]]])
+    ///     The dict for a complex result is the following:
+    ///         {<query_string>: {<prefix>: {<values>}}}
+    ///     The list for simple queries basically only contains all the results in a bulk result.
+    // #[pyo3(signature = (query, search_type = None, threshold = None, target_language = None, ignores_ascii_case = None))]
+    fn search<'py>(
+        &self,
+        query: SearchInput<'py>,
+        search_type: Option<SearchTypeUnion>,
+        threshold: Option<PyEither<usize, f64>>,
+        target_language: Option<LanguageKind>,
+        ignores_ascii_case: Option<bool>,
+    ) -> PyResult<SearchResultContainer> {
+        let ignores_ascii_case = ignores_ascii_case.unwrap_or(false);
+        let read = self.get();
+        let searcher = read.inner.get_searcher();
+        let search_type = search_type.map(|value| {
+            match value.into_inner().into_inner() {
+                Either::Left(value) => {
+                    Ok(value)
+                }
+                Either::Right(value) => {
+                    value.parse_ex()
+                }
+            }
+        }).transpose().map_err(|value| PyValueError::new_err(format!("Failed to parse argument: {value}")))?;
 
-    // ///
-    // fn search(&self, word: &str, language: Option<LanguageHintValue>) {
-    //     /// Regex
-    // }
-    //
-    // fn search_reg(&self, word: &str, language: Option<LanguageHintValue>) {
-    //
-    // }
+        let result = searcher.search(
+            query,
+            search_type,
+            target_language,
+            threshold.map(|value| value.into_inner()),
+            ignores_ascii_case,
+        )?;
+
+        let result = match result {
+            None => {
+                drop(read);
+                match target_language {
+                    None => {
+                        PyEitherOrBoth::both(
+                            PyEither::left(Vec::with_capacity(0)),
+                            PyEither::left(Vec::with_capacity(0))
+                        )
+                    }
+                    Some(LanguageKind::A) => {
+                        PyEitherOrBoth::left(PyEither::left(Vec::with_capacity(0)))
+                    }
+                    Some(LanguageKind::B) => {
+                        PyEitherOrBoth::right(PyEither::left(Vec::with_capacity(0)))
+                    }
+                }
+            }
+            Some(value) => {
+                fn convert_to_left(value: Vec<(usize, HashRef<String>)>) -> Vec<String> {
+                    value.into_iter().map(|(_, v)| v.to_string()).collect_vec()
+                }
+
+                fn convert_to_right(
+                    voc: &Vocabulary<String>,
+                    value: HashMap<String, Vec<(String, Vec<usize>)>>
+                ) -> HashMap<String, HashMap<String, HashSet<String>>>
+                {
+                    value.into_iter().map(|(k, v)| {
+                        (
+                            k,
+                            v.into_iter().into_grouping_map().fold_with(
+                                |_, _| HashSet::new(),
+                                |mut acc, _, v| {
+                                    acc.extend(
+                                        v.into_iter()
+                                            .map(|value|
+                                                voc.id_to_entry(value)
+                                                    .expect("A search never returns an id that is invalid!")
+                                                    .to_string()
+                                            )
+                                    );
+                                    acc
+                                }
+                            )
+                        )
+                    }).collect()
+                }
+
+                match value {
+                    Either::Left(a) => {
+                        drop(read);
+                        match a {
+                            EitherOrBoth::Both(a, b) => {
+                                PyEitherOrBoth::both(
+                                    PyEither::left(convert_to_left(a)),
+                                    PyEither::left(convert_to_left(b)),
+                                )
+                            }
+                            EitherOrBoth::Left(a) => {
+                                PyEitherOrBoth::left(PyEither::left(convert_to_left(a)))
+                            }
+                            EitherOrBoth::Right(b) => {
+                                PyEitherOrBoth::right(PyEither::left(convert_to_left(b)))
+                            }
+                        }
+                    }
+                    Either::Right(b) => {
+                        match b {
+                            EitherOrBoth::Both(a, b) => {
+                                PyEitherOrBoth::both(
+                                    PyEither::right(convert_to_right(read.voc_a(), a)),
+                                    PyEither::right(convert_to_right(read.voc_b(), b)),
+                                )
+                            }
+                            EitherOrBoth::Left(a) => {
+                                PyEitherOrBoth::left(
+                                    PyEither::right(convert_to_right(read.voc_a(), a))
+                                )
+                            }
+                            EitherOrBoth::Right(b) => {
+                                PyEitherOrBoth::right(
+                                    PyEither::right(convert_to_right(read.voc_b(), b))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(result.into())
+    }
 
 
 
-    /// Returns the dictionaries contained in this dictionary.
+    /// Returns the dictionaries that where used to create this dictionary.
     #[getter]
     fn known_dictionaries(&self) -> Vec<String> {
         self.get().known_dictionaries().into_iter().map(|value| value.to_string()).collect_vec()
@@ -126,26 +281,32 @@ impl PyDictionary {
         (a.cloned(), b.cloned())
     }
 
-    /// Allows to set the translation languages. This is usually not necessary, except youbuild your own.
+    /// Allows to set the translation languages. This is usually not necessary, except you build your own.
     #[setter]
-    fn set_translation_direction(&mut self, option: (Option<LanguageHintValue>, Option<LanguageHintValue>)) {
+    fn set_translation_direction(&mut self, direction: (Option<LanguageHintValue>, Option<LanguageHintValue>)) {
         let mut write = self.get_mut();
-        write.set_language_a(option.0.map(|value| value.into()));
-        write.set_language_b(option.1.map(|value| value.into()));
+        write.set_language_a(direction.0.map(|value| value.into()));
+        write.set_language_b(direction.1.map(|value| value.into()));
     }
 
     /// Returns the vocabulary a
     #[getter]
     #[pyo3(name = "voc_a")]
     fn voc_a_py(&self) -> PyVocabulary {
-        self.get().voc_a().clone()
+        PyVocabulary::new_from_dict(
+            self.inner.clone(),
+            LanguageKind::A
+        )
     }
 
     /// Returns the vocabulary b
     #[getter]
     #[pyo3(name = "voc_b")]
     fn voc_b_py(&self) -> PyVocabulary {
-        self.get().voc_b().clone()
+        PyVocabulary::new_from_dict(
+            self.inner.clone(),
+            LanguageKind::B
+        )
     }
 
     /// Returns true if voc a contains the value
@@ -253,8 +414,9 @@ impl PyDictionary {
     pub fn load(path: PathBuf) -> PyResult<Self> {
         let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
         Ok(
-            DictionaryWithMeta::from_path_with_extension(path)
-                .map_err(|value| PyValueError::new_err(value.to_string()))?.into()
+            DefaultDict::from_path_with_extension(path)
+                .map_err(|value| PyValueError::new_err(value.to_string()))?
+                .into()
         )
     }
 
@@ -262,8 +424,6 @@ impl PyDictionary {
     #[staticmethod]
     pub fn load_as(path: PathBuf, mode: WriteModeLiteral) -> PyResult<Self> {
         let path = Utf8PathBuf::from_path_buf(path).map_err(|value| PyValueError::new_err(value.as_os_str().to_string_lossy().to_string()))?;
-
-
         Ok(
             DictionaryWithMeta::from_path(
                 mode.parse().map_err(|err| { PyValueError::new_err(format!("{err}")) })?,
@@ -422,16 +582,10 @@ define_py_method!{
 }
 
 
-impl From<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>> for PyDictionary {
-    fn from(value: DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>) -> Self {
-        Self::new(value)
-    }
-}
-
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 pub struct PyDictIter {
-    inner: DictionaryWithMetaIterator<DictionaryWithMeta<String, PyVocabulary, MetadataManagerEx>, String, PyVocabulary, MetadataManagerEx>,
+    inner: DictionaryWithMetaIterator<DefaultDict, String, Vocabulary<String>, MetadataManagerEx>,
 }
 
 unsafe impl Send for PyDictIter{}
@@ -474,27 +628,26 @@ impl From<Dictionary<String, Vocabulary<String>>> for PyDictionary {
     }
 }
 
-impl From<Dictionary<String, PyVocabulary>> for PyDictionary {
-    #[inline(always)]
-    fn from(inner: Dictionary<String, PyVocabulary>) -> Self {
-        Self { inner: Arc::new(RwLock::new(inner.into())) }
+impl From<DefaultDict> for PyDictionary {
+    fn from(value: DefaultDict) -> Self {
+        Self { inner: Arc::new(RwLock::new(value)) }
     }
 }
 
-impl FromVoc<String, PyVocabulary> for PyDictionary {
-    fn from_voc(voc_a: PyVocabulary, voc_b: PyVocabulary) -> Self {
+impl FromVoc<String, Vocabulary<String>> for PyDictionary {
+    fn from_voc(voc_a: Vocabulary<String>, voc_b: Vocabulary<String>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc(voc_a, voc_b)))
         }
     }
 
-    fn from_voc_lang_a(voc: PyVocabulary, other_lang: Option<LanguageHint>) -> Self {
+    fn from_voc_lang_a(voc: Vocabulary<String>, other_lang: Option<LanguageHint>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_a(voc, other_lang)))
         }
     }
 
-    fn from_voc_lang_b(other_lang: Option<LanguageHint>, voc: PyVocabulary) -> Self {
+    fn from_voc_lang_b(other_lang: Option<LanguageHint>, voc: Vocabulary<String>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_b(other_lang, voc)))
         }

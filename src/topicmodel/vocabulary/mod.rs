@@ -145,6 +145,11 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
         self.id2entry.iter()
     }
 
+    fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a HashRef<T>)> + 'a  where T: 'a{
+        self.id2entry.iter().enumerate()
+    }
+
+
     fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)> {
         self.get_value(id).map(|value| (id, value))
     }

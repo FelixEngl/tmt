@@ -133,7 +133,7 @@ impl<'py> ScanSearcher<'py> {
 
     pub fn search<D, T, V>(&self, dictionary: &D) -> Vec<(LanguageKind, usize, HashRef<T>)>
     where
-        D: DictionaryWithVocabulary<T, V>,
+        D: DictionaryWithVocabulary<T, V> + ?Sized,
         T: Borrow<str> + Hash + Eq + AsRef<str>,
         V: SearchableVocabulary<T>,
     {
@@ -325,7 +325,7 @@ impl<'py> ScanSearcher<'py> {
         matcher: F,
     ) -> Vec<(LanguageKind, usize, HashRef<T>)>
     where
-        D: DictionaryWithVocabulary<T, V>,
+        D: DictionaryWithVocabulary<T, V> + ?Sized,
         T: Borrow<str> + Hash + Eq + AsRef<str>,
         V: SearchableVocabulary<T>,
         F: Fn(LanguageKind, &str) -> bool,
@@ -381,7 +381,7 @@ impl<'py> ScanSearcher<'py> {
         matcher: &StrEq,
     ) -> Vec<(LanguageKind, usize, HashRef<T>)>
     where
-        D: DictionaryWithVocabulary<T, V>,
+        D: DictionaryWithVocabulary<T, V> + ?Sized,
         T: Hash + Eq + Borrow<str>,
         V: SearchableVocabulary<T>,
     {
@@ -392,7 +392,7 @@ impl<'py> ScanSearcher<'py> {
             ignore_ascii: bool,
             output: &mut Vec<(LanguageKind, usize, HashRef<T>)>,
         ) where
-            D: DictionaryWithVocabulary<T, V>,
+            D: DictionaryWithVocabulary<T, V> + ?Sized,
             T: Hash + Eq + Borrow<str>,
             V: SearchableVocabulary<T>,
         {

@@ -29,6 +29,8 @@ pub use loader::*;
 pub use traits::*;
 
 pub use metadata::dictionary::*;
+use crate::toolkit::once_serializer::OnceLockDef;
+
 
 #[macro_export]
 macro_rules! dict_insert {
@@ -66,7 +68,7 @@ macro_rules! dict {
 
     ($($a:tt $op:tt $b:tt)+) => {
         {
-            let mut __dict = $crate::topicmodel::dictionary::Dictionary::<_, $crate::topicmodel::vocabulary::Vocabulary<_>>::new();
+            let mut __dict = $crate::topicmodel::dictionary::Dictionary::<_, $crate::topicmodel::vocabulary::Vocabulary<_>>::default();
             $(
                 $crate::dict_insert!(__dict, $a $op $b);
             )+
@@ -80,9 +82,11 @@ macro_rules! dict {
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::sync::OnceLock;
 use itertools::{Itertools, Position};
 use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, DirectionKind, DirectionTuple, Invariant, Language, A, B};
+use crate::topicmodel::dictionary::search::{DictionarySearcher, SearchIndex};
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
@@ -95,7 +99,13 @@ pub struct Dictionary<T, V> {
     pub(crate) voc_b: V,
     pub(crate) map_a_to_b: Vec<Vec<usize>>,
     pub(crate) map_b_to_a: Vec<Vec<usize>>,
+    #[serde(with = "OnceLockDef", skip_serializing_if = "index_not_initialized", default)]
+    pub(crate) search_index: OnceLock<SearchIndex>,
     _word_type: PhantomData<T>
+}
+
+fn index_not_initialized(cell: &OnceLock<SearchIndex>) -> bool {
+    cell.get().is_none()
 }
 
 unsafe impl<T, V> Send for Dictionary<T, V>{}
@@ -108,80 +118,73 @@ impl<T, V> FromVoc<T, V> for Dictionary<T, V> where V: BasicVocabulary<T> + Defa
         let mut map_b_to_a = Vec::new();
         map_b_to_a.resize_with(voc_b.len(), || Vec::with_capacity(1));
 
-        Self {
+        Self::new(
             voc_a,
-            voc_b,
             map_a_to_b,
+            voc_b,
             map_b_to_a,
-            _word_type: PhantomData
-        }
+        )
     }
 
     fn from_voc_lang_a(voc: V, other_lang: Option<LanguageHint>) -> Self {
         let mut map_a_to_b = Vec::new();
         map_a_to_b.resize_with(voc.len(), || Vec::with_capacity(1));
-        Self {
-            voc_a: voc,
-            voc_b: V::create(other_lang),
+        Self::new(
+            voc,
             map_a_to_b,
-            map_b_to_a: Default::default(),
-            _word_type: PhantomData
-        }
+            V::create(other_lang),
+            Default::default(),
+        )
     }
 
     fn from_voc_lang_b(other_lang: Option<LanguageHint>, voc: V) -> Self {
         let mut map_b_to_a = Vec::new();
         map_b_to_a.resize_with(voc.len(), || Vec::with_capacity(1));
-        Self {
-            voc_a: V::create(other_lang),
-            voc_b: voc,
-            map_a_to_b: Default::default(),
+        Self::new(
+            V::create(other_lang),
+            Default::default(),
+            voc,
             map_b_to_a,
-            _word_type: PhantomData
-        }
+        )
     }
 }
 
 impl<T, V> Dictionary<T, V> where V: From<Option<LanguageHint>>  {
     pub fn new_with(language_a: Option<impl Into<LanguageHint>>, language_b: Option<impl Into<LanguageHint>>) -> Self {
-
-        Self {
-            voc_a: language_a.map(|value| value.into()).into(),
-            voc_b: language_b.map(|value| value.into()).into(),
-            map_a_to_b: Default::default(),
-            map_b_to_a: Default::default(),
-            _word_type: PhantomData
-        }
+        Self::new(
+            language_a.map(|value| value.into()).into(),
+            Default::default(),
+            language_b.map(|value| value.into()).into(),
+            Default::default()
+        )
     }
 }
 
 impl<T, V> Dictionary<T, V> {
     pub fn new(voc_a: V, map_a_to_b: Vec<Vec<usize>>, voc_b: V, map_b_to_a: Vec<Vec<usize>>) -> Self {
-        Self { voc_a, voc_b, map_a_to_b, map_b_to_a, _word_type: PhantomData }
+        Self { voc_a, voc_b, map_a_to_b, map_b_to_a, search_index: Default::default(), _word_type: PhantomData }
     }
 }
 
 impl<T, V> Clone for Dictionary<T, V> where V: Clone {
     fn clone(&self) -> Self {
-        Self {
-            voc_a: self.voc_a.clone(),
-            voc_b: self.voc_b.clone(),
-            map_a_to_b: self.map_a_to_b.clone(),
-            map_b_to_a: self.map_b_to_a.clone(),
-            _word_type: PhantomData
-        }
+        Self::new(
+            self.voc_a.clone(),
+            self.map_a_to_b.clone(),
+            self.voc_b.clone(),
+            self.map_b_to_a.clone()
+        )
     }
 }
 
 impl<T, V> Default for Dictionary<T, V> where V: Default {
     fn default() -> Self {
-        Self {
-            voc_a: Default::default(),
-            voc_b: Default::default(),
-            map_a_to_b: Default::default(),
-            map_b_to_a: Default::default(),
-            _word_type: PhantomData
-        }
+        Self::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        )
     }
 }
 
@@ -195,13 +198,12 @@ impl<T, V> BasicDictionary for Dictionary<T, V> {
     }
 
     fn switch_languages(self) -> Self where Self: Sized {
-        Self {
-            voc_a: self.voc_b,
-            voc_b: self.voc_a,
-            map_a_to_b: self.map_b_to_a,
-            map_b_to_a: self.map_a_to_b,
-            _word_type: PhantomData
-        }
+        Self::new(
+            self.voc_b,
+            self.map_b_to_a,
+            self.voc_a,
+            self.map_a_to_b
+        )
     }
 }
 
@@ -225,13 +227,12 @@ impl<T, V> BasicDictionaryWithVocabulary<V> for Dictionary<T, V> {
 
 impl<T, V> Dictionary<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
     pub fn map<Q: Eq + Hash, Voc, F>(self, f: F) -> Dictionary<Q, Voc> where F: for<'a> Fn(&'a T)-> Q, Voc: BasicVocabulary<Q> {
-        Dictionary {
-            voc_a: self.voc_a.map(&f),
-            voc_b: self.voc_b.map(f),
-            map_a_to_b: self.map_a_to_b,
-            map_b_to_a: self.map_b_to_a,
-            _word_type: PhantomData
-        }
+        Dictionary::new(
+            self.voc_a.map(&f),
+            self.map_a_to_b,
+            self.voc_b.map(f),
+            self.map_b_to_a
+        )
     }
 }
 
@@ -522,6 +523,16 @@ impl<T: Display, V: BasicVocabulary<T>> Display for Dictionary<T, V> {
     }
 }
 
+
+impl<V> DictionaryWithSearch<String, V> for Dictionary<String, V>
+where
+    V: BasicVocabulary<String>
+{
+    fn get_searcher(&self) -> DictionarySearcher<Self, V> {
+        let index = self.search_index.get_or_init(SearchIndex::new);
+        DictionarySearcher::new(self, index)
+    }
+}
 
 
 

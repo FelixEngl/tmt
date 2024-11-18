@@ -28,8 +28,6 @@ impl SearchIndex {
             searcher_b: Default::default(),
         }
     }
-    
-    
 
     fn get_or_init_trie_searcher_for<'a, V>(&self, targ: &'a OnceLock<Arc<RwLock<TrieSearcher>>>, voc: &V, language: LanguageKind) -> ShareableTrieSearcherRef<'a>
     where
@@ -42,11 +40,12 @@ impl SearchIndex {
         });
         {
             let read = provided.read().unwrap();
-            if read.prefix_length() == self.prefix_len {
+            if read.is_valid_fast(self.prefix_len, voc) {
                 return provided;
             }
         }
         {
+            log::debug!("re-initialize the index");
             let mut write = provided.write().unwrap();
             *write = TrieSearcher::new(voc, language, self.prefix_len).expect("We always create a valid trie from a dictionary provided voc.");
         }
@@ -67,7 +66,7 @@ impl SearchIndex {
 
     pub fn get_or_init_trie_searcher_a<D, V>(&self, dict: &D) -> ShareableTrieSearcherRef
     where
-        D: DictionaryWithVocabulary<String, V>,
+        D: DictionaryWithVocabulary<String, V> + ?Sized,
         V: BasicVocabulary<String>
     {
         self.get_or_init_trie_searcher_for(
@@ -79,7 +78,7 @@ impl SearchIndex {
 
     pub fn get_or_init_trie_searcher_b<D, V>(&self, dict: &D) -> ShareableTrieSearcherRef
     where
-        D: DictionaryWithVocabulary<String, V>,
+        D: DictionaryWithVocabulary<String, V> + ?Sized,
         V: BasicVocabulary<String>
     {
         self.get_or_init_trie_searcher_for(
@@ -91,7 +90,7 @@ impl SearchIndex {
     
     pub fn get_or_init_trie_searcher<D, V>(&self, dict: &D, language: LanguageKind) -> ShareableTrieSearcherRef
     where
-        D: DictionaryWithVocabulary<String, V>,
+        D: DictionaryWithVocabulary<String, V> + ?Sized,
         V: BasicVocabulary<String>
     {
         match language {
@@ -106,7 +105,7 @@ impl SearchIndex {
 
     pub fn get_or_init_both_trie_searcher<D, V>(&self, dict: &D) -> (ShareableTrieSearcherRef, ShareableTrieSearcherRef)
     where
-        D: DictionaryWithVocabulary<String, V>,
+        D: DictionaryWithVocabulary<String, V> + ?Sized,
         V: BasicVocabulary<String>
     {
         std::thread::scope(|scope| {

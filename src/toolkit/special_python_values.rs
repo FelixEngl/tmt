@@ -1,9 +1,11 @@
-use pyo3::{Bound, FromPyObject, IntoPy, PyObject, PyResult, Python};
+use pyo3::{Bound, FromPyObject, IntoPy, PyAny, PyObject, PyResult, Python};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use either::Either;
+use itertools::EitherOrBoth;
+use pyo3::prelude::PyAnyMethods;
 #[cfg(feature = "gen_python_api")]
 use crate::toolkit::pystub::TypeInfoBuilder;
 #[cfg(feature = "gen_python_api")]
@@ -14,10 +16,19 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
 pub struct PyEither<L, R>(Either<L, R>);
 
 impl<L, R> PyEither<L, R> {
+    pub fn left(value: L) -> PyEither<L, R> {
+        Self(Either::Left(value))
+    }
+
+    pub fn right(value: R) -> PyEither<L, R> {
+        Self(Either::Right(value))
+    }
+
     pub fn into_inner(self) -> Either<L, R> {
         self.0
     }
 }
+
 
 #[cfg(feature = "gen_python_api")]
 impl<L, R> PyStubType for PyEither<L, R> where L:PyStubType, R: PyStubType {
@@ -55,6 +66,109 @@ impl<L, R> Into<Either<L, R>> for PyEither<L, R> {
         self.0
     }
 }
+
+impl<L, R> IntoPy<PyObject>  for PyEither<L, R>
+where
+    L: IntoPy<PyObject>,
+    R: IntoPy<PyObject>,
+{
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self.0 {
+            Either::Left(value) => {
+                value.into_py(py)
+            }
+            Either::Right(value) => {
+                value.into_py(py)
+            }
+        }
+    }
+}
+
+
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct PyEitherOrBoth<L, R = L>(EitherOrBoth<L, R>);
+
+impl<L, R> PyEitherOrBoth<L, R> {
+    pub fn left(a: L) -> PyEitherOrBoth<L, R> {
+        Self(EitherOrBoth::Left(a))
+    }
+
+    pub fn right(b: R) -> PyEitherOrBoth<L, R> {
+        Self(EitherOrBoth::Right(b))
+    }
+
+    pub fn both(a: L, b: R) -> PyEitherOrBoth<L, R> {
+        Self(EitherOrBoth::Both(a, b))
+    }
+}
+
+#[cfg(feature = "gen_python_api")]
+impl<L, R> PyStubType for PyEitherOrBoth<L, R> where L:PyStubType, R: PyStubType {
+    fn type_output() -> TypeInfo {
+        TypeInfoBuilder::new().with::<(L, R)>().with::<(L, ())>().with::<((), R)>().build_output()
+    }
+
+    fn type_input() -> TypeInfo {
+        TypeInfoBuilder::new().with::<(L, R)>().with::<(L, ())>().with::<((), R)>().with::<L>().with::<R>().build_output()
+    }
+}
+
+impl<L, R> From<EitherOrBoth<L, R>> for PyEitherOrBoth<L, R> {
+    fn from(value: EitherOrBoth<L, R>) -> PyEitherOrBoth<L, R> {
+        Self(value)
+    }
+}
+
+impl<'py, L, R> FromPyObject<'py> for PyEitherOrBoth<L, R> where L: FromPyObject<'py>, R: FromPyObject<'py> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+
+        match ob.extract::<(Option<L>, Option<R>)>() {
+            Ok((Some(a), Some(b))) => Ok(EitherOrBoth::Both(a, b).into()),
+            Ok((Some(a), None)) => Ok(EitherOrBoth::Left(a).into()),
+            Ok((None, Some(b))) => Ok(EitherOrBoth::Right(b).into()),
+            Ok((None, None)) => {
+                if let Ok(value) = ob.extract::<L>() {
+                    return Ok(EitherOrBoth::Left(value).into())
+                }
+                Ok(EitherOrBoth::Right(ob.extract::<R>()?).into())
+            }
+            Err(err) => {
+                if let Ok(value) = ob.extract::<L>() {
+                    return Ok(EitherOrBoth::Left(value).into())
+                }
+                if let Ok(value) = ob.extract::<R>() {
+                    return Ok(EitherOrBoth::Right(value).into())
+                }
+                Err(err)
+            }
+        }
+    }
+}
+
+impl<L, R> Into<(Option<L>, Option<R>)> for PyEitherOrBoth<L, R> {
+    fn into(self) -> (Option<L>, Option<R>) {
+        match self.0 {
+            EitherOrBoth::Both(a, b) => {
+                (Some(a), Some(b))
+            }
+            EitherOrBoth::Left(a) => {
+                (Some(a), None)
+            }
+            EitherOrBoth::Right(b) => {
+                (None, Some(b))
+            }
+        }
+    }
+}
+
+impl<L, R> IntoPy<PyObject> for PyEitherOrBoth<L, R> where L: IntoPy<PyObject>, R: IntoPy<PyObject> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        let value: (Option<L>, Option<R>) = self.into();
+        value.into_py(py)
+    }
+}
+
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum VecOrSet<T> {

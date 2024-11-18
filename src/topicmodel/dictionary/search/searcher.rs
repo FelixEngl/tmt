@@ -9,21 +9,34 @@ use crate::topicmodel::dictionary::search::index::{SearchIndex, ShareableTrieSea
 use crate::topicmodel::dictionary::search::{SearchInput, SearchType};
 use crate::topicmodel::dictionary::DictionaryWithVocabulary;
 use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::SearchableVocabulary;
+use crate::topicmodel::vocabulary::{SearchableVocabulary};
 use either::Either;
 use itertools::{EitherOrBoth, Itertools};
-use nom::Parser;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::RwLockReadGuard;
+use pyo3::exceptions::PyValueError;
+use pyo3::PyErr;
 use thiserror::Error;
 
-#[derive(Debug)]
-pub struct DictionarySearch<'a, D, V> {
+
+/// A lightweight searcher to combine the dictionary and the search index
+#[derive(Debug, Copy, Clone)]
+pub struct DictionarySearcher<'a, D: ?Sized, V, I = SearchIndex> {
     dictionary: &'a D,
-    index: &'a SearchIndex,
+    index: &'a I,
     _phantom: PhantomData<V>,
+}
+
+impl<'a, D, V, I> DictionarySearcher<'a, D, V, I> where D: ?Sized {
+    pub fn new(dictionary: &'a D, index: &'a I) -> Self {
+        Self {
+            dictionary,
+            index,
+            _phantom: PhantomData,
+        }
+    }
 }
 
 type SearchResult = Option<
@@ -36,19 +49,11 @@ type SearchResult = Option<
 type TrieRefs<'a> = (ShareableTrieSearcherRef<'a>, ShareableTrieSearcherRef<'a>);
 type ShareableTrieSearcherAccess<'a> = RwLockReadGuard<'a, TrieSearcher>;
 
-impl<'a, D, V> DictionarySearch<'a, D, V>
+impl<'a, D, V> DictionarySearcher<'a, D, V, SearchIndex>
 where
-    D: DictionaryWithVocabulary<String, V>,
+    D: DictionaryWithVocabulary<String, V> + ?Sized,
     V: SearchableVocabulary<String>,
 {
-    pub fn new(dictionary: &'a D, index: &'a SearchIndex) -> Self {
-        Self {
-            dictionary,
-            index,
-            _phantom: PhantomData,
-        }
-    }
-
     fn get_trie_searcher_a(&self) -> ShareableTrieSearcherRef<'a> {
         self.index.get_or_init_trie_searcher_a(self.dictionary)
     }
@@ -61,15 +66,21 @@ where
         self.index.get_or_init_both_trie_searcher(self.dictionary)
     }
 
-    fn searcher_is_init_and_exact(&self) -> bool {
+    pub fn force_init(&self) {
+        self.get_trie_searchers();
+    }
+
+    /// Returns true iff the
+    fn searcher_is_init_and_exact(&self) -> bool
+    {
         match self.index.get_both_trie_searchers() {
             (Some(a), Some(b)) => {
                 let ra = a.read_unwrapped();
                 let rb = b.read_unwrapped();
                 ra.is_exact()
                     && rb.is_exact()
-                    && ra.prefix_length() == self.index.prefix_len()
-                    && rb.prefix_length() == self.index.prefix_len()
+                    && ra.is_valid_fast(self.index.prefix_len(), self.dictionary.voc_a())
+                    && rb.is_valid_fast(self.index.prefix_len(), self.dictionary.voc_b())
             }
             _ => false,
         }
@@ -448,4 +459,11 @@ pub enum SearchError {
     PrimitiveSearcher(#[from] ScanSearcherInitError),
     #[error("The method {0} does not support ignoring ascii case!")]
     IgnoreAsciiNotSupported(&'static str),
+}
+
+
+impl From<SearchError> for PyErr {
+    fn from(value: SearchError) -> Self {
+        PyValueError::new_err(value.to_string())
+    }
 }

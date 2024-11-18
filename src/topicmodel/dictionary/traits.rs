@@ -12,6 +12,7 @@ use crate::topicmodel::dictionary::iterators::{DictIter, DictIterImpl, DictLangI
 use crate::topicmodel::dictionary::len::Len;
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
 use crate::topicmodel::dictionary::metadata::{DictionaryWithMetaIter, MetadataMutReference};
+use crate::topicmodel::dictionary::search::DictionarySearcher;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, SearchableVocabulary, VocabularyMut};
@@ -254,6 +255,16 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         Some(self.convert_ids_a_to_values(self.translate_word_b_to_ids_a(word)?.iter().copied()))
     }
 }
+
+
+pub trait DictionaryWithSearch<T, V>: DictionaryWithVocabulary<T, V>
+where
+    V: BasicVocabulary<T>
+{
+    /// Returns a search instance for the dictionary
+    fn get_searcher(&self) -> DictionarySearcher<Self, V>;
+}
+
 
 pub trait MergingDictionary<T, V>: DictionaryWithVocabulary<T, V> where V: BasicVocabulary<T> {
     /// Allows to merge two similar dictionary

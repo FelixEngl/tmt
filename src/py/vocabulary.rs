@@ -12,56 +12,64 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::borrow::{Borrow};
-use std::convert::Infallible;
-use std::fmt::{Display, Formatter};
-use std::hash::Hash;
-use std::io::Write;
-use std::ops::{Deref, DerefMut, Range};
+use std::ops::{Deref, DerefMut};
 use std::path::{PathBuf};
-use std::slice::Iter;
-use std::vec::IntoIter;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use pyo3::{pyclass, pyfunction, pymethods, PyRef, PyResult};
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use serde::{Deserialize, Serialize};
+use pyo3::exceptions::{PyAssertionError, PyRuntimeError, PyStopIteration, PyValueError};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::py::dictionary::{PyDictionary};
 use crate::py::helpers::{LanguageHintValue, ListOrInt};
 use crate::register_python;
+use crate::toolkit::rw_ext::RWLockUnwrapped;
 use crate::topicmodel::create_topic_model_specific_dictionary as create_topic_model_specific_dictionary_impl;
+use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryWithMeta};
+use crate::topicmodel::dictionary::direction::LanguageKind;
+use crate::topicmodel::dictionary::metadata::ex::MetadataManagerEx;
 use crate::topicmodel::language_hint::{LanguageHint};
-use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{LoadableVocabulary, MappableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary, AnonymousVocabulary, AnonymousVocabularyMut};
+use crate::topicmodel::vocabulary::{LoadableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyVocabulary {
-    inner: Vocabulary<String>
+    inner: PyVocabularyInner,
+}
+
+impl From<Vocabulary<String>> for PyVocabulary {
+    fn from(v: Vocabulary<String>) -> Self {
+        Self { inner: v.into() }
+    }
 }
 
 impl PyVocabulary {
-    pub fn into_inner(self) -> Vocabulary<String> {
-        self.inner
+
+    pub fn new_from_value(value: Vocabulary<String>) -> Self {
+        Self { inner: value.into() }
+    }
+
+    pub fn new_from_dict(
+        origin: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
+        target: LanguageKind,
+    ) -> Self {
+        Self { inner: PyVocabularyInner::dict_based(origin, target) }
+    }
+
+    pub fn to_voc(self) -> Vocabulary<String> {
+        self.inner.to_voc()
+    }
+
+    pub fn get(&self) -> PyVocabularyRef {
+        self.inner.get()
+    }
+
+    pub fn get_mut(&self) -> PyVocabularyRefMut {
+        self.inner.get_mut()
     }
 }
 
-impl AnonymousVocabulary for PyVocabulary {
-    delegate::delegate! {
-        to self.inner {
-            fn has_entry_for(&self, word_id: usize) -> bool;
-            fn id_to_entry(&self, word_id: usize) -> Option<&HashRef<String>>;
-        }
-    }
-}
-
-impl AnonymousVocabularyMut for PyVocabulary {
-    delegate::delegate! {
-        to self.inner {
-            fn entry_to_id(&mut self, word: HashRef<String>) -> usize;
-        }
-    }
-}
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
@@ -72,18 +80,16 @@ impl PyVocabulary {
         let language = language.map(|value| value.into());
 
         match size {
-            None => {
-                Self {
-                    inner: Vocabulary::empty(language)
-                }
-            }
+            None => Self {
+                    inner: Vocabulary::empty(language).into()
+            },
             Some(value) => {
                 match value {
                     ListOrInt::List(values) => Self {
-                            inner: Vocabulary::create_from(language, values)
+                        inner: Vocabulary::create_from(language, values).into()
                     },
                     ListOrInt::Int(value) => Self {
-                        inner: Vocabulary::with_capacity(language, value)
+                        inner: Vocabulary::with_capacity(language, value).into()
                     }
                 }
             }
@@ -93,13 +99,13 @@ impl PyVocabulary {
     #[getter]
     #[pyo3(name="language")]
     fn language_hint(&self) -> Option<LanguageHint> {
-        self.language().cloned()
+        self.get().language().cloned()
     }
 
     #[setter]
     #[pyo3(name="set_language")]
     fn set_language_hint(&mut self, value: Option<LanguageHintValue>) -> PyResult<()>{
-        self.set_language(value.map(|value| {
+        self.get_mut().set_language(value.map(|value| {
             let x: LanguageHint = value.into();
             x
         }));
@@ -108,44 +114,44 @@ impl PyVocabulary {
 
     #[doc(hidden)]
     fn __repr__(&self) -> String {
-        format!("PyVocabulary({:?})", self.inner)
+        format!("PyVocabulary({:?})", self.get().deref())
     }
 
     #[doc(hidden)]
     fn __str__(&self) -> String {
-        self.inner.to_string()
+        self.get().to_string()
     }
 
     #[doc(hidden)]
     fn __len__(&self) -> usize {
-        self.inner.len()
+        self.get().len()
     }
 
     #[doc(hidden)]
     fn __contains__(&self, value: &str) -> bool {
-        self.inner.contains(value)
+        self.get().contains(value)
     }
 
     #[doc(hidden)]
     fn __iter__(&self) -> PyVocIter {
-        PyVocIter::new(self.clone())
+        PyVocIter::new(&self.inner)
     }
 
     fn add(&mut self, word: String) -> usize {
-        self.inner.add_value(word)
+        self.get_mut().add_value(word)
     }
 
     fn word_to_id(&mut self, word: String) -> Option<usize> {
-        self.inner.get_id(word.as_str())
+        self.get().get_id(word.as_str())
     }
 
-    pub fn id_to_word(&self, id: usize) -> Option<&String> {
-        self.inner.get_value(id).map(|value| value.deref())
+    pub fn id_to_word(&self, id: usize) -> Option<String> {
+        self.get().get_value(id).map(|value| value.to_string())
     }
 
     /// Save the vocabulary in a standardisized way
     fn save(&self, path: PathBuf) -> PyResult<usize> {
-        Ok(self.inner.save_to_file(path)?)
+        Ok(self.get().save_to_file(path)?)
     }
 
     /// Load the vocabulary from a file
@@ -153,7 +159,7 @@ impl PyVocabulary {
     fn load(path: PathBuf) -> PyResult<PyVocabulary> {
         match Vocabulary::<String>::load_from_file(path) {
             Ok(inner) => {
-                Ok(Self{ inner })
+                Ok(Self{ inner: inner.into() })
             }
             Err(value) => {
                 Err(PyValueError::new_err(value.to_string()))
@@ -175,198 +181,287 @@ impl PyVocabulary {
     }
 }
 
-impl Deref for PyVocabulary {
+
+
+#[derive(Debug, Clone)]
+enum PyVocabularyInner {
+    DictBased {
+        origin: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
+        target: LanguageKind,
+        mut_version: Arc<AtomicUsize>
+    },
+    Raw {
+        value: Arc<RwLock<Vocabulary<String>>>,
+        mut_version: Arc<AtomicUsize>
+    },
+}
+impl PyVocabularyInner {
+    pub fn raw(value: Vocabulary<String>) -> Self {
+        Self::Raw {
+            value: Arc::new(RwLock::new(value.into())),
+            mut_version: Arc::new(AtomicUsize::new(0))
+        }
+    }
+
+    pub fn dict_based(
+        origin: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
+        target: LanguageKind,
+    ) -> Self {
+        Self::DictBased {
+            origin,
+            target,
+            mut_version: Arc::new(AtomicUsize::new(0))
+        }
+    }
+
+    pub fn to_voc(self) -> Vocabulary<String> {
+        self.get().clone()
+    }
+}
+
+impl Default for PyVocabularyInner {
+    fn default() -> Self {
+        Self::raw(Vocabulary::default())
+    }
+}
+impl Serialize for PyVocabularyInner {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+    {
+        self.get().serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for PyVocabularyInner {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>
+    {
+        Ok(PyVocabularyInner::raw(<Vocabulary<String> as Deserialize<'de>>::deserialize(deserializer)?))
+    }
+}
+impl From<Vocabulary<String>> for PyVocabularyInner {
+    fn from(value: Vocabulary<String>) -> Self {
+        Self::raw(value)
+    }
+}
+impl PyVocabularyInner {
+    pub fn get_mut_version(&self) -> usize {
+        match self {
+            PyVocabularyInner::DictBased { mut_version, .. } => {
+                mut_version.load(Ordering::Acquire)
+            }
+            PyVocabularyInner::Raw { mut_version, .. } => {
+                mut_version.load(Ordering::Acquire)
+            }
+        }
+    }
+
+    pub fn get(&self) -> PyVocabularyRef {
+        match self {
+            PyVocabularyInner::DictBased {
+                origin,
+                target,
+                mut_version
+            } => {
+                PyVocabularyRef::DictBased {
+                    origin: origin.read_unwrapped(),
+                    target: *target,
+                    mut_version: mut_version.clone()
+                }
+            }
+            PyVocabularyInner::Raw {
+                value,
+                mut_version
+            } => {
+                PyVocabularyRef::Raw {
+                    value: value.read_unwrapped(),
+                    mut_version: mut_version.clone()
+                }
+            }
+        }
+    }
+
+    pub fn get_mut(&self) -> PyVocabularyRefMut {
+        match self {
+            PyVocabularyInner::DictBased {
+                origin,
+                target,
+                mut_version,
+            } => {
+                PyVocabularyRefMut::DictBased {
+                    origin: origin.write_unwrapped(),
+                    target: *target,
+                    mut_version: mut_version.clone()
+                }
+            }
+            PyVocabularyInner::Raw {
+                value,
+                mut_version
+            } => {
+                PyVocabularyRefMut::Raw {
+                    value: value.write_unwrapped(),
+                    mut_version: mut_version.clone()
+                }
+            }
+        }
+    }
+}
+
+pub enum PyVocabularyRef<'a> {
+    DictBased {
+        origin: RwLockReadGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>,
+        target: LanguageKind,
+        mut_version: Arc<AtomicUsize>,
+    },
+    Raw {
+        value: RwLockReadGuard<'a, Vocabulary<String>>,
+        mut_version: Arc<AtomicUsize>
+    },
+}
+impl PyVocabularyRef<'_> {
+    pub fn get_mut_version(&self) -> usize {
+        match self {
+            PyVocabularyRef::DictBased { mut_version, .. } => {
+                mut_version.load(Ordering::Acquire)
+            }
+            PyVocabularyRef::Raw { mut_version, .. } => {
+                mut_version.load(Ordering::Acquire)
+            }
+        }
+    }
+}
+impl<'a> Deref for PyVocabularyRef<'a> {
     type Target = Vocabulary<String>;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        match self {
+            PyVocabularyRef::DictBased {
+                origin,
+                target,
+                ..
+            } => {
+                match target {
+                    LanguageKind::A => {
+                        origin.voc_a()
+                    }
+                    LanguageKind::B => {
+                        origin.voc_b()
+                    }
+                }
+            }
+            PyVocabularyRef::Raw {
+                value,
+                ..
+            } => {
+                value.deref()
+            }
+        }
     }
 }
 
-impl DerefMut for PyVocabulary {
+
+pub enum PyVocabularyRefMut<'a> {
+    DictBased {
+        origin: RwLockWriteGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>,
+        target: LanguageKind,
+        mut_version: Arc<AtomicUsize>,
+    },
+    Raw {
+        value: RwLockWriteGuard<'a, Vocabulary<String>>,
+        mut_version: Arc<AtomicUsize>
+    },
+}
+impl PyVocabularyRefMut<'_> {
+    pub fn get_mut_version(&self) -> usize {
+        match self {
+            PyVocabularyRefMut::DictBased { mut_version, .. } => {
+                mut_version.load(Ordering::Acquire)
+            }
+            PyVocabularyRefMut::Raw { mut_version, .. } => {
+                mut_version.load(Ordering::Acquire)
+            }
+        }
+    }
+}
+impl<'a> Deref for PyVocabularyRefMut<'a> {
+    type Target = Vocabulary<String>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            PyVocabularyRefMut::DictBased {
+                origin,
+                target,
+                ..
+            } => {
+                match target {
+                    LanguageKind::A => {
+                        origin.voc_a()
+                    }
+                    LanguageKind::B => {
+                        origin.voc_b()
+                    }
+                }
+            }
+            PyVocabularyRefMut::Raw {
+                value,
+                ..
+            } => {
+                value.deref()
+            }
+        }
+    }
+}
+impl<'a> DerefMut for PyVocabularyRefMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl IntoIterator for PyVocabulary {
-    type Item = <Vocabulary<String> as IntoIterator>::Item;
-    type IntoIter = <Vocabulary<String> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.inner.into_iter()
-    }
-}
-
-impl BasicVocabulary<String> for PyVocabulary {
-    delegate::delegate! {
-        to self.inner {
-            fn language(&self) -> Option<&LanguageHint>;
-
-            fn set_language(&mut self, new: Option<LanguageHint>) -> Option<LanguageHint>;
-
-            /// The number of entries in the vocabulary
-            fn len(&self) -> usize;
-
-            /// Clear the whole thing
-            fn clear(&mut self);
-
-            /// Get the ids
-            fn ids(&self) -> Range<usize>;
-
-            /// Iterate over the words
-            fn iter(&self) -> Iter<HashRef<String>>;
-
-            fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<String>)>;
-
-            /// Get the HashRef for a specific `id` or none
-            fn get_value(&self, id: usize) -> Option<&HashRef<String>>;
-
-            unsafe fn get_value_unchecked(&self, id: usize) -> &HashRef<String>;
-
-            /// Check if the `id` is contained in this
-            fn contains_id(&self, id: usize) -> bool;
-        }
-    }
-
-    fn create(language: Option<LanguageHint>) -> Self where Self: Sized {
-        Self {
-            inner: Vocabulary::create(language)
-        }
-    }
-
-    fn create_from(language: Option<LanguageHint>, voc: Vec<String>) -> Self where Self: Sized, String: Eq + Hash {
-        Self {
-            inner: Vocabulary::create_from(language, voc)
+        match self {
+            PyVocabularyRefMut::DictBased {
+                ref mut origin,
+                target,
+                mut_version,
+            } => {
+                mut_version.fetch_add(1, Ordering::Release);
+                match target {
+                    LanguageKind::A => {
+                        origin.voc_a_mut()
+                    }
+                    LanguageKind::B => {
+                        origin.voc_b_mut()
+                    }
+                }
+            }
+            PyVocabularyRefMut::Raw {
+                ref mut value,
+                mut_version,
+            } => {
+                mut_version.fetch_add(1, Ordering::Release);
+                value.deref_mut()
+            }
         }
     }
 }
 
-impl MappableVocabulary<String> for PyVocabulary {
-    fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&String) -> Q, V: BasicVocabulary<Q> {
-        self.inner.map(mapping)
-    }
-}
 
-impl AsRef<[HashRef<String>]> for PyVocabulary {
-    fn as_ref(&self) -> &[HashRef<String>] {
-        self.inner.as_ref()
-    }
-}
-
-impl SearchableVocabulary<String> for PyVocabulary {
-
-    delegate::delegate! {
-        to self.inner {
-            /// Retrieves the id for `value`
-            fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
-                where
-                    String: Borrow<Q>,
-                    Q: Hash + Eq;
-
-            /// Retrieves the id for `value`
-            fn get_hash_ref<Q: ?Sized>(&self, value: &Q) -> Option<&HashRef<String>>
-                where
-                    String: Borrow<Q>,
-                    Q: Hash + Eq;
-
-            /// Retrieves the complete entry for `value` in the vocabulary, if it exists
-            fn get_entry_id<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<String>, &usize)>
-                where
-                    String: Borrow<Q>,
-                    Q: Hash + Eq;
-
-            fn contains<Q: ?Sized>(&self, value: &Q) -> bool
-                where
-                    String: Borrow<Q>,
-                    Q: Hash + Eq;
-        }
-    }
-
-    fn filter_by_id<F: Fn(usize) -> bool>(&self, filter: F) -> Self where Self: Sized {
-        self.inner.filter_by_id(filter).into()
-    }
-
-    fn filter_by_value<'a, F: Fn(&'a HashRef<String>) -> bool>(&'a self, filter: F) -> Self where Self: Sized, String: 'a {
-        self.inner.filter_by_value(filter).into()
-    }
-}
-
-impl VocabularyMut<String> for PyVocabulary {
-    delegate::delegate! {
-        to self.inner {
-            /// Adds the `value` to the vocabulary and returns the associated id
-            fn add_hash_ref(&mut self, value: HashRef<String>) -> usize;
-
-            fn add_value(&mut self, value: String) -> usize;
-
-            /// Adds any `value` that can be converted into `T`
-            fn add<V: Into<String>>(&mut self, value: V) -> usize;
-
-            fn add_all_hash_ref<I: IntoIterator<Item=HashRef<String>>>(&mut self, other: I);
-        }
-    }
-}
-impl StoreableVocabulary<String> for PyVocabulary {
-    fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {
-        self.inner.save_to_output(writer)
-    }
-}
-
-impl LoadableVocabulary<String, Infallible> for PyVocabulary {}
-
-impl Display for PyVocabulary {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.inner, f)
-    }
-}
-
-impl<T> From<Vec<T>> for PyVocabulary where T: Into<String> {
-    fn from(value: Vec<T>) -> Self {
-        Self { inner: Vocabulary::from(value.into_iter().map(|value| value.into()).collect::<Vec<_>>()) }
-    }
-}
-
-impl<T> From<(Option<LanguageHint>, Vec<T>)> for PyVocabulary where T: Into<String> {
-    fn from((hint, value): (Option<LanguageHint>, Vec<T>)) -> Self {
-        Self { inner: Vocabulary::from((hint, value.into_iter().map(|value| value.into()).collect::<Vec<_>>())) }
-    }
-}
-
-impl From<Vocabulary<String>> for PyVocabulary {
-    #[inline(always)]
-    fn from(inner: Vocabulary<String>) -> Self {
-        Self { inner }
-    }
-}
-
-impl From<Option<LanguageHint>> for  PyVocabulary {
-    fn from(value: Option<LanguageHint>) -> Self {
-        Self { inner: value.into() }
-    }
-}
-
-impl<'a> FromIterator<&'a HashRef<String>> for PyVocabulary {
-    fn from_iter<I: IntoIterator<Item=&'a HashRef<String>>>(iter: I) -> Self {
-        PyVocabulary {
-            inner: iter.into_iter().collect()
-        }
-    }
-}
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyVocIter {
-    iter: IntoIter<HashRef<String>>
+    target: PyVocabularyInner,
+    mut_version: usize,
+    pos: usize,
 }
 
 unsafe impl Send for PyVocIter{}
 unsafe impl Sync for PyVocIter{}
 
 impl PyVocIter {
-    pub fn new(voc: PyVocabulary) -> Self {
-        Self { iter: voc.inner.into_iter() }
+    fn new(voc: &PyVocabularyInner) -> Self {
+        Self {
+            target: voc.clone(),
+            mut_version: voc.get_mut_version(),
+            pos: 0,
+        }
     }
 }
 
@@ -377,8 +472,20 @@ impl PyVocIter {
         slf
     }
 
-    fn __next__(&mut self) -> Option<String> {
-        Some(self.iter.next()?.to_string())
+    /// May raise an assertion error when the vocabulary changes while iterating.
+    fn __next__(&mut self) -> PyResult<String> {
+        let read = self.target.get();
+        if self.mut_version != read.get_mut_version() {
+            Err(PyAssertionError::new_err("The value of the dictionary changed while iterating!"))
+        } else {
+            if let Some(value) = read.get_value(self.pos) {
+                self.pos += 1;
+                let value = value.to_string();
+                Ok(value)
+            } else {
+                Err(PyStopIteration::new_err("End of iteration."))
+            }
+        }
     }
 }
 
@@ -386,7 +493,12 @@ impl PyVocIter {
 #[pyfunction]
 pub fn create_topic_model_specific_dictionary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
     let read = dictionary.get();
-    PyDictionary::new(create_topic_model_specific_dictionary_impl(read.deref(), vocabulary))
+    let read_voc = vocabulary.get();
+    let result = create_topic_model_specific_dictionary_impl(
+        read.deref(),
+        read_voc.deref()
+    );
+    PyDictionary::new(result)
 }
 
 

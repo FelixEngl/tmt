@@ -130,5 +130,7 @@ fn generate_typedefs(stub: &mut StubInfo) -> Result<()>{
        write!(f, "{new_content}")?;
    }
 
+    "def search(self, query:str | list[str] | typing.Callable[[LanguageKind, str], bool], search_type:typing.Optional[SearchTypeUnionType], threshold:typing.Optional[int | float], target_language:typing.Optional[LanguageKind], ignores_ascii_case:typing.Optional[bool]) -> SearchResultContainerType:";
+
     Ok(())
 }

@@ -18,7 +18,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::{pyclass, pymethods, PyResult};
 use crate::py::helpers::LanguageHintValue;
 use crate::py::topic_model::PyTopicModel;
-use crate::py::vocabulary::PyVocabulary;
 use crate::register_python;
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::topicmodel::model::{DocumentLength, DocumentTo, FullTopicModel, Probability, TopicModel, TopicTo, WordFrequency, WordTo};
@@ -158,7 +157,7 @@ impl PyTopicModelBuilder {
 
         let mut model = TopicModel::new(
             topics,
-            PyVocabulary::from(self.voc.clone()),
+            self.voc.clone(),
             self.used_vocab_frequency.get().cloned().unwrap_or_default(),
             self.doc_topic_distributions.clone().unwrap_or_default(),
             self.document_lengths.clone().unwrap_or_default(),

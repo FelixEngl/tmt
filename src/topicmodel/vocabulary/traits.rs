@@ -31,8 +31,13 @@ pub trait BasicVocabulary<T>: Send + Sync + AsRef<[HashRef<T>]> + IntoIterator<I
     /// Get the ids
     fn ids(&self) -> Range<usize>;
 
-    /// Iterate over the words
+    /// Iterates over the words in the order of the ids.
+    /// To get the ids use .enumerate()
     fn iter(&self) -> Iter<HashRef<T>>;
+
+    /// Iterates over the ids and associated words.
+    /// Usually only a shortcut for [iter] followed by an [enumerate]
+    fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a HashRef<T>)> + 'a where T: 'a;
 
     fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)>;
 
