@@ -99,7 +99,7 @@ pub struct Dictionary<T, V> {
     pub(crate) voc_b: V,
     pub(crate) map_a_to_b: Vec<Vec<usize>>,
     pub(crate) map_b_to_a: Vec<Vec<usize>>,
-    #[serde(with = "OnceLockDef", skip_serializing_if = "index_not_initialized", default)]
+    #[serde(with = "OnceLockDef", default)]
     pub(crate) search_index: OnceLock<SearchIndex>,
     _word_type: PhantomData<T>
 }

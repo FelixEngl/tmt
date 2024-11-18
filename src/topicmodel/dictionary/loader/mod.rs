@@ -1391,7 +1391,6 @@ mod test {
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
     use crate::topicmodel::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
-    use rayon::prelude::*;
     use crate::topicmodel::dictionary::DictionaryKind::*;
     use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteMode, WriteableDictionary};
     use crate::topicmodel::dictionary::metadata::ex::MetadataManagerEx;
@@ -1475,7 +1474,7 @@ mod test {
     pub fn test(){
         env_logger::init();
 
-        let result = TARGETS.iter().cloned().enumerate().par_bridge().map(|(i, value)| {
+        let result = TARGETS.iter().cloned().enumerate().map(|(i, value)| {
             let mut default = UnifiedTranslationHelper::new(LanguageDirection::EN_DE);
             match default.read_by_instruction(&value) {
                 Ok(_) => {
@@ -1495,9 +1494,13 @@ mod test {
             };
 
             data.write_to_path(
-                WriteMode::binary(false),
-                format!("dictionary_{}_{}.dat", value.kind, i)
-            )
+                WriteMode::binary(true),
+                format!("./dictionary_{}_{}.dat", value.kind, i)
+            ).expect("Never fails.");
+
+
+            let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path(WriteMode::binary(true), format!("./dictionary_{}_{}.dat.zst", value.kind, i)).expect("Failed to load dictionary");
+
         }).collect::<Vec<_>>();
 
         for value in result {
@@ -1526,12 +1529,12 @@ mod test {
         };
         data.write_to_path(
             WriteMode::binary(true),
-            "./dictionary2",
+            "./test/dictionary3",
         ).unwrap();
 
 
         let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
-            "./dictionary2.dat.zst"
+            "./test/dictionary3.dat.zst"
         ).unwrap();
 
 

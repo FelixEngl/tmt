@@ -33,7 +33,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use camino::Utf8PathBuf;
 use either::Either;
 use crate::py::tokenizer::PyAlignedArticleProcessor;
-use crate::{define_py_method, impl_py_type_def, register_python, type_def_wrapper};
+use crate::{define_py_method, register_python, type_def_wrapper};
 use crate::tokenizer::Tokenizer;
 use crate::toolkit::from_str_ex::ParseEx;
 use crate::toolkit::special_python_values::{PyEither, PyEitherOrBoth};

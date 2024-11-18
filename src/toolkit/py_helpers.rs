@@ -272,24 +272,6 @@ macro_rules! define_py_literal {
 }
 
 
-macro_rules! __type_def_wrapper_name_helper {
-    ($name: ident, $name_as_str: ident) => {
-        $crate::toolkit::py_helpers::__type_def_wrapper_name_helper!{
-            c $name, stringify!($name_as_str)
-        }
-    };
-    (c $name: ident, $name_as_str: literal) => {
-        $crate::impl_py_stub! {
-            $name {
-                name: $name_as_str,
-            }
-        }
-    };
-}
-
-pub(crate) use __type_def_wrapper_name_helper;
-
-
 #[macro_export]
 macro_rules! type_def_wrapper {
     ($v: vis $name: ident <$ty: ty>) => {
@@ -297,6 +279,7 @@ macro_rules! type_def_wrapper {
         $v struct $name(pub $ty);
 
         impl $name {
+            #[allow(dead_code)]
             pub fn into_inner(self) -> $ty {
                 self.0
             }
