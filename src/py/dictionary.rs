@@ -140,7 +140,7 @@ impl PyDictionary {
     ///     The dict for a complex result is the following:
     ///         {<query_string>: {<prefix>: {<values>}}}
     ///     The list for simple queries basically only contains all the results in a bulk result.
-    // #[pyo3(signature = (query, search_type = None, threshold = None, target_language = None, ignores_ascii_case = None))]
+    #[pyo3(signature = (query, search_type = None, threshold = None, target_language = None, ignores_ascii_case = None))]
     fn search<'py>(
         &self,
         query: SearchInput<'py>,
