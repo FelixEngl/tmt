@@ -135,11 +135,8 @@ pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadat
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-    use tinyset::Fits64;
-    use crate::toolkit::typesafe_interner::DictionaryOrigin;
-    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, DictionaryMutGen, MutableDictionaryWithMeta, StringDictWithMetaDefault};
-    use crate::topicmodel::dictionary::direction::{DirectionTuple, LanguageKind};
+    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, StringDictWithMetaDefault};
+    use crate::topicmodel::dictionary::direction::{DirectionTuple};
     use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
     use crate::topicmodel::dictionary::metadata::MetadataManager;
     use crate::topicmodel::dictionary::word_infos::*;

@@ -65,7 +65,6 @@ macro_rules! convert_into {
 
 }
 
-use std::fmt::Display;
 pub(super) use convert_into;
 
 macro_rules! create_cached_getter {
