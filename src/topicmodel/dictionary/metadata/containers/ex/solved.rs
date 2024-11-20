@@ -258,15 +258,15 @@ macro_rules! create_solved_implementation {
                 result.append(RcDoc::text("}"))
             }
 
-            pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx) -> Result<(), WrongResolvedValueError> {
+            pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
                 $(
                     paste::paste! {
                         if let Some(ref $name) = self.$name.0 {
-                            target.[<write_from_solved_ $name _default>]($name.iter())?;
+                            target.[<write_from_solved_ $name _default>]($name.iter(), is_same_word)?;
                         }
                         if let Some(found) = self.$name.1.as_ref() {
                             for (k, v) in found.iter() {
-                                target.[<write_from_solved_ $name>](k, v.iter())?;
+                                target.[<write_from_solved_ $name>](k, v.iter(), is_same_word)?;
                             }
                         }
                     }

@@ -13,16 +13,16 @@ use strum::Display;
 #[derive(FromPyObject)]
 #[derive(From, Display)]
 pub enum ResolvedValue {
-    #[strum(to_string = "{0}")] Language(Language),
-    #[strum(to_string = "{0}")] Domain(Domain),
-    #[strum(to_string = "{0}")] Register(Register),
-    #[strum(to_string = "{0}")] GrammaticalGender(GrammaticalGender),
-    #[strum(to_string = "{0}")] PartOfSpeech(PartOfSpeech),
-    #[strum(to_string = "{0}")] PartOfSpeechTag(PartOfSpeechTag),
-    #[strum(to_string = "{0}")] Region(Region),
-    #[strum(to_string = "{0}")] GrammaticalNumber(GrammaticalNumber),
-    #[strum(to_string = "{0}")] RawId(u64),
-    #[strum(to_string = "{0}")] String(String),
+    #[strum(to_string = "({0:?})")] Language((Language, u32)),
+    #[strum(to_string = "({0:?})")] Domain((Domain, u32)),
+    #[strum(to_string = "({0:?})")] Register((Register, u32)),
+    #[strum(to_string = "({0:?})")] GrammaticalGender((GrammaticalGender, u32)),
+    #[strum(to_string = "({0:?})")] PartOfSpeech((PartOfSpeech, u32)),
+    #[strum(to_string = "({0:?})")] PartOfSpeechTag((PartOfSpeechTag, u32)),
+    #[strum(to_string = "({0:?})")] Region((Region, u32)),
+    #[strum(to_string = "({0:?})")] GrammaticalNumber((GrammaticalNumber, u32)),
+    #[strum(to_string = "({0:?})")] RawId((u64, u32)),
+    #[strum(to_string = "({0:?})")] String((String, u32)),
 }
 
 #[derive(Debug, Clone, Error)]
@@ -34,7 +34,7 @@ macro_rules! impl_try_from_as_unpack {
         $(
         const _: () = {
             use $crate::topicmodel::dictionary::metadata::ex::{ResolvedValue, WrongResolvedValueError};
-            impl TryFrom<ResolvedValue> for $a {
+            impl TryFrom<ResolvedValue> for ($a, u32) {
                 type Error = WrongResolvedValueError;
 
                 fn try_from(value: ResolvedValue) -> Result<Self, Self::Error> {
@@ -49,10 +49,10 @@ macro_rules! impl_try_from_as_unpack {
     };
 }
 
-impl TryInto<u64> for ResolvedValue {
+impl TryInto<(u64, u32)> for ResolvedValue {
     type Error = WrongResolvedValueError;
 
-    fn try_into(self) -> Result<u64, Self::Error> {
+    fn try_into(self) -> Result<(u64, u32), Self::Error> {
         match self {
             ResolvedValue::RawId(int) => Ok(int),
             other => Err(WrongResolvedValueError("int", other))
@@ -60,10 +60,21 @@ impl TryInto<u64> for ResolvedValue {
     }
 }
 
-impl TryInto<String> for ResolvedValue {
+impl TryInto<(usize, u32)> for ResolvedValue {
     type Error = WrongResolvedValueError;
 
-    fn try_into(self) -> Result<String, Self::Error> {
+    fn try_into(self) -> Result<(usize, u32), Self::Error> {
+        match self {
+            ResolvedValue::RawId((a, b)) => Ok((a as usize, b)),
+            other => Err(WrongResolvedValueError("int", other))
+        }
+    }
+}
+
+impl TryInto<(String, u32)> for ResolvedValue {
+    type Error = WrongResolvedValueError;
+
+    fn try_into(self) -> Result<(String, u32), Self::Error> {
         match self {
             ResolvedValue::String(value) => Ok(value),
             other => Err(WrongResolvedValueError("String", other))
@@ -74,24 +85,24 @@ impl TryInto<String> for ResolvedValue {
 pub(crate) use impl_try_from_as_unpack;
 
 impl ResolvedValue {
-    pub fn resolve_with_interner<B: string_interner::backend::Backend<Symbol=S>, S: Symbol, H: BuildHasher>(&self, interner: &mut string_interner::StringInterner<B, H>) -> Result<S, WrongResolvedValueError> {
+    pub fn resolve_with_interner<B: string_interner::backend::Backend<Symbol=S>, S: Symbol, H: BuildHasher>(&self, interner: &mut string_interner::StringInterner<B, H>) -> Result<(S, u32), WrongResolvedValueError> {
         match self {
-            ResolvedValue::String(value) => { Ok(interner.get_or_intern(value)) }
+            ResolvedValue::String(value) => { Ok((interner.get_or_intern(&value.0), value.1)) }
             other => Err(WrongResolvedValueError("", other.clone()))
         }
     }
 
-    pub fn try_resolve_with_interner<B: string_interner::backend::Backend<Symbol=S>, S: Symbol, H: BuildHasher>(&self, interner: &string_interner::StringInterner<B, H>) -> Result<Option<S>, WrongResolvedValueError> {
+    pub fn try_resolve_with_interner<B: string_interner::backend::Backend<Symbol=S>, S: Symbol, H: BuildHasher>(&self, interner: &string_interner::StringInterner<B, H>) -> Result<Option<(S, u32)>, WrongResolvedValueError> {
         match self {
-            ResolvedValue::String(value) => { Ok(interner.get(value)) }
+            ResolvedValue::String(value) => { Ok(interner.get(&value.0).map(|v| (v, value.1))) }
             other => Err(WrongResolvedValueError("", other.clone()))
         }
     }
 }
 
-impl From<&str> for ResolvedValue {
-    fn from(value: &str) -> Self {
-        Self::String(value.to_string())
+impl From<(&str, u32)> for ResolvedValue {
+    fn from((value, count): (&str, u32)) -> Self {
+        Self::String((value.to_string(), count))
     }
 }
 
@@ -118,30 +129,30 @@ crate::impl_py_type_def_special!(
     ResolvedValueType; {
         output: {
             builder()
-            .with::<Language>()
-            .with::<Domain>()
-            .with::<Register>()
-            .with::<GrammaticalGender>()
-            .with::<PartOfSpeech>()
-            .with::<Region>()
-            .with::<GrammaticalNumber>()
-            .with::<PartOfSpeechTag>()
-            .with::<String>()
-            .with::<u64>()
+            .with::<(Language, u32)>()
+            .with::<(Domain, u32)>()
+            .with::<(Register, u32)>()
+            .with::<(GrammaticalGender, u32)>()
+            .with::<(PartOfSpeech, u32)>()
+            .with::<(Region, u32)>()
+            .with::<(GrammaticalNumber, u32)>()
+            .with::<(PartOfSpeechTag, u32)>()
+            .with::<(String, u32)>()
+            .with::<(u64, u32)>()
             .build_output()
         }
         input: {
             builder()
-            .with::<Language>()
-            .with::<Domain>()
-            .with::<Register>()
-            .with::<GrammaticalGender>()
-            .with::<PartOfSpeech>()
-            .with::<Region>()
-            .with::<GrammaticalNumber>()
-            .with::<PartOfSpeechTag>()
-            .with::<String>()
-            .with::<u64>()
+            .with::<(Language, u32)>()
+            .with::<(Domain, u32)>()
+            .with::<(Register, u32)>()
+            .with::<(GrammaticalGender, u32)>()
+            .with::<(PartOfSpeech, u32)>()
+            .with::<(Region, u32)>()
+            .with::<(GrammaticalNumber, u32)>()
+            .with::<(PartOfSpeechTag, u32)>()
+            .with::<(String, u32)>()
+            .with::<(u64, u32)>()
             .build_input()
         }
     }

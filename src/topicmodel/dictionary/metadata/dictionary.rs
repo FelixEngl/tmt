@@ -164,7 +164,8 @@ where
     fn insert_meta_for_create_subset<'a, L: Language>(
         &mut self,
         word_id: usize,
-        metadata_ref: M::Reference<'a>
+        metadata_ref: M::Reference<'a>,
+        is_exact_same_word: bool,
     ) {
         let mut meta = self.metadata.get_or_create_meta::<L>(
             match L::LANG {
@@ -177,7 +178,7 @@ where
             },
             word_id
         );
-        meta.update_with_reference(metadata_ref)
+        meta.update_with_reference(metadata_ref, is_exact_same_word)
     }
 
     pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V, M>
@@ -224,7 +225,7 @@ where
                                 }
                             }
                         }
-                        new.insert_meta_for_create_subset::<A>(word_a, meta_a);
+                        new.insert_meta_for_create_subset::<A>(word_a, meta_a, true);
                     }
                     if let Some(meta_b) = meta_b {
                         if let Some(b) = meta_b.collect_all_associated_word_ids() {
@@ -238,7 +239,7 @@ where
                             }
                         }
 
-                        new.insert_meta_for_create_subset::<B>(word_b, meta_b);
+                        new.insert_meta_for_create_subset::<B>(word_b, meta_b, true);
                     }
                     update.add_id::<A>(word_id_a, word_a);
                     update.add_id::<B>(word_id_b, word_b);
@@ -447,7 +448,7 @@ where
                                 }
                             }
                         }
-                        new.insert_meta_for_create_subset::<A>(word_a, meta_a);
+                        new.insert_meta_for_create_subset::<A>(word_a, meta_a, false);
                     }
                     if let Some(meta_b) = meta_b {
                         if let Some(b) = meta_b.collect_all_associated_word_ids() {
@@ -462,7 +463,7 @@ where
                                 }
                             }
                         }
-                        new.insert_meta_for_create_subset::<B>(word_b, meta_b);
+                        new.insert_meta_for_create_subset::<B>(word_b, meta_b, false);
                     }
                     update.add_id::<A>(word_id_a, word_a);
                     update.add_id::<B>(word_id_b, word_b);
@@ -585,7 +586,7 @@ where
                         }
                     }
                 }
-                self.insert_meta_for_create_subset::<A>(word_a, meta_a);
+                self.insert_meta_for_create_subset::<A>(word_a, meta_a, true);
             }
             if let Some(meta_b) = meta_b {
                 if let Some(b) = meta_b.collect_all_associated_word_ids() {
@@ -598,7 +599,7 @@ where
                         }
                     }
                 }
-                self.insert_meta_for_create_subset::<B>(word_b, meta_b);
+                self.insert_meta_for_create_subset::<B>(word_b, meta_b, true);
             }
         }
         self.metadata.update_ids(&update);

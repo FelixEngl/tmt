@@ -231,14 +231,14 @@ impl TopicVector {
             let (a, b) = meta.domains();
             if let Some(a) = a {
                 for x in a {
-                    let domain: Domain = x.clone().try_into().unwrap();
-                    new.increment(domain);
+                    let domain: (Domain, u32) = x.clone().try_into().unwrap();
+                    new.increment_by(domain.0, domain.1.into());
                 }
             }
             if let Some(b) = b {
                 for x in b.values().flat_map(|value| value.iter().cloned()) {
-                    let domain: Domain = x.clone().try_into().unwrap();
-                    new.increment(domain);
+                    let domain: (Domain, u32) = x.clone().try_into().unwrap();
+                    new.increment_by(domain.0, domain.1.into());
                 }
             }
         }
@@ -246,14 +246,14 @@ impl TopicVector {
             let (a, b) = meta.registers();
             if let Some(a) = a {
                 for x in a {
-                    let domain: Register = x.clone().try_into().unwrap();
-                    new.increment(domain);
+                    let domain: (Register, u32) = x.clone().try_into().unwrap();
+                    new.increment_by(domain.0, domain.1.into());
                 }
             }
             if let Some(b) = b {
                 for x in b.values().flat_map(|value| value.iter().cloned()) {
-                    let domain: Register = x.clone().try_into().unwrap();
-                    new.increment(domain);
+                    let domain: (Register, u32) = x.clone().try_into().unwrap();
+                    new.increment_by(domain.0, domain.1.into());
                 }
             }
         }
@@ -262,14 +262,14 @@ impl TopicVector {
 
     pub fn fill_by(&mut self, meta: &AssociatedMetadata) {
         if let Some(meta) = meta.domains() {
-            for x in meta.iter() {
-                self.increment(x);
+            for (x, y) in meta.iter() {
+                self.increment_by(x, y.get().into());
             }
         }
 
         if let Some(meta) = meta.registers() {
-            for x in meta.iter() {
-                self.increment(x);
+            for (x, y) in meta.iter() {
+                self.increment_by(x, y.get().into());
             }
         }
     }

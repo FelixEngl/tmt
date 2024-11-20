@@ -3,10 +3,10 @@ macro_rules! convert_into {
         paste::paste! {
             let $name = {
                 let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
-                let def = data.default.as_ref().map(|(_, v)| v.iter().map(|x| x.to_string().into()).collect());
+                let def = data.default.as_ref().map(|(_, v)| v.iter().map(|(x, y)|(x.to_string(), *y).into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
-                        Some((k.to_string(), v.1.iter().map(|x| x.to_string().into()).collect()))
+                        Some((k.to_string(), v.1.iter().map(|(x, y)|(x.to_string(), *y).into()).collect()))
                     } else {
                         None
                     }
@@ -24,10 +24,10 @@ macro_rules! convert_into {
         paste::paste! {
             let $name = {
                 let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
-                let def = data.default.as_ref().map(|value| value.iter().map(Into::into).collect());
+                let def = data.default.as_ref().map(|value| value.iter().map(|(a, b)| (a, b.get()).into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
-                        Some((k.to_string(), v.iter().map(|value| value.into()).collect()))
+                        Some((k.to_string(), v.iter().map(|(a, b)| (a, b.get()).into()).collect()))
                     } else {
                         None
                     }
@@ -45,10 +45,10 @@ macro_rules! convert_into {
         paste::paste! {
             let $name = {
                 let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
-                let def = data.default.as_ref().map(|(_, v)| v.iter().map(|x| x.to_string().into()).collect());
+                let def = data.default.as_ref().map(|(_, v)| v.iter().map(|(x, y)| (x.to_string(), *y).into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
-                        Some((k.to_string(), v.1.iter().map(|x| x.to_string().into()).collect()))
+                        Some((k.to_string(), v.1.iter().map(|(x, y)| (x.to_string(), *y).into()).collect()))
                     } else {
                         None
                     }
@@ -70,27 +70,29 @@ pub(super) use convert_into;
 macro_rules! create_cached_getter {
     (interned: $ident:ident, $interner_name: ident: $ty:ty, $($tt:tt)*) => {
         paste::paste! {
-            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a str>)> {
+            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a str, u32)>)> {
                 self.[<$ident>].get_or_init(|| {
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
                     let def = def.map(|value| {
-                        let resolved = value.iter().map(|v|{
-                            self.manager_ref
+                        let resolved = value.iter().map(|(v, ct)|{
+                            let v = self.manager_ref
                                  .$interner_name
                                  .resolve(v)
-                                 .expect("Encountered an unknown value!")
+                                 .expect("Encountered an unknown value!");
+                            (v, ct.get())
                         }).collect();
                         (value, resolved)
                     });
 
                     let map = dat.into_iter().enumerate().map(|(k, v)|{
                         let resolved = if let Some(v) = v {
-                            let resolved = v.iter().map(|v|{
-                                self.manager_ref
+                            let resolved = v.iter().map(|(v, ct)|{
+                                let v = self.manager_ref
                                      .$interner_name
                                      .resolve(v)
-                                     .expect("Encountered an unknown value!")
+                                     .expect("Encountered an unknown value!");
+                                (v, ct.get())
                             }).collect();
                             Some((v, resolved))
                         } else {
@@ -112,7 +114,7 @@ macro_rules! create_cached_getter {
                 })
             }
 
-            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a str>)> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a str, u32)>)> {
                 self.[<get_ $ident _impl>]()
             }
         }
@@ -120,7 +122,7 @@ macro_rules! create_cached_getter {
     };
     (set: $ident:ident: $ty:ty, $($tt:tt)*) => {
         paste::paste! {
-            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, tinyset::Set64<$ty>> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, &'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>> {
                 self.[<$ident>].get_or_init(|| {
                     use string_interner::Symbol;
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
@@ -147,25 +149,27 @@ macro_rules! create_cached_getter {
     (voc: $ident:ident: $ty:ty, $($tt:tt)*) => {
 
         paste::paste! {
-            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a $crate::topicmodel::reference::HashRef<String>>)> {
+            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a $crate::topicmodel::reference::HashRef<String>, u32)>)> {
                 self.[<$ident>].get_or_init(|| {
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
                     let def = def.map(|value| {
-                        let resolved = value.iter().map(|v|{
-                            self.vocabulary
+                        let resolved = value.iter().map(|(v, ct)|{
+                            let v = self.vocabulary
                                 .id_to_entry(v)
-                                .expect("Encountered an unknown value!")
+                                .expect("Encountered an unknown value!");
+                            (v, ct.get())
                         }).collect();
                         (value, resolved)
                     });
 
                     let map = dat.into_iter().enumerate().map(|(k, v)|{
                         let resolved = if let Some(v) = v {
-                            let resolved = v.iter().map(|v|{
-                                self.vocabulary
+                            let resolved = v.iter().map(|(v, ct)|{
+                                let v = self.vocabulary
                                     .id_to_entry(v)
-                                    .expect("Encountered an unknown value!")
+                                    .expect("Encountered an unknown value!");
+                                (v, ct.get())
                             }).collect();
                             Some((v, resolved))
                         } else {
@@ -187,7 +191,7 @@ macro_rules! create_cached_getter {
                 })
             }
 
-            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, (Set64<$ty>, Vec<&'a $crate::topicmodel::reference::HashRef<String>>)> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a $crate::topicmodel::reference::HashRef<String>, u32)>)> {
                 self.[<get_ $ident _impl>]()
             }
         }

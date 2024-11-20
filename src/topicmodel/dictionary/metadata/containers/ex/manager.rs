@@ -269,20 +269,35 @@ macro_rules! update_routine_set_implementation {
 }
 pub(super) use update_routine_set_implementation;
 
+// for value in $target.$field_name.iter() {
+//     [<$field_name _value>].insert(
+//           $intern_name.get_or_intern(
+//               unsafe {
+//                   $TSelf.$intern_name.resolve_unchecked(value)
+//               }
+//           )
+//     );
+// }
+// $target.$field_name = [<$field_name _value>];
+
 macro_rules! implement_filter_set {
     (interned: $TSelf:ident, $target:ident, $field_name: ident, $intern_name: ident; $($tt:tt)*) => {
         paste::paste! {
-            let mut [<$field_name _value>] = tinyset::Set64::new();
-            for value in $target.$field_name.iter() {
-                [<$field_name _value>].insert(
-                      $intern_name.get_or_intern(
-                          unsafe {
-                              $TSelf.$intern_name.resolve_unchecked(value)
-                          }
-                      )
-                );
+            if let Some(to_iter) = $target.[<$field_name _mut>]() {
+                let mut result = $crate::topicmodel::dictionary::metadata::ex::metadata::MetadataContainerValueGeneric::new();
+                for (value, count) in to_iter.iter() {
+                    unsafe { result.insert_direct(
+                        $intern_name.get_or_intern(
+                            $TSelf.$intern_name.resolve_unchecked(value)
+                        ),
+                        count.get(),
+                        true
+                    ) }
+                }
+                unsafe{
+                    to_iter.apply_new_as_update(result);
+                }
             }
-            $target.$field_name = [<$field_name _value>];
         }
         $crate::topicmodel::dictionary::metadata::ex::manager::implement_filter_set!(
             $($tt)*
@@ -374,28 +389,5 @@ impl MetadataManagerEx {
                 }
             }
         }
-    }
-
-    pub fn drop_original_words(&mut self) {
-        let mut original_entry_interner: OriginalEntryStringInterner = OriginalEntryStringInterner::new();
-        for value in self.meta_a.iter_mut() {
-            for value in value.iter_mut() {
-                let metadata = value.to_metadata();
-                if let Some(targ) = metadata.get_mut() {
-                    let mut original_entry_value = Set64::new();
-                    for value in targ.original_entry.iter() {
-                        original_entry_value.insert(
-                            original_entry_interner.get_or_intern(
-                                unsafe {
-                                    self.original_entry_interner.resolve_unchecked(value)
-                                }
-                            )
-                        );
-                    }
-                    targ.original_entry = original_entry_value;
-                }
-            }
-        }
-        self.original_entry_interner = original_entry_interner;
     }
 }

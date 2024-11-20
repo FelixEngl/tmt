@@ -2,8 +2,12 @@
 macro_rules! implement_update {
     ($targ: ident, $update: ident, $L: ident => voc: $name: ident, $($tt:tt)*) => {
         {
-            let __update = $update.create_update::<$L>(&$targ.synonyms);
-            $targ.synonyms = __update;
+            if let Some(value) = $targ.synonyms_mut() {
+                let update = $update.create_update::<$L, _, _>(value.iter_counts());
+                unsafe {
+                    value.apply_iterable_as_update(update.into_iter(), true)
+                }
+            }
         }
         $crate::topicmodel::dictionary::metadata::ex::metadata::implement_update!($targ, $update, $L => $($tt)*);
     };
@@ -18,7 +22,7 @@ pub(super) use implement_update;
 
 macro_rules! implement_id_collection {
     ($targ: ident, $collector: ident => voc: $name: ident, $($tt:tt)*) => {
-        $collector.extend($targ.$name.iter());
+        $collector.extend($targ.$name().map(|value| value.iter_keys()).into_iter().flatten());
         $crate::topicmodel::dictionary::metadata::ex::metadata::implement_id_collection!($targ, $collector => $($tt)*);
     };
     ($targ: ident, $collector: ident => $marker:tt: $name: ident, $($tt:tt)*) => {
@@ -30,15 +34,6 @@ macro_rules! implement_id_collection {
 pub(super) use implement_id_collection;
 
 macro_rules! impl_associated_metadata {
-
-    (__is_empty $name: ident $($name2: ident)*) => {
-        pub fn is_empty(&self) -> bool {
-            self.$name.is_empty()
-            $(
-                && self.$name2.is_empty()
-            )*
-        }
-    };
 
     ($($tt: tt: $($doc: literal)? $name: ident: $typ: ty),+ $(,)?) => {
 
@@ -57,55 +52,124 @@ macro_rules! impl_associated_metadata {
             $(
             /// Get the values of the field
             #[inline(always)]
-            pub fn $name(&self) -> Option<&tinyset::Set64<$typ>> {
-                Some(&self.inner.get()?.$name)
+            pub fn $name(&self) -> Option<&$crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ>> {
+                self.inner.get()?.$name()
             }
 
             paste::paste! {
+                /// Get the values of the field
+                #[inline(always)]
+                pub fn [<$name _mut>](&mut self) -> Option<&mut $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ>> {
+                    self.inner.get_mut()?.[<$name _mut>]()
+                }
+
+                /// Get the values of the field
+                #[inline(always)]
+                pub fn [<get_or_init_ $name>](&mut self) -> &mut $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ> {
+                    self.get_mut_or_init().[<get_or_init_ $name>]()
+                }
+
                 /// Adds a single value to the specified field
                 #[inline(always)]
                 pub fn [<add_single_to_ $name>](&mut self, value: $typ) {
-                    self.get_mut_or_init().$name.insert(value);
+                    self.get_mut_or_init().[<add_single_to_ $name>](value);
                 }
 
                 /// Adds all values to the specified field
                 #[inline(always)]
                 pub fn [<add_all_to_ $name>]<I: IntoIterator<Item=$typ>>(&mut self, values: I) {
-                    self.get_mut_or_init().$name.extend(values);
+                    self.get_mut_or_init().[<add_all_to_ $name>](values);
+                }
+
+                /// Adds a single value to the specified field
+                #[inline(always)]
+                pub fn [<write_single_to_ $name>](&mut self, value: $typ, count: u32, is_same_word: bool) {
+                    self.get_mut_or_init().[<write_single_to_ $name>](value, count, is_same_word);
+                }
+
+                /// Adds all values to the specified field
+                #[inline(always)]
+                pub fn [<write_all_to_ $name>]<I: IntoIterator<Item=($typ, u32)>>(&mut self, values: I, is_same_word: bool) {
+                    self.get_mut_or_init().[<write_all_to_ $name>](values, is_same_word);
                 }
             }
             )+
         }
 
-        #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
-        pub struct AssociatedMetadataImpl {
-            $(
-                $(#[doc=$doc])?
-                $name: tinyset::Set64<$typ>,
-            )+
 
-        }
+
 
         impl AssociatedMetadataImpl {
-            pub fn update_with(&mut self, other: &AssociatedMetadataImpl) {
-                $(
-                    self.$name.extend(other.$name.iter());
-                )+
-            }
-
-            $crate::topicmodel::dictionary::metadata::ex::metadata::impl_associated_metadata!{__is_empty $($name)+}
 
             $(
-            pub fn $name(&self) -> &tinyset::Set64<$typ> {
-                &self.$name
+            pub fn $name(&self) -> Option<&$crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ>> {
+                use $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
+                Some(
+                    unsafe {
+                        paste::paste! {
+                            self.get(MetaField::[<$name:camel>])?.[<as_ref_unchecked_ $name>]()
+                        }
+                    }
+                )
             }
 
+
+
             paste::paste! {
+                pub fn [<$name _mut>](&mut self) -> Option<&mut $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ>> {
+                    use $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
+                    Some(
+                        unsafe {
+                            paste::paste! {
+                                self.get_mut(MetaField::[<$name:camel>])?.[<as_mut_unchecked_ $name>]()
+                            }
+                        }
+                    )
+                }
+
+                pub fn [<get_or_init_ $name>](&mut self) -> &mut $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ> {
+                    use $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
+                    unsafe {
+                        paste::paste! {
+                            self.get_or_insert(MetaField::[<$name:camel>]).[<as_mut_unchecked_ $name>]()
+                        }
+                    }
+                }
+
                 pub fn [<add_single_to_ $name>](&mut self, value: $typ) {
-                    self.$name.insert(value);
+                    unsafe {
+                        self
+                            .get_or_insert(MetaField::[<$name:camel>])
+                            .[<as_mut_unchecked_ $name>]()
+                            .insert(value);
+                    }
                 }
                 pub fn [<add_all_to_ $name>]<I: IntoIterator<Item=$typ>>(&mut self, values: I) {
-                    self.$name.extend(values);
+                    unsafe {
+                        self
+                            .get_or_insert(MetaField::[<$name:camel>])
+                            .[<as_mut_unchecked_ $name>]()
+                            .extend(values);
+                    }
+                }
+
+                pub fn [<write_single_to_ $name>](&mut self, value: $typ, count: u32, is_same_word: bool) {
+                    unsafe {
+                        self
+                            .get_or_insert(MetaField::[<$name:camel>])
+                            .[<as_mut_unchecked_ $name>]()
+                            .insert_direct(value, count, is_same_word);
+                    }
+                }
+                pub fn [<write_all_to_ $name>]<I: IntoIterator<Item=($typ, u32)>>(&mut self, values: I, is_same_word: bool) {
+                    unsafe {
+                        let targ = self
+                            .get_or_insert(MetaField::[<$name:camel>])
+                            .[<as_mut_unchecked_ $name>]();
+                        for (k, v) in values {
+                            targ.insert_direct(k, v, is_same_word);
+                        }
+                    }
                 }
             }
             )+
@@ -133,9 +197,9 @@ macro_rules! impl_associated_metadata {
             $(
                 paste::paste! {
                     /// Get all values of a specific field.
-                    pub fn [<all_raw_ $name>](&self) -> (Option<tinyset::Set64<$typ>>, Vec<Option<tinyset::Set64<$typ>>>) {
-                         let a = self.general_metadata.get().map(|value| value.$name().cloned()).flatten();
-                         let b = self.associated_metadata.iter().map(|value| value.get().map(|value| value.$name().cloned()).flatten()).collect();
+                    pub fn [<all_raw_ $name>]<'a>(&'a self) -> (Option<&'a MetadataContainerValueGeneric<$typ>>, Vec<Option<&'a MetadataContainerValueGeneric<$typ>>>) {
+                         let a = self.general_metadata.get().and_then(|value| value.$name());
+                         let b = self.associated_metadata.iter().map(|value| value.get().and_then(|value| value.$name())).collect();
                          (a, b)
                     }
                 }
@@ -167,6 +231,85 @@ macro_rules! impl_keys {
             }
             )+
         }
+
+        #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+        pub enum MetadataContainerValue {
+            $($enum_var_name($crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$typ>),
+            )+
+        }
+
+        const _: () = {
+            use $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
+            use $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric;
+            impl MetadataContainerValue {
+                pub fn create_for_key(key: MetaField) -> Self {
+                    match key {
+                        $(
+                        MetaField::$enum_var_name => Self::$enum_var_name(MetadataContainerValueGeneric::new()),
+                        )+
+                    }
+                }
+
+                pub fn is_empty(&self) -> bool {
+                    match self {
+                        $(
+                        MetadataContainerValue::$enum_var_name(slf) => slf.is_empty(),
+                        )+
+                    }
+                }
+
+                pub fn update(&mut self, other: &MetadataContainerValue, is_same_word: bool) {
+                    match (self, other) {
+                        $(
+                        (MetadataContainerValue::$enum_var_name(slf), MetadataContainerValue::$enum_var_name(othr)) => slf.update(othr, is_same_word),
+                        )+
+                        _ => {}
+                    }
+                }
+
+                paste::paste! {
+                    $(
+                    pub fn [<as_ref_ $normal_name>](&self) -> Option<&MetadataContainerValueGeneric<$typ>> {
+                        match self {
+                            Self::$enum_var_name(resolved_value) => {
+                                Some(resolved_value)
+                            }
+                            _ => None
+                        }
+                    }
+
+                    pub fn [<as_mut_ $normal_name>](&mut self) -> Option<&mut MetadataContainerValueGeneric<$typ>> {
+                        match self {
+                            Self::$enum_var_name(resolved_value) => {
+                                Some(resolved_value)
+                            }
+                            _ => None
+                        }
+                    }
+
+                    pub unsafe fn [<as_ref_unchecked_ $normal_name>](&self) -> &MetadataContainerValueGeneric<$typ> {
+                        match self {
+                            Self::$enum_var_name(resolved_value) => {
+                                resolved_value
+                            }
+                            _ => panic!("Illegal conversion for {}", stringify!($typ))
+                        }
+                    }
+
+                    pub unsafe fn [<as_mut_unchecked_ $normal_name>](&mut self) -> &mut MetadataContainerValueGeneric<$typ> {
+                        match self {
+                            Self::$enum_var_name(resolved_value) => {
+                                resolved_value
+                            }
+                            _ => panic!("Illegal conversion for {}", stringify!($typ))
+                        }
+                    }
+                    )+
+                }
+            }
+        };
+
+
     };
 }
 pub(super) use impl_keys;
@@ -174,21 +317,21 @@ pub(super) use impl_keys;
 macro_rules! impl_general_metadata {
     ($($normal_name:ident, $enum_var_name: ident, $typ: ty);+ $(;)?) => {
 
-        #[derive(Clone, Copy, Hash, Eq, PartialEq, Debug)]
+        #[derive(Clone, Eq, PartialEq, Debug)]
         pub enum GeneralMetadataEntry<'a> {
-            $($enum_var_name(&'a tinyset::Set64<$typ>),
+            $($enum_var_name(std::borrow::Cow<'a, std::collections::HashMap<$typ, u32>>),
             )+
         }
 
-        #[derive(Clone, Hash, Eq, PartialEq, Debug, serde::Deserialize, serde::Serialize)]
+        #[derive(Clone, Eq, PartialEq, Debug, serde::Deserialize, serde::Serialize)]
         pub enum GeneralMetadata {
-            $($enum_var_name(Option<tinyset::Set64<$typ>>, Vec<Option<tinyset::Set64<$typ>>>),
+            $($enum_var_name(Option<std::collections::HashMap<$typ, u32>>, Vec<Option<std::collections::HashMap<$typ, u32>>>),
             )+
         }
 
         impl GeneralMetadata {
             $(
-            fn $normal_name(default: Option<tinyset::Set64<$typ>>, dicts: Vec<Option<tinyset::Set64<$typ>>>) -> GeneralMetadata {
+            fn $normal_name(default: Option<std::collections::HashMap<$typ, u32>>, dicts: Vec<Option<std::collections::HashMap<$typ, u32>>>) -> GeneralMetadata {
                 GeneralMetadata::$enum_var_name(default, dicts)
             }
             )+
@@ -197,7 +340,7 @@ macro_rules! impl_general_metadata {
                 match self {
                     $(
                     GeneralMetadata::$enum_var_name(Some(default), _) => {
-                        Some(GeneralMetadataEntry::$enum_var_name(default))
+                        Some(GeneralMetadataEntry::$enum_var_name(std::borrow::Cow::Borrowed(default)))
                     }
                     )+
                     _ => None
@@ -210,7 +353,7 @@ macro_rules! impl_general_metadata {
                     GeneralMetadata::$enum_var_name(_, value) => {
                         value
                         .iter()
-                        .map(|value| value.as_ref().map(GeneralMetadataEntry::$enum_var_name))
+                        .map(|value| value.as_ref().map(|value| GeneralMetadataEntry::$enum_var_name(std::borrow::Cow::Borrowed(value))))
                         .collect()
                     }
                     )+
@@ -224,7 +367,7 @@ macro_rules! impl_general_metadata {
                         value
                         .get(idx.to_usize())?
                         .as_ref()
-                        .map(GeneralMetadataEntry::$enum_var_name)
+                        .map(|value| GeneralMetadataEntry::$enum_var_name(std::borrow::Cow::Borrowed(value)))
                     }
                     )+
                 }
@@ -237,8 +380,18 @@ macro_rules! impl_general_metadata {
                 enum_map::enum_map! {
                     $(
                         MetaField::$enum_var_name => GeneralMetadata::$normal_name(
-                            self.general_metadata.get().map(|value| value.$normal_name().cloned()).flatten(),
-                            self.associated_metadata.iter().map(|value| value.get().map(|value| value.$normal_name().cloned()).flatten()).collect()
+                            self.general_metadata.get().and_then(|value| {
+                                value.$normal_name().map(|value| {
+                                    value.counts().into_owned()
+                                })
+                            }),
+                            self.associated_metadata.iter().map(|value| {
+                                value.get().and_then(|value| {
+                                    value.$normal_name().map(|value| {
+                                        value.counts().into_owned()
+                                    })
+                                })
+                            }).collect()
                         ),
                     )+
                 }
@@ -248,8 +401,18 @@ macro_rules! impl_general_metadata {
                 match field {
                     $(
                         MetaField::$enum_var_name => GeneralMetadata::$normal_name(
-                            self.general_metadata.get().map(|value| value.$normal_name().cloned()).flatten(),
-                            self.associated_metadata.iter().map(|value| value.get().map(|value| value.$normal_name().cloned()).flatten()).collect()
+                            self.general_metadata.get().and_then(|value| {
+                                value.$normal_name().map(|value| {
+                                    value.counts().into_owned()
+                                })
+                            }),
+                            self.associated_metadata.iter().map(|value| {
+                                value.get().and_then(|value| {
+                                    value.$normal_name().map(|value| {
+                                        value.counts().into_owned()
+                                    })
+                                })
+                            }).collect()
                         ),
                     )+
                 }
@@ -264,16 +427,15 @@ macro_rules! impl_general_metadata {
                                 self
                                 .associated_metadata
                                 .get(dict.to_usize())?
-                                .get()
-                                .map(
-                                    |value|
-                                    value
-                                    .$normal_name()
-                                    .map(GeneralMetadataEntry::$enum_var_name)
-                                )
-                                .flatten()
+                                .get()?
+                                .$normal_name()
+                                .map(|value| GeneralMetadataEntry::$enum_var_name(value.counts()))
                             } else {
-                                self.general_metadata.get()?.$normal_name().map(GeneralMetadataEntry::$enum_var_name)
+                                self
+                                .general_metadata
+                                .get()?
+                                .$normal_name()
+                                .map(|value| GeneralMetadataEntry::$enum_var_name(value.counts()))
                             }
                         }
                     )+
@@ -294,13 +456,13 @@ macro_rules! create_metadata_impl {
 
 pub(super) use create_metadata_impl;
 
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::iter::Map;
 use std::num::NonZeroU32;
 use either::Either;
-use serde::de::DeserializeOwned;
 use strum::EnumIs;
 use tinyset::Fits64;
 use super::*;
@@ -324,84 +486,61 @@ impl<T> MetadataWithOrigin<T> {
     }
 }
 
-
-
-#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
-enum MetadataContainerValue {
-    Domain(MetadataContainerValueGeneric<Domain>)
-}
-
-impl MetadataContainerValue {
-    pub fn create_for_key(key: MetaField) -> Self {
-        match key {
-            MetaField::Domains => {
-                Self::create_domain()
-            }
-            _ => todo!()
-        }
-    }
-
-    pub fn create_domain() -> Self {
-        Self::Domain(MetadataContainerValueGeneric::new())
-    }
-
-    pub fn as_domain(&self) -> Option<&MetadataContainerValueGeneric<Domain>> {
-        match self {
-            MetadataContainerValue::Domain(resolved_value) => {
-                Some(resolved_value)
-            }
-            _ => None
-        }
-    }
-
-    pub fn as_domain_mut(&mut self) -> Option<&mut MetadataContainerValueGeneric<Domain>> {
-        match self {
-            MetadataContainerValue::Domain(resolved_value) => {
-                Some(resolved_value)
-            }
-            _ => None
-        }
-    }
-
-    pub unsafe fn as_domain_unchecked(&self) -> &MetadataContainerValueGeneric<Domain> {
-        match self {
-            MetadataContainerValue::Domain(resolved_value) => {
-                resolved_value
-            }
-            _ => panic!("Not a {}!", std::any::type_name::<Domain>())
-        }
-    }
-
-    pub unsafe fn as_domain_mut_unchecked(&mut self) -> &mut MetadataContainerValueGeneric<Domain> {
-        match self {
-            MetadataContainerValue::Domain(resolved_value) => {
-                resolved_value
-            }
-            _ => panic!("Not a {}!", std::any::type_name::<Domain>())
-        }
-    }
-}
-
-
-impl SpareMetadataContainer {
-
-}
-
-
-
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, EnumIs)]
 enum InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
-    Simple(Set64<T>),
-    Counting(HashMap<T, u32>),
+    Small(Set64<T>),
+    Big(HashMap<T, u32>),
 }
 
 impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+
+    pub fn entries(&self) -> Cow<Set64<T>> {
+        match self {
+            InnerMetadataContainerValueGeneric::Small(value) => {
+                Cow::Borrowed(value)
+            }
+            InnerMetadataContainerValueGeneric::Big(value) => {
+                Cow::Owned(value.keys().cloned().collect())
+            }
+        }
+    }
+
+    pub fn counts(&self) -> Cow<HashMap<T, u32>> {
+        match self {
+            InnerMetadataContainerValueGeneric::Small(value) => {
+                Cow::Owned(value.iter().map(|v| (v, 1)).collect())
+            }
+            InnerMetadataContainerValueGeneric::Big(value) => {
+                Cow::Borrowed(value)
+            }
+        }
+    }
+
+    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item=T> + 'a> {
+        match self {
+            InnerMetadataContainerValueGeneric::Small(value) => {
+                Box::new(value.iter())
+            }
+            InnerMetadataContainerValueGeneric::Big(value) => {
+                Box::new(value.keys().copied())
+            }
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            InnerMetadataContainerValueGeneric::Small(value) => value.is_empty(),
+            InnerMetadataContainerValueGeneric::Big(value) => value.is_empty()
+        }
+    }
+
+
     pub fn len(&self) -> usize {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Small(resolved_value) => {
                 resolved_value.len()
             }
-            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Big(resolved_value) => {
                 resolved_value.len()
             }
         }
@@ -409,7 +548,7 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     pub fn unwrap_simple(self) -> Set64<T> {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Small(resolved_value) => {
                 resolved_value
             }
             _ => panic!("Not a {}!", std::any::type_name::<Set64<T>>())
@@ -418,7 +557,7 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     pub fn unwrap_counting(self) -> HashMap<T, u32> {
         match self {
-            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Big(resolved_value) => {
                 resolved_value
             }
             _ => panic!("Not a {}!", std::any::type_name::<Set64<T>>())
@@ -427,10 +566,10 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     pub fn as_ref(&self) -> Either<&Set64<T>, &HashMap<T, u32>> {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Small(resolved_value) => {
                 Either::Left(resolved_value)
             }
-            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Big(resolved_value) => {
                 Either::Right(resolved_value)
             }
         }
@@ -438,10 +577,10 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     pub fn as_ref_mut(&mut self) -> Either<&mut Set64<T>, &mut HashMap<T, u32>> {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Small(resolved_value) => {
                 Either::Left(resolved_value)
             }
-            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Big(resolved_value) => {
                 Either::Right(resolved_value)
             }
         }
@@ -449,10 +588,10 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     pub fn contains<R: Borrow<T>>(&self, value: R) -> bool {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(v) => {
+            InnerMetadataContainerValueGeneric::Small(v) => {
                 v.contains(value)
             }
-            InnerMetadataContainerValueGeneric::Counting(v) => {
+            InnerMetadataContainerValueGeneric::Big(v) => {
                 v.contains_key(value.borrow())
             }
         }
@@ -462,10 +601,10 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     /// this value is between 0..n
     pub fn count_of<R: Borrow<T>>(&self, value: R) -> u32 {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(val) => {
+            InnerMetadataContainerValueGeneric::Small(val) => {
                 val.contains(value) as u32
             }
-            InnerMetadataContainerValueGeneric::Counting(val) => {
+            InnerMetadataContainerValueGeneric::Big(val) => {
                 val.get(value.borrow()).copied().unwrap_or(0)
             }
         }
@@ -473,10 +612,10 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     pub fn iter_counts<'a>(&'a self) -> Box<dyn Iterator<Item=(T, NonZeroU32)> + 'a> {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Small(resolved_value) => {
                 Box::new(resolved_value.iter().map(|value| (value, unsafe{NonZeroU32::new_unchecked(1)})))
             }
-            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+            InnerMetadataContainerValueGeneric::Big(resolved_value) => {
                 Box::new(resolved_value.iter().map(|(k, v)| (k.clone(), unsafe{NonZeroU32::new_unchecked(*v)})))
             }
         }
@@ -484,11 +623,24 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     pub fn insert_no_count(&mut self, value: T) {
         match self {
-            InnerMetadataContainerValueGeneric::Simple(v) => {
+            InnerMetadataContainerValueGeneric::Small(v) => {
                 v.insert(value);
             }
-            InnerMetadataContainerValueGeneric::Counting(v) => {
+            InnerMetadataContainerValueGeneric::Big(v) => {
                 v.entry(value).or_insert(1);
+            }
+        }
+    }
+
+    pub fn extend_no_count<I: IntoIterator<Item=T>>(&mut self, values: I) {
+        match self {
+            InnerMetadataContainerValueGeneric::Small(v) => {
+                v.extend(values);
+            }
+            InnerMetadataContainerValueGeneric::Big(v) => {
+                for value in values {
+                    v.entry(value).or_insert(1);
+                }
             }
         }
     }
@@ -496,7 +648,7 @@ impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
 impl<T> Default for InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     fn default() -> Self {
-        Self::Simple(Set64::default())
+        Self::Small(Set64::default())
     }
 }
 
@@ -506,6 +658,31 @@ impl<T> Default for InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq +
 pub struct MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     inner: InnerMetadataContainerValueGeneric<T>
 }
+
+// impl<T, C: Into<u32>> FromIterator<(T, C)> for MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+//     fn from_iter<I: IntoIterator<Item=(T, C)>>(iter: I) -> Self {
+//         let mut new = MetadataContainerValueGeneric::new();
+//         for (k, v) in iter {
+//             unsafe {
+//                 new.insert_direct(k, v.into());
+//             }
+//         }
+//         new
+//     }
+// }
+
+// impl<T> FromIterator<(T, NonZeroU32)> for MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+//     fn from_iter<I: IntoIterator<Item=(T, NonZeroU32)>>(iter: I) -> Self {
+//         let mut new = MetadataContainerValueGeneric::default();
+//         for (k, v) in iter {
+//             unsafe {
+//                 new.insert_direct(k, v.get());
+//             }
+//         }
+//         new
+//     }
+// }
+
 impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     pub fn new() -> Self {
         Self {
@@ -513,10 +690,42 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
         }
     }
 
+    pub(super) unsafe fn apply_new_as_update(&mut self, update: Self) {
+        self.inner = update.inner;
+    }
+
+    pub(super) unsafe fn apply_iterable_as_update<C: Into<u32>, I: IntoIterator<Item=(T, C)>>(&mut self, update: I, is_same_word: bool) {
+        let mut new = MetadataContainerValueGeneric::new();
+        for (k, v) in update {
+            unsafe {
+                new.insert_direct(k, v.into(), is_same_word);
+            }
+        }
+        self.apply_new_as_update(new)
+    }
+
+    /// is_same_word indicates, that we have to remove a single count from is_same_word
+    pub unsafe fn insert_direct(&mut self, value: T, count: u32, is_same_word: bool) {
+        match (count, is_same_word) {
+            (1, true) | (0, _) => {
+                self.inner.insert_no_count(value);
+            },
+            (1, _) => {
+                self.insert_and_count(value);
+            }
+            (_, true) => {
+                self.get_or_init_count().insert(value, count.saturating_sub(1));
+            }
+            _ => {
+                self.get_or_init_count().insert(value, count);
+            }
+        }
+    }
+
     fn get_or_init_count(&mut self) -> &mut HashMap<T, u32> {
-        if self.inner.is_simple() {
+        if self.inner.is_small() {
             let len = self.inner.len();
-            let left = std::mem::replace(&mut self.inner, InnerMetadataContainerValueGeneric::Counting(HashMap::with_capacity(len))).unwrap_simple();
+            let left = std::mem::replace(&mut self.inner, InnerMetadataContainerValueGeneric::Big(HashMap::with_capacity(len))).unwrap_simple();
             let result = match self.inner.as_ref_mut() {
                 Either::Right(value) => value,
                 _ => unreachable!()
@@ -536,16 +745,36 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
         self.get_or_init_count().entry(value).or_insert(1)
     }
 
+    #[inline(always)]
+    pub fn iter_keys<'a>(&'a self) -> Box<dyn Iterator<Item=T> + 'a> {
+        self.inner.iter()
+    }
+
+    #[inline(always)]
+    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item=(T, NonZeroU32)> + 'a> {
+        self.inner.iter_counts()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
 
     /// Insert without count
     pub fn insert(&mut self, value: T) {
         self.inner.insert_no_count(value);
     }
 
+    /// Insert without count
+    pub fn extend<I: IntoIterator<Item=T>>(&mut self, values: I) {
+        values.into_iter().for_each(|v| self.inner.insert_no_count(v));
+    }
+
     /// Insert and inc count.
     pub fn insert_and_count(&mut self, value: T) {
         match &mut self.inner {
-            InnerMetadataContainerValueGeneric::Simple(targ) => {
+            InnerMetadataContainerValueGeneric::Small(targ) => {
                 if targ.insert(value) {
                     return;
                 }
@@ -556,6 +785,16 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
         if *ct != 1 {
             *ct += 1;
         }
+    }
+
+    #[inline(always)]
+    pub fn counts(&self) -> Cow<HashMap<T, u32>> {
+        self.inner.counts()
+    }
+
+    #[inline(always)]
+    pub fn entries(&self) -> Cow<Set64<T>> {
+        self.inner.entries()
     }
 
     #[inline(always)]
@@ -631,27 +870,49 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
             }
         }
     }
+
 }
 
 
-
-#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
-#[repr(transparent)]
-pub struct SpareMetadataContainer {
-    pub(super) inner: HashMap<MetaField, MetadataContainerValue>
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
+pub struct AssociatedMetadataImpl {
+    inner: HashMap<MetaField, MetadataContainerValue>
 }
 
-impl SpareMetadataContainer {
-    pub fn new() -> Self {
-        Self {
-            inner: HashMap::new()
+impl AssociatedMetadataImpl {
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+            || self.inner.values().all(|value| value.is_empty())
+    }
+
+
+    pub fn update_with(&mut self, other: &AssociatedMetadataImpl, is_same_word: bool) {
+        for (k, v) in other.inner.iter() {
+            match self.inner.entry(k.clone()) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().update(v, is_same_word);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(v.clone());
+                }
+            }
         }
     }
 
-    pub fn get_or_init_mut(&mut self, key: MetaField) -> &mut MetadataContainerValue {
+    pub fn get_or_insert(&mut self, key: MetaField) -> &mut MetadataContainerValue {
         self.inner.entry(key).or_insert_with(|| MetadataContainerValue::create_for_key(key))
     }
+
+    pub fn get(&self, key: MetaField) -> Option<&MetadataContainerValue> {
+        self.inner.get(&key)
+    }
+
+    pub fn get_mut(&mut self, key: MetaField) -> Option<&mut MetadataContainerValue> {
+        self.inner.get_mut(&key)
+    }
 }
+
 
 
 
@@ -718,13 +979,13 @@ impl MetadataEx {
     }
 
 
-    pub fn update_with(&mut self, other: &MetadataEx) {
+    pub fn update_with(&mut self, other: &MetadataEx, is_same_word: bool) {
         if let Some(targ) = other.general_metadata.get() {
-            self.general_metadata.get_mut_or_init().update_with(targ);
+            self.general_metadata.get_mut_or_init().update_with(targ, is_same_word);
         }
         for (origin, value) in other.associated_metadata.iter().enumerate() {
             if let Some(value) = value.get() {
-                self.get_or_create_impl(origin).update_with(value)
+                self.get_or_create_impl(origin).update_with(value, is_same_word)
             }
         }
     }
@@ -979,10 +1240,10 @@ impl AssociatedMetadata {
     }
 
     #[inline(always)]
-    pub fn update_with(&mut self, other: &AssociatedMetadata) {
+    pub fn update_with(&mut self, other: &AssociatedMetadata, is_same_word: bool) {
         if let Some(targ) = self.inner.get_mut() {
             if let Some(other) = other.inner.get() {
-                targ.update_with(other)
+                targ.update_with(other, is_same_word)
             }
         }
     }
@@ -1013,11 +1274,10 @@ mod test {
 
 
     unsafe fn add_data(write: &mut AssociatedMetadataImpl) {
-        write.pos.insert(PartOfSpeech::Noun);
-        write.pos.insert(PartOfSpeech::Num);
-        write.ids.insert(AnyIdSymbol::from_u64(12));
-        write.ids.insert(AnyIdSymbol::from_u64(3));
-
+        write.pos_mut().unwrap().insert(PartOfSpeech::Noun);
+        write.pos_mut().unwrap().insert(PartOfSpeech::Num);
+        write.ids_mut().unwrap().insert(AnyIdSymbol::from_u64(12));
+        write.ids_mut().unwrap().insert(AnyIdSymbol::from_u64(3));
     }
 
     #[test]

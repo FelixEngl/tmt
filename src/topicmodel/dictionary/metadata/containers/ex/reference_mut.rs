@@ -77,15 +77,20 @@ macro_rules! create_adders {
                     )}
                 }
 
-                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I) -> Result<(), WrongResolvedValueError> {
-                    let data = values.into_iter().cloned().map(TryInto::try_into).collect::<Result<Vec<String>, _>>()?;
-                    self.[<add_all_to_ $ident _default>](data);
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                    let data = values.into_iter().cloned().map(|v| v.try_into()).collect::<Result<Vec<($ty, u32)>, _>>()?;
+                    self.meta
+                        .get_mut_or_init_general_metadata()
+                        .[<write_all_to_ $ident>](data, is_same_word);
                     Ok(())
                 }
 
-                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> Result<(), WrongResolvedValueError> {
-                    let data = values.into_iter().cloned().map(TryInto::try_into).collect::<Result<Vec<String>, _>>()?;
-                    self.[<add_all_to_ $ident>](dictionary_name, data);
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                    let data = values.into_iter().cloned().map(|v| v.try_into()).collect::<Result<Vec<($ty, u32)>, _>>()?;
+                    let name = self.add_dictionary(dictionary_name);
+                    self.meta
+                        .get_or_create(name)
+                        .[<write_all_to_ $ident>](data, is_same_word);
                     Ok(())
                 }
             }
@@ -146,7 +151,7 @@ macro_rules! create_adders {
                     self.[<add_all_to_ $ident _by_dict>](name, values)
                 }
 
-                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
                     use crate::topicmodel::dictionary::metadata::containers::MetadataMutReference;
                     let data = values
                         .into_iter()
@@ -155,11 +160,11 @@ macro_rules! create_adders {
 
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<add_all_to_ $ident>](data);
+                        .[<write_all_to_ $ident>](data, is_same_word);
                     Ok(())
                 }
 
-                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
                     use crate::topicmodel::dictionary::metadata::containers::MetadataMutReference;
                     let data = values
                         .into_iter()
@@ -168,7 +173,7 @@ macro_rules! create_adders {
                     let name = self.add_dictionary(dictionary_name);
                     self.meta
                         .get_or_create(name)
-                        .[<add_all_to_ $ident>](data);
+                        .[<write_all_to_ $ident>](data, is_same_word);
                     Ok(())
                 }
             }
@@ -211,18 +216,20 @@ macro_rules! create_adders {
                     self.[<add_all_to_ $ident _by_dict>](name, values)
                 }
 
-                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I) -> Result<(), WrongResolvedValueError> {
-                    let data = values.into_iter().cloned().map(TryInto::try_into).collect::<Result<Vec<_>, _>>()?;
-                    self.[<add_all_to_ $ident _default>](data);
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                    let data = values.into_iter().cloned().map(|resolved| resolved.try_into()).collect::<Result<Vec<_>, _>>()?;
+                    self.meta
+                        .get_mut_or_init_general_metadata()
+                        .[<write_all_to_ $ident>](data, is_same_word);
                     Ok(())
                 }
 
-                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> Result<(), WrongResolvedValueError> {
-                    let data = values.into_iter().cloned().map(TryInto::try_into).collect::<Result<Vec<_>, _>>()?;
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                    let data = values.into_iter().cloned().map(|resolved| resolved.try_into()).collect::<Result<Vec<_>, _>>()?;
                     let name = self.add_dictionary(dictionary_name);
                     self.meta
                         .get_or_create(name)
-                        .[<add_all_to_ $ident>](data);
+                        .[<write_all_to_ $ident>](data, is_same_word);
                     Ok(())
                 }
             }
@@ -288,13 +295,14 @@ impl<'a> MetadataMutReference<'a, MetadataManagerEx> for MetadataMutRefEx<'a> {
     #[inline(always)]
     fn update_with_reference<'b>(
         &mut self, 
-        associated: <MetadataManagerEx as MetadataManager>::Reference<'b>
+        associated: <MetadataManagerEx as MetadataManager>::Reference<'b>,
+        is_same_word: bool
     ) {
-        self.meta.update_with(associated.raw)
+        self.meta.update_with(associated.raw, is_same_word)
     }
 
-    fn update_with_resolved(&mut self, update: &<MetadataManagerEx as MetadataManager>::ResolvedMetadata) -> Result<(), WrongResolvedValueError> {
-        update.write_into(self)
+    fn update_with_resolved(&mut self, update: &<MetadataManagerEx as MetadataManager>::ResolvedMetadata, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+        update.write_into(self, is_same_word)
     }
 
     #[inline(always)]

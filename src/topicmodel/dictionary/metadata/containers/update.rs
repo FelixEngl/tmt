@@ -32,37 +32,39 @@ impl WordIdUpdate {
     }
 
     /// Register an id for after-update handling
-    pub fn create_update<L: Language>(&self, value: &Set64<usize>) -> Set64<usize> {
+    pub fn create_update<L: Language, P: Copy, I: IntoIterator<Item=(usize, P)>>(&self, targets: I) -> Vec<(usize, P)> {
         if L::LANG.is_a() {
-            self.create_update_a(value)
+            self.create_update_a(targets)
         } else {
-            self.create_update_b(value)
+            self.create_update_b(targets)
         }
     }
 
-    pub fn create_update_a(&self, value: &Set64<usize>) -> Set64<usize> {
-        let mut values = Set64::new();
-        for v in value.iter() {
+    pub fn create_update_a<P: Copy, I: IntoIterator<Item=(usize, P)>>(&self, targets: I) -> Vec<(usize, P)> {
+        let mut values = Vec::new();
+        for (k, v) in targets {
             values.extend(
                 self
                     .old_ids_a
-                    .get(v)
+                    .get(k)
                     .expect("All id's should be known!")
                     .iter()
+                    .map(|id| (id, v.clone())),
             );
         }
         values
     }
 
-    pub fn create_update_b(&self, value: &Set64<usize>) -> Set64<usize> {
-        let mut values = Set64::new();
-        for v in value.iter() {
+    pub fn create_update_b<P: Copy, I: IntoIterator<Item=(usize, P)>>(&self, targets: I) -> Vec<(usize, P)> {
+        let mut values = Vec::new();
+        for (k, v) in targets {
             values.extend(
                 self
                     .old_ids_b
-                    .get(v)
+                    .get(k)
                     .expect("All id's should be known!")
                     .iter()
+                    .map(|id| (id, v.clone())),
             );
         }
         values

@@ -122,12 +122,47 @@ pub trait MetadataReference<'a, M: MetadataManager>: Clone + Deref<Target: Metad
 
 pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadata> {
 
+    /// Setting the flag is_same_word indicates, that the updating reference is the exact same word.
     #[allow(clippy::needless_lifetimes)]
-    fn update_with_reference<'b>(&mut self, update: <M as MetadataManager>::Reference<'b>);
+    fn update_with_reference<'b>(&mut self, update: <M as MetadataManager>::Reference<'b>, is_same_word: bool);
 
-    fn update_with_resolved(&mut self, update: &<M as MetadataManager>::ResolvedMetadata) -> Result<(), <M as MetadataManager>::UpdateError>;
+    fn update_with_resolved(&mut self, update: &<M as MetadataManager>::ResolvedMetadata, is_same_word: bool) -> Result<(), <M as MetadataManager>::UpdateError>;
 
     fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <M as MetadataManager>::Metadata;
 
     fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut M;
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, DictionaryMut, DictionaryMutGen, MutableDictionaryWithMeta, StringDictWithMetaDefault};
+    use crate::topicmodel::dictionary::direction::{DirectionTuple, LanguageKind};
+    use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
+    use crate::topicmodel::dictionary::word_infos::*;
+
+    #[test]
+    fn can_initialize(){
+        let mut d: StringDictWithMetaDefault = Default::default();
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a1", "b1");
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a2", "b2");
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a3", "b3");
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a4", "b4");
+
+        let mut x = MetadataCollectionBuilder::with_name(Some("Dict1"));
+        MetadataCollectionBuilder::push_domains(&mut x, Domain::Acad);
+        MetadataCollectionBuilder::push_domains(&mut x, Domain::Alchemy);
+        MetadataCollectionBuilder::push_domains(&mut x, Domain::Zool);
+
+        MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Noun);
+        MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Conj);
+        MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Adj);
+
+        MetadataCollectionBuilder::push_synonyms(&mut x, "a2".to_string());
+
+        x.build().unwrap().write_into(&mut d.get_mut_meta_a(a).unwrap());
+
+        let data = d.get_meta_for_a(a).unwrap();
+        println!("{:?}", data);
+    }
 }

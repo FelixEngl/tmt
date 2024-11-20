@@ -547,10 +547,11 @@ where
         word: HashRef<T>,
         meta: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<usize, (usize, <M as MetadataManager>::UpdateError)> {
+        let exists = self.voc_a().contains(&word);
         let word_id = self.insert_single_hash_ref_a(word);
         if let Some(meta_to_add) = meta {
             self.get_or_create_meta_a(word_id)
-                .update_with_resolved(meta_to_add)
+                .update_with_resolved(meta_to_add, exists)
                 .map_err(|value| (word_id, value))?;
         }
         Ok(word_id)
@@ -561,10 +562,11 @@ where
         word: HashRef<T>,
         meta: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<usize, (usize, <M as MetadataManager>::UpdateError)> {
+        let exists = self.voc_b().contains(&word);
         let word_id = self.insert_single_hash_ref_b(word);
         if let Some(meta_to_add) = meta {
             self.get_or_create_meta_b(word_id)
-                .update_with_resolved(meta_to_add)
+                .update_with_resolved(meta_to_add, exists)
                 .map_err(|value| (word_id, value))?;
         }
         Ok(word_id)

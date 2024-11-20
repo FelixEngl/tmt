@@ -8,6 +8,7 @@ macro_rules! generate_enum {
         #[derive(strum::Display, strum::EnumString, strum::IntoStaticStr, strum::EnumCount, strum::EnumIter)]
         #[derive(serde::Serialize, serde::Deserialize)]
         #[derive(enum_map::Enum)]
+        #[repr(u8)]
         pub enum MetaField {
             $(
             #[strum(serialize = $lit_name)]
