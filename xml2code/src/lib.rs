@@ -68,6 +68,7 @@ pub mod macro_impl {
             {
                 fn exec() -> Result<(), $crate::error::Error> {
                     use $crate::macro_impl::GenerateCodeCommandBuilder;
+                    #[allow(unused_imports)]
                     use $crate::RecognizedContentType;
                     use $crate::macro_impl::GenerateCodeCommand;
                     use $crate::generate_code;

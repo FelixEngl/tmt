@@ -7,6 +7,7 @@ mod collector;
 mod field_denom;
 mod resolved_value;
 mod solved_new_arg;
+mod metadata_field_holder;
 
 pub use metadata::*;
 use reference::*;
@@ -22,7 +23,7 @@ use tinyset::Set64;
 use crate::register_python;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::toolkit::typesafe_interner::*;
-use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModelIndex;
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DomainModelIndex;
 use std::ops::Deref;
 use crate::topicmodel::reference::HashRef;
 
@@ -177,7 +178,7 @@ impl MetadataManagerEx {
         use itertools::Itertools;
         use lockfree_object_pool::LinearObjectPool;
         use rayon::prelude::*;
-        use super::super::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE;
+        use super::super::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE;
 
         #[repr(transparent)]
         struct Wrap<'a>(&'a MetadataEx);

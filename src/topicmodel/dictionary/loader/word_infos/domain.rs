@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr};
 use tinyset::Fits64;
 use crate::register_python;
-use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModelIndex;
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DomainModelIndex;
 use crate::topicmodel::dictionary::metadata::ex::impl_try_from_as_unpack;
 
 register_python! {
@@ -1787,7 +1787,7 @@ impl_try_from_as_unpack! {
 
 // #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl crate::topicmodel::dictionary::loader::word_infos::Domain {
+impl Domain {
     fn __str__(&self) -> &'static str {
         self.into()
     }
@@ -1797,17 +1797,17 @@ impl crate::topicmodel::dictionary::loader::word_infos::Domain {
     }
 }
 
-impl DomainModelIndex for crate::topicmodel::dictionary::loader::word_infos::Domain {
+impl DomainModelIndex for Domain {
     #[inline(always)]
     fn as_index(self) -> usize {
         (self as u64) as usize
     }
 }
 
-impl Fits64 for crate::topicmodel::dictionary::loader::word_infos::Domain {
+impl Fits64 for Domain {
     #[inline(always)]
     unsafe fn from_u64(x: u64) -> Self {
-        crate::topicmodel::dictionary::loader::word_infos::Domain::try_from(x).unwrap()
+        Domain::try_from(x).unwrap()
     }
     #[inline(always)]
     fn to_u64(self) -> u64 {

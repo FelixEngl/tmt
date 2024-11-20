@@ -177,8 +177,6 @@ mod test {
     use crate::py::dictionary::DefaultDict;
     use crate::topicmodel::dictionary::search::index::SearchIndex;
     use crate::topicmodel::dictionary::search::searcher::DictionarySearcher;
-    use crate::topicmodel::dictionary::search::SearchType::Autocomplete;
-    use crate::topicmodel::dictionary::{DictionaryWithMeta, MutableDictionaryWithMeta, StringDictWithMetaDefault};
     use crate::topicmodel::dictionary::io::ReadableDictionary;
 
     #[test]

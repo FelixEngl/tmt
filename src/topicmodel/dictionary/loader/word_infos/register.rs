@@ -5,7 +5,7 @@ use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr};
 use tinyset::Fits64;
 use crate::register_python;
 use crate::topicmodel::dictionary::loader::iate_reader::AdministrativeStatus;
-use crate::topicmodel::dictionary::metadata::domain_matrix::DomainModelIndex;
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DomainModelIndex;
 use crate::topicmodel::dictionary::metadata::ex::impl_try_from_as_unpack;
 use crate::topicmodel::dictionary::word_infos::Domain;
 

@@ -13,6 +13,7 @@ macro_rules! implement_update {
     ($targ: ident, $update: ident, $L: ident => $(,)?) => {}
 }
 
+
 pub(super) use implement_update;
 
 macro_rules! implement_id_collection {
@@ -46,6 +47,9 @@ macro_rules! impl_associated_metadata {
             $crate::topicmodel::dictionary::metadata::ex::metadata::impl_general_metadata!(
                 $($name, [<$name:camel>], $typ;)+
             );
+            $crate::topicmodel::dictionary::metadata::ex::metadata::impl_keys!(
+                $($name, [<$name:camel>], $typ;)+
+            );
         }
 
 
@@ -77,9 +81,9 @@ macro_rules! impl_associated_metadata {
         pub struct AssociatedMetadataImpl {
             $(
                 $(#[doc=$doc])?
-                // #[serde(skip_serializing_if = "tinyset::Set64::is_empty", default)]
                 $name: tinyset::Set64<$typ>,
             )+
+
         }
 
         impl AssociatedMetadataImpl {
@@ -142,6 +146,30 @@ macro_rules! impl_associated_metadata {
 }
 
 pub(super) use impl_associated_metadata;
+
+
+macro_rules! impl_keys {
+    (
+        $($normal_name:ident, $enum_var_name: ident, $typ: ty);+ $(;)?
+    ) => {
+        /// Allows to store a count in association to a value
+        #[derive(Clone, Copy, Hash, Eq, PartialEq, Debug)]
+        pub enum CountKey {
+            $($enum_var_name($typ),
+            )+
+        }
+
+        impl CountKey {
+            $(
+            #[inline(always)]
+            pub fn $normal_name(value: $typ) -> CountKey {
+                CountKey::$enum_var_name(value)
+            }
+            )+
+        }
+    };
+}
+pub(super) use impl_keys;
 
 macro_rules! impl_general_metadata {
     ($($normal_name:ident, $enum_var_name: ident, $typ: ty);+ $(;)?) => {
@@ -266,7 +294,15 @@ macro_rules! create_metadata_impl {
 
 pub(super) use create_metadata_impl;
 
-
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::iter::Map;
+use std::num::NonZeroU32;
+use either::Either;
+use serde::de::DeserializeOwned;
+use strum::EnumIs;
+use tinyset::Fits64;
 use super::*;
 
 #[derive(Copy, Clone)]
@@ -288,17 +324,342 @@ impl<T> MetadataWithOrigin<T> {
     }
 }
 
+
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+enum MetadataContainerValue {
+    Domain(MetadataContainerValueGeneric<Domain>)
+}
+
+impl MetadataContainerValue {
+    pub fn create_for_key(key: MetaField) -> Self {
+        match key {
+            MetaField::Domains => {
+                Self::create_domain()
+            }
+            _ => todo!()
+        }
+    }
+
+    pub fn create_domain() -> Self {
+        Self::Domain(MetadataContainerValueGeneric::new())
+    }
+
+    pub fn as_domain(&self) -> Option<&MetadataContainerValueGeneric<Domain>> {
+        match self {
+            MetadataContainerValue::Domain(resolved_value) => {
+                Some(resolved_value)
+            }
+            _ => None
+        }
+    }
+
+    pub fn as_domain_mut(&mut self) -> Option<&mut MetadataContainerValueGeneric<Domain>> {
+        match self {
+            MetadataContainerValue::Domain(resolved_value) => {
+                Some(resolved_value)
+            }
+            _ => None
+        }
+    }
+
+    pub unsafe fn as_domain_unchecked(&self) -> &MetadataContainerValueGeneric<Domain> {
+        match self {
+            MetadataContainerValue::Domain(resolved_value) => {
+                resolved_value
+            }
+            _ => panic!("Not a {}!", std::any::type_name::<Domain>())
+        }
+    }
+
+    pub unsafe fn as_domain_mut_unchecked(&mut self) -> &mut MetadataContainerValueGeneric<Domain> {
+        match self {
+            MetadataContainerValue::Domain(resolved_value) => {
+                resolved_value
+            }
+            _ => panic!("Not a {}!", std::any::type_name::<Domain>())
+        }
+    }
+}
+
+
+impl SpareMetadataContainer {
+
+}
+
+
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, EnumIs)]
+enum InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+    Simple(Set64<T>),
+    Counting(HashMap<T, u32>),
+}
+
+impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+    pub fn len(&self) -> usize {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+                resolved_value.len()
+            }
+            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+                resolved_value.len()
+            }
+        }
+    }
+
+    pub fn unwrap_simple(self) -> Set64<T> {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+                resolved_value
+            }
+            _ => panic!("Not a {}!", std::any::type_name::<Set64<T>>())
+        }
+    }
+
+    pub fn unwrap_counting(self) -> HashMap<T, u32> {
+        match self {
+            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+                resolved_value
+            }
+            _ => panic!("Not a {}!", std::any::type_name::<Set64<T>>())
+        }
+    }
+
+    pub fn as_ref(&self) -> Either<&Set64<T>, &HashMap<T, u32>> {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+                Either::Left(resolved_value)
+            }
+            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+                Either::Right(resolved_value)
+            }
+        }
+    }
+
+    pub fn as_ref_mut(&mut self) -> Either<&mut Set64<T>, &mut HashMap<T, u32>> {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+                Either::Left(resolved_value)
+            }
+            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+                Either::Right(resolved_value)
+            }
+        }
+    }
+
+    pub fn contains<R: Borrow<T>>(&self, value: R) -> bool {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(v) => {
+                v.contains(value)
+            }
+            InnerMetadataContainerValueGeneric::Counting(v) => {
+                v.contains_key(value.borrow())
+            }
+        }
+    }
+
+    /// Returns the count for [value].
+    /// this value is between 0..n
+    pub fn count_of<R: Borrow<T>>(&self, value: R) -> u32 {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(val) => {
+                val.contains(value) as u32
+            }
+            InnerMetadataContainerValueGeneric::Counting(val) => {
+                val.get(value.borrow()).copied().unwrap_or(0)
+            }
+        }
+    }
+
+    pub fn iter_counts<'a>(&'a self) -> Box<dyn Iterator<Item=(T, NonZeroU32)> + 'a> {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(resolved_value) => {
+                Box::new(resolved_value.iter().map(|value| (value, unsafe{NonZeroU32::new_unchecked(1)})))
+            }
+            InnerMetadataContainerValueGeneric::Counting(resolved_value) => {
+                Box::new(resolved_value.iter().map(|(k, v)| (k.clone(), unsafe{NonZeroU32::new_unchecked(*v)})))
+            }
+        }
+    }
+
+    pub fn insert_no_count(&mut self, value: T) {
+        match self {
+            InnerMetadataContainerValueGeneric::Simple(v) => {
+                v.insert(value);
+            }
+            InnerMetadataContainerValueGeneric::Counting(v) => {
+                v.entry(value).or_insert(1);
+            }
+        }
+    }
+}
+
+impl<T> Default for InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+    fn default() -> Self {
+        Self::Simple(Set64::default())
+    }
+}
+
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Default)]
+#[repr(transparent)]
+pub struct MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+    inner: InnerMetadataContainerValueGeneric<T>
+}
+impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
+    pub fn new() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+
+    fn get_or_init_count(&mut self) -> &mut HashMap<T, u32> {
+        if self.inner.is_simple() {
+            let len = self.inner.len();
+            let left = std::mem::replace(&mut self.inner, InnerMetadataContainerValueGeneric::Counting(HashMap::with_capacity(len))).unwrap_simple();
+            let result = match self.inner.as_ref_mut() {
+                Either::Right(value) => value,
+                _ => unreachable!()
+            };
+            result.extend(left.iter().map(|value| (value, 1)));
+            result
+        } else {
+            match self.inner.as_ref_mut() {
+                Either::Right(value) => value,
+                _ => unreachable!()
+            }
+        }
+    }
+
+    /// starts at zero
+    fn get_count_ref_to(&mut self, value: T) -> &mut u32 {
+        self.get_or_init_count().entry(value).or_insert(1)
+    }
+
+
+    /// Insert without count
+    pub fn insert(&mut self, value: T) {
+        self.inner.insert_no_count(value);
+    }
+
+    /// Insert and inc count.
+    pub fn insert_and_count(&mut self, value: T) {
+        match &mut self.inner {
+            InnerMetadataContainerValueGeneric::Simple(targ) => {
+                if targ.insert(value) {
+                    return;
+                }
+            }
+            _ => {}
+        }
+        let ct = self.get_count_ref_to(value);
+        if *ct != 1 {
+            *ct += 1;
+        }
+    }
+
+    #[inline(always)]
+    pub fn contains<R: Borrow<T>>(&self, value: R) -> bool {
+        self.inner.contains(value)
+    }
+
+    /// Returns the count for [value].
+    /// this value is between 0..n
+    #[inline(always)]
+    pub fn count_of<R: Borrow<T>>(&self, value: R) -> u32 {
+        self.inner.count_of(value)
+    }
+
+    /// Returns the value of asssociated counts, this value is between 0..n
+    pub fn associated_count_of<R: Borrow<T>>(&self, value: R) -> u32 {
+        self.count_of(value).saturating_sub(1)
+    }
+
+    /// Returns a value and the counts of it.
+    /// Returns at least one.
+    ///
+    /// If you only want the associated counts (and not the associated + 1)
+    /// use [iter_associated_counts]
+    pub fn iter_counts<'a>(&'a self) -> Box<dyn Iterator<Item=(T, NonZeroU32)> + 'a> {
+        self.inner.iter_counts()
+    }
+
+    pub fn iter_associated_counts<'a>(&'a self) -> Map<Box<dyn Iterator<Item=(T, NonZeroU32)> + 'a>, fn((T, NonZeroU32)) -> (T, u32)> {
+        self.inner.iter_counts().map(|(k, v)| (k, v.get().saturating_sub(1)))
+    }
+
+    /// An update for this element. If the is_same_word is set, the value is only set, but not counted.
+    /// The three possible update strategies are:
+    ///
+    /// ```python
+    /// target: T = ...;
+    /// is_same_word = true;
+    ///
+    /// x = self.count_of(target);
+    /// n = other.count_of(target);
+    ///
+    /// if is_same_word {
+    ///     if n == 1 {
+    ///         self[target] = x
+    ///     } else if n > 1 {
+    ///         self[target] = x + n - 1
+    ///     }
+    /// } else {
+    ///     if n == 1 {
+    ///         self[target] = x + 1
+    ///     } else if n > 1 {
+    ///         self[target] = x + n - 1
+    ///     }
+    /// }
+    /// ```
+    pub fn update(&mut self, other: &Self, is_same_word: bool) {
+        if is_same_word {
+            for (targ, value) in other.iter_counts() {
+                if value.get() == 1 {
+                    self.inner.insert_no_count(targ)
+                } else {
+                    *self.get_count_ref_to(targ) += value.get() - 1;
+                }
+            }
+        } else {
+            for (targ, value) in other.iter_counts() {
+                if value.get() == 1 {
+                    self.insert_and_count(targ);
+                } else {
+                    *self.get_count_ref_to(targ) += value.get() - 1;
+                }
+            }
+        }
+    }
+}
+
+
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[repr(transparent)]
+pub struct SpareMetadataContainer {
+    pub(super) inner: HashMap<MetaField, MetadataContainerValue>
+}
+
+impl SpareMetadataContainer {
+    pub fn new() -> Self {
+        Self {
+            inner: HashMap::new()
+        }
+    }
+
+    pub fn get_or_init_mut(&mut self, key: MetaField) -> &mut MetadataContainerValue {
+        self.inner.entry(key).or_insert_with(|| MetadataContainerValue::create_for_key(key))
+    }
+}
+
+
+
 /// The metadata for an entry
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
 pub struct MetadataEx {
-    // #[serde(skip_serializing_if = "LazyAssociatedMetadata::is_not_init", default)]
     pub(super) general_metadata: LazyAssociatedMetadata,
-    // #[serde(skip_serializing_if = "Vec::is_empty", default = "empty_vec")]
     pub(super) associated_metadata: Vec<LazyAssociatedMetadata>,
-}
-
-fn empty_vec() -> Vec<LazyAssociatedMetadata> {
-    Vec::with_capacity(0)
 }
 
 impl MetadataEx {

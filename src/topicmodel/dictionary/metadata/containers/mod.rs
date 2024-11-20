@@ -122,7 +122,7 @@ pub trait MetadataReference<'a, M: MetadataManager>: Clone + Deref<Target: Metad
 
 pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadata> {
 
-
+    #[allow(clippy::needless_lifetimes)]
     fn update_with_reference<'b>(&mut self, update: <M as MetadataManager>::Reference<'b>);
 
     fn update_with_resolved(&mut self, update: &<M as MetadataManager>::ResolvedMetadata) -> Result<(), <M as MetadataManager>::UpdateError>;

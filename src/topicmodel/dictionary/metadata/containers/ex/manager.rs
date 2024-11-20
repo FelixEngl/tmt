@@ -1,7 +1,7 @@
 macro_rules! create_struct {
     ($($name: ident: $ty:ident => $method: ident: $r_typ: ty),* $(,)?) => {
 
-        pub type DomainCounts = ([u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE], [u64; $crate::topicmodel::dictionary::metadata::domain_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE]);
+        pub type DomainCounts = ([u64; $crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE], [u64; $crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE]);
 
         #[derive(Clone, serde::Serialize, serde::Deserialize)]
         pub struct MetadataManagerEx {

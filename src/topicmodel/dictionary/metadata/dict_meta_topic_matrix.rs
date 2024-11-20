@@ -16,7 +16,7 @@ use strum::EnumCount;
 use thiserror::Error;
 
 register_python!(
-    struct DomainModel;
+    struct DictMetaTopicModel;
     struct TopicVector;
 );
 
@@ -33,13 +33,13 @@ pub enum DomainModelErrors {
 #[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct DomainModel {
+pub struct DictMetaTopicModel {
     matrix: Vec<TopicVector>,
 }
 
 #[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl DomainModel {
+impl DictMetaTopicModel {
     #[new]
     #[pyo3(signature = (capacity=None), text_signature = "capacity: None | int = None")]
     pub fn new_py(capacity: Option<usize>) -> Self {
@@ -59,7 +59,7 @@ impl DomainModel {
     }
 }
 
-impl DomainModel {
+impl DictMetaTopicModel {
     pub fn new() -> Self {
         Self { matrix: Vec::new() }
     }
@@ -117,7 +117,7 @@ impl DomainModel {
     }
 }
 
-impl Deref for DomainModel {
+impl Deref for DictMetaTopicModel {
     type Target = [TopicVector];
 
     fn deref(&self) -> &Self::Target {
@@ -125,13 +125,13 @@ impl Deref for DomainModel {
     }
 }
 
-impl DerefMut for DomainModel {
+impl DerefMut for DictMetaTopicModel {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.matrix
     }
 }
 
-impl Display for DomainModel {
+impl Display for DictMetaTopicModel {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "[\n")?;
         for x in self.matrix.iter() {
@@ -520,3 +520,7 @@ impl Display for TopicVector {
         write!(f, "[{}]", self.inner.iter().join(", "))
     }
 }
+
+
+
+

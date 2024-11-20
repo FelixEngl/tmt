@@ -130,7 +130,7 @@ impl Into<HashMap<MetaField, SolvedMetadataField>> for NewSolvedArgs {
                     }).collect::<Vec<_>>()
                 });
                 match (default, dictionaries) {
-                    (None, None) => HashMap::with_capacity(0),
+                    (None, None) => HashMap::new(),
                     (Some(a), None) => {
                         HashMap::from_iter(a.into_iter().map(|(k, v)| (k, (Some(v), None))))
                     }
