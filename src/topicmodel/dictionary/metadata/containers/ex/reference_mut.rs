@@ -240,7 +240,7 @@ macro_rules! create_adders {
     () => {}
 }
 
-
+use std::fmt::{Display, Formatter};
 pub(super) use create_adders;
 
 macro_rules! create_mut_ref_implementation {
@@ -285,6 +285,12 @@ impl<'a> MetadataMutRefEx<'a> {
     #[inline(always)]
     pub(in super) fn dict_mut<'b: 'a>(&'b self) -> &'a mut dyn AnonymousVocabularyMut {
         unsafe { &mut *self.voc_ref }
+    }
+}
+
+impl<'a> Display for MetadataMutRefEx<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.meta.fmt(f)
     }
 }
 

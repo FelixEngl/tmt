@@ -65,6 +65,7 @@ macro_rules! convert_into {
 
 }
 
+use std::fmt::Display;
 pub(super) use convert_into;
 
 macro_rules! create_cached_getter {
@@ -213,6 +214,12 @@ macro_rules! create_ref_implementation {
             pub(in super) vocabulary: &'a dyn $crate::topicmodel::vocabulary::AnonymousVocabulary,
             $(pub(in super) $name: std::sync::Arc<std::sync::OnceLock<$crate::topicmodel::dictionary::metadata::containers::ex::Storage<'a, $ty>>>,
             )*
+        }
+
+        impl<'a> std::fmt::Display for MetadataRefEx<'a> {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}", self.raw)
+            }
         }
 
         impl std::fmt::Debug for MetadataRefEx<'_> {

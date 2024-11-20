@@ -238,10 +238,22 @@ macro_rules! impl_keys {
             )+
         }
 
+        impl std::fmt::Display for MetadataContainerValue {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(
+                    Self::$enum_var_name(value) => value.fmt(f),
+                    )+
+                }
+            }
+        }
+
+
         const _: () = {
             use $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
             use $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric;
             impl MetadataContainerValue {
+
                 pub fn create_for_key(key: MetaField) -> Self {
                     match key {
                         $(
@@ -459,10 +471,13 @@ pub(super) use create_metadata_impl;
 use std::borrow::{Borrow, Cow};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::iter::Map;
 use std::num::NonZeroU32;
+use std::ops::Range;
 use either::Either;
+use itertools::{Itertools, Position};
 use strum::EnumIs;
 use tinyset::Fits64;
 use super::*;
@@ -490,6 +505,23 @@ impl<T> MetadataWithOrigin<T> {
 enum InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     Small(Set64<T>),
     Big(HashMap<T, u32>),
+}
+
+impl<T> Display for InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash + Display {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        for (p, (v, k)) in self.iter_counts().with_position() {
+            match p {
+                Position::First | Position::Middle => {
+                    write!(f, "{v}: {k}, ")?;
+                }
+                Position::Last | Position::Only => {
+                    write!(f, "{v}: {k}")?;
+                }
+            }
+        }
+        write!(f, ")")
+    }
 }
 
 impl<T> InnerMetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
@@ -659,29 +691,11 @@ pub struct MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     inner: InnerMetadataContainerValueGeneric<T>
 }
 
-// impl<T, C: Into<u32>> FromIterator<(T, C)> for MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
-//     fn from_iter<I: IntoIterator<Item=(T, C)>>(iter: I) -> Self {
-//         let mut new = MetadataContainerValueGeneric::new();
-//         for (k, v) in iter {
-//             unsafe {
-//                 new.insert_direct(k, v.into());
-//             }
-//         }
-//         new
-//     }
-// }
-
-// impl<T> FromIterator<(T, NonZeroU32)> for MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
-//     fn from_iter<I: IntoIterator<Item=(T, NonZeroU32)>>(iter: I) -> Self {
-//         let mut new = MetadataContainerValueGeneric::default();
-//         for (k, v) in iter {
-//             unsafe {
-//                 new.insert_direct(k, v.get());
-//             }
-//         }
-//         new
-//     }
-// }
+impl<T> Display for MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash + Display {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
 
 impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     pub fn new() -> Self {
@@ -768,6 +782,7 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
 
     /// Insert without count
     pub fn extend<I: IntoIterator<Item=T>>(&mut self, values: I) {
+
         values.into_iter().for_each(|v| self.inner.insert_no_count(v));
     }
 
@@ -781,10 +796,7 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
             }
             _ => {}
         }
-        let ct = self.get_count_ref_to(value);
-        if *ct != 1 {
-            *ct += 1;
-        }
+        *self.get_count_ref_to(value) += 1;
     }
 
     #[inline(always)]
@@ -865,7 +877,7 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
                 if value.get() == 1 {
                     self.insert_and_count(targ);
                 } else {
-                    *self.get_count_ref_to(targ) += value.get() - 1;
+                    *self.get_count_ref_to(targ) += value.get();
                 }
             }
         }
@@ -913,7 +925,24 @@ impl AssociatedMetadataImpl {
     }
 }
 
+impl Display for AssociatedMetadataImpl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        for (p, (k, v)) in self.inner.iter().sorted_unstable_by_key(|(k, _)| k.clone()).with_position() {
+            match p {
+                Position::First | Position::Middle => {
+                    write!(f, "{}: {}, ", k, v)?;
+                }
+                Position::Last | Position::Only => {
+                    write!(f, "{}: {}", k, v)?;
+                }
+            }
 
+        }
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
 
 
 /// The metadata for an entry
@@ -1005,6 +1034,16 @@ impl MetadataEx {
     }
 }
 
+impl Display for MetadataEx {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ general: [{}]", self.general_metadata)?;
+        for (k, v) in self.associated_metadata.iter().enumerate() {
+            write!(f, ", dict_{k}: [{v}]")?;
+        }
+        write!(f, " }}")
+    }
+}
+
 impl crate::topicmodel::dictionary::metadata::Metadata for MetadataEx{}
 
 
@@ -1038,12 +1077,12 @@ impl<T> MetadataWithOrigin<T> where T: Copy {
 pub struct Iter<'a> {
     src: &'a MetadataEx,
     general_metadata: bool,
-    pos: usize
+    pos: Range<usize>
 }
 
 impl<'a> Iter<'a> {
     pub fn new(src: &'a MetadataEx) -> Self {
-        Self { src, general_metadata: false, pos: 0 }
+        Self { src, general_metadata: false, pos: 0..src.associated_metadata.len() }
     }
 }
 
@@ -1053,7 +1092,7 @@ impl<'a> Iterator for Iter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         use string_interner::Symbol;
 
-        if self.general_metadata && self.pos == self.src.associated_metadata.len() {
+        if self.general_metadata && self.pos.is_empty() {
             return None
         }
         if !self.general_metadata {
@@ -1062,19 +1101,13 @@ impl<'a> Iterator for Iter<'a> {
                 return Some(MetadataWithOrigin::General(meta))
             }
         }
-        for idx in self.pos..self.src.associated_metadata.len() {
-            if let Some(targ) = self.src.associated_metadata.get(idx) {
-                if let Some(meta) = targ.get() {
-                    self.pos = idx;
-                    return Some(MetadataWithOrigin::Associated(
-                        DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
-                        meta
-                    ))
-                }
-            }
-        }
-        self.pos = self.src.associated_metadata.len();
-        None
+        let idx = self.pos.next()?;
+        let targ = self.src.associated_metadata.get(idx)?;
+        let meta = targ.get()?;
+        Some(MetadataWithOrigin::Associated(
+            DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
+            meta
+        ))
     }
 }
 
@@ -1083,12 +1116,13 @@ impl<'a> Iterator for Iter<'a> {
 pub struct IterMut<'a> {
     src: &'a mut MetadataEx,
     general_metadata: bool,
-    pos: usize
+    pos: Range<usize>
 }
 
 impl<'a> IterMut<'a> {
     pub fn new(src: &'a mut MetadataEx) -> Self {
-        Self { src, general_metadata: false, pos: 0 }
+        let pos = 0..src.associated_metadata.len();
+        Self { src, general_metadata: false, pos }
     }
 }
 
@@ -1097,7 +1131,7 @@ impl<'a> Iterator for IterMut<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         use string_interner::Symbol;
-        if self.general_metadata && self.pos == self.src.associated_metadata.len() {
+        if self.general_metadata && self.pos.is_empty() {
             return None
         }
         if !self.general_metadata {
@@ -1106,20 +1140,13 @@ impl<'a> Iterator for IterMut<'a> {
                 return Some(MetadataWithOrigin::General(unsafe{std::mem::transmute(meta)}))
             }
         }
-        let assoc: &'static mut Vec<LazyAssociatedMetadata> = unsafe{std::mem::transmute(&mut self.src.associated_metadata)};
-        for idx in self.pos..assoc.len() {
-            if let Some(targ) = assoc.get_mut(idx) {
-                if let Some(meta) = targ.get_mut() {
-                    self.pos = idx;
-                    return Some(MetadataWithOrigin::Associated(
-                        crate::toolkit::typesafe_interner::DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
-                        unsafe{std::mem::transmute(meta)}
-                    ))
-                }
-            }
-        }
-        self.pos = assoc.len();
-        None
+        let idx = self.pos.next()?;
+        let targ = self.src.associated_metadata.get_mut(idx)?;
+        let meta = targ.get_mut()?;
+        Some(MetadataWithOrigin::Associated(
+            DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
+            unsafe{std::mem::transmute(meta)}
+        ))
     }
 }
 
@@ -1131,6 +1158,16 @@ impl<'a> Iterator for IterMut<'a> {
 pub(super) struct LazyAssociatedMetadata {
     #[serde(with = "crate::toolkit::once_serializer::OnceCellDef")]
     pub(super) inner: std::cell::OnceCell<AssociatedMetadata>
+}
+
+impl Display for LazyAssociatedMetadata {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(inner) = self.get() {
+            inner.fmt(f)
+        } else {
+            write!(f, "_Unset_")
+        }
+    }
 }
 
 impl Default for LazyAssociatedMetadata {
@@ -1204,6 +1241,16 @@ pub struct AssociatedMetadata {
     pub(super) inner: std::cell::OnceCell<AssociatedMetadataImpl>
 }
 
+impl Display for AssociatedMetadata {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(inner) = self.inner.get() {
+            write!(f, "{inner}")
+        } else {
+            write!(f, "_Empty_")
+        }
+    }
+}
+
 impl PartialEq for AssociatedMetadata {
     fn eq(&self, other: &Self) -> bool {
         self.inner.get() == other.inner.get()
@@ -1236,15 +1283,13 @@ impl AssociatedMetadata {
     // but does not conatin any values.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.inner.get().is_none_or(|value| value.is_empty())
+        self.get().is_none_or(|value| value.is_empty())
     }
 
     #[inline(always)]
     pub fn update_with(&mut self, other: &AssociatedMetadata, is_same_word: bool) {
-        if let Some(targ) = self.inner.get_mut() {
-            if let Some(other) = other.inner.get() {
-                targ.update_with(other, is_same_word)
-            }
+        if let Some(other) = other.get() {
+            self.get_mut_or_init().update_with(other, is_same_word)
         }
     }
 

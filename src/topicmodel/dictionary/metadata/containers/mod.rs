@@ -136,10 +136,15 @@ pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadat
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
-    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, DictionaryMut, DictionaryMutGen, MutableDictionaryWithMeta, StringDictWithMetaDefault};
+    use tinyset::Fits64;
+    use crate::toolkit::typesafe_interner::DictionaryOrigin;
+    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, DictionaryMutGen, MutableDictionaryWithMeta, StringDictWithMetaDefault};
     use crate::topicmodel::dictionary::direction::{DirectionTuple, LanguageKind};
     use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
+    use crate::topicmodel::dictionary::metadata::MetadataManager;
     use crate::topicmodel::dictionary::word_infos::*;
+    use crate::topicmodel::reference::HashRef;
+    use crate::topicmodel::vocabulary::BasicVocabulary;
 
     #[test]
     fn can_initialize(){
@@ -159,10 +164,48 @@ mod test {
         MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Adj);
 
         MetadataCollectionBuilder::push_synonyms(&mut x, "a2".to_string());
+        {
+            let mut y = d.get_or_create_meta_a(a);
+            x.build().unwrap().write_into(&mut y);
+        }
 
-        x.build().unwrap().write_into(&mut d.get_mut_meta_a(a).unwrap());
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a5", "b5");
+        let mut x = MetadataCollectionBuilder::with_name(Some("Dict1"));
+        MetadataCollectionBuilder::push_domains(&mut x, Domain::Acad);
+        MetadataCollectionBuilder::push_domains(&mut x, Domain::Alchemy);
+        MetadataCollectionBuilder::push_domains(&mut x, Domain::T);
 
-        let data = d.get_meta_for_a(a).unwrap();
-        println!("{:?}", data);
+        MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Noun);
+        MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Prefix);
+        MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Adj);
+
+        MetadataCollectionBuilder::push_synonyms(&mut x, "a3".to_string());
+
+        {
+            let mut y = d.get_or_create_meta_a(a);
+            x.build().unwrap().write_into(&mut y);
+        }
+
+        for value in d.metadata.meta_a() {
+            println!("{}", value);
+            println!("{:?}", value.collect_all_associated_word_ids());
+            for value in value.iter() {
+                println!("inner --- {}", value.meta());
+            }
+        }
+
+
+
+        let new_d = d.filter_and_process(
+            |a| Ok::<_, ()>(Some(HashRef::from((&a[0..1]).to_string()))),
+            |a| Ok(Some(HashRef::from((&a[0..1]).to_string()))),
+        ).unwrap();
+        println!("-------------------------");
+        for value in new_d.voc_a().iter() {
+            println!("{}", value);
+        }
+        for value in new_d.metadata.meta_a() {
+            println!("{}", value);
+        }
     }
 }
