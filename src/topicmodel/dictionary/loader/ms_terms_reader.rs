@@ -3,12 +3,12 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use arcstr::ArcStr;
 use itertools::Itertools;
 use strum::Display;
 use thiserror::Error;
 use tinyset::Set64;
 use crate::topicmodel::dictionary::word_infos::{Language, PartOfSpeech, Region};
-use crate::topicmodel::reference::HashRef;
 use super::helper::gen_ms_terms_reader::iter::TermEntryElementIter;
 use super::helper::gen_ms_terms_reader::*;
 
@@ -49,15 +49,15 @@ impl<R> Iterator for MSTermsReader<R> where R: BufRead {
                     term_grp_element: TermGrpElement {
                         term_element: TermElement {
                             content: term,
-                            id_attribute: term_id
+                            id_attribute: id
                         },
                         term_note_element: TermNoteElement {
                             content: part_of_speech,
                             type_attribute: term_note_type
                         }
                     } } in ntig_elements {
+                    let id = ArcStr::from(id);
                     assert!(matches!(term_note_type, TypeAttribute::PartOfSpeech), "Not a pos! {term_note_type}");
-                    let id = HashRef::new(term_id);
                     if let Some(value) = hash_map.insert(id.clone(), Term {
                         id,
                         term,
@@ -79,7 +79,7 @@ impl<R> Iterator for MSTermsReader<R> where R: BufRead {
             }
             Ok(
                 MsTermsEntry {
-                    id: HashRef::new(entry_id),
+                    id: entry_id,
                     terms
                 }
             )
@@ -118,7 +118,7 @@ pub enum MsTermsEntryMergeTermErrorKind {
 
 #[derive(Debug)]
 pub struct MsTermsEntry {
-    pub id: HashRef<String>,
+    pub id: String,
     pub terms: HashMap<LangAttribute, TermDefinition>
 }
 
@@ -152,7 +152,7 @@ pub struct TermDefinition {
     pub lang: Language,
     pub region: Option<Region>,
     pub defintition: Vec<String>,
-    pub terms: HashMap<HashRef<String>, Term>
+    pub terms: HashMap<ArcStr, Term>
 }
 
 impl TermDefinition {
@@ -179,7 +179,7 @@ impl TermDefinition {
 #[derive(Debug, Clone)]
 pub struct Term {
     pub term: String,
-    pub id: HashRef<String>,
+    pub id: ArcStr,
     pub part_of_speech: PartOfSpeech
 }
 
@@ -233,7 +233,7 @@ pub enum MergingReaderFinishedMode {
 }
 
 pub struct MergingReader {
-    cache: indexmap::IndexMap<HashRef<String>, (MsTermsEntry, Set64<usize>)>,
+    cache: indexmap::IndexMap<ArcStr, (MsTermsEntry, Set64<usize>)>,
     readers: Vec<Option<Box<dyn Iterator<Item=Result<MsTermsEntry, MSTermsReaderError>>>>>,
     mode: MergingReaderFinishedMode,
     dropped: usize,
@@ -274,14 +274,14 @@ impl MergingReader {
         )
     }
 
-    pub fn cache(&self) -> &indexmap::IndexMap<HashRef<String>, (MsTermsEntry, Set64<usize>)> {
+    pub fn cache(&self) -> &indexmap::IndexMap<ArcStr, (MsTermsEntry, Set64<usize>)> {
         &self.cache
     }
 
     /// Merges an element in the already cached element.
     /// Pops the element from the ache when it is completed.
     fn merge_element(&mut self, reader_id: usize, entry: MsTermsEntry) -> Result<Option<MsTermsEntry>, MSTermsReaderError> {
-        match self.cache.entry(entry.id.clone()) {
+        match self.cache.entry(ArcStr::from(entry.id.as_str())) {
             indexmap::map::Entry::Occupied(mut value) => {
                 let len = {
                     let (a, b) = value.get_mut();
@@ -441,13 +441,12 @@ impl<'a> Iterator for MergingReaderIter<'a> {
 #[cfg(test)]
 mod test {
     use std::collections::{HashMap};
-    use crate::topicmodel::reference::HashRef;
     use super::{read_ms_terms, MergingReader, MergingReaderFinishedMode, MsTermsEntry};
 
     #[test]
     fn can_run(){
 
-        let mut en_de: HashMap<HashRef<String>, MsTermsEntry> = HashMap::new();
+        let mut en_de: HashMap<String, MsTermsEntry> = HashMap::new();
 
         for value in read_ms_terms(
             "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"

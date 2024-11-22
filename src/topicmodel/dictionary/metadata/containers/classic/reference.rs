@@ -113,7 +113,7 @@ impl<'a> ClassicMetadataRef<'a> {
             let voc = self.manager_ref.get_unstemmed_voc();
             self.unstemmed_cached.set(
                 inner.iter().map(|(k, v)| {
-                    (voc.get_value(*k).unwrap().as_str(), v.iter().map(|value| interner.resolve(*value).unwrap()).collect_vec())
+                    (voc.get_value_by_id(*k).unwrap().as_str(), v.iter().map(|value| interner.resolve(*value).unwrap()).collect_vec())
                 }).collect_vec()
             ).unwrap();
             self.unstemmed_cached.get()

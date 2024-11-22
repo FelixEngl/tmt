@@ -35,7 +35,6 @@ use crate::topicmodel::create_topic_model_specific_dictionary;
 use crate::topicmodel::dictionary::*;
 use crate::topicmodel::dictionary::direction::{AToB, BToA, B};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
 use crate::translate::phantoms::DummyAsVariableProvider;
 use crate::translate::TranslateError::IncompatibleLanguages;
@@ -94,10 +93,10 @@ pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V>(
     translate_config: &TranslateConfig<V>,
 ) -> Result<Target, TranslateError<'a>>
 where
-    T: Hash + Eq + Ord + Clone,
+    T: Hash + Eq + Ord + Clone + Sync + Send + 'a,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a + for<'b> FromIterator<&'b HashRef<T>>,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync,
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
 {
     translate_topic_model(
@@ -115,10 +114,10 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     translate_config: &TranslateConfig<V>,
     provider: Option<&P>
 ) -> Result<Target, TranslateError<'a>> where
-    T: Hash + Eq + Ord + Clone,
+    T: Hash + Eq + Ord + Clone + Send + Sync + 'a,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a + for<'b> FromIterator<&'b HashRef<T>>,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync,
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
     P: AsVariableProvider<T>
 {
@@ -234,10 +233,10 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     let voc_b_col = result.par_iter().flatten().map(|value| {
         match value.candidate_word_id {
             LanguageOrigin::Origin(word_id) => {
-                dictionary.voc_a().get_value(word_id).unwrap()
+                dictionary.voc_a().get_value_by_id(word_id).unwrap()
             }
             LanguageOrigin::Target(word_id) => {
-                dictionary.voc_b().get_value(word_id).unwrap()
+                dictionary.voc_b().get_value_by_id(word_id).unwrap()
             }
         }
     }).collect_vec_list();
@@ -258,10 +257,10 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         let mut topic = topic_content.into_par_iter().map(|candidate| {
             let word = match candidate.candidate_word_id {
                 LanguageOrigin::Origin(word_id) => {
-                    dictionary.voc_a().get_value(word_id).unwrap()
+                    dictionary.voc_a().get_value_by_id(word_id).unwrap()
                 }
                 LanguageOrigin::Target(word_id) => {
-                    dictionary.voc_b().get_value(word_id).unwrap()
+                    dictionary.voc_b().get_value_by_id(word_id).unwrap()
                 }
             };
             (voc_b.get_id(word).unwrap(), candidate.relative_score)
@@ -654,33 +653,33 @@ pub(crate) mod test {
         ]);
 
         let mut dict = Dictionary::default();
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Ebene").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Planum").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Platane").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Maschine").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Bremsberg").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Berg").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Fläche").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Luftfahrzeug").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Fluggerät").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flugsystem").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Motorflugzeug").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("flyer").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airman").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("wing").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-        dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Ebene").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Planum").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Platane").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Maschine").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Bremsberg").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Berg").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Fläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Luftfahrzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Fluggerät").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugsystem").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Motorflugzeug").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("flyer").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("airman").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("airfoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("wing").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("deck").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("hydrofoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("foil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+        dict.insert_hash_ref::<Invariant>(voc_a.get_value("bearing surface").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
 
         (voc_a, voc_b, dict)
     }

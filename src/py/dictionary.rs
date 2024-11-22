@@ -21,7 +21,6 @@ use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetad
 use crate::topicmodel::dictionary::metadata::{MetadataManager};
 use crate::topicmodel::dictionary::*;
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, SearchableVocabulary, Vocabulary};
 use itertools::{EitherOrBoth, Itertools};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -30,10 +29,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use arcstr::ArcStr;
 use camino::Utf8PathBuf;
 use either::Either;
 use crate::py::tokenizer::PyAlignedArticleProcessor;
 use crate::{define_py_method, register_python, type_def_wrapper};
+use crate::py::aliases::{UnderlyingPyVocabulary, UnderlyingPyWord};
 use crate::tokenizer::Tokenizer;
 use crate::toolkit::from_str_ex::ParseEx;
 use crate::toolkit::special_python_values::{PyEither, PyEitherOrBoth};
@@ -41,29 +42,29 @@ use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, Wr
 use crate::topicmodel::dictionary::len::Len;
 use crate::topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
 
-pub type DefaultDict = StringDictWithMeta<Vocabulary<String>>;
+pub type DefaultDict = EfficientDictWithMetaDefault;
 
 /// A dictionary for bidirectional dictionaries.
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default)]
 pub struct PyDictionary {
-    inner: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
+    inner: Arc<RwLock<DefaultDict>>,
 }
 
 
 impl PyDictionary {
-    pub fn new(dict: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>) -> Self {
+    pub fn new(dict: DefaultDict) -> Self {
         Self {
             inner: Arc::new(RwLock::new(dict))
         }
     }
 
-    pub fn get<'a>(&'a self) -> RwLockReadGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>> {
+    pub fn get<'a>(&'a self) -> RwLockReadGuard<'a, DefaultDict> {
         self.inner.read().unwrap()
     }
 
-    pub fn get_mut<'a>(&'a mut self) -> RwLockWriteGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>> {
+    pub fn get_mut<'a>(&'a mut self) -> RwLockWriteGuard<'a, DefaultDict> {
         self.inner.write().unwrap()
     }
 }
@@ -190,12 +191,12 @@ impl PyDictionary {
                 }
             }
             Some(value) => {
-                fn convert_to_left(value: Vec<(usize, HashRef<String>)>) -> Vec<String> {
+                fn convert_to_left(value: Vec<(usize, String)>) -> Vec<String> {
                     value.into_iter().map(|(_, v)| v.to_string()).collect_vec()
                 }
 
                 fn convert_to_right(
-                    voc: &Vocabulary<String>,
+                    voc: &Vocabulary<ArcStr>,
                     value: HashMap<String, Vec<(String, Vec<usize>)>>
                 ) -> HashMap<String, HashMap<String, HashSet<String>>>
                 {
@@ -311,12 +312,12 @@ impl PyDictionary {
 
     /// Returns true if voc a contains the value
     fn voc_a_contains(&self, value: &str) -> bool {
-        self.get().voc_a().contains(value)
+        self.get().voc_a().contains_value(value)
     }
 
     /// Returns true if voc a contains the value
     fn voc_b_contains(&self, value: &str) -> bool {
-        self.get().voc_b().contains(value)
+        self.get().voc_b().contains_value(value)
     }
 
     /// Returns true if any voc contains the value
@@ -346,9 +347,9 @@ impl PyDictionary {
         let mut write = self.inner.write().unwrap();
 
         match write.insert_translation_ref_with_meta_invariant(
-            HashRef::new(a_word),
+            a_word.into(),
             a_solved.as_ref(),
-            HashRef::new(b_word),
+            b_word.into(),
             b_solved.as_ref(),
         ) {
             Ok((a, b)) => {
@@ -503,15 +504,17 @@ impl PyDictionary {
                     return Err(PyValueError::new_err(format!("Language B ({b}) is unknown to the processor!")))
                 };
 
-                fn apply_tokenizer_and_filer(tokenizer: &Tokenizer, value: &str) -> Result<Option<HashRef<String>>, ()> {
-                    let result = tokenizer.process(value).filter(|value| !value.1.lemma.is_empty() && value.1.is_word()).collect_vec();
-                    if result.is_empty() {
+                fn apply_tokenizer_and_filer(tokenizer: &Tokenizer, value: &str) -> Result<Option<DictionaryWithMetaProcessResult<ArcStr>>, ()> {
+                    let result = tokenizer.process(value).collect_vec();
+                    let processed = result.iter().filter(|value| !value.1.lemma.is_empty() && value.1.is_word()).map(|value| value.1.lemma()).join(" ");
+                    if processed.is_empty() {
                         Ok(None)
                     } else {
                         Ok(
                             Some(
-                                HashRef::new(
-                                    result.iter().map(|value| value.1.lemma()).join(" ")
+                                DictionaryWithMetaProcessResult::with_unprocessed(
+                                    processed.into(),
+                                    result.iter().map(|value| value.0).join(" ").into()
                                 )
                             )
                         )
@@ -521,12 +524,8 @@ impl PyDictionary {
                 Ok(
                     Self {
                         inner: Arc::new(RwLock::new(read.filter_and_process(
-                            |value| {
-                                apply_tokenizer_and_filer(&a_tok, value.as_str())
-                            },
-                            |value| {
-                                apply_tokenizer_and_filer(&b_tok, value.as_str())
-                            }
+                            |value| apply_tokenizer_and_filer(&a_tok, value.as_str()),
+                            |value| apply_tokenizer_and_filer(&b_tok, value.as_str()),
                         ).unwrap()))
                     }
                 )
@@ -585,7 +584,7 @@ define_py_method!{
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 pub struct PyDictIter {
-    inner: DictionaryWithMetaIterator<DefaultDict, String, Vocabulary<String>, MetadataManagerEx>,
+    inner: DictionaryWithMetaIterator<DefaultDict, ArcStr, Vocabulary<ArcStr>, MetadataManagerEx>,
 }
 
 unsafe impl Send for PyDictIter{}
@@ -622,8 +621,8 @@ impl PyDictIter {
 }
 
 
-impl From<Dictionary<String, Vocabulary<String>>> for PyDictionary {
-    fn from(value: Dictionary<String, Vocabulary<String>>) -> Self {
+impl From<Dictionary<UnderlyingPyWord, UnderlyingPyVocabulary>> for PyDictionary {
+    fn from(value: Dictionary<UnderlyingPyWord, UnderlyingPyVocabulary>) -> Self {
         Self { inner: Arc::new(RwLock::new(value.map(|value| value.clone()).into())) }
     }
 }
@@ -634,20 +633,20 @@ impl From<DefaultDict> for PyDictionary {
     }
 }
 
-impl FromVoc<String, Vocabulary<String>> for PyDictionary {
-    fn from_voc(voc_a: Vocabulary<String>, voc_b: Vocabulary<String>) -> Self {
+impl FromVoc<UnderlyingPyWord, UnderlyingPyVocabulary> for PyDictionary {
+    fn from_voc(voc_a: UnderlyingPyVocabulary, voc_b: UnderlyingPyVocabulary) -> Self {
         Self {
             inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc(voc_a, voc_b)))
         }
     }
 
-    fn from_voc_lang_a(voc: Vocabulary<String>, other_lang: Option<LanguageHint>) -> Self {
+    fn from_voc_lang_a(voc: UnderlyingPyVocabulary, other_lang: Option<LanguageHint>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_a(voc, other_lang)))
         }
     }
 
-    fn from_voc_lang_b(other_lang: Option<LanguageHint>, voc: Vocabulary<String>) -> Self {
+    fn from_voc_lang_b(other_lang: Option<LanguageHint>, voc: UnderlyingPyVocabulary) -> Self {
         Self {
             inner: Arc::new(RwLock::new(DictionaryWithMeta::from_voc_lang_b(other_lang, voc)))
         }

@@ -5,7 +5,6 @@ use crate::topicmodel::dictionary::direction::{Direction, DirectionKind, Directi
 use crate::topicmodel::dictionary::iterators::DictLangIter;
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, SearchableVocabulary, VocabularyMut};
 
 /// A generified trait
@@ -71,7 +70,7 @@ pub trait DictionaryWithVocabularyGen<T, V>: DictionaryWithVocabulary<T, V> wher
     }
 
     /// Convert an ID to a word
-    fn convert_id_to_word<'a, D: Language>(&'a self, id: usize) -> Option<&'a HashRef<T>> where V: 'a {
+    fn convert_id_to_word<'a, D: Language>(&'a self, id: usize) -> Option<&'a T> where V: 'a {
         if D::LANG.is_a() {
             self.convert_id_a_to_word(id)
         } else {
@@ -81,7 +80,7 @@ pub trait DictionaryWithVocabularyGen<T, V>: DictionaryWithVocabulary<T, V> wher
 
 
     /// Convert ids to ids with entries
-    fn convert_ids_to_id_entries<'a, D: Language, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<(usize, &'a HashRef<T>)> where V: 'a {
+    fn convert_ids_to_id_entries<'a, D: Language, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<(usize, &'a T)> where V: 'a {
         if D::LANG.is_a() {
             self.convert_ids_a_to_id_entries(ids)
         } else {
@@ -90,7 +89,7 @@ pub trait DictionaryWithVocabularyGen<T, V>: DictionaryWithVocabulary<T, V> wher
     }
 
     /// Convert ids to values
-    fn convert_ids_to_values<'a, D: Language, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a HashRef<T>> where V: 'a {
+    fn convert_ids_to_values<'a, D: Language, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a T> where V: 'a {
         if D::LANG.is_a() {
             self.convert_ids_a_to_values(ids)
         } else {
@@ -104,7 +103,7 @@ pub trait DictionaryWithVocabularyGen<T, V>: DictionaryWithVocabulary<T, V> wher
     }
 
     /// Translates a single [word_id]
-    fn translate_id<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<(usize, &'a HashRef<T>)>> where V: 'a {
+    fn translate_id<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<(usize, &'a T)>> where V: 'a {
         if D::DIRECTION.is_a_to_b() {
             self.translate_id_a_to_entries_b(word_id)
         } else {
@@ -113,7 +112,7 @@ pub trait DictionaryWithVocabularyGen<T, V>: DictionaryWithVocabulary<T, V> wher
     }
 
     /// Translates a single [word_id]
-    fn translate_id_to_values<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<&'a HashRef<T>>> where V: 'a {
+    fn translate_id_to_values<'a, D: Translation>(&'a self, word_id: usize) -> Option<Vec<&'a T>> where V: 'a {
         if D::DIRECTION.is_a_to_b() {
             self.translate_id_a_to_words_b(word_id)
         } else {
@@ -135,7 +134,7 @@ pub trait DictionaryWithVocabularyGen<T, V>: DictionaryWithVocabulary<T, V> wher
     }
 
     /// Translate a value
-    fn translate_value<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a HashRef<T>)>>
+    fn translate_value<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a T)>>
     where
         T: Borrow<Q> + Eq + Hash,
         Q: Hash + Eq,
@@ -175,7 +174,7 @@ pub trait DictionaryWithVocabularyGen<T, V>: DictionaryWithVocabulary<T, V> wher
     }
 
 
-    fn translate_value_to_values<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a HashRef<T>>>
+    fn translate_value_to_values<'a, D: Translation, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a T>>
     where
         T: Borrow<Q> + Eq + Hash,
         Q: Hash + Eq,
@@ -197,7 +196,11 @@ where
 {}
 
 
-pub trait DictionaryMutGen<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: VocabularyMut<T>  {
+pub trait DictionaryMutGen<T, V>: DictionaryMut<T, V>
+where
+    T: Eq + Hash + Clone,
+    V: VocabularyMut<T>
+{
     fn set_language<L: Language>(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
         if L::LANG.is_a() {
             self.set_language_a(value)
@@ -228,7 +231,7 @@ pub trait DictionaryMutGen<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: Voc
         }
     }
 
-    fn insert_single_ref<L: Language>(&mut self, word: HashRef<T>) -> usize {
+    fn insert_single_ref<L: Language>(&mut self, word: T) -> usize {
         if L::LANG.is_a() {
             self.insert_single_hash_ref_a(word)
         } else {
@@ -237,14 +240,14 @@ pub trait DictionaryMutGen<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: Voc
     }
 
     fn insert_single_value<L: Language>(&mut self, word: T) -> usize {
-        self.insert_single_ref::<L>(HashRef::new(word))
+        self.insert_single_ref::<L>(word)
     }
 
     fn insert_single_word<L: Language>(&mut self, word: impl Into<T>) -> usize{
         self.insert_single_value::<L>(word.into())
     }
 
-    fn insert_hash_ref<D: Direction>(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
+    fn insert_hash_ref<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         self.insert_hash_ref_dir(
             D::DIRECTION,
             word_a,
@@ -253,7 +256,7 @@ pub trait DictionaryMutGen<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: Voc
     }
 
     fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref::<D>(HashRef::new(word_a), HashRef::new(word_b))
+        self.insert_hash_ref::<D>(word_a, word_b)
     }
 
     fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
@@ -276,7 +279,7 @@ pub trait DictionaryMutGen<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: Voc
 
 impl<D, T, V> DictionaryMutGen<T, V> for D where
     D: DictionaryMut<T, V>,
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
     V: VocabularyMut<T>
 {}
 
@@ -357,11 +360,11 @@ pub trait MutableDictionaryWithMetaGen<M, T, V>: MutableDictionaryWithMeta<M, T,
 where
     M: MetadataManager,
     V: AnonymousVocabulary + AnonymousVocabularyMut + VocabularyMut<T>,
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
 {
     fn insert_single_ref_with_meta<L: Language>(
         &mut self,
-        word: HashRef<T>,
+        word: T,
         meta: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<usize, (usize, <M as MetadataManager>::UpdateError)> {
         if L::LANG.is_a() {
@@ -373,9 +376,9 @@ where
 
     fn insert_translation_ref_with_meta<D: Direction>(
         &mut self,
-        word_a: HashRef<T>,
+        word_a: T,
         meta_a: Option<&<M as MetadataManager>::ResolvedMetadata>,
-        word_b: HashRef<T>,
+        word_b: T,
         meta_b: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<(usize, usize), (usize, <M as MetadataManager>::UpdateError)> {
         self.insert_translation_ref_with_meta_dir(
@@ -393,5 +396,5 @@ where
     D: MutableDictionaryWithMeta<M, T, V>,
     M: MetadataManager,
     V: AnonymousVocabulary + AnonymousVocabularyMut + VocabularyMut<T>,
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
 {}

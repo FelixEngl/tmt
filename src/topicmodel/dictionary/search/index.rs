@@ -29,9 +29,10 @@ impl SearchIndex {
         }
     }
 
-    fn get_or_init_trie_searcher_for<'a, V>(&self, targ: &'a OnceLock<Arc<RwLock<TrieSearcher>>>, voc: &V, language: LanguageKind) -> ShareableTrieSearcherRef<'a>
+    fn get_or_init_trie_searcher_for<'a, V, T>(&self, targ: &'a OnceLock<Arc<RwLock<TrieSearcher>>>, voc: &V, language: LanguageKind) -> ShareableTrieSearcherRef<'a>
     where
-        V: BasicVocabulary<String>
+        V: BasicVocabulary<T>,
+        T: AsRef<str> + Send + Sync,
     {
         let provided = targ.get_or_init(|| {
             Arc::new(RwLock::new(
@@ -64,10 +65,11 @@ impl SearchIndex {
         None
     }
 
-    pub fn get_or_init_trie_searcher_a<D, V>(&self, dict: &D) -> ShareableTrieSearcherRef
+    pub fn get_or_init_trie_searcher_a<D, V, T>(&self, dict: &D) -> ShareableTrieSearcherRef
     where
-        D: DictionaryWithVocabulary<String, V> + ?Sized,
-        V: BasicVocabulary<String>
+        D: DictionaryWithVocabulary<T, V> + ?Sized,
+        V: BasicVocabulary<T>,
+        T: AsRef<str> + Send + Sync,
     {
         self.get_or_init_trie_searcher_for(
             &self.searcher_a,
@@ -76,10 +78,11 @@ impl SearchIndex {
         )
     }
 
-    pub fn get_or_init_trie_searcher_b<D, V>(&self, dict: &D) -> ShareableTrieSearcherRef
+    pub fn get_or_init_trie_searcher_b<D, V, T>(&self, dict: &D) -> ShareableTrieSearcherRef
     where
-        D: DictionaryWithVocabulary<String, V> + ?Sized,
-        V: BasicVocabulary<String>
+        D: DictionaryWithVocabulary<T, V> + ?Sized,
+        V: BasicVocabulary<T>,
+        T: AsRef<str> + Send + Sync,
     {
         self.get_or_init_trie_searcher_for(
             &self.searcher_b,
@@ -88,10 +91,11 @@ impl SearchIndex {
         )
     }
     
-    pub fn get_or_init_trie_searcher<D, V>(&self, dict: &D, language: LanguageKind) -> ShareableTrieSearcherRef
+    pub fn get_or_init_trie_searcher<D, V, T>(&self, dict: &D, language: LanguageKind) -> ShareableTrieSearcherRef
     where
-        D: DictionaryWithVocabulary<String, V> + ?Sized,
-        V: BasicVocabulary<String>
+        D: DictionaryWithVocabulary<T, V> + ?Sized,
+        V: BasicVocabulary<T>,
+        T: AsRef<str> + Send + Sync,
     {
         match language {
             LanguageKind::A => {
@@ -103,10 +107,11 @@ impl SearchIndex {
         }
     }
 
-    pub fn get_or_init_both_trie_searcher<D, V>(&self, dict: &D) -> (ShareableTrieSearcherRef, ShareableTrieSearcherRef)
+    pub fn get_or_init_both_trie_searcher<D, V, T>(&self, dict: &D) -> (ShareableTrieSearcherRef, ShareableTrieSearcherRef)
     where
-        D: DictionaryWithVocabulary<String, V> + ?Sized,
-        V: BasicVocabulary<String>
+        D: DictionaryWithVocabulary<T, V> + ?Sized,
+        V: BasicVocabulary<T>,
+        T: AsRef<str> + Send + Sync,
     {
         std::thread::scope(|scope| {
             let a = scope.spawn(|| {

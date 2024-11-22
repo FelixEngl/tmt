@@ -1,7 +1,6 @@
 use crate::topicmodel::dictionary::direction::LanguageKind;
 use crate::topicmodel::dictionary::search::{MatchWordMethod, SearchInput, SearchType};
 use crate::topicmodel::dictionary::DictionaryWithVocabulary;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::SearchableVocabulary;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, Input};
 use derive_more::From;
@@ -131,10 +130,10 @@ impl<'py> ScanSearcher<'py> {
         })
     }
 
-    pub fn search<D, T, V>(&self, dictionary: &D) -> Vec<(LanguageKind, usize, HashRef<T>)>
+    pub fn search<D, T, V>(&self, dictionary: &D) -> Vec<(LanguageKind, usize, T)>
     where
         D: DictionaryWithVocabulary<T, V> + ?Sized,
-        T: Borrow<str> + Hash + Eq + AsRef<str>,
+        T: Borrow<str> + Hash + Eq + AsRef<str> + Clone,
         V: SearchableVocabulary<T>,
     {
         match self.kind {
@@ -323,10 +322,10 @@ impl<'py> ScanSearcher<'py> {
         &self,
         dictionary: &D,
         matcher: F,
-    ) -> Vec<(LanguageKind, usize, HashRef<T>)>
+    ) -> Vec<(LanguageKind, usize, T)>
     where
         D: DictionaryWithVocabulary<T, V> + ?Sized,
-        T: Borrow<str> + Hash + Eq + AsRef<str>,
+        T: Borrow<str> + Hash + Eq + AsRef<str> + Clone,
         V: SearchableVocabulary<T>,
         F: Fn(LanguageKind, &str) -> bool,
     {
@@ -379,10 +378,10 @@ impl<'py> ScanSearcher<'py> {
         &self,
         dictionary: &D,
         matcher: &StrEq,
-    ) -> Vec<(LanguageKind, usize, HashRef<T>)>
+    ) -> Vec<(LanguageKind, usize, T)>
     where
         D: DictionaryWithVocabulary<T, V> + ?Sized,
-        T: Hash + Eq + Borrow<str>,
+        T: Hash + Eq + Borrow<str> + Clone,
         V: SearchableVocabulary<T>,
     {
         fn search_configured<D, T, V>(
@@ -390,29 +389,29 @@ impl<'py> ScanSearcher<'py> {
             lang: LanguageKind,
             value: &str,
             ignore_ascii: bool,
-            output: &mut Vec<(LanguageKind, usize, HashRef<T>)>,
+            output: &mut Vec<(LanguageKind, usize, T)>,
         ) where
             D: DictionaryWithVocabulary<T, V> + ?Sized,
-            T: Hash + Eq + Borrow<str>,
+            T: Hash + Eq + Borrow<str> + Clone,
             V: SearchableVocabulary<T>,
         {
             match lang {
                 LanguageKind::A => {
-                    if let Some((a, b)) = dict.voc_a().get_entry_id(value) {
+                    if let Some((a, b)) = dict.voc_a().get_entry_by_value(value) {
                         output.push((LanguageKind::A, *b, a.clone()))
                     }
                     if ignore_ascii {
-                        if let Some((a, b)) = dict.voc_a().get_entry_id(&value.to_lowercase()) {
+                        if let Some((a, b)) = dict.voc_a().get_entry_by_value(&value.to_lowercase()) {
                             output.push((LanguageKind::A, *b, a.clone()))
                         }
                     }
                 }
                 LanguageKind::B => {
-                    if let Some((a, b)) = dict.voc_b().get_entry_id(value) {
+                    if let Some((a, b)) = dict.voc_b().get_entry_by_value(value) {
                         output.push((LanguageKind::B, *b, a.clone()))
                     }
                     if ignore_ascii {
-                        if let Some((a, b)) = dict.voc_b().get_entry_id(&value.to_lowercase()) {
+                        if let Some((a, b)) = dict.voc_b().get_entry_by_value(&value.to_lowercase()) {
                             output.push((LanguageKind::B, *b, a.clone()))
                         }
                     }
@@ -774,6 +773,7 @@ impl<'a> WithMatcher<'a, Box<dyn Fn(&str, &str) -> bool>> {
 
 #[cfg(test)]
 mod test {
+    use arcstr::ArcStr;
     use super::{
         ScanAlgorithm, ScanSearcher, ScanSearcherInitError, ScanSearcherOptions,
         ScanSearcherOptionsInitError,
@@ -781,8 +781,7 @@ mod test {
     use crate::topicmodel::dictionary::direction::LanguageKind;
     use crate::topicmodel::dictionary::direction::LanguageKind::{A, B};
     use crate::topicmodel::dictionary::search::impls::scanning::ScanSearcherOptionsInitError::ThresholdMissing;
-    use crate::topicmodel::dictionary::{MutableDictionaryWithMeta, StringDictWithMetaDefault};
-    use crate::topicmodel::reference::HashRef;
+    use crate::topicmodel::dictionary::{MutableDictionaryWithMeta, EfficientDictWithMetaDefault};
     use either::Either;
 
     macro_rules! impl_test {
@@ -802,7 +801,7 @@ mod test {
 
     #[test]
     fn can_do_all_searched() {
-        let mut dict = StringDictWithMetaDefault::default();
+        let mut dict = EfficientDictWithMetaDefault::default();
         dict.push_invariant("hallo", "hello").use_consuming(
             |mut value| {
                 value.add_dictionary("test1");
@@ -880,12 +879,12 @@ mod test {
         fn cr<I: IntoIterator<Item = (LanguageKind, usize, T)>, T: ToString>(
             i: I,
         ) -> Result<
-            Result<Vec<(LanguageKind, usize, HashRef<String>)>, ScanSearcherInitError>,
+            Result<Vec<(LanguageKind, usize, ArcStr)>, ScanSearcherInitError>,
             ScanSearcherOptionsInitError,
         > {
             Ok(Ok(Vec::from_iter(
                 i.into_iter()
-                    .map(|(a, b, c)| (a, b, HashRef::new(c.to_string()))),
+                    .map(|(a, b, c)| (a, b, c.to_string().into())),
             )))
         }
 
@@ -1640,11 +1639,11 @@ mod test {
         ] {
             let inp_str = format!("{inp:?}");
             let expected: Result<
-                Result<Vec<(LanguageKind, usize, HashRef<String>)>, ScanSearcherInitError>,
+                Result<Vec<(LanguageKind, usize, ArcStr)>, ScanSearcherInitError>,
                 ScanSearcherOptionsInitError,
             > = expected;
             let result: Result<
-                Result<Vec<(LanguageKind, usize, HashRef<String>)>, ScanSearcherInitError>,
+                Result<Vec<(LanguageKind, usize, ArcStr)>, ScanSearcherInitError>,
                 ScanSearcherOptionsInitError,
             > = impl_test!(
                 kind: kind,

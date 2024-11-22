@@ -14,7 +14,6 @@ use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
 use crate::topicmodel::dictionary::metadata::{DictionaryWithMetaIter, MetadataMutReference};
 use crate::topicmodel::dictionary::search::DictionarySearcher;
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, SearchableVocabulary, VocabularyMut};
 
 /// A basic dictionary that can translate IDs
@@ -99,60 +98,60 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
     }
 
     /// Convert an ID to a word
-    fn convert_id_a_to_word<'a>(&'a self, id: usize) -> Option<&'a HashRef<T>> where V: 'a {
-        self.voc_a().get_value(id)
+    fn convert_id_a_to_word<'a>(&'a self, id: usize) -> Option<&'a T> where V: 'a {
+        self.voc_a().get_value_by_id(id)
     }
 
     /// Convert an ID to a word
-    fn convert_id_b_to_word<'a>(&'a self, id: usize) -> Option<&'a HashRef<T>> where V: 'a {
-        self.voc_b().get_value(id)
+    fn convert_id_b_to_word<'a>(&'a self, id: usize) -> Option<&'a T> where V: 'a {
+        self.voc_b().get_value_by_id(id)
     }
 
     /// Convert ids to ids with entries
-    fn convert_ids_a_to_id_entries<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<(usize, &'a HashRef<T>)> where V: 'a {
+    fn convert_ids_a_to_id_entries<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<(usize, &'a T)> where V: 'a {
         ids.into_iter().map(|value| unsafe {
-            self.voc_a().get_id_entry(value).unwrap_unchecked()
+            self.voc_a().get_entry_by_id(value).unwrap_unchecked()
         }).collect()
     }
 
     /// Convert ids to ids with entries
-    fn convert_ids_b_to_id_entries<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<(usize, &'a HashRef<T>)> where V: 'a {
+    fn convert_ids_b_to_id_entries<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<(usize, &'a T)> where V: 'a {
         ids.into_iter().map(|value| unsafe {
-            self.voc_b().get_id_entry(value).unwrap_unchecked()
+            self.voc_b().get_entry_by_id(value).unwrap_unchecked()
         }).collect()
     }
 
     /// Convert ids to values
-    fn convert_ids_a_to_values<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a HashRef<T>> where V: 'a {
+    fn convert_ids_a_to_values<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a T> where V: 'a {
         ids.into_iter().map(|value| unsafe {
-            self.voc_a().get_value(value).unwrap_unchecked()
+            self.voc_a().get_value_by_id(value).unwrap_unchecked()
         }).collect()
     }
 
     /// Convert ids to values
-    fn convert_ids_b_to_values<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a HashRef<T>> where V: 'a {
+    fn convert_ids_b_to_values<'a, I: IntoIterator<Item=usize>>(&'a self, ids: I) -> Vec<&'a T> where V: 'a {
         ids.into_iter().map(|value| unsafe {
-            self.voc_b().get_value(value).unwrap_unchecked()
+            self.voc_b().get_value_by_id(value).unwrap_unchecked()
         }).collect()
     }
 
     /// Translates [word_id] to the entries.
-    fn translate_id_a_to_entries_b<'a>(&'a self, word_id: usize) -> Option<Vec<(usize, &'a HashRef<T>)>> where V: 'a {
+    fn translate_id_a_to_entries_b<'a>(&'a self, word_id: usize) -> Option<Vec<(usize, &'a T)>> where V: 'a {
         Some(self.convert_ids_b_to_id_entries(self.translate_id_a_to_id_b(word_id)?.into_iter().copied()))
     }
 
     /// Translates [word_id] to the entries.
-    fn translate_id_b_to_entries_a<'a>(&'a self, word_id: usize) -> Option<Vec<(usize, &'a HashRef<T>)>> where V: 'a {
+    fn translate_id_b_to_entries_a<'a>(&'a self, word_id: usize) -> Option<Vec<(usize, &'a T)>> where V: 'a {
         Some(self.convert_ids_a_to_id_entries(self.translate_id_b_to_id_a(word_id)?.into_iter().copied()))
     }
 
     /// Translates a single [word_id]
-    fn translate_id_a_to_words_b<'a>(&'a self, word_id: usize) -> Option<Vec<&'a HashRef<T>>> where V: 'a {
+    fn translate_id_a_to_words_b<'a>(&'a self, word_id: usize) -> Option<Vec<&'a T>> where V: 'a {
         Some(self.convert_ids_b_to_values(self.translate_id_a_to_id_b(word_id)?.iter().copied()))
     }
 
     /// Translates a single [word_id]
-    fn translate_id_b_to_words_a<'a>(&'a self, word_id: usize) -> Option<Vec<&'a HashRef<T>>> where V: 'a {
+    fn translate_id_b_to_words_a<'a>(&'a self, word_id: usize) -> Option<Vec<&'a T>> where V: 'a {
         Some(self.convert_ids_a_to_values(self.translate_id_b_to_id_a(word_id)?.iter().copied()))
     }
 
@@ -183,7 +182,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
     }
 
 
-    fn translate_word_a_to_entries_b<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a HashRef<T>)>>
+    fn translate_word_a_to_entries_b<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a T)>>
     where
         T: Borrow<Q> + Eq + Hash,
         Q: Hash + Eq,
@@ -192,7 +191,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         Some(self.convert_ids_b_to_id_entries(self.translate_word_a_to_ids_b::<Q>(word)?.into_iter().copied()))
     }
 
-    fn translate_word_b_to_entries_a<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a HashRef<T>)>>
+    fn translate_word_b_to_entries_a<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<(usize, &'a T)>>
     where
         T: Borrow<Q> + Eq + Hash,
         Q: Hash + Eq,
@@ -237,7 +236,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         self.word_to_id_b(word).is_some_and(|value| self.can_translate_b_to_a(value))
     }
 
-    fn translate_word_a_to_words_b<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a HashRef<T>>>
+    fn translate_word_a_to_words_b<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a T>>
     where
         T: Borrow<Q> + Eq + Hash,
         Q: Hash + Eq,
@@ -246,7 +245,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         Some(self.convert_ids_b_to_values(self.translate_word_a_to_ids_b(word)?.iter().copied()))
     }
 
-    fn translate_word_b_to_words_a<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a HashRef<T>>>
+    fn translate_word_b_to_words_a<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<Vec<&'a T>>
     where
         T: Borrow<Q> + Eq + Hash,
         Q: Hash + Eq,
@@ -259,10 +258,11 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
 
 pub trait DictionaryWithSearch<T, V>: DictionaryWithVocabulary<T, V>
 where
-    V: BasicVocabulary<T>
+    V: BasicVocabulary<T>,
+    T: AsRef<str> + Send + Sync
 {
     /// Returns a search instance for the dictionary
-    fn get_searcher(&self) -> DictionarySearcher<Self, V>;
+    fn get_searcher(&self) -> DictionarySearcher<Self, V, T>;
 }
 
 
@@ -273,7 +273,7 @@ pub trait MergingDictionary<T, V>: DictionaryWithVocabulary<T, V> where V: Basic
 
 pub trait DictionaryMut<T, V>: DictionaryWithVocabulary<T, V>
 where
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
     V: VocabularyMut<T>
 {
     fn set_language_a(&mut self, value: Option<LanguageHint>) -> Option<LanguageHint> {
@@ -286,22 +286,22 @@ where
     unsafe fn reserve_for_single_value_a(&mut self, word_id: usize);
     unsafe fn reserve_for_single_value_b(&mut self, word_id: usize);
 
-    fn insert_single_hash_ref_a(&mut self, word: HashRef<T>) -> usize {
-        let word_id =  self.voc_a_mut().add_hash_ref(word);
+    fn insert_single_hash_ref_a(&mut self, word: T) -> usize {
+        let word_id =  self.voc_a_mut().add_value(word);
         unsafe{self.reserve_for_single_value_a(word_id);}
         word_id
     }
-    fn insert_single_hash_ref_b(&mut self, word: HashRef<T>) -> usize {
-        let word_id =  self.voc_b_mut().add_hash_ref(word);
+    fn insert_single_hash_ref_b(&mut self, word: T) -> usize {
+        let word_id =  self.voc_b_mut().add_value(word);
         unsafe{self.reserve_for_single_value_b(word_id);}
         word_id
     }
 
     fn insert_single_word_a(&mut self, word: T) -> usize {
-        self.insert_single_hash_ref_a(HashRef::new(word))
+        self.insert_single_hash_ref_a(word)
     }
     fn insert_single_word_b(&mut self, word: T) -> usize {
-        self.insert_single_hash_ref_b(HashRef::new(word))
+        self.insert_single_hash_ref_b(word)
     }
 
     fn insert_single_a(&mut self, word: impl Into<T>) -> usize {
@@ -318,25 +318,25 @@ where
         self.insert_raw_values_b_to_a(word_id_a, word_id_b);
     }
 
-    fn insert_hash_ref_a_to_b(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
-        let id_a = self.voc_a_mut().add_hash_ref(word_a);
-        let id_b = self.voc_b_mut().add_hash_ref(word_b);
+    fn insert_hash_ref_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+        let id_a = self.voc_a_mut().add_value(word_a);
+        let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_a_to_b(id_a, id_b); }
         DirectionTuple::new(id_a, id_b, DirectionKind::AToB)
     }
-    fn insert_hash_ref_b_to_a(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
-        let id_a = self.voc_a_mut().add_hash_ref(word_a);
-        let id_b = self.voc_b_mut().add_hash_ref(word_b);
+    fn insert_hash_ref_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+        let id_a = self.voc_a_mut().add_value(word_a);
+        let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_b_to_a(id_a, id_b); }
         DirectionTuple::new(id_a, id_b, DirectionKind::BToA)
     }
-    fn insert_hash_ref_invariant(&mut self, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
-        let id_a = self.voc_a_mut().add_hash_ref(word_a);
-        let id_b = self.voc_b_mut().add_hash_ref(word_b);
+    fn insert_hash_ref_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+        let id_a = self.voc_a_mut().add_value(word_a);
+        let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_invariant(id_a, id_b); }
         DirectionTuple::new(id_a, id_b, DirectionKind::Invariant)
     }
-    fn insert_hash_ref_dir(&mut self, dir: DirectionKind, word_a: HashRef<T>, word_b: HashRef<T>) -> DirectionTuple<usize, usize> {
+    fn insert_hash_ref_dir(&mut self, dir: DirectionKind, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         match dir {
             DirectionKind::AToB => {
                 self.insert_hash_ref_a_to_b(word_a, word_b)
@@ -352,16 +352,16 @@ where
 
 
     fn insert_word_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_a_to_b(HashRef::new(word_a), HashRef::new(word_b))
+        self.insert_hash_ref_a_to_b(word_a, word_b)
     }
     fn insert_word_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_b_to_a(HashRef::new(word_a), HashRef::new(word_b))
+        self.insert_hash_ref_b_to_a(word_a, word_b)
     }
     fn insert_word_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_invariant(HashRef::new(word_a), HashRef::new(word_b))
+        self.insert_hash_ref_invariant(word_a, word_b)
     }
     fn insert_value_dir(&mut self, dir: DirectionKind, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_dir(dir, HashRef::new(word_a), HashRef::new(word_b))
+        self.insert_hash_ref_dir(dir, word_a, word_b)
     }
 
     fn insert_a_to_b(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
@@ -392,15 +392,16 @@ where
 
 }
 
-pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
+pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash + Clone, V: VocabularyMut<T> {
+    type ProcessResult<U>: Sized + From<T>;
 
     /// Filters and processes the contents of the dictionary to create a new one.
     fn filter_and_process<'a, Fa, Fb, E>(&'a self, f_a: Fa, f_b: Fb) -> Result<Self, E>
     where
         Self: Sized,
         T: 'a,
-        Fa: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>,
-        Fb: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>;
+        Fa: Fn(&'a T) -> Result<Option<Self::ProcessResult<T>>, E>,
+        Fb: Fn(&'a T) -> Result<Option<Self::ProcessResult<T>>, E>;
 
     fn filter_by_ids<Fa, Fb>(&self, filter_a: Fa, filter_b: Fb) -> Self
     where
@@ -412,8 +413,8 @@ pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V:
     where
         Self: Sized,
         T: 'a,
-        Fa: Fn(&'a HashRef<T>) -> bool,
-        Fb: Fn(&'a HashRef<T>) -> bool;
+        Fa: Fn(&'a T) -> bool,
+        Fb: Fn(&'a T) -> bool;
 
 
     fn filter_by_tokenizer(&self, tokenizer_a: &Tokenizer, tokenizer_b: &Tokenizer) -> Self
@@ -421,24 +422,22 @@ pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash, V:
         Self: Sized,
         T: AsRef<str> + From<String>
     {
-        fn apply_tokenizer_and_filer<U>(tokenizer: &Tokenizer, value: &str) -> Result<Option<HashRef<U>>, ()> where U: From<String> {
+        fn apply_tokenizer_and_filer<U>(tokenizer: &Tokenizer, value: &str) -> Result<Option<U>, ()> where U: From<String> {
             let result = tokenizer.process(value).filter(|value| !value.1.lemma.is_empty() && value.1.is_word()).collect_vec();
             if result.is_empty() {
                 Ok(None)
             } else {
                 Ok(
                     Some(
-                        HashRef::new(
-                            result.iter().map(|value| value.1.lemma()).join(" ").into()
-                        )
+                        result.iter().map(|value| value.1.lemma()).join(" ").into()
                     )
                 )
             }
         }
 
         self.filter_and_process(
-            |value| apply_tokenizer_and_filer::<T>(tokenizer_a, value.as_ref().as_ref()),
-            |value| apply_tokenizer_and_filer::<T>(tokenizer_b, value.as_ref().as_ref())
+            |value| apply_tokenizer_and_filer::<T>(tokenizer_a, value.as_ref().as_ref()).map(|value| value.map(|value| value.into())),
+            |value| apply_tokenizer_and_filer::<T>(tokenizer_b, value.as_ref().as_ref()).map(|value| value.map(|value| value.into())),
         ).expect("This should never fail!")
     }
 }
@@ -494,20 +493,20 @@ pub trait MutableDictionaryWithMeta<M, T, V> : DictionaryMut<T, V> + BasicDictio
 where
     M: MetadataManager,
     V: AnonymousVocabulary + AnonymousVocabularyMut + VocabularyMut<T>,
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
 {
 
-    fn push_hash_ref_a_to_b<'a>(&'a mut self, a: HashRef<T>, b: HashRef<T>) -> ABMutReference<'a, M> {
+    fn push_hash_ref_a_to_b<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
         let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_a_to_b(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
-    fn push_hash_ref_b_to_a<'a>(&'a mut self, a: HashRef<T>, b: HashRef<T>) -> ABMutReference<'a, M> {
+    fn push_hash_ref_b_to_a<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
         let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_b_to_a(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
-    fn push_hash_ref_invariant<'a>(&'a mut self, a: HashRef<T>, b: HashRef<T>) -> ABMutReference<'a, M> {
+    fn push_hash_ref_invariant<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
         let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_invariant(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
@@ -544,10 +543,10 @@ where
 
     fn insert_single_ref_with_meta_to_a(
         &mut self,
-        word: HashRef<T>,
+        word: T,
         meta: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<usize, (usize, <M as MetadataManager>::UpdateError)> {
-        let exists = self.voc_a().contains(&word);
+        let exists = self.voc_a().contains_value(&word);
         let word_id = self.insert_single_hash_ref_a(word);
         if let Some(meta_to_add) = meta {
             self.get_or_create_meta_a(word_id)
@@ -559,10 +558,10 @@ where
 
     fn insert_single_ref_with_meta_to_b(
         &mut self,
-        word: HashRef<T>,
+        word: T,
         meta: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<usize, (usize, <M as MetadataManager>::UpdateError)> {
-        let exists = self.voc_b().contains(&word);
+        let exists = self.voc_b().contains_value(&word);
         let word_id = self.insert_single_hash_ref_b(word);
         if let Some(meta_to_add) = meta {
             self.get_or_create_meta_b(word_id)
@@ -574,9 +573,9 @@ where
 
     fn insert_translation_ref_with_meta_a_to_b(
         &mut self,
-        word_a: HashRef<T>,
+        word_a: T,
         meta_a: Option<&<M as MetadataManager>::ResolvedMetadata>,
-        word_b: HashRef<T>,
+        word_b: T,
         meta_b: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<(usize, usize), (usize, <M as MetadataManager>::UpdateError)> {
         let id_a = self.insert_single_ref_with_meta_to_a(word_a, meta_a)?;
@@ -587,9 +586,9 @@ where
 
     fn insert_translation_ref_with_meta_b_to_a(
         &mut self,
-        word_a: HashRef<T>,
+        word_a: T,
         meta_a: Option<&<M as MetadataManager>::ResolvedMetadata>,
-        word_b: HashRef<T>,
+        word_b: T,
         meta_b: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<(usize, usize), (usize, <M as MetadataManager>::UpdateError)> {
         let id_a = self.insert_single_ref_with_meta_to_a(word_a, meta_a)?;
@@ -600,9 +599,9 @@ where
 
     fn insert_translation_ref_with_meta_invariant(
         &mut self,
-        word_a: HashRef<T>,
+        word_a: T,
         meta_a: Option<&<M as MetadataManager>::ResolvedMetadata>,
-        word_b: HashRef<T>,
+        word_b: T,
         meta_b: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<(usize, usize), (usize, <M as MetadataManager>::UpdateError)> {
         let id_a = self.insert_single_ref_with_meta_to_a(word_a, meta_a)?;
@@ -614,9 +613,9 @@ where
     fn insert_translation_ref_with_meta_dir(
         &mut self,
         direction: DirectionKind,
-        word_a: HashRef<T>,
+        word_a: T,
         meta_a: Option<&<M as MetadataManager>::ResolvedMetadata>,
-        word_b: HashRef<T>,
+        word_b: T,
         meta_b: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<(usize, usize), (usize, <M as MetadataManager>::UpdateError)> {
         match direction {
@@ -638,7 +637,7 @@ where
     D: DictionaryMut<T, V> + BasicDictionaryWithMutMeta<M, V>,
     M: MetadataManager,
     V: AnonymousVocabulary + AnonymousVocabularyMut + VocabularyMut<T>,
-    T: Eq + Hash
+    T: Eq + Hash + Clone
 {}
 
 

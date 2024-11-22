@@ -262,7 +262,7 @@ impl<'o, 'tb> Iterator for PhraseRecognizerIter<'o, 'tb>{
                     }
                 }
             }
-            return Some(result)
+            Some(result)
         } else {
             self.token_iter.next()
         }

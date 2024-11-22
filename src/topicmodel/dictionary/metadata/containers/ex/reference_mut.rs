@@ -36,30 +36,30 @@ macro_rules! create_adders {
                 }
 
                 pub fn [<add_single_to_ $ident _default>](&mut self, value: impl AsRef<str>) {
-                    let id = self.dict_mut().any_entry_to_id(value.as_ref());
+                    let id = self.dict_mut().entry_to_id(value.as_ref());
                     unsafe{self.[<add_single_to_ $ident _default_unchecked>](id)}
                 }
 
                 pub fn [<add_single_to_ $ident _by_dict>](&mut self, dictionary_name: crate::toolkit::typesafe_interner::DictionaryOriginSymbol, value: impl AsRef<str>) {
-                    let id = self.dict_mut().any_entry_to_id(value.as_ref());
+                    let id = self.dict_mut().entry_to_id(value.as_ref());
                     unsafe{self.[<add_single_to_ $ident _by_dict_unchecked>](dictionary_name, id)}
                 }
 
                 pub fn [<add_single_to_ $ident>](&mut self, dictionary_name: impl AsRef<str>, value: impl AsRef<str>) {
-                    let id = self.dict_mut().any_entry_to_id(value.as_ref());
+                    let id = self.dict_mut().entry_to_id(value.as_ref());
                     unsafe{self.[<add_single_to_ $ident _unchecked>](dictionary_name, id)}
                 }
 
                 pub fn [<add_all_to_ $ident _default>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, values: I) {
                     let x = values.into_iter().map(|value| {
-                            self.dict_mut().any_entry_to_id(value.as_ref())
+                            self.dict_mut().entry_to_id(value.as_ref())
                     }).collect::<Vec<$ty>>();
                     unsafe{self.[<add_all_to_ $ident _default_unchecked>](x)}
                 }
 
                 pub fn [<add_all_to_ $ident _by_dict>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, dictionary_name: crate::toolkit::typesafe_interner::DictionaryOriginSymbol, values: I) {
                     let x = values.into_iter().map(|value| {
-                            self.dict_mut().any_entry_to_id(value.as_ref())
+                            self.dict_mut().entry_to_id(value.as_ref())
                     }).collect::<Vec<$ty>>();
                     unsafe{self.[<add_all_to_ $ident _by_dict_unchecked>](
                         dictionary_name,
@@ -69,7 +69,7 @@ macro_rules! create_adders {
 
                 pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, dictionary_name: impl AsRef<str>, values: I) {
                     let x = values.into_iter().map(|value| {
-                            self.dict_mut().any_entry_to_id(value.as_ref())
+                            self.dict_mut().entry_to_id(value.as_ref())
                     }).collect::<Vec<$ty>>();
                     unsafe{self.[<add_all_to_ $ident _unchecked>](
                         dictionary_name,
@@ -77,20 +77,20 @@ macro_rules! create_adders {
                     )}
                 }
 
-                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, add_only_associated_count: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                     let data = values.into_iter().cloned().map(|v| v.try_into()).collect::<Result<Vec<($ty, u32)>, _>>()?;
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<write_all_to_ $ident>](data, is_same_word);
+                        .[<write_all_to_ $ident>](data, add_only_associated_count);
                     Ok(())
                 }
 
-                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, add_only_associated_count: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                     let data = values.into_iter().cloned().map(|v| v.try_into()).collect::<Result<Vec<($ty, u32)>, _>>()?;
                     let name = self.add_dictionary(dictionary_name);
                     self.meta
                         .get_or_create(name)
-                        .[<write_all_to_ $ident>](data, is_same_word);
+                        .[<write_all_to_ $ident>](data, add_only_associated_count);
                     Ok(())
                 }
             }
@@ -151,7 +151,7 @@ macro_rules! create_adders {
                     self.[<add_all_to_ $ident _by_dict>](name, values)
                 }
 
-                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, add_only_associated_count: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                     use crate::topicmodel::dictionary::metadata::containers::MetadataMutReference;
                     let data = values
                         .into_iter()
@@ -160,11 +160,11 @@ macro_rules! create_adders {
 
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<write_all_to_ $ident>](data, is_same_word);
+                        .[<write_all_to_ $ident>](data, add_only_associated_count);
                     Ok(())
                 }
 
-                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, add_only_associated_count: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                     use crate::topicmodel::dictionary::metadata::containers::MetadataMutReference;
                     let data = values
                         .into_iter()
@@ -173,7 +173,7 @@ macro_rules! create_adders {
                     let name = self.add_dictionary(dictionary_name);
                     self.meta
                         .get_or_create(name)
-                        .[<write_all_to_ $ident>](data, is_same_word);
+                        .[<write_all_to_ $ident>](data, add_only_associated_count);
                     Ok(())
                 }
             }
@@ -216,20 +216,20 @@ macro_rules! create_adders {
                     self.[<add_all_to_ $ident _by_dict>](name, values)
                 }
 
-                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident _default>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, values: I, add_only_associated_count: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                     let data = values.into_iter().cloned().map(|resolved| resolved.try_into()).collect::<Result<Vec<_>, _>>()?;
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<write_all_to_ $ident>](data, is_same_word);
+                        .[<write_all_to_ $ident>](data, add_only_associated_count);
                     Ok(())
                 }
 
-                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+                fn [<write_from_solved_ $ident>]<'b, I: IntoIterator<Item=&'b ResolvedValue>>(&mut self, dictionary_name: impl AsRef<str>, values: I, add_only_associated_count: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                     let data = values.into_iter().cloned().map(|resolved| resolved.try_into()).collect::<Result<Vec<_>, _>>()?;
                     let name = self.add_dictionary(dictionary_name);
                     self.meta
                         .get_or_create(name)
-                        .[<write_all_to_ $ident>](data, is_same_word);
+                        .[<write_all_to_ $ident>](data, add_only_associated_count);
                     Ok(())
                 }
             }
@@ -295,20 +295,19 @@ impl<'a> Display for MetadataMutRefEx<'a> {
 }
 
 
-
 impl<'a> MetadataMutReference<'a, MetadataManagerEx> for MetadataMutRefEx<'a> {
     #[allow(clippy::needless_lifetimes)]
     #[inline(always)]
     fn update_with_reference<'b>(
         &mut self, 
         associated: <MetadataManagerEx as MetadataManager>::Reference<'b>,
-        is_same_word: bool
+        add_only_associated_count: bool
     ) {
-        self.meta.update_with(associated.raw, is_same_word)
+        self.meta.update_with(associated.raw, add_only_associated_count)
     }
 
-    fn update_with_resolved(&mut self, update: &<MetadataManagerEx as MetadataManager>::ResolvedMetadata, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
-        update.write_into(self, is_same_word)
+    fn update_with_resolved(&mut self, update: &<MetadataManagerEx as MetadataManager>::ResolvedMetadata, add_only_associated_count: bool) -> Result<(), WrongResolvedValueError<ResolvedValue>> {
+        update.write_into(self, add_only_associated_count)
     }
 
     #[inline(always)]
@@ -319,6 +318,20 @@ impl<'a> MetadataMutReference<'a, MetadataManagerEx> for MetadataMutRefEx<'a> {
     #[inline(always)]
     fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut MetadataManagerEx {
         unsafe { &mut *self.manager_ref }
+    }
+
+    fn insert_value<T: Into<<MetadataManagerEx as MetadataManager>::FieldValue>>(&mut self, field_name: <MetadataManagerEx as MetadataManager>::FieldName, dictionary: Option<&str>, value: T) -> Result<(), (<MetadataManagerEx as MetadataManager>::FieldName, <MetadataManagerEx as MetadataManager>::FieldValue)> {
+        let parent = self.meta_container_mut();
+        let value = parent.convert_to_bound_value(field_name, value)?;
+        match dictionary {
+            None => {
+                self.meta.get_mut_or_init_general_metadata().add_single_generic(value);
+            }
+            Some(dict) => {
+                self.meta.get_or_create(parent.intern_dictionary_origin(dict)).add_single_generic(value);
+            }
+        }
+        Ok(())
     }
 }
 

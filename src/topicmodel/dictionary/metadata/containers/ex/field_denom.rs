@@ -1,6 +1,6 @@
 macro_rules! generate_enum {
     (
-        $($variant_name: ident $field: ident $lit_name: literal),+ $(,)?
+        $($doc: literal $variant_name: ident $field: ident $lit_name: literal),+ $(,)?
     ) => {
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
         #[pyo3::pyclass(eq, eq_int, hash, frozen)]
@@ -11,6 +11,7 @@ macro_rules! generate_enum {
         #[repr(u8)]
         pub enum MetaField {
             $(
+            #[doc = $doc]
             #[strum(serialize = $lit_name)]
             $variant_name,
             )+
@@ -34,11 +35,11 @@ pub(super) use generate_enum;
 
 macro_rules! generate_field_denoms {
     (
-        $($field: ident($lit_name:literal)),+ $(,)+
+        $($doc: literal $field: ident($lit_name:literal)),+ $(,)+
     ) => {
         paste::paste!{
             $crate::topicmodel::dictionary::metadata::ex::field_denom::generate_enum!(
-                $([<$field:camel>] $field $lit_name,
+                $($doc [<$field:camel>] $field $lit_name,
                 )+
             );
         }

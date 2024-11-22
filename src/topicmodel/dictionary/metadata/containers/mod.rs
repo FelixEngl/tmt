@@ -4,6 +4,7 @@ mod iter;
 pub mod ex;
 pub mod update;
 
+use std::fmt::Debug;
 pub use with_dict::*;
 pub use iter::*;
 
@@ -15,6 +16,12 @@ use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut}
 
 
 pub trait MetadataManager: Default + Clone {
+    type FieldName: Debug;
+    type FieldValue: Debug;
+
+    /// A field value that is explicitly bound to a specific field type.
+    type BoundFieldValue: Debug;
+
     type Metadata: Sized + Metadata;
     type UpdateError: Sized + 'static;
     type ResolvedMetadata: Sized + 'static;
@@ -25,6 +32,8 @@ pub trait MetadataManager: Default + Clone {
     fn meta_a(&self) -> &[Self::Metadata];
     fn meta_b(&self) -> &[Self::Metadata];
     fn switch_languages(self) -> Self;
+
+    fn unprocessed_field() -> Option<Self::FieldName>;
 
     fn get_meta_a(&self, word_id: usize) -> Option<&Self::Metadata> {
         self.meta_a().get(word_id)
@@ -66,11 +75,28 @@ pub trait MetadataManager: Default + Clone {
     }
     fn get_meta_ref_for<'a>(&'a self, lang: LanguageKind, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>>;
 
-    fn resize(&mut self, meta_a: usize, meta_b: usize);
     fn copy_keep_vocabulary(&self) -> Self;
+
+    /// Return the list of registered disctionaries.
     fn dictionaries(&self) -> Vec<&str>;
+
+    /// When filterring words the metadata has to be updated where internal word ids are stored.
+    /// By supplying the appropiate upate, with is possible without rewriting everything.
     fn update_ids(&mut self, update: &WordIdUpdate);
+
+    /// Clean up the metadata from unecessary cludder.
     fn optimize(&mut self);
+
+    /// Dropbs a specific field. Returns false if it fails.
+    fn drop_field(&mut self, field: Self::FieldName) -> bool;
+
+    fn drop_all_fields(&mut self) -> bool;
+
+    fn convert_to_bound_value<T: Into<Self::FieldValue>>(
+        &mut self,
+        field: Self::FieldName,
+        value: T
+    ) -> Result<Self::BoundFieldValue, (Self::FieldName, Self::FieldValue)>;
 }
 
 pub trait MetadataManagerGen: MetadataManager {
@@ -122,30 +148,35 @@ pub trait MetadataReference<'a, M: MetadataManager>: Clone + Deref<Target: Metad
 
 pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadata> {
 
-    /// Setting the flag is_same_word indicates, that the updating reference is the exact same word.
+    /// Setting the flag add_only_associated_count indicates that the update does not count as a
+    /// new word and therefore the update reference itself doesn't count.
     #[allow(clippy::needless_lifetimes)]
-    fn update_with_reference<'b>(&mut self, update: <M as MetadataManager>::Reference<'b>, is_same_word: bool);
+    fn update_with_reference<'b>(&mut self, update: <M as MetadataManager>::Reference<'b>, add_only_associated_count: bool);
 
-    fn update_with_resolved(&mut self, update: &<M as MetadataManager>::ResolvedMetadata, is_same_word: bool) -> Result<(), <M as MetadataManager>::UpdateError>;
+    fn update_with_resolved(&mut self, update: &<M as MetadataManager>::ResolvedMetadata, add_only_associated_count: bool) -> Result<(), <M as MetadataManager>::UpdateError>;
 
     fn raw_mut<'b: 'a>(&'b mut self) -> &'a mut <M as MetadataManager>::Metadata;
 
     fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut M;
+
+    /// A generic function to insert a value into a field.
+    fn insert_value<T: Into<<M as MetadataManager>::FieldValue>>(&mut self, field_name: <M as MetadataManager>::FieldName, dictionary: Option<&str>, value: T) -> Result<(), (<M as MetadataManager>::FieldName, <M as MetadataManager>::FieldValue)>;
 }
+
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, StringDictWithMetaDefault};
+    use arcstr::ArcStr;
+    use crate::topicmodel::dictionary::{BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, EfficientDictWithMetaDefault};
     use crate::topicmodel::dictionary::direction::{DirectionTuple};
     use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
     use crate::topicmodel::dictionary::metadata::MetadataManager;
     use crate::topicmodel::dictionary::word_infos::*;
-    use crate::topicmodel::reference::HashRef;
     use crate::topicmodel::vocabulary::BasicVocabulary;
 
     #[test]
     fn can_initialize(){
-        let mut d: StringDictWithMetaDefault = Default::default();
+        let mut d: EfficientDictWithMetaDefault = Default::default();
         let DirectionTuple{a, b , direction:_}= d.insert_invariant("a1", "b1");
         let DirectionTuple{a, b , direction:_}= d.insert_invariant("a2", "b2");
         let DirectionTuple{a, b , direction:_}= d.insert_invariant("a3", "b3");
@@ -194,8 +225,8 @@ mod test {
 
 
         let new_d = d.filter_and_process(
-            |a| Ok::<_, ()>(Some(HashRef::from((&a[0..1]).to_string()))),
-            |a| Ok(Some(HashRef::from((&a[0..1]).to_string()))),
+            |a| Ok::<_, ()>(Some(ArcStr::from(&a[0..1]).into())),
+            |a| Ok::<_, ()>(Some(ArcStr::from(&a[0..1]).into())),
         ).unwrap();
         println!("-------------------------");
         for value in new_d.voc_a().iter() {

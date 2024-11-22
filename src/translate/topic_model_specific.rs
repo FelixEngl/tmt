@@ -43,7 +43,7 @@ pub fn translate_topic_model_without_provider<'a, Model, D, T, Voc, V>(
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
 ) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError<'a>> where
-    T: Hash + Eq + Ord + Clone,
+    T: Hash + Eq + Ord + Clone + Send + Sync,
     V: VotingMethodMarker,
     Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
     D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
@@ -64,7 +64,7 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
     translate_config: &TranslateConfig<V>,
     provider: Option<&P>
 ) -> Result<TopicModel<T, Vocabulary<T>>, TranslateError<'a>> where
-    T: Hash + Eq + Ord + Clone,
+    T: Hash + Eq + Ord + Clone + Send + Sync,
     V: VotingMethodMarker,
     Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + 'a,
     D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc>,
@@ -181,10 +181,10 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
     let voc_b_col = result.par_iter().flatten().map(|value| {
         match value.candidate_word_id {
             LanguageOrigin::Origin(word_id) => {
-                dictionary.voc_a().get_value(word_id).unwrap()
+                dictionary.voc_a().get_value_by_id(word_id).unwrap()
             }
             LanguageOrigin::Target(word_id) => {
-                dictionary.voc_b().get_value(word_id).unwrap()
+                dictionary.voc_b().get_value_by_id(word_id).unwrap()
             }
         }
     }).collect_vec_list();
@@ -205,10 +205,10 @@ pub(crate) fn translate_topic_model<'a, Model, D, T, Voc, V, P>(
         let mut topic = topic_content.into_par_iter().map(|candidate| {
             let word = match candidate.candidate_word_id {
                 LanguageOrigin::Origin(word_id) => {
-                    dictionary.voc_a().get_value(word_id).unwrap()
+                    dictionary.voc_a().get_value_by_id(word_id).unwrap()
                 }
                 LanguageOrigin::Target(word_id) => {
-                    dictionary.voc_b().get_value(word_id).unwrap()
+                    dictionary.voc_b().get_value_by_id(word_id).unwrap()
                 }
             };
             (voc_b.get_id(word).unwrap(), candidate.relative_score)

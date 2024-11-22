@@ -10,12 +10,11 @@ use std::str::FromStr;
 use itertools::Itertools;
 use trie_rs::map::{Trie, TrieBuilder};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::traits::ToParseableString;
+use crate::topicmodel::traits::AsParseableString;
 use crate::topicmodel::vocabulary::LoadVocabularyError;
 
 /// A basic vocabulary for [HashRef] elements.
-pub trait BasicVocabulary<T>: Send + Sync + AsRef<[HashRef<T>]> + IntoIterator<Item=HashRef<T>> {
+pub trait BasicVocabulary<T>: AsRef<[T]> + IntoIterator<Item=T> {
     /// Gets the associated language
     fn language(&self) -> Option<&LanguageHint>;
 
@@ -33,19 +32,19 @@ pub trait BasicVocabulary<T>: Send + Sync + AsRef<[HashRef<T>]> + IntoIterator<I
 
     /// Iterates over the words in the order of the ids.
     /// To get the ids use .enumerate()
-    fn iter(&self) -> Iter<HashRef<T>>;
+    fn iter(&self) -> Iter<T>;
 
     /// Iterates over the ids and associated words.
     /// Usually only a shortcut for [iter] followed by an [enumerate]
-    fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a HashRef<T>)> + 'a where T: 'a;
+    fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a T)> + 'a where T: 'a;
 
-    fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)>;
-
-    /// Get the HashRef for a specific `id` or none
-    fn get_value(&self, id: usize) -> Option<&HashRef<T>>;
+    fn get_entry_by_id(&self, id: usize) -> Option<(usize, &T)>;
 
     /// Get the HashRef for a specific `id` or none
-    unsafe fn get_value_unchecked(&self, id: usize) -> &HashRef<T>;
+    fn get_value_by_id(&self, id: usize) -> Option<&T>;
+
+    /// Get the HashRef for a specific `id` or none
+    unsafe fn get_value_unchecked(&self, id: usize) -> &T;
 
     /// Check if the `id` is contained in this
     fn contains_id(&self, id: usize) -> bool;
@@ -54,7 +53,7 @@ pub trait BasicVocabulary<T>: Send + Sync + AsRef<[HashRef<T>]> + IntoIterator<I
     fn create(language: Option<LanguageHint>) -> Self where Self: Sized;
 
     /// Creates a new instance
-    fn create_from(language: Option<LanguageHint>, voc: Vec<T>) -> Self where Self: Sized, T: Eq + Hash;
+    fn create_from(language: Option<LanguageHint>, voc: Vec<T>) -> Self where Self: Sized, T: Eq + Hash + Clone;
 
     /// Creates a trie from this
     fn create_trie(&self) -> Trie<u8, usize> where T: AsRef<[u8]> {
@@ -92,59 +91,60 @@ where
 /// Allows to search a vocabulary by a query
 pub trait SearchableVocabulary<T>: BasicVocabulary<T> where T: Eq + Hash {
 
-    /// Retrieves the id for `value`
-    fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
+    /// Retrieves the id for `q`
+    fn get_id<Q: ?Sized>(&self, q: &Q) -> Option<usize>
     where
         T: Borrow<Q>,
         Q: Hash + Eq;
 
-    /// Retrieves the id for `value`
-    fn get_hash_ref<Q: ?Sized>(&self, value: &Q) -> Option<&HashRef<T>>
+    /// Retrieves the value identity for `q`
+    fn get_value<Q: ?Sized>(&self, q: &Q) -> Option<&T>
     where
         T: Borrow<Q>,
         Q: Hash + Eq;
 
-    /// Retrieves the complete entry for `value` in the vocabulary, if it exists
-    fn get_entry_id<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
+    /// Retrieves the complete entry for `q` in the vocabulary, if it exists
+    fn get_entry_by_value<Q: ?Sized>(&self, q: &Q) -> Option<(&T, &usize)>
     where
         T: Borrow<Q>,
         Q: Hash + Eq;
 
-    fn contains<Q: ?Sized>(&self, value: &Q) -> bool
+
+    fn contains_value<Q: ?Sized>(&self, value: &Q) -> bool
     where
         T: Borrow<Q>,
         Q: Hash + Eq;
-
 
 
     /// Returns a new vocabulary filtered by the ids
     fn filter_by_id<F: Fn(usize) -> bool>(&self, filter: F) -> Self where Self: Sized;
 
     /// Returns a vocabulary filtered by the values
-    fn filter_by_value<'a, F: Fn(&'a HashRef<T>) -> bool>(&'a self, filter: F) -> Self where Self: Sized, T: 'a;
+    fn filter_by_value<'a, F: Fn(&'a T) -> bool>(&'a self, filter: F) -> Self where Self: Sized, T: 'a;
 }
 
 /// A vocabulary that can be modified
-pub trait VocabularyMut<T>: SearchableVocabulary<T> where T: Eq + Hash {
+pub trait VocabularyMut<T>: SearchableVocabulary<T> where T: Eq + Hash + Clone {
     /// Adds the `value` to the vocabulary and returns the associated id
-    fn add_hash_ref(&mut self, value: HashRef<T>) -> usize;
-
     fn add_value(&mut self, value: T) -> usize;
 
     /// Adds any `value` that can be converted into `T`
-    fn add<V: Into<T>>(&mut self, value: V) -> usize;
+    fn add<V: Into<T>>(&mut self, value: V) -> usize {
+        self.add_value(value.into())
+    }
 
-    fn add_all_hash_ref<I: IntoIterator<Item=HashRef<T>>>(&mut self, other: I);
+    fn add_all_value<I: IntoIterator<Item=T>>(&mut self, other: I);
 }
 
 /// A vocabulary that can be mapped
 pub trait MappableVocabulary<T>: BasicVocabulary<T> where T: Eq + Hash {
-    /// Mapps the vocabulary entries from [T] to [Q]. The order of the terms stays the same.
-    fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&T) -> Q, V: BasicVocabulary<Q>;
+    /// Mapps the vocabulary entries from [T] to [R]. The order of the terms stays the same.
+    fn map<R, V, F>(self, mapping: F) -> V where F: Fn(T) -> R, V: BasicVocabulary<R>, R: Eq + Hash + Clone;
 }
 
 /// A vocabulary that can be stored to a file.
-pub trait StoreableVocabulary<T> where T: ToParseableString {
+pub trait StoreableVocabulary<T> where T: AsParseableString
+{
     /// Writes the vocabulary as a file to `path` in the list format
     fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<usize> {
         let mut writer = File::options().create(true).truncate(true).write(true).open(path)?;

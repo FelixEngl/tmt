@@ -1,25 +1,18 @@
-use crate::topicmodel::reference::HashRef;
-
 pub type AnonymousVocabularyRef<'a> = &'a dyn AnonymousVocabulary;
 
 pub trait AnonymousVocabulary {
     fn has_entry_for(&self, word_id: usize) -> bool;
-    fn id_to_entry(&self, word_id: usize) -> Option<&HashRef<String>>;
+    fn id_to_entry<'a>(&'a self, word_id: usize) -> Option<&'a str>;
 }
 
-pub trait AnonymousVocabularyMut: AnonymousVocabulary {
-    fn any_entry_to_id(&mut self, word: &str) -> usize {
-        self.entry_to_id(HashRef::new(word.to_string()))
-    }
-
-    fn entry_to_id(&mut self, word: HashRef<String>) -> usize;
+pub trait AnonymousVocabularyMut {
+    fn entry_to_id(&mut self, word: &str) -> usize;
 }
 
 
 //  A hack solution for phantoming a AnonymousVocabulary and AnonymousVocabularyMut.
 pub mod phantom {
     use std::cell::UnsafeCell;
-    use crate::topicmodel::reference::HashRef;
     use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut};
 
 
@@ -48,13 +41,13 @@ pub mod phantom {
             false
         }
 
-        fn id_to_entry(&self, _: usize) -> Option<&HashRef<String>> {
+        fn id_to_entry<'a>(&'a self, _: usize) -> Option<&'a str> {
             None
         }
     }
 
     impl AnonymousVocabularyMut for AnonymousVocabularyPhantom {
-        fn entry_to_id(&mut self, _: HashRef<String>) -> usize {
+        fn entry_to_id(&mut self, _: &str) -> usize {
             0
         }
     }
@@ -76,7 +69,7 @@ mod test {
         }
 
         fn test_write_call(v: &mut dyn AnonymousVocabularyMut) {
-            println!("{}", v.any_entry_to_id(&"Hello World"))
+            println!("{}", v.entry_to_id(&"Hello World"))
         }
 
         let mut voc = Vocabulary::<String>::default();

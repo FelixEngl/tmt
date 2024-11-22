@@ -59,6 +59,10 @@ impl<'a> MetadataMutReference<'a, ClassicMetadataManager> for ClassicMetadataMut
     fn meta_container_mut<'b: 'a>(&'b self) -> &'a mut ClassicMetadataManager {
         unsafe { &mut *self.manager_ref }
     }
+
+    fn insert_value<T: Into<<ClassicMetadataManager as MetadataManager>::FieldValue>>(&mut self, _field_name: <ClassicMetadataManager as MetadataManager>::FieldName, _dictionary: Option<&str>, _value: T) -> Result<(), ((), ())> {
+        todo!()
+    }
 }
 
 impl<'a> ClassicMetadataMutRef<'a> {

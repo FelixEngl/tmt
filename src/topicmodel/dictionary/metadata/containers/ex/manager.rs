@@ -65,11 +65,45 @@ macro_rules! create_struct {
         }
 
         impl $crate::topicmodel::dictionary::metadata::MetadataManager for MetadataManagerEx {
-            type UpdateError = $crate::topicmodel::dictionary::metadata::containers::ex::WrongResolvedValueError;
+            type FieldName = $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
+            type FieldValue = $crate::topicmodel::dictionary::metadata::containers::ex::ResolvableValue;
+            type BoundFieldValue = $crate::topicmodel::dictionary::metadata::containers::ex::GenericMetadataValue;
+            type UpdateError = $crate::topicmodel::dictionary::metadata::containers::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::containers::ex::ResolvedValue>;
             type Metadata = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx;
             type ResolvedMetadata = $crate::topicmodel::dictionary::metadata::containers::ex::LoadedMetadataEx;
             type Reference<'a> = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataRefEx<'a> where Self: 'a;
             type MutReference<'a> = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataMutRefEx<'a> where Self: 'a;
+
+            fn unprocessed_field() -> Option<Self::FieldName> {
+                Some($crate::topicmodel::dictionary::metadata::containers::ex::MetaField::UnalteredVocabulary)
+            }
+
+            fn drop_field(&mut self, field: Self::FieldName) -> bool {
+                let a = self.meta_a.iter_mut().map(|value| {
+                    value.drop_field(field)
+                }).any(|value| value);
+
+                let b = self.meta_b.iter_mut().map(|value| {
+                    value.drop_field(field)
+                }).any(|value| value);
+
+                let had_drop = a || b;
+                if had_drop {
+                   self.drop_if_unused();
+                }
+                had_drop
+            }
+
+            fn drop_all_fields(&mut self) -> bool {
+                let a = self.meta_a.iter_mut().map(|value| value.drop_all_fields()).any(|value| value);
+                let b = self.meta_b.iter_mut().map(|value| value.drop_all_fields()).any(|value| value);
+                $(
+                    if !self.$name.is_empty() {
+                        self.$name = $ty::new();
+                    }
+                )*
+                a || b
+            }
 
             fn meta_a(&self) -> &[Self::Metadata] {
                 self.meta_a.as_slice()
@@ -159,17 +193,19 @@ macro_rules! create_struct {
                 Some(MetadataRefEx::new(self.get_meta_for(lang, word_id)?, self, vocabulary))
             }
 
-            fn resize(&mut self, meta_a: usize, meta_b: usize) {
-                if meta_a > self.meta_a.len() {
-                    self.changed = true;
-                    self.meta_a.resize(meta_a, $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx::default());
-                }
+            // fn resize(&mut self, meta_a: usize, meta_b: usize) {
+            //     if meta_a > self.meta_a.len() {
+            //         self.changed = true;
+            //         self.meta_a.resize(meta_a, $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx::default());
+            //     }
+            //
+            //     if meta_b > self.meta_a.len() {
+            //         self.changed = true;
+            //         self.meta_b.resize(meta_b, $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx::default());
+            //     }
+            // }
 
-                if meta_b > self.meta_a.len() {
-                    self.changed = true;
-                    self.meta_b.resize(meta_b, $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx::default());
-                }
-            }
+
 
             fn copy_keep_vocabulary(&self) -> Self {
                 Self {
@@ -195,7 +231,12 @@ macro_rules! create_struct {
             }
 
             fn optimize(&mut self) {
+                self.optimize_impl()
+            }
 
+            #[inline(always)]
+            fn convert_to_bound_value<T: Into<Self::FieldValue>>(&mut self, field: Self::FieldName, value: T) -> Result<Self::BoundFieldValue, (Self::FieldName, Self::FieldValue)> {
+                self.convert_value(field, value)
             }
         }
     };
@@ -319,6 +360,118 @@ macro_rules! implement_filter_set {
 }
 pub(super) use implement_filter_set;
 
+
+macro_rules! clean_routine_declaration_implementation {
+    (interned: $field: ident, $t:ident; $($tt:tt)*) => {
+        let mut $field: usize = 0;
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_declaration_implementation!($($tt)*);
+    };
+    (interned: $field: ident; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_declaration_implementation!($($tt)*);
+    };
+    ($marker:tt: ; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_declaration_implementation!($($tt)*);
+    };
+    ($(;)?) => {
+
+    };
+}
+pub(super) use clean_routine_declaration_implementation;
+
+macro_rules! clean_routine_counts_implementation {
+    (interned: $field: ident; $($tt:tt)*) => {
+        $field += 2;
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_counts_implementation!($($tt)*);
+    };
+    ($marker:tt: ; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_counts_implementation!($($tt)*);
+    };
+    ($(;)?) => {
+
+    };
+}
+pub(super) use clean_routine_counts_implementation;
+
+macro_rules! clean_routine_check_empty_implementation {
+    (interned: $var: ident, $name: ident, $field_name: ident; $($tt:tt)*) => {
+        paste::paste! {
+            if $var.field_is_empty($crate::topicmodel::dictionary::metadata::ex::MetaField::[<$name:camel>]) {
+                $field_name -= 1;
+            }
+        }
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_check_empty_implementation!($($tt)*);
+    };
+    ($marker:tt: $var: ident, $name: ident ; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_check_empty_implementation!($($tt)*);
+    };
+    ($(;)?) => {
+
+    };
+}
+pub(super) use clean_routine_check_empty_implementation;
+
+
+macro_rules! clean_routine_clear_empty_implementation {
+    (interned: $TSelf:ident, $field_name: ident, $t:ident; $($tt:tt)*) => {
+        if $field_name == 0 && !$TSelf.$field_name.is_empty() {
+            $TSelf.$field_name = $t::new();
+        }
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_clear_empty_implementation!($($tt)*);
+    };
+    (interned: $TSelf:ident, $field_name: ident ; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_clear_empty_implementation!($($tt)*);
+    };
+    ($marker:tt: $TSelf:ident; $($tt:tt)*) => {
+        $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_clear_empty_implementation!($($tt)*);
+    };
+    ($(;)?) => {
+
+    };
+}
+pub(super) use clean_routine_clear_empty_implementation;
+
+macro_rules! general_conversion_right_impl {
+    (interned: $TSelf: ident, $value: ident, $field_enum: ident, $target_intern: ident) => {
+        {
+            use $crate::topicmodel::dictionary::metadata::containers::ex::{GenericMetadataValue, MetaField, WrongResolvedValueError, ResolvableValue};
+            Ok(
+                GenericMetadataValue::$field_enum(
+                    $value
+                        .resolve_with_interner(&mut $TSelf.$target_intern)
+                        .map_err(|value: WrongResolvedValueError<ResolvableValue>| (MetaField::$field_enum, value.1))?
+                )
+            )
+        }
+    };
+    (set: $TSelf: ident, $value: ident, $field_enum: ident) => {
+        {
+            use $crate::topicmodel::dictionary::metadata::containers::ex::{GenericMetadataValue, MetaField, WrongResolvedValueError};
+            Ok(
+                GenericMetadataValue::$field_enum(
+                    $value
+                        .try_into()
+                        .map_err(|value: WrongResolvedValueError<ResolvableValue>| (MetaField::$field_enum, value.1))?
+                )
+            )
+        }
+    };
+    (voc: $TSelf: ident, $value: ident, $field_enum: ident) => {
+        {
+            use $crate::topicmodel::dictionary::metadata::containers::ex::{GenericMetadataValue, MetaField, WrongResolvedValueError};
+            Ok(
+                GenericMetadataValue::$field_enum(
+                    $value
+                        .try_into()
+                        .map_err(|value: WrongResolvedValueError<ResolvableValue>| (MetaField::$field_enum, value.1))?
+                )
+            )
+        }
+    };
+}
+
+pub(super) use general_conversion_right_impl;
+
+
 macro_rules! update_routine {
     ($($marker:tt: $target_field: ident $(, $target_intern: ident $(, $ty: ident)?)?;)*) => {
         impl MetadataManagerEx {
@@ -326,7 +479,19 @@ macro_rules! update_routine {
                 $crate::topicmodel::dictionary::metadata::ex::manager::update_routine_declaration_implementation!(
                     $($marker: $($target_intern $(, $ty)?)?;)*
                 );
+
                 for value in self.meta_a.iter_mut() {
+                    for value in value.iter_mut() {
+                        let metadata = value.to_metadata();
+                        if let Some(targ) = metadata.get_mut() {
+                            $crate::topicmodel::dictionary::metadata::ex::manager::implement_filter_set!(
+                                $($marker: self, targ, $target_field $(, $target_intern)?;)*
+                            );
+                        }
+                    }
+                }
+
+                for value in self.meta_b.iter_mut() {
                     for value in value.iter_mut() {
                         let metadata = value.to_metadata();
                         if let Some(targ) = metadata.get_mut() {
@@ -340,6 +505,46 @@ macro_rules! update_routine {
                     $($marker: self $(, $target_intern $(, $ty)?)?;)*
                 );
             }
+
+            fn drop_if_unused(&mut self) {
+                $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_declaration_implementation!(
+                    $($marker: $($target_intern $(, $ty)?)?;)*
+                );
+
+                $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_counts_implementation!(
+                    $($marker: $($target_intern)?;)*
+                );
+
+                for value in self.meta_a.iter().chain(self.meta_b.iter()) {
+                    $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_check_empty_implementation!(
+                        $($marker: value, $target_field $(, $target_intern)?;)*
+                    );
+                }
+
+                $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_clear_empty_implementation!(
+                    $($marker: self $(, $target_intern $(, $ty)?)?;)*
+                );
+            }
+
+            fn convert_value<T: Into<<Self as $crate::topicmodel::dictionary::metadata::MetadataManager>::FieldValue>>(
+                &mut self,
+                field: <Self as $crate::topicmodel::dictionary::metadata::MetadataManager>::FieldName,
+                value: T
+            ) -> Result<<Self as $crate::topicmodel::dictionary::metadata::MetadataManager>::BoundFieldValue, (<Self as $crate::topicmodel::dictionary::metadata::MetadataManager>::FieldName, $crate::topicmodel::dictionary::metadata::ex::ResolvableValue)> {
+                use $crate::topicmodel::dictionary::metadata::ex::MetaField;
+                let value: <Self as $crate::topicmodel::dictionary::metadata::MetadataManager>::FieldValue = value.into();
+                paste::paste! {
+                    match field {
+                        $(
+                            MetaField::[<$target_field:camel>] => {
+                                $crate::topicmodel::dictionary::metadata::ex::manager::general_conversion_right_impl!(
+                                    $marker: self, value, [<$target_field:camel>] $(, $target_intern)?
+                                )
+                            }
+                        )*
+                    }
+                }
+            }
         }
     };
 }
@@ -347,7 +552,9 @@ macro_rules! update_routine {
 pub(super) use update_routine;
 
 
+
 use crate::topicmodel::dictionary::direction::{A, B};
+use crate::topicmodel::dictionary::metadata::MetadataManager;
 use super::*;
 
 
@@ -389,5 +596,51 @@ impl MetadataManagerEx {
                 }
             }
         }
+    }
+
+    pub(super) fn insert_into_a_impl(&mut self, word_id: usize, dictionary: Option<impl AsRef<str>>, value: <Self as MetadataManager>::BoundFieldValue) -> bool {
+        let dictionary = if let Some(dictionary) = dictionary {
+            Some(self.dictionary_interner.get_or_intern(dictionary))
+        } else {
+            None
+        };
+        self.meta_a.get_mut(word_id).map_or(false, |meta| {
+            match dictionary {
+                None => {
+                    meta.get_mut_or_init_general_metadata().add_single_generic(
+                        value
+                    );
+                }
+                Some(resolved_value) => {
+                    meta.get_or_create(resolved_value).add_single_generic(
+                        value
+                    );
+                }
+            }
+            true
+        })
+    }
+
+    pub(super) fn insert_into_b_impl(&mut self, word_id: usize, dictionary: Option<impl AsRef<str>>, value: <Self as MetadataManager>::BoundFieldValue) -> bool {
+        let dictionary = if let Some(dictionary) = dictionary {
+            Some(self.dictionary_interner.get_or_intern(dictionary))
+        } else {
+            None
+        };
+        self.meta_b.get_mut(word_id).map_or(false, |meta| {
+            match dictionary {
+                None => {
+                    meta.get_mut_or_init_general_metadata().add_single_generic(
+                        value
+                    );
+                }
+                Some(resolved_value) => {
+                    meta.get_or_create(resolved_value).add_single_generic(
+                        value
+                    );
+                }
+            }
+            true
+        })
     }
 }

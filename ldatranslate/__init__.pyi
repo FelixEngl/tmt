@@ -1012,7 +1012,14 @@ class PyDictionary:
     voc_a_py: PyVocabulary
     voc_b_py: PyVocabulary
     def __new__(cls,language_a:typing.Optional[str | LanguageHint], language_b:typing.Optional[str | LanguageHint]): ...
-    def search(self, query:str | list[str] | typing.Callable[[LanguageKind, str], bool] = None, search_type:typing.Optional[SearchTypeUnionType] = None, threshold:typing.Optional[int | float] = None, target_language:typing.Optional[LanguageKind] = None, ignores_ascii_case:typing.Optional[bool] = None) -> SearchResultContainerType:
+    def search(
+            self,
+            query:str | list[str] | typing.Callable[[LanguageKind, str], bool] = None,
+            search_type:typing.Optional[SearchTypeUnionType] = None,
+            threshold:typing.Optional[int | float] = None,
+            target_language:typing.Optional[LanguageKind] = None,
+            ignores_ascii_case:typing.Optional[bool] = None
+    ) -> SearchResultContainerType:
         r"""
         A search function for the dictionary, requires a query or matcher as first argument.
         

@@ -48,6 +48,9 @@ impl Default for ClassicMetadataManager {
 }
 
 impl MetadataManager for ClassicMetadataManager {
+    type FieldName = ();
+    type FieldValue = ();
+    type BoundFieldValue = ();
     type Metadata = ClassicMetadata;
     type UpdateError = ();
     type ResolvedMetadata = SolvedMetadata;
@@ -71,6 +74,13 @@ impl MetadataManager for ClassicMetadataManager {
             dictionary_interner: self.dictionary_interner
         }
     }
+
+    fn unprocessed_field() -> Option<Self::FieldName> {
+        None
+    }
+
+
+
 
     fn get_meta_mut_for<'a>(&'a mut self, lang: LanguageKind, _: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>> {
         let ptr = self as *mut Self;
@@ -106,15 +116,15 @@ impl MetadataManager for ClassicMetadataManager {
         Some(ClassicMetadataRef::new(self.get_meta_for(lang, word_id)?, self))
     }
 
-    fn resize(&mut self, meta_a: usize, meta_b: usize){
-        if meta_a > self.meta_a.len() {
-            self.meta_a.resize(meta_a, ClassicMetadata::default());
-        }
-
-        if meta_b > self.meta_a.len() {
-            self.meta_b.resize(meta_b, ClassicMetadata::default());
-        }
-    }
+    // fn resize(&mut self, meta_a: usize, meta_b: usize){
+    //     if meta_a > self.meta_a.len() {
+    //         self.meta_a.resize(meta_a, ClassicMetadata::default());
+    //     }
+    //
+    //     if meta_b > self.meta_a.len() {
+    //         self.meta_b.resize(meta_b, ClassicMetadata::default());
+    //     }
+    // }
 
     fn copy_keep_vocabulary(&self) -> Self {
         Self {
@@ -137,6 +147,19 @@ impl MetadataManager for ClassicMetadataManager {
     fn optimize(&mut self) {
 
     }
+
+    fn drop_field(&mut self, _: Self::FieldName) -> bool {
+        false
+    }
+
+    fn drop_all_fields(&mut self) -> bool {
+        false
+    }
+
+    fn convert_to_bound_value<T: Into<Self::FieldValue>>(&mut self, _field: Self::FieldName, _value: T) -> Result<Self::BoundFieldValue, (Self::FieldName, Self::FieldValue)> {
+        Ok(())
+    }
+
 }
 
 impl ClassicMetadataManager {

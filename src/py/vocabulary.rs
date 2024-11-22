@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use pyo3::{pyclass, pyfunction, pymethods, PyRef, PyResult};
 use pyo3::exceptions::{PyAssertionError, PyRuntimeError, PyStopIteration, PyValueError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::py::aliases::UnderlyingPyWord;
 use crate::py::dictionary::{PyDictionary};
 use crate::py::helpers::{LanguageHintValue, ListOrInt};
 use crate::register_python;
@@ -30,6 +31,7 @@ use crate::topicmodel::dictionary::metadata::ex::MetadataManagerEx;
 use crate::topicmodel::language_hint::{LanguageHint};
 use crate::topicmodel::vocabulary::{LoadableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -38,26 +40,26 @@ pub struct PyVocabulary {
     inner: PyVocabularyInner,
 }
 
-impl From<Vocabulary<String>> for PyVocabulary {
-    fn from(v: Vocabulary<String>) -> Self {
+impl From<Vocabulary<UnderlyingPyWord>> for PyVocabulary {
+    fn from(v: Vocabulary<UnderlyingPyWord>) -> Self {
         Self { inner: v.into() }
     }
 }
 
 impl PyVocabulary {
 
-    pub fn new_from_value(value: Vocabulary<String>) -> Self {
+    pub fn new_from_value(value: Vocabulary<UnderlyingPyWord>) -> Self {
         Self { inner: value.into() }
     }
 
     pub fn new_from_dict(
-        origin: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
+        origin: Arc<RwLock<DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>>,
         target: LanguageKind,
     ) -> Self {
         Self { inner: PyVocabularyInner::dict_based(origin, target) }
     }
 
-    pub fn to_voc(self) -> Vocabulary<String> {
+    pub fn to_voc(self) -> Vocabulary<UnderlyingPyWord> {
         self.inner.to_voc()
     }
 
@@ -86,7 +88,7 @@ impl PyVocabulary {
             Some(value) => {
                 match value {
                     ListOrInt::List(values) => Self {
-                        inner: Vocabulary::create_from(language, values).into()
+                        inner: Vocabulary::create_from(language, values.into_iter().map(UnderlyingPyWord::from).collect()).into()
                     },
                     ListOrInt::Int(value) => Self {
                         inner: Vocabulary::with_capacity(language, value).into()
@@ -129,7 +131,7 @@ impl PyVocabulary {
 
     #[doc(hidden)]
     fn __contains__(&self, value: &str) -> bool {
-        self.get().contains(value)
+        self.get().contains_value(value)
     }
 
     #[doc(hidden)]
@@ -138,7 +140,7 @@ impl PyVocabulary {
     }
 
     fn add(&mut self, word: String) -> usize {
-        self.get_mut().add_value(word)
+        self.get_mut().add_value(word.into())
     }
 
     fn word_to_id(&mut self, word: String) -> Option<usize> {
@@ -146,7 +148,7 @@ impl PyVocabulary {
     }
 
     pub fn id_to_word(&self, id: usize) -> Option<String> {
-        self.get().get_value(id).map(|value| value.to_string())
+        self.get().get_value_by_id(id).map(|value| value.to_string())
     }
 
     /// Save the vocabulary in a standardisized way
@@ -157,7 +159,7 @@ impl PyVocabulary {
     /// Load the vocabulary from a file
     #[staticmethod]
     fn load(path: PathBuf) -> PyResult<PyVocabulary> {
-        match Vocabulary::<String>::load_from_file(path) {
+        match Vocabulary::<UnderlyingPyWord>::load_from_file(path) {
             Ok(inner) => {
                 Ok(Self{ inner: inner.into() })
             }
@@ -186,17 +188,17 @@ impl PyVocabulary {
 #[derive(Debug, Clone)]
 enum PyVocabularyInner {
     DictBased {
-        origin: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
+        origin: Arc<RwLock<DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>>,
         target: LanguageKind,
         mut_version: Arc<AtomicUsize>
     },
     Raw {
-        value: Arc<RwLock<Vocabulary<String>>>,
+        value: Arc<RwLock<Vocabulary<UnderlyingPyWord>>>,
         mut_version: Arc<AtomicUsize>
     },
 }
 impl PyVocabularyInner {
-    pub fn raw(value: Vocabulary<String>) -> Self {
+    pub fn raw(value: Vocabulary<UnderlyingPyWord>) -> Self {
         Self::Raw {
             value: Arc::new(RwLock::new(value.into())),
             mut_version: Arc::new(AtomicUsize::new(0))
@@ -204,7 +206,7 @@ impl PyVocabularyInner {
     }
 
     pub fn dict_based(
-        origin: Arc<RwLock<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>>,
+        origin: Arc<RwLock<DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>>,
         target: LanguageKind,
     ) -> Self {
         Self::DictBased {
@@ -214,7 +216,7 @@ impl PyVocabularyInner {
         }
     }
 
-    pub fn to_voc(self) -> Vocabulary<String> {
+    pub fn to_voc(self) -> Vocabulary<UnderlyingPyWord> {
         self.get().clone()
     }
 }
@@ -237,11 +239,11 @@ impl<'de> Deserialize<'de> for PyVocabularyInner {
     where
         D: Deserializer<'de>
     {
-        Ok(PyVocabularyInner::raw(<Vocabulary<String> as Deserialize<'de>>::deserialize(deserializer)?))
+        Ok(PyVocabularyInner::raw(<Vocabulary<UnderlyingPyWord> as Deserialize<'de>>::deserialize(deserializer)?))
     }
 }
-impl From<Vocabulary<String>> for PyVocabularyInner {
-    fn from(value: Vocabulary<String>) -> Self {
+impl From<Vocabulary<UnderlyingPyWord>> for PyVocabularyInner {
+    fn from(value: Vocabulary<UnderlyingPyWord>) -> Self {
         Self::raw(value)
     }
 }
@@ -310,12 +312,12 @@ impl PyVocabularyInner {
 
 pub enum PyVocabularyRef<'a> {
     DictBased {
-        origin: RwLockReadGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>,
+        origin: RwLockReadGuard<'a, DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>,
         target: LanguageKind,
         mut_version: Arc<AtomicUsize>,
     },
     Raw {
-        value: RwLockReadGuard<'a, Vocabulary<String>>,
+        value: RwLockReadGuard<'a, Vocabulary<UnderlyingPyWord>>,
         mut_version: Arc<AtomicUsize>
     },
 }
@@ -332,7 +334,7 @@ impl PyVocabularyRef<'_> {
     }
 }
 impl<'a> Deref for PyVocabularyRef<'a> {
-    type Target = Vocabulary<String>;
+    type Target = Vocabulary<UnderlyingPyWord>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -363,12 +365,12 @@ impl<'a> Deref for PyVocabularyRef<'a> {
 
 pub enum PyVocabularyRefMut<'a> {
     DictBased {
-        origin: RwLockWriteGuard<'a, DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>>,
+        origin: RwLockWriteGuard<'a, DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>,
         target: LanguageKind,
         mut_version: Arc<AtomicUsize>,
     },
     Raw {
-        value: RwLockWriteGuard<'a, Vocabulary<String>>,
+        value: RwLockWriteGuard<'a, Vocabulary<UnderlyingPyWord>>,
         mut_version: Arc<AtomicUsize>
     },
 }
@@ -385,7 +387,7 @@ impl PyVocabularyRefMut<'_> {
     }
 }
 impl<'a> Deref for PyVocabularyRefMut<'a> {
-    type Target = Vocabulary<String>;
+    type Target = Vocabulary<UnderlyingPyWord>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -478,7 +480,7 @@ impl PyVocIter {
         if self.mut_version != read.get_mut_version() {
             Err(PyAssertionError::new_err("The value of the dictionary changed while iterating!"))
         } else {
-            if let Some(value) = read.get_value(self.pos) {
+            if let Some(value) = read.get_value_by_id(self.pos) {
                 self.pos += 1;
                 let value = value.to_string();
                 Ok(value)

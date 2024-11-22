@@ -17,7 +17,7 @@ register_python! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr, EnumIter)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[repr(u64)]
+#[repr(u16)]
 pub enum GrammaticalGender {
     #[strum(to_string = "f", serialize = "female", serialize = "f.", serialize = "feminine")]
     Feminine = 0,
@@ -49,11 +49,11 @@ impl GrammaticalGender {
 impl Fits64 for GrammaticalGender {
     #[inline(always)]
     unsafe fn from_u64(x: u64) -> Self {
-        GrammaticalGender::try_from(x).unwrap()
+        GrammaticalGender::try_from(x as u16).unwrap()
     }
     #[inline(always)]
     fn to_u64(self) -> u64 {
-        self.into()
+        (self as u16) as u64
     }
 }
 

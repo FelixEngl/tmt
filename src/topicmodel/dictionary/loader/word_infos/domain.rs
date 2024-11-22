@@ -16,7 +16,7 @@ register_python! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[derive(Display, EnumString, IntoStaticStr, EnumCount, EnumIter)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
-#[repr(u64)]
+#[repr(u16)]
 pub enum Domain {
     /// Academic Disciplines / Wissenschaft
     #[strum(
@@ -1807,10 +1807,10 @@ impl DomainModelIndex for Domain {
 impl Fits64 for Domain {
     #[inline(always)]
     unsafe fn from_u64(x: u64) -> Self {
-        Domain::try_from(x).unwrap()
+        Domain::try_from(x as u16).unwrap()
     }
     #[inline(always)]
     fn to_u64(self) -> u64 {
-        self.into()
+        (self as u16) as u64
     }
 }

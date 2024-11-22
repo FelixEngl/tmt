@@ -31,12 +31,11 @@ use std::hash::Hash;
 use std::io;
 use std::io::{ErrorKind, Write};
 use std::marker::PhantomData;
-use std::ops::{Deref, Range};
+use std::ops::{Range};
 use std::sync::Arc;
 
 use crate::toolkit::normal_number::IsNormalNumber;
 use crate::topicmodel::model::meta::*;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -100,7 +99,7 @@ impl<T, V> Clone for TopicModel<T, V> where V: Clone {
 
 impl<T, V> TopicModel<T, V> where
     T: Hash + Eq + Ord,
-    V: SearchableVocabulary<T>
+    V: SearchableVocabulary<T> + Sync + Send
 {
     fn recalculate_statistics(&mut self) {
         self.topic_metas = unsafe {
@@ -108,7 +107,7 @@ impl<T, V> TopicModel<T, V> where
         };
     }
 
-    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &impl BasicVocabulary<T>) -> TopicTo<TopicMeta> {
+    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &(impl BasicVocabulary<T> + Sync + Send)) -> TopicTo<TopicMeta> {
         struct SortHelper<'a, Q, V> where V: BasicVocabulary<Q> {
             word_id: WordId,
             probability: Probability,
@@ -117,8 +116,8 @@ impl<T, V> TopicModel<T, V> where
         }
 
         impl<'a, Q, V> SortHelper<'a, Q, V> where Q: Hash + Eq, V: BasicVocabulary<Q> {
-            fn word(&self) -> &HashRef<Q> {
-                self.vocabulary.get_value(self.word_id).expect("There should be no problem with enpacking it here!")
+            fn word(&self) -> &Q {
+                self.vocabulary.get_value_by_id(self.word_id).expect("There should be no problem with enpacking it here!")
             }
         }
 
@@ -140,16 +139,16 @@ impl<T, V> TopicModel<T, V> where
                             Some(Ordering::Less)
                         } else {
                             Some(
-                                other.vocabulary.get_value(other.word_id).unwrap().cmp(
-                                    self.vocabulary.get_value(self.word_id).unwrap()
+                                other.vocabulary.get_value_by_id(other.word_id).unwrap().cmp(
+                                    self.vocabulary.get_value_by_id(self.word_id).unwrap()
                                 )
                             )
                         }
                     }
                     Some(Ordering::Equal) => {
                         Some(
-                            other.vocabulary.get_value(other.word_id).unwrap().cmp(
-                                self.vocabulary.get_value(self.word_id).unwrap()
+                            other.vocabulary.get_value_by_id(other.word_id).unwrap().cmp(
+                                self.vocabulary.get_value_by_id(self.word_id).unwrap()
                             )
                         )
                     }
@@ -286,7 +285,7 @@ impl<T, V> TopicModel<T, V> where
 
 impl<T, V> FullTopicModel<T, V> for TopicModel<T, V> where
     T: Hash + Eq + Ord,
-    V: SearchableVocabulary<T>
+    V: SearchableVocabulary<T> + Sync + Send
 {
     fn normalize_in_place(&mut self) {
         for topic in self.topics.iter_mut() {
@@ -330,7 +329,7 @@ impl<T, V> FullTopicModel<T, V> for TopicModel<T, V> where
 }
 
 
-impl<T, V> TopicModel<T, V> where T: Hash + Eq + Ord, V: Clone + VocabularyMut<T> {
+impl<T, V> TopicModel<T, V> where T: Hash + Eq + Ord + Clone, V: Clone + VocabularyMut<T> + Sync + Send {
     pub fn normalize(&self) -> Self {
         let mut target = self.clone();
         target.normalize_in_place();
@@ -459,27 +458,29 @@ impl<T, V> BasicTopicModelWithVocabulary<T, V> for TopicModel<T, V> where V: Bas
         &self.vocabulary
     }
 
-    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, HashRef<T>>>  where V: 'a  {
+    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, T>>  where V: 'a  {
         let topic_meta = self.get_topic_meta(topic_id)?;
         let word_meta = topic_meta.by_words.get(word_id)?;
-        let word = self.vocabulary.get_value(word_meta.word_id)?;
+        let word = self.vocabulary.get_value_by_id(word_meta.word_id)?;
         Some(WordMetaWithWord::new(word, word_meta))
     }
 
-    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, HashRef<T>>>> where V: 'a {
+    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, T>>> where V: 'a {
         Some(
             self.get_all_similar_important(topic_id, word_id)?
                 .iter()
-                .map(|value| WordMetaWithWord::new(self.vocabulary.get_value(value.word_id).unwrap(), value))
+                .map(|value| WordMetaWithWord::new(self.vocabulary.get_value_by_id(value.word_id).unwrap(), value))
                 .collect()
         )
     }
 }
 
-impl<T, V> TopicModelWithVocabulary<T, V> for TopicModel<T, V> where T: Hash + Eq, V: VocabularyMut<T> {
+impl<T, V> TopicModelWithVocabulary<T, V> for TopicModel<T, V> where T: Hash + Eq, V: SearchableVocabulary<T> {
     delegate::delegate! {
         to self.vocabulary {
             fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<usize> where T: Borrow<Q>, Q: Hash + Eq;
+
+            #[call(contains_value)]
             fn contains<Q: ?Sized>(&self, word: &Q) -> bool where T: Borrow<Q>, Q: Hash + Eq;
         }
     }
@@ -492,7 +493,7 @@ impl<T, V> TopicModelWithVocabulary<T, V> for TopicModel<T, V> where T: Hash + E
         self.topic_count() == other.topic_count()
             && self.vocabulary_size() == other.vocabulary_size()
             && self.vocabulary.iter().enumerate().all(|(word_id, word)| {
-            if let Some(found) = other.get_id(word.deref()) {
+            if let Some(found) = other.get_id(word) {
                 self.used_vocab_frequency.get(word_id) == other.used_vocab_frequency().get(found)
             } else {
                 false
@@ -546,7 +547,7 @@ impl<T: Display, V> TopicModel<T, V> where V: BasicVocabulary<T> {
             write!(out, "Topic({topic_id}):")?;
             for it in topic_entries.iter() {
                 out.write(b"\n")?;
-                write!(out, "    {}: {} ({})", self.vocabulary.get_value(it.word_id).unwrap(), it.probability, it.rank())?;
+                write!(out, "    {}: {} ({})", self.vocabulary.get_value_by_id(it.word_id).unwrap(), it.probability, it.rank())?;
             }
         }
         Ok(())
@@ -570,7 +571,7 @@ impl<T: Display, V> Display for TopicModel<T, V> where V: Display + BasicVocabul
         for (topic_id, topic) in self.topics.iter().enumerate() {
             write!(f, "\n    Topic({topic_id})")?;
             for (word_id, probability) in topic.iter().enumerate() {
-                write!(f, "\n        '{}'({}): {}", self.vocabulary.get_value(word_id).unwrap(), word_id, probability)?;
+                write!(f, "\n        '{}'({}): {}", self.vocabulary.get_value_by_id(word_id).unwrap(), word_id, probability)?;
             }
         }
         write!(f, "\n{}", self.vocabulary)
@@ -602,14 +603,15 @@ impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash +
 
 #[cfg(test)]
 pub mod test {
+    use arcstr::ArcStr;
     use crate::topicmodel::enums::TopicModelVersion;
     use crate::topicmodel::model::{FullTopicModel, TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
-    use crate::topicmodel::vocabulary::{StringVocabulary, Vocabulary, VocabularyMut};
+    use crate::topicmodel::vocabulary::{EfficientStringVocabulary, Vocabulary, VocabularyMut};
     use itertools::{assert_equal, Itertools};
 
 
-    pub fn create_test_data() -> TopicModel<String, Vocabulary<String>> {
-        let mut voc: StringVocabulary = Vocabulary::default();
+    pub fn create_test_data() -> TopicModel<ArcStr, Vocabulary<ArcStr>> {
+        let mut voc: EfficientStringVocabulary = Vocabulary::default();
         voc.add("plane");
         voc.add("aircraft");
         voc.add("airplane");

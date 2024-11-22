@@ -7,7 +7,6 @@ use std::ops::Range;
 use std::sync::Arc;
 use crate::topicmodel::model::{DocumentId, DocumentLength, DocumentTo, Probability, TopicId, TopicTo, WordFrequency, WordId, WordTo};
 use crate::topicmodel::model::meta::{TopicMeta, WordMeta, WordMetaWithWord};
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::BasicVocabulary;
 
 /// A basic topic model fulfilling the bare minimum of a topic model.
@@ -98,30 +97,30 @@ pub trait BasicTopicModelWithVocabulary<T, Voc>: BasicTopicModel where Voc: Basi
 
     /// Get the word for the `word_id`
     #[inline]
-    fn get_word<'a>(&'a self, word_id: WordId) -> Option<&'a HashRef<T>> where Voc: 'a {
-        self.vocabulary().get_value(word_id)
+    fn get_word<'a>(&'a self, word_id: WordId) -> Option<&'a T> where Voc: 'a {
+        self.vocabulary().get_value_by_id(word_id)
     }
 
     /// Get the [WordMetaWithWord] of `word_id` of `topic_id`
-    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, HashRef<T>>>  where Voc: 'a {
+    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, T>>  where Voc: 'a {
         let topic_meta = self.get_topic_meta(topic_id)?;
         let word_meta = topic_meta.by_words.get(word_id)?;
-        let word = self.vocabulary().get_value(word_meta.word_id)?;
+        let word = self.vocabulary().get_value_by_id(word_meta.word_id)?;
         Some(WordMetaWithWord::new(word, word_meta))
     }
 
     /// Get the [WordMetaWithWord] of `word_id` for all topics.
-    fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, HashRef<T>>>> where Voc: 'a {
+    fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, T>>> where Voc: 'a {
         self.topic_ids().map(|topic_id| self.get_word_meta_with_word(topic_id, word_id)).collect()
     }
 
     /// Get all [WordMetaWithWord] values with a similar importance in `topic_id` than `word_id`.
     /// (including the `word_id`)
-    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, HashRef<T>>>> where Voc: 'a {
+    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, T>>> where Voc: 'a {
         Some(
             self.get_all_similar_important(topic_id, word_id)?
                 .iter()
-                .map(|value| WordMetaWithWord::new(self.vocabulary().get_value(value.word_id).unwrap(), value))
+                .map(|value| WordMetaWithWord::new(self.vocabulary().get_value_by_id(value.word_id).unwrap(), value))
                 .collect()
         )
     }
@@ -152,7 +151,7 @@ pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc
 
     /// Get the [WordMetaWithWord] of `word` for all topics.
     #[inline]
-    fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, HashRef<T>>>> where T: Borrow<Q>, Q: Hash + Eq, Voc: 'a {
+    fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, T>>> where T: Borrow<Q>, Q: Hash + Eq, Voc: 'a {
         self.get_word_metas_with_word(self.get_id(word)?)
     }
 

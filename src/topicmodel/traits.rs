@@ -12,14 +12,16 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::str::FromStr;
+
 /// Allows to returns a string that can be used by [FromStr]
-pub trait ToParseableString {
+pub trait AsParseableString {
     /// This string is guaranteed to be parseable, no matter that is represents.
-    fn to_parseable_string(&self) -> String;
+    fn as_parseable_string(&self) -> String;
 }
 
-impl ToParseableString for String {
-    fn to_parseable_string(&self) -> String {
-        self.into()
+impl<T> AsParseableString for T where T: ToString + FromStr {
+    fn as_parseable_string(&self) -> String {
+        self.to_string()
     }
 }

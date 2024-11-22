@@ -70,7 +70,7 @@ pub(super) use convert_into;
 macro_rules! create_cached_getter {
     (interned: $ident:ident, $interner_name: ident: $ty:ty, $($tt:tt)*) => {
         paste::paste! {
-            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a str, u32)>)> {
+            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, $ty> {
                 self.[<$ident>].get_or_init(|| {
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
@@ -114,7 +114,7 @@ macro_rules! create_cached_getter {
                 })
             }
 
-            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a str, u32)>)> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, $ty> {
                 self.[<get_ $ident _impl>]()
             }
         }
@@ -122,7 +122,7 @@ macro_rules! create_cached_getter {
     };
     (set: $ident:ident: $ty:ty, $($tt:tt)*) => {
         paste::paste! {
-            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, &'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, $ty> {
                 self.[<$ident>].get_or_init(|| {
                     use string_interner::Symbol;
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
@@ -149,7 +149,7 @@ macro_rules! create_cached_getter {
     (voc: $ident:ident: $ty:ty, $($tt:tt)*) => {
 
         paste::paste! {
-            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a $crate::topicmodel::reference::HashRef<String>, u32)>)> {
+            pub(super) fn [<get_ $ident _impl>](&self) -> &Storage<'a, $ty> {
                 self.[<$ident>].get_or_init(|| {
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
@@ -191,7 +191,7 @@ macro_rules! create_cached_getter {
                 })
             }
 
-            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, (&'a $crate::topicmodel::dictionary::metadata::containers::ex::metadata::MetadataContainerValueGeneric<$ty>, Vec<(&'a $crate::topicmodel::reference::HashRef<String>, u32)>)> {
+            pub(super) fn [<get_ $ident>](&self) -> &Storage<'a, $ty> {
                 self.[<get_ $ident _impl>]()
             }
         }
@@ -205,7 +205,7 @@ pub(super) use create_cached_getter;
 
 
 macro_rules! create_ref_implementation {
-    ($($tt:tt: $name: ident $(, $interner_name: ident)?: $ty: ty | $ty_sub:ty),* $(,)?) => {
+    ($($tt:tt: $name: ident $(, $interner_name: ident)?: $ty: ty),* $(,)?) => {
         #[derive(Clone)]
         pub struct MetadataRefEx<'a> {
             pub(in super) raw: &'a $crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx,
@@ -248,7 +248,7 @@ macro_rules! create_ref_implementation {
 
 
         impl<'a> MetadataRefEx<'a> {
-            $crate::topicmodel::dictionary::metadata::ex::reference::create_cached_getter!($($tt: $name $(, $interner_name)?: $ty_sub,)*);
+            $crate::topicmodel::dictionary::metadata::ex::reference::create_cached_getter!($($tt: $name $(, $interner_name)?: $ty,)*);
         }
 
         impl<'a> MetadataRefEx<'a> {

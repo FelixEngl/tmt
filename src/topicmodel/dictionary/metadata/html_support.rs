@@ -5,7 +5,6 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryWithMeta, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{Language, A, B};
 use crate::topicmodel::dictionary::metadata::{MetadataManagerGen};
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{AlphabeticalVocabulary, AnonymousVocabulary, BasicVocabulary};
 use build_html::{Container, Html, HtmlContainer, HtmlPage, Table, TableCell, TableRow};
 use build_html::ContainerType::*;
@@ -48,11 +47,11 @@ use crate::toolkit::crc32;
 
 impl<T, V> DictionaryWithMeta<T, V, MetadataManagerEx>
 where
-    T: Ord + Display,
-    V: BasicVocabulary<T> + AnonymousVocabulary,
+    T: Ord + Display + Clone + Send + Sync,
+    V: BasicVocabulary<T> + AnonymousVocabulary + Send + Sync,
 {
 
-    fn generate_directed<L: Language>(&self, main: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>, use_crc32: bool) -> Result<Vec<(HashRef<T>, HashRef<T>, Utf8PathBuf)>, std::io::Error> {
+    fn generate_directed<L: Language>(&self, main: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>, use_crc32: bool) -> Result<Vec<(T, T, Utf8PathBuf)>, std::io::Error> {
 
         let main = main.as_ref();
         std::fs::create_dir_all(dir.as_ref())?;
@@ -81,8 +80,8 @@ where
             let start = *chunk.first().unwrap();
             let end = *chunk.last().unwrap();
             let file_path = dir.join(format!("{}_{}_{}.html", L::LANG, start, end));
-            let start = voc_origin.get_value(start).unwrap().clone();
-            let end = voc_origin.get_value(end).unwrap().clone();
+            let start = voc_origin.get_value_by_id(start).unwrap().clone();
+            let end = voc_origin.get_value_by_id(end).unwrap().clone();
             let is_same = if use_crc32 && file_path.exists() {
                 File::options().read(true).open(&file_path).map(BufReader::new).and_then(|value| {
                     crc32(value).map(Some)

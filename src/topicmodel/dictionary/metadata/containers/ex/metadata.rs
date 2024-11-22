@@ -83,17 +83,23 @@ macro_rules! impl_associated_metadata {
 
                 /// Adds a single value to the specified field
                 #[inline(always)]
-                pub fn [<write_single_to_ $name>](&mut self, value: $typ, count: u32, is_same_word: bool) {
-                    self.get_mut_or_init().[<write_single_to_ $name>](value, count, is_same_word);
+                pub fn [<write_single_to_ $name>](&mut self, value: $typ, count: u32, add_only_associated_count: bool) {
+                    self.get_mut_or_init().[<write_single_to_ $name>](value, count, add_only_associated_count);
                 }
 
                 /// Adds all values to the specified field
                 #[inline(always)]
-                pub fn [<write_all_to_ $name>]<I: IntoIterator<Item=($typ, u32)>>(&mut self, values: I, is_same_word: bool) {
-                    self.get_mut_or_init().[<write_all_to_ $name>](values, is_same_word);
+                pub fn [<write_all_to_ $name>]<I: IntoIterator<Item=($typ, u32)>>(&mut self, values: I, add_only_associated_count: bool) {
+                    self.get_mut_or_init().[<write_all_to_ $name>](values, add_only_associated_count);
                 }
+
             }
             )+
+
+            #[inline(always)]
+            pub fn add_single_generic(&mut self, value: $crate::topicmodel::dictionary::metadata::containers::ex::GenericMetadataValue) {
+                self.get_mut_or_init().add_single_generic(value);
+            }
         }
 
 
@@ -153,26 +159,36 @@ macro_rules! impl_associated_metadata {
                     }
                 }
 
-                pub fn [<write_single_to_ $name>](&mut self, value: $typ, count: u32, is_same_word: bool) {
+                pub fn [<write_single_to_ $name>](&mut self, value: $typ, count: u32, add_only_associated_count: bool) {
                     unsafe {
                         self
                             .get_or_insert(MetaField::[<$name:camel>])
                             .[<as_mut_unchecked_ $name>]()
-                            .insert_direct(value, count, is_same_word);
+                            .insert_direct(value, count, add_only_associated_count);
                     }
                 }
-                pub fn [<write_all_to_ $name>]<I: IntoIterator<Item=($typ, u32)>>(&mut self, values: I, is_same_word: bool) {
+                pub fn [<write_all_to_ $name>]<I: IntoIterator<Item=($typ, u32)>>(&mut self, values: I, add_only_associated_count: bool) {
                     unsafe {
                         let targ = self
                             .get_or_insert(MetaField::[<$name:camel>])
                             .[<as_mut_unchecked_ $name>]();
                         for (k, v) in values {
-                            targ.insert_direct(k, v, is_same_word);
+                            targ.insert_direct(k, v, add_only_associated_count);
                         }
                     }
                 }
             }
             )+
+
+            pub fn add_single_generic(&mut self, value: $crate::topicmodel::dictionary::metadata::containers::ex::GenericMetadataValue) {
+                use $crate::topicmodel::dictionary::metadata::containers::ex::GenericMetadataValue;
+                paste::paste! {
+                    match value {
+                        $(GenericMetadataValue::[<$name:camel>](value) => self.[<add_single_to_ $name>](value),
+                        )+
+                    }
+                }
+            }
 
             pub fn update_ids<L: $crate::topicmodel::dictionary::direction::Language>(
                 &mut self,
@@ -217,20 +233,29 @@ macro_rules! impl_keys {
         $($normal_name:ident, $enum_var_name: ident, $typ: ty);+ $(;)?
     ) => {
         /// Allows to store a count in association to a value
-        #[derive(Clone, Copy, Hash, Eq, PartialEq, Debug)]
-        pub enum CountKey {
+        #[derive(Clone, Debug)]
+        pub enum GenericMetadataValue {
             $($enum_var_name($typ),
             )+
         }
 
-        impl CountKey {
+        impl GenericMetadataValue {
             $(
             #[inline(always)]
-            pub fn $normal_name(value: $typ) -> CountKey {
-                CountKey::$enum_var_name(value)
+            pub fn $normal_name(value: $typ) -> GenericMetadataValue {
+                GenericMetadataValue::$enum_var_name(value)
             }
             )+
+
+            pub fn associated_key(&self) -> $crate::topicmodel::dictionary::metadata::containers::ex::MetaField {
+                match self {
+                    $(
+                    Self::$enum_var_name(_) => $crate::topicmodel::dictionary::metadata::containers::ex::MetaField::$enum_var_name,
+                    )+
+                }
+            }
         }
+
 
         #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
         pub enum MetadataContainerValue {
@@ -270,10 +295,10 @@ macro_rules! impl_keys {
                     }
                 }
 
-                pub fn update(&mut self, other: &MetadataContainerValue, is_same_word: bool) {
+                pub fn update(&mut self, other: &MetadataContainerValue, add_only_associated_count: bool) {
                     match (self, other) {
                         $(
-                        (MetadataContainerValue::$enum_var_name(slf), MetadataContainerValue::$enum_var_name(othr)) => slf.update(othr, is_same_word),
+                        (MetadataContainerValue::$enum_var_name(slf), MetadataContainerValue::$enum_var_name(othr)) => slf.update(othr, add_only_associated_count),
                         )+
                         _ => {}
                     }
@@ -479,8 +504,24 @@ use std::ops::Range;
 use either::Either;
 use itertools::{Itertools, Position};
 use strum::EnumIs;
+use thiserror::Error;
 use tinyset::Fits64;
 use super::*;
+
+
+#[derive(Debug, Error)]
+#[error("Expected the field name {actual} but got {expected}!")]
+pub struct UnexpectedFieldKeyError<T>{
+    pub actual: MetaField,
+    pub expected: MetaField,
+    pub value: T
+}
+
+impl<T> UnexpectedFieldKeyError<T> {
+    pub fn new(actual: MetaField, expected: MetaField, value: T) -> Self {
+        Self { actual, expected, value }
+    }
+}
 
 #[derive(Copy, Clone)]
 pub enum MetadataWithOrigin<T> {
@@ -708,19 +749,19 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
         self.inner = update.inner;
     }
 
-    pub(super) unsafe fn apply_iterable_as_update<C: Into<u32>, I: IntoIterator<Item=(T, C)>>(&mut self, update: I, is_same_word: bool) {
+    pub(super) unsafe fn apply_iterable_as_update<C: Into<u32>, I: IntoIterator<Item=(T, C)>>(&mut self, update: I, add_only_associated_count: bool) {
         let mut new = MetadataContainerValueGeneric::new();
         for (k, v) in update {
             unsafe {
-                new.insert_direct(k, v.into(), is_same_word);
+                new.insert_direct(k, v.into(), add_only_associated_count);
             }
         }
         self.apply_new_as_update(new)
     }
 
-    /// is_same_word indicates, that we have to remove a single count from is_same_word
-    pub unsafe fn insert_direct(&mut self, value: T, count: u32, is_same_word: bool) {
-        match (count, is_same_word) {
+    /// add_only_associated_count indicates, that we have to remove a single count from add_only_associated_count
+    pub unsafe fn insert_direct(&mut self, value: T, count: u32, add_only_associated_count: bool) {
+        match (count, add_only_associated_count) {
             (1, true) | (0, _) => {
                 self.inner.insert_no_count(value);
             },
@@ -839,17 +880,17 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
         self.inner.iter_counts().map(|(k, v)| (k, v.get().saturating_sub(1)))
     }
 
-    /// An update for this element. If the is_same_word is set, the value is only set, but not counted.
+    /// An update for this element. If the add_only_associated_count is set, the value is only set, but not counted.
     /// The three possible update strategies are:
     ///
     /// ```python
     /// target: T = ...;
-    /// is_same_word = true;
+    /// add_only_associated_count = true;
     ///
     /// x = self.count_of(target);
     /// n = other.count_of(target);
     ///
-    /// if is_same_word {
+    /// if add_only_associated_count {
     ///     if n == 1 {
     ///         self[target] = x
     ///     } else if n > 1 {
@@ -863,8 +904,8 @@ impl<T> MetadataContainerValueGeneric<T> where T: Fits64 + Eq + Hash {
     ///     }
     /// }
     /// ```
-    pub fn update(&mut self, other: &Self, is_same_word: bool) {
-        if is_same_word {
+    pub fn update(&mut self, other: &Self, add_only_associated_count: bool) {
+        if add_only_associated_count {
             for (targ, value) in other.iter_counts() {
                 if value.get() == 1 {
                     self.inner.insert_no_count(targ)
@@ -898,12 +939,15 @@ impl AssociatedMetadataImpl {
             || self.inner.values().all(|value| value.is_empty())
     }
 
+    pub fn field_is_empty(&self, key: MetaField) -> bool {
+        self.inner.get(&key).map_or(true, |value| value.is_empty())
+    }
 
-    pub fn update_with(&mut self, other: &AssociatedMetadataImpl, is_same_word: bool) {
+    pub fn update_with(&mut self, other: &AssociatedMetadataImpl, add_only_associated_count: bool) {
         for (k, v) in other.inner.iter() {
             match self.inner.entry(k.clone()) {
                 Entry::Occupied(mut entry) => {
-                    entry.get_mut().update(v, is_same_word);
+                    entry.get_mut().update(v, add_only_associated_count);
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(v.clone());
@@ -923,12 +967,17 @@ impl AssociatedMetadataImpl {
     pub fn get_mut(&mut self, key: MetaField) -> Option<&mut MetadataContainerValue> {
         self.inner.get_mut(&key)
     }
+
+    /// Returns true if there was a non-empty field dropped
+    pub fn drop_field(&mut self, key: MetaField) -> bool {
+        self.inner.remove(&key).is_some_and(|value| !value.is_empty())
+    }
 }
 
 impl Display for AssociatedMetadataImpl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{")?;
-        for (p, (k, v)) in self.inner.iter().sorted_unstable_by_key(|(k, _)| k.clone()).with_position() {
+        for (p, (k, v)) in self.inner.iter().sorted_unstable_by_key(|(k, _)| **k).with_position() {
             match p {
                 Position::First | Position::Middle => {
                     write!(f, "{}: {}, ", k, v)?;
@@ -958,6 +1007,27 @@ impl MetadataEx {
             general_metadata: LazyAssociatedMetadata::new(),
             associated_metadata: Vec::with_capacity(capacity),
         }
+    }
+
+    /// Returns true if a field is empty.
+    pub fn field_is_empty(&self, key: MetaField) -> bool {
+        self.general_metadata.get()
+            .and_then(|value| value.get())
+            .map_or(true, |value| value.field_is_empty(key))
+    }
+    
+    /// Drops a single field from all the metadata.
+    /// Returns true when some kind of data was dropped.
+    pub fn drop_field(&mut self, key: MetaField) -> bool {
+        self.general_metadata.drop_field(key) 
+            | self.associated_metadata.iter_mut().map(|m| m.drop_field(key)).any(|x| x)
+    }
+
+    /// Drops all field in the metadata.
+    /// Returns true when some kind of data was dropped.
+    pub fn drop_all_fields(&mut self) -> bool {
+        self.general_metadata.drop_all_fields()
+            | self.associated_metadata.iter_mut().map(|m| m.drop_all_fields()).any(|x| x)
     }
 
     pub fn get_general_metadata(&self) -> Option<&AssociatedMetadata> {
@@ -993,7 +1063,8 @@ impl MetadataEx {
         }
         unsafe {self.associated_metadata.get_unchecked_mut(origin)}.get_mut_or_init()
     }
-
+    
+    /// Gets or creates the metadata for a dictionary.
     pub fn get_or_create(&mut self, origin: DictionaryOriginSymbol) -> &mut AssociatedMetadata {
         use string_interner::Symbol;
         self.get_or_create_impl(origin.to_usize())
@@ -1008,13 +1079,13 @@ impl MetadataEx {
     }
 
 
-    pub fn update_with(&mut self, other: &MetadataEx, is_same_word: bool) {
+    pub fn update_with(&mut self, other: &MetadataEx, add_only_associated_count: bool) {
         if let Some(targ) = other.general_metadata.get() {
-            self.general_metadata.get_mut_or_init().update_with(targ, is_same_word);
+            self.general_metadata.get_mut_or_init().update_with(targ, add_only_associated_count);
         }
         for (origin, value) in other.associated_metadata.iter().enumerate() {
             if let Some(value) = value.get() {
-                self.get_or_create_impl(origin).update_with(value, is_same_word)
+                self.get_or_create_impl(origin).update_with(value, add_only_associated_count)
             }
         }
     }
@@ -1183,6 +1254,16 @@ impl LazyAssociatedMetadata {
         }
     }
 
+    /// returns true when something was dropped.
+    pub fn drop_field(&mut self, field_name: MetaField) -> bool {
+        self.get_mut().is_some_and(|value| value.drop_field(field_name))
+    }
+    
+    /// Returns true if some kind of content was dropped.
+    pub fn drop_all_fields(&mut self) -> bool {
+        self.get_mut().is_some_and(|value| value.drop_all_fields())
+    }
+
     pub fn into_inner(self) -> std::cell::OnceCell<AssociatedMetadata> {
         self.inner
     }
@@ -1287,15 +1368,23 @@ impl AssociatedMetadata {
     }
 
     #[inline(always)]
-    pub fn update_with(&mut self, other: &AssociatedMetadata, is_same_word: bool) {
+    pub fn update_with(&mut self, other: &AssociatedMetadata, add_only_associated_count: bool) {
         if let Some(other) = other.get() {
-            self.get_mut_or_init().update_with(other, is_same_word)
+            self.get_mut_or_init().update_with(other, add_only_associated_count)
         }
     }
 
     #[inline(always)]
     pub fn collect_all_known_ids(&self) -> Option<Set64<usize>> {
         Some(self.get()?.collect_all_known_ids())
+    }
+
+    pub fn drop_field(&mut self, field_name: MetaField) -> bool {
+        self.get_mut().is_some_and(|value| value.drop_field(field_name))
+    }
+
+    pub fn drop_all_fields(&mut self) -> bool {
+        self.inner.take().is_some_and(|value| !value.is_empty())
     }
 }
 

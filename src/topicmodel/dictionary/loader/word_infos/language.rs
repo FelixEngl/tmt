@@ -25,7 +25,7 @@ register_python! {
 #[derive(Display, EnumString, IntoStaticStr)]
 #[derive(TryFromPrimitive, IntoPrimitive)]
 #[derive(Serialize, Deserialize)]
-#[repr(u64)]
+#[repr(u16)]
 /// The recognized
 pub enum Language {
     #[strum(to_string = "en", serialize = "english", serialize = "English")]
@@ -65,12 +65,12 @@ impl Language {
 impl Fits64 for Language {
     #[inline(always)]
     unsafe fn from_u64(x: u64) -> Self {
-        Language::try_from(x).unwrap()
+        Language::try_from(x as u16).unwrap()
     }
 
     #[inline(always)]
     fn to_u64(self) -> u64 {
-        self.into()
+        (self as u16) as u64
     }
 }
 

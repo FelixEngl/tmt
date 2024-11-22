@@ -26,10 +26,11 @@ use std::collections::hash_map::{Entry};
 use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
-use std::ops::{Deref, Range};
+use std::ops::{Range};
 use std::slice::Iter;
 use std::str::FromStr;
 use std::vec::IntoIter;
+use arcstr::ArcStr;
 use itertools::Itertools;
 use rayon::prelude::{FromParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -37,10 +38,9 @@ use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};
 use thiserror::Error;
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::{HashRef, Wrapper};
-use crate::topicmodel::traits::ToParseableString;
+use crate::topicmodel::traits::AsParseableString;
 
-pub type StringVocabulary = Vocabulary<String>;
+pub type EfficientStringVocabulary = Vocabulary<ArcStr>;
 
 #[macro_export]
 macro_rules! voc {
@@ -75,14 +75,14 @@ macro_rules! voc {
 #[derive(Clone, Debug)]
 pub struct Vocabulary<T> {
     language: Option<LanguageHint>,
-    id2entry: Vec<HashRef<T>>,
-    entry2id: HashMap<HashRef<T>, usize>,
+    id2entry: Vec<T>,
+    entry2id: HashMap<T, usize>,
 }
 
 impl <T> Vocabulary<T> {
 
     /// Create a new vocabulary with the default sizes
-    pub fn new(language: Option<LanguageHint>, id2entry: Vec<HashRef<T>>, entry2id: HashMap<HashRef<T>, usize>) -> Self {
+    pub fn new(language: Option<LanguageHint>, id2entry: Vec<T>, entry2id: HashMap<T, usize>) -> Self {
         Self {
             language,
             id2entry,
@@ -114,6 +114,8 @@ impl <T> Vocabulary<T> {
     }
 }
 
+unsafe impl<T> Send for Vocabulary<T> {}
+unsafe impl<T> Sync for Vocabulary<T> {}
 
 impl <T> BasicVocabulary<T> for Vocabulary<T> {
     fn language(&self) -> Option<&LanguageHint> {
@@ -141,25 +143,25 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
     }
 
     /// Iterate over the words
-    fn iter(&self) -> Iter<HashRef<T>> {
+    fn iter(&self) -> Iter<T> {
         self.id2entry.iter()
     }
 
-    fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a HashRef<T>)> + 'a  where T: 'a{
+    fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a T)> + 'a  where T: 'a {
         self.id2entry.iter().enumerate()
     }
 
 
-    fn get_id_entry(&self, id: usize) -> Option<(usize, &HashRef<T>)> {
-        self.get_value(id).map(|value| (id, value))
+    fn get_entry_by_id(&self, id: usize) -> Option<(usize, &T)> {
+        self.get_value_by_id(id).map(|value| (id, value))
     }
 
     /// Get the HashRef for a specific `id` or none
-    fn get_value(&self, id: usize) -> Option<&HashRef<T>> {
+    fn get_value_by_id(&self, id: usize) -> Option<&T> {
         self.id2entry.get(id)
     }
 
-    unsafe fn get_value_unchecked(&self, id: usize) -> &HashRef<T> {
+    unsafe fn get_value_unchecked(&self, id: usize) -> &T {
         self.id2entry.get_unchecked(id)
     }
 
@@ -174,8 +176,8 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
     }
 
 
-    fn create_from(language: Option<LanguageHint>, voc: Vec<T>) -> Self where Self: Sized, T: Eq + Hash {
-        let id2entry = voc.into_iter().map(|value| HashRef::new(value)).collect_vec();
+    fn create_from(language: Option<LanguageHint>, voc: Vec<T>) -> Self where Self: Sized, T: Eq + Hash + Clone {
+        let id2entry = voc;
         let entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
         Self::new(
             language,
@@ -185,15 +187,14 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
     }
 }
 
-
 impl<T> Default for Vocabulary<T> {
     fn default() -> Self {
         Self::empty(Default::default())
     }
 }
 
-impl<T> AsRef<[HashRef<T>]> for Vocabulary<T> {
-    fn as_ref(&self) -> &[HashRef<T>] {
+impl<T> AsRef<[T]> for Vocabulary<T> {
+    fn as_ref(&self) -> &[T] {
         &self.id2entry
     }
 }
@@ -210,20 +211,28 @@ impl<T> From<Option<LanguageHint>> for Vocabulary<T> {
     }
 }
 
-impl<T: Eq + Hash> From<Vec<T>> for Vocabulary<T>  {
+impl<T> From<Vec<T>> for Vocabulary<T>
+where
+    T: Eq + Hash + Clone
+{
     fn from(value: Vec<T>) -> Self {
         Self::create_from(None, value)
     }
 }
 
-impl<T: Eq + Hash> From<(Option<LanguageHint>, Vec<T>)> for Vocabulary<T>  {
+impl<T> From<(Option<LanguageHint>, Vec<T>)> for Vocabulary<T>
+where
+    T: Eq + Hash + Clone
+{
     fn from((hint, value): (Option<LanguageHint>, Vec<T>)) -> Self {
         Self::create_from(hint, value)
     }
 }
 
-impl<T: Eq + Hash> SearchableVocabulary<T> for Vocabulary<T> {
-
+impl<T> SearchableVocabulary<T> for Vocabulary<T>
+where
+    T: Eq + Hash + Clone
+{
 
     /// Retrieves the id for `value`
     fn get_id<Q: ?Sized>(&self, value: &Q) -> Option<usize>
@@ -231,33 +240,33 @@ impl<T: Eq + Hash> SearchableVocabulary<T> for Vocabulary<T> {
         T: Borrow<Q>,
         Q: Hash + Eq
     {
-        self.entry2id.get(Wrapper::wrap(value)).copied()
+        self.entry2id.get(value).copied()
     }
 
     /// Retrieves the id for `value`
-    fn get_hash_ref<Q: ?Sized>(&self, value: &Q) -> Option<&HashRef<T>>
+    fn get_value<Q: ?Sized>(&self, value: &Q) -> Option<&T>
     where
         T: Borrow<Q>,
         Q: Hash + Eq
     {
-        Some(self.get_entry_id(value)?.0)
+        Some(self.get_entry_by_value(value)?.0)
     }
 
     /// Retrieves the complete entry for `value` in the vocabulary, if it exists
-    fn get_entry_id<Q: ?Sized>(&self, value: &Q) -> Option<(&HashRef<T>, &usize)>
+    fn get_entry_by_value<Q: ?Sized>(&self, value: &Q) -> Option<(&T, &usize)>
     where
         T: Borrow<Q>,
         Q: Hash + Eq
     {
-        self.entry2id.get_key_value(Wrapper::wrap(value))
+        self.entry2id.get_key_value(value)
     }
 
-    fn contains<Q: ?Sized>(&self, value: &Q) -> bool
+    fn contains_value<Q: ?Sized>(&self, value: &Q) -> bool
     where
         T: Borrow<Q>,
         Q: Hash + Eq {
 
-        self.entry2id.contains_key(Wrapper::wrap(value))
+        self.entry2id.contains_key(value)
     }
 
     fn filter_by_id<F: Fn(usize) -> bool>(&self, filter: F) -> Self where Self: Sized {
@@ -270,7 +279,7 @@ impl<T: Eq + Hash> SearchableVocabulary<T> for Vocabulary<T> {
         }).collect()
     }
 
-    fn filter_by_value<'a, F: Fn(&'a HashRef<T>) -> bool>(&'a self, filter: F) -> Self where Self: Sized, T: 'a {
+    fn filter_by_value<'a, F: Fn(&'a T) -> bool>(&'a self, filter: F) -> Self where Self: Sized, T: 'a {
         self.id2entry.iter().filter_map(|value| {
             if filter(value) {
                 Some(value.clone())
@@ -281,9 +290,9 @@ impl<T: Eq + Hash> SearchableVocabulary<T> for Vocabulary<T> {
     }
 }
 
-impl<T> VocabularyMut<T> for Vocabulary<T> where T: Eq + Hash {
+impl<T> VocabularyMut<T> for Vocabulary<T> where T: Eq + Hash + Clone {
     /// Adds the `value` to the vocabulary and returns the associated id
-    fn add_hash_ref(&mut self, value: HashRef<T>) -> usize {
+    fn add_value(&mut self, value: T) -> usize {
         let found = self.entry2id.entry(value);
         match found {
             Entry::Occupied(entry) => {
@@ -298,40 +307,46 @@ impl<T> VocabularyMut<T> for Vocabulary<T> where T: Eq + Hash {
         }
     }
 
-    fn add_value(&mut self, value: T) -> usize {
-        self.add_hash_ref(value.into())
-    }
 
     /// Adds any `value` that can be converted into `T`
     fn add<V: Into<T>>(&mut self, value: V) -> usize {
-        self.add_hash_ref(value.into().into())
+        self.add_value(value.into())
     }
 
-    fn add_all_hash_ref<I: IntoIterator<Item=HashRef<T>>>(&mut self, other: I) {
+    fn add_all_value<I: IntoIterator<Item=T>>(&mut self, other: I) {
         for value in other {
-            self.add_hash_ref(value);
+            self.add_value(value);
         }
     }
 }
 
 impl<T> MappableVocabulary<T> for Vocabulary<T> where T: Eq + Hash {
-    fn map<Q: Eq + Hash, V, F>(self, mapping: F) -> V where F: Fn(&T) -> Q, V: BasicVocabulary<Q> {
+    fn map<R, V, F>(self, mapping: F) -> V
+    where
+        F: Fn(T) -> R,
+        V: BasicVocabulary<R>,
+        R: Eq + Hash + Clone
+    {
         V::create_from(
             self.language,
-            self.id2entry.into_iter().map(|value| mapping(value.deref())).collect::<Vec<_>>()
+            self.id2entry.into_iter().map(mapping).collect::<Vec<_>>()
         )
     }
 }
 
-impl<T, Q: Into<T>> Extend<Q> for Vocabulary<T> where T: Eq + Hash {
-    fn extend<I: IntoIterator<Item=Q>>(&mut self, iter: I) {
+impl<T, R> Extend<R> for Vocabulary<T>
+where
+    T: Eq + Hash + Clone,
+    R: Into<T>
+{
+    fn extend<I: IntoIterator<Item=R>>(&mut self, iter: I) {
         for value in iter {
             self.add(value);
         }
     }
 }
 
-impl<T: Eq> PartialEq for Vocabulary<T> {
+impl<T> PartialEq for Vocabulary<T> where T: Eq {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() &&
             self.id2entry.iter()
@@ -340,7 +355,7 @@ impl<T: Eq> PartialEq for Vocabulary<T> {
     }
 }
 
-impl<T: Eq> Eq for Vocabulary<T> {}
+impl<T> Eq for Vocabulary<T>  where T: Eq {}
 
 #[derive(Debug, Error)]
 pub enum LoadVocabularyError<E: Debug> {
@@ -350,16 +365,23 @@ pub enum LoadVocabularyError<E: Debug> {
     Parse(E),
 }
 
-impl<T: Hash + Eq + FromStr<Err=E>, E: Debug> LoadableVocabulary<T, E> for  Vocabulary<T> {
+impl<T, E> LoadableVocabulary<T, E> for  Vocabulary<T>
+where
+    T: Hash + Eq + Clone + FromStr<Err=E>,
+    E: Debug
+{
 }
 
-impl<T: ToParseableString> StoreableVocabulary<T> for Vocabulary<T>  {
+impl<T> StoreableVocabulary<T> for Vocabulary<T>
+where
+    T: AsParseableString
+{
     /// Writes the vocabulary to `writer` in the list format
     fn save_to_output(&self, writer: &mut impl Write) -> std::io::Result<usize> {
         let mut written = 0;
         let mut writer = BufWriter::new(writer);
         for value in self.id2entry.iter() {
-            let value = value.to_parseable_string();
+            let value = value.as_parseable_string();
             written += writer.write(value.as_bytes())?;
             written += writer.write(b"\n")?;
         }
@@ -368,7 +390,7 @@ impl<T: ToParseableString> StoreableVocabulary<T> for Vocabulary<T>  {
     }
 }
 
-impl <T: ToString> Display for Vocabulary<T> {
+impl <T> Display for Vocabulary<T> where T: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let x = self
             .id2entry
@@ -379,7 +401,7 @@ impl <T: ToString> Display for Vocabulary<T> {
     }
 }
 
-impl<T: Serialize> Serialize for Vocabulary<T> {
+impl<T> Serialize for Vocabulary<T> where T: Serialize {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         if serializer.is_human_readable() {
             let mut st = serializer.serialize_struct("Vocabulary", 2)?;
@@ -389,20 +411,22 @@ impl<T: Serialize> Serialize for Vocabulary<T> {
             )?;
             st.serialize_field(
                 "id2entry",
-                &self.id2entry.iter().map(|it| it.deref()).collect_vec()
+                &self.id2entry
             )?;
             st.end()
         } else {
             let mut st = serializer.serialize_seq(Some(2))?;
             st.serialize_element(&self.language)?;
-            st.serialize_element(&self.id2entry.iter().map(|it| it.deref()).collect_vec())?;
+            st.serialize_element(&self.id2entry)?;
             st.end()
         }
-
     }
 }
 
-impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
+impl <'de, T> Deserialize<'de> for Vocabulary<T>
+where
+    T: Deserialize<'de> + Hash + Eq + Clone
+{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
 
         struct VocabularyVisitor<'de, T: Deserialize<'de>>{_phantom: PhantomData<(T, &'de())>}
@@ -417,7 +441,9 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
         #[serde(field_identifier, rename_all = "lowercase")]
         enum Field { Id2Entry, Language }
 
-        impl<'de, T: Deserialize<'de> + Hash + Eq> Visitor<'de> for VocabularyVisitor<'de, T> {
+        impl<'de, T> Visitor<'de> for VocabularyVisitor<'de, T>
+        where T: Deserialize<'de> + Hash + Eq + Clone
+        {
             type Value = Vocabulary<T>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
@@ -469,118 +495,91 @@ impl <'de, T: Deserialize<'de> + Hash + Eq> Deserialize<'de> for Vocabulary<T> {
 }
 
 impl<T> IntoIterator for Vocabulary<T> {
-    type Item = HashRef<T>;
-    type IntoIter = IntoIter<HashRef<T>>;
+    type Item = T;
+    type IntoIter = IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.id2entry.into_iter()
     }
 }
 
-impl<T> IntoParallelIterator for Vocabulary<T> {
-    type Iter = rayon::vec::IntoIter<HashRef<T>>;
-    type Item = HashRef<T>;
+impl<T> IntoParallelIterator for Vocabulary<T>
+where
+    T:  Sync + Send
+{
+    type Iter = rayon::vec::IntoIter<T>;
+    type Item = T;
 
     fn into_par_iter(self) -> Self::Iter {
         self.id2entry.into_par_iter()
     }
 }
 
-impl<T> FromIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
-    fn from_iter<I: IntoIterator<Item=HashRef<T>>>(iter: I) -> Self {
-        let mut new = Self::default();
-        for value in iter {
-            new.add_hash_ref(value);
-        }
-        return new;
+impl<T> FromIterator<T> for Vocabulary<T> where T: Hash + Eq + Clone {
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
+        Self::create_from(None, iter.into_iter().collect())
     }
 }
 
-impl<'a, T> FromIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
-    fn from_iter<I: IntoIterator<Item=&'a HashRef<T>>>(iter: I) -> Self {
-        let mut new = Self::default();
-        for value in iter {
-            new.add_hash_ref(value.clone());
-        }
-        new
+impl<'a, T> FromIterator<&'a T> for Vocabulary<T> where T: Hash + Eq + Clone {
+    fn from_iter<I: IntoIterator<Item=&'a T>>(iter: I) -> Self {
+        Self::create_from(None, iter.into_iter().cloned().collect())
     }
 }
 
-impl<T> FromParallelIterator<HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
-    fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=HashRef<T>> {
-        let mut new = Self::default();
-        for value in par_iter.into_par_iter().collect_vec_list() {
-            for value in value.into_iter() {
-                new.add_hash_ref(value);
-            }
-        }
-        new
+impl<T> FromParallelIterator<T> for Vocabulary<T> where T: Hash + Eq + Clone + Send + Send {
+    fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=T> {
+        Self::create_from(None, par_iter.into_par_iter().collect())
     }
 }
 
-impl<'a, T> FromParallelIterator<&'a HashRef<T>> for Vocabulary<T> where T: Hash + Eq {
-    fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=&'a HashRef<T>> {
-        let mut new = Self::default();
-        for value in par_iter.into_par_iter().collect_vec_list() {
-            for value in value.into_iter() {
-                new.add_hash_ref(value.clone());
-            }
-        }
-        new
+impl<'a, T> FromParallelIterator<&'a T> for Vocabulary<T> where T: Hash + Eq + Clone + Sync + Send {
+    fn from_par_iter<I>(par_iter: I) -> Self where I: IntoParallelIterator<Item=&'a T> {
+        Self::create_from(None, par_iter.into_par_iter().cloned().collect())
     }
 }
 
-impl AnonymousVocabulary for Vocabulary<String> {
+impl<T> AnonymousVocabulary for Vocabulary<T>
+where
+    T: AsRef<str>
+{
     fn has_entry_for(&self, word_id: usize) -> bool {
         self.contains_id(word_id)
     }
 
-    fn id_to_entry(&self, word_id: usize) -> Option<&HashRef<String>> {
-        self.get_value(word_id)
+    fn id_to_entry<'a>(&'a self, word_id: usize) -> Option<&'a str> {
+        self.get_value_by_id(word_id).map(|v| v.as_ref())
     }
 }
 
-impl AnonymousVocabularyMut for Vocabulary<String> {
-    fn entry_to_id(&mut self, word: HashRef<String>) -> usize {
-        self.add_hash_ref(word)
+impl<T> AnonymousVocabularyMut for Vocabulary<T>
+where
+    T: Eq + Hash + Clone + for<'a> From<&'a str>
+{
+    fn entry_to_id(&mut self, word: &str) -> usize {
+        self.add_value(word.into())
     }
 }
 
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::vocabulary::{HashRef, StringVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
+    use crate::topicmodel::vocabulary::{EfficientStringVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 
     #[test]
     fn can_insert_and_retrieve() {
-        let mut voc = StringVocabulary::empty_from("MyLang");
+        let mut voc = EfficientStringVocabulary::empty_from("MyLang");
         voc.add("Hello World".to_string());
         voc.add("Wasimodo".to_string());
 
         assert_eq!(2usize, voc.len());
         assert_eq!(Some(0usize), voc.get_id("Hello World"));
-        assert_eq!(Some("Hello World"), voc.get_value(0).map(|x| x.as_str()));
-        assert_eq!(Some("Wasimodo"), voc.get_value(1).map(|x| x.as_str()));
+        assert_eq!(Some("Hello World"), voc.get_value_by_id(0).map(|x| x.as_str()));
+        assert_eq!(Some("Wasimodo"), voc.get_value_by_id(1).map(|x| x.as_str()));
 
         let s = serde_json::to_string(&voc).unwrap();
         let voc2: Vocabulary<String> = serde_json::from_str(&s).unwrap();
         println!("{voc}");
         println!("{voc2}");
-    }
-
-    #[test]
-    fn equals_behaves_normally() {
-        let a = HashRef::new("Test1");
-        let b = a.clone();
-        let c = HashRef::new("Test1");
-        let d = HashRef::new("Test2");
-
-        assert_eq!(a, a);
-        assert_eq!(a, b);
-        assert_eq!(a, c);
-        assert_eq!(b, c);
-        assert_ne!(d, a);
-        assert_ne!(d, b);
-        assert_ne!(d, c);
     }
 }

@@ -6,6 +6,7 @@ use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
 use std::ops::DerefMut;
 use std::path::Path;
 use std::str::FromStr;
+use arcstr::ArcStr;
 use flate2::Compression;
 use itertools::Itertools;
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
@@ -13,10 +14,10 @@ use crate::topicmodel::enums::ReadError::NotFinishedError;
 use crate::topicmodel::io::{TopicModelFSRead, TopicModelFSWrite};
 use crate::topicmodel::io::TopicModelIOError::PathNotFound;
 use crate::topicmodel::model::{FullTopicModel, TopicModel};
-use crate::topicmodel::traits::ToParseableString;
+use crate::topicmodel::traits::AsParseableString;
 use crate::topicmodel::vocabulary::{LoadableVocabulary, StoreableVocabulary, Vocabulary, VocabularyMut};
 
-impl TopicModel<String, Vocabulary<String>> {
+impl TopicModel<ArcStr, Vocabulary<ArcStr>> {
     pub fn load_string_model(path: impl AsRef<Path>, allow_unfinished: bool) -> Result<(Self, TopicModelVersion), ReadError<Infallible>> {
         Self::load(path, allow_unfinished)
     }
@@ -38,7 +39,12 @@ impl<T, V> TopicModel<T, V> {
     }
 }
 
-impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug, V> TopicModel<T, V> where V: LoadableVocabulary<T, E> + VocabularyMut<T> {
+impl<T, E, V> TopicModel<T, V>
+where
+    V: LoadableVocabulary<T, E> + VocabularyMut<T> + Sync + Send,
+    T: FromStr<Err=E> + Hash + Eq + Ord + Clone,
+    E: Debug
+{
 
     pub fn load(path: impl AsRef<Path>, allow_unfinished: bool) -> Result<(TopicModel<T, V>, TopicModelVersion), ReadError<E>> {
         if !allow_unfinished && !Self::is_already_finished(&path) {
@@ -141,7 +147,7 @@ impl<T: FromStr<Err=E> + Hash + Eq + Ord, E: Debug, V> TopicModel<T, V> where V:
     }
 }
 
-impl<T: ToParseableString, V> TopicModel<T, V> where V: StoreableVocabulary<T> {
+impl<T: AsParseableString, V> TopicModel<T, V> where V: StoreableVocabulary<T> {
 
     pub fn save(&self, path: impl AsRef<Path>, save_version: TopicModelVersion, deflate: bool, replace: bool) -> Result<usize, WriteError> {
         if Self::is_already_finished(&path) {

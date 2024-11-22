@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::iter::Map;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::slice::Iter;
 use itertools::{multiunzip, multizip, Itertools};
 use rand::prelude::Distribution;
@@ -34,7 +35,7 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where Model: TopicMo
 }
 
 impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
-    T: Hash + Eq,
+    T: Hash + Eq + Clone,
     V: VocabularyMut<T>,
     Model: TopicModelWithVocabulary<T, V>
 {
@@ -42,28 +43,58 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
     pub const DEFAULT_MIN_PHI_VALUE: f64 = 1E-10;
 
     /// Infer the probabilities for [doc]. Implemented like gensim, with the same default values.
-    pub fn get_doc_probability_for_default(
+    pub fn get_doc_probability_for_default<I, Q: ?Sized>(
         &self,
-        doc: Vec<T>,
+        doc: impl IntoIterator<Item = I>,
         per_word_topics: bool
-    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
+    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>)
+    where
+        I: Deref<Target=Q> + Hash + Eq,
+        T: Borrow<Q>,
+        Q: Hash + Eq
+    {
         self.get_doc_probability_for(doc, Self::DEFAULT_MIN_PROBABILITY, Self::DEFAULT_MIN_PHI_VALUE, per_word_topics)
     }
 
     /// Infer the probabilities for [doc]. Implemented like gensim.
-    pub fn get_doc_probability_for(&self, doc: Vec<T>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
-        let doc = doc.into_iter().map(|value| match self.topic_model.get_id(&value) {
-            None => {
-                WordIdOrUnknown::Unknown(value)
-            }
-            Some(value) => {
-                WordIdOrUnknown::WordId(value)
-            }
-        }).collect_vec();
+    pub fn get_doc_probability_for<I, Q: ?Sized>(
+        &self,
+        doc: impl IntoIterator<Item = I>,
+        minimum_probability: f64,
+        minimum_phi_value: f64,
+        per_word_topics: bool
+    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>)
+    where
+        I: Deref<Target=Q> + Hash + Eq,
+        T: Borrow<Q>,
+        Q: Hash + Eq
+    {
+        let doc = doc.into_iter()
+            .map(|value|
+                match self.topic_model.get_id(&value) {
+                    None => {
+                        WordIdOrUnknown::Unknown(value)
+                    }
+                    Some(value) => {
+                        WordIdOrUnknown::WordId(value)
+                    }
+                }
+            ).collect_vec();
         self.get_doc_probability(doc, minimum_probability,minimum_phi_value, per_word_topics)
     }
 
-    fn get_doc_probability(&self, doc: Vec<WordIdOrUnknown<T>>, minimum_probability: f64, minimum_phi_value: f64, per_word_topics: bool) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
+    fn get_doc_probability<I, Q: ?Sized>(
+        &self,
+        doc: Vec<WordIdOrUnknown<I>>,
+        minimum_probability: f64,
+        minimum_phi_value: f64,
+        per_word_topics: bool
+    ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>)
+    where
+        I: Deref<Target=Q> + Hash + Eq,
+        T: Borrow<Q>,
+        Q: Hash + Eq
+    {
         let minimum_probability = 1E-10f64.max(minimum_probability);
         let minimum_phi_value = 1E-10f64.max(minimum_phi_value);
         let (bow, _) = self.doc_to_bow(doc);
@@ -194,7 +225,12 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
         (gamma, stats)
     }
 
-    fn doc_to_bow<Q>(&self, doc: Vec<WordIdOrUnknown<Q>>) -> (HashMap<WordId, usize>, Option<HashMap<Q, usize>>) where T: Borrow<Q>, Q: Eq + Hash {
+    fn doc_to_bow<I, Q: ?Sized>(&self, doc: Vec<WordIdOrUnknown<I>>) -> (HashMap<WordId, usize>, Option<HashMap<I, usize>>)
+    where
+        I: Deref<Target=Q> + Hash + Eq,
+        T: Borrow<Q>,
+        Q: Hash + Eq
+    {
         let mut counts: HashMap<WordId, usize> = HashMap::with_capacity(doc.len());
         let mut fallback = HashMap::new();
         for word in doc {

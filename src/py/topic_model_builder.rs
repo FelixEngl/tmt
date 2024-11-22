@@ -14,6 +14,7 @@
 
 use itertools::repeat_n;
 use std::sync::OnceLock;
+use arcstr::ArcStr;
 use pyo3::exceptions::PyValueError;
 use pyo3::{pyclass, pymethods, PyResult};
 use crate::py::helpers::LanguageHintValue;
@@ -32,7 +33,7 @@ register_python! {
 #[pyclass]
 #[derive(Clone, Debug, Default)]
 pub struct PyTopicModelBuilder {
-    voc: Vocabulary<String>,
+    voc: Vocabulary<ArcStr>,
     topics: Vec<Vec<f64>>,
     used_vocab_frequency: OnceLock<WordTo<WordFrequency>>,
     doc_topic_distributions: Option<DocumentTo<TopicTo<Probability>>>,
@@ -92,7 +93,7 @@ impl PyTopicModelBuilder {
     }
 
     fn set_frequency(&mut self, word: String, frequency: u64) {
-        let word_id = self.voc.add_value(word);
+        let word_id = self.voc.add_value(word.into());
         self.set_frequency_impl(word_id, frequency);
     }
 
@@ -101,7 +102,7 @@ impl PyTopicModelBuilder {
         if !probability.is_normal() {
             return Err(PyValueError::new_err("The probability has to be a normal number!"))
         }
-        let word_id = self.voc.add_value(word);
+        let word_id = self.voc.add_value(word.into());
         self.set_probability_impl(topic_id, word_id, probability);
         if let Some(frequency) = frequency {
             self.set_frequency_impl(topic_id, frequency);

@@ -17,7 +17,6 @@ use rayon::prelude::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use crate::topicmodel::dictionary::{DictionaryMut, DictionaryMutGen, FromVoc};
 use crate::topicmodel::dictionary::direction::*;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{MappableVocabulary, VocabularyMut};
 
 pub mod model;
@@ -37,7 +36,7 @@ pub fn create_topic_model_specific_dictionary<D2, D1, T, V1, V2>(
 where
     V1: VocabularyMut<T> + MappableVocabulary<T> + Clone,
     V2: VocabularyMut<T>,
-    T: Eq + Hash + Clone,
+    T: Eq + Hash + Clone + Send + Sync,
     D1: DictionaryMut<T, V1>,
     D2: DictionaryMut<T, V2> + FromVoc<T, V2>
 {
@@ -46,13 +45,13 @@ where
         dictionary.language_b().cloned()
     );
 
-    let translations: Vec<(HashRef<T>, Option<Vec<&HashRef<T>>>)> = {
+    let translations: Vec<(T, Option<Vec<&T>>)> = {
         new_dict.voc_a().as_ref().par_iter().map(|value| {
             (value.clone(), dictionary.translate_word_a_to_words_b(value))
         }).collect::<Vec<_>>()
     };
 
-    fn insert_into<L: Language, T: Eq + Hash, V: VocabularyMut<T>>(dict: &mut impl DictionaryMut<T, V>, translations: &Vec<(HashRef<T>, Option<Vec<&HashRef<T>>>)>) {
+    fn insert_into<L: Language, T: Eq + Hash + Clone, V: VocabularyMut<T>>(dict: &mut impl DictionaryMut<T, V>, translations: &Vec<(T, Option<Vec<&T>>)>) {
         for (t, other) in translations.iter() {
             if let Some(other) = other {
                 for o in other {
@@ -83,7 +82,6 @@ where
 mod test {
     use crate::topicmodel::create_topic_model_specific_dictionary;
     use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable};
-    use crate::topicmodel::reference::HashRef;
     use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary};
 
     #[test]
@@ -97,13 +95,13 @@ mod test {
 
         let voc = voc_a.filter_by_value(
             |a| {
-                a.eq(&HashRef::new("plane".to_string())) || a.eq(&HashRef::new("aircraft".to_string()))
+                a.eq("plane") || a.eq("aircraft")
             }
         );
         println!("{dict}\n------\n");
         let dict = dict.filter_by_values(
             |_| true,
-            |b| !b.eq(&HashRef::new("Ebene".to_string()))
+            |b| !b.eq("Ebene")
         );
 
         let d: Dictionary<_, Vocabulary<_>> = create_topic_model_specific_dictionary(

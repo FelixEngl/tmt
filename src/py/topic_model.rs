@@ -32,10 +32,10 @@ use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::{PyVocabulary};
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::{register_python, topicmodel};
+use crate::py::aliases::{UnderlyingPyTopicModel, UnderlyingPyVocabulary, UnderlyingPyWord};
 use crate::toolkit::special_python_values::{SingleOrVec};
 use crate::topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, FullTopicModel, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use crate::topicmodel::model::meta::*;
 use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
@@ -44,14 +44,14 @@ use crate::topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PyTopicModel {
-    inner: TopicModel<String, Vocabulary<String>>
+    inner: UnderlyingPyTopicModel
 }
 
 impl PyTopicModel {
-    pub fn wrapped(&self) -> &TopicModel<String, Vocabulary<String>> {
+    pub fn wrapped(&self) -> &UnderlyingPyTopicModel {
         &self.inner
     }
-    pub fn wrap(inner: TopicModel<String, Vocabulary<String>>) -> Self {
+    pub fn wrap(inner: UnderlyingPyTopicModel) -> Self {
         Self{inner}
     }
 }
@@ -96,7 +96,7 @@ impl PyTopicModel {
 
     #[staticmethod]
     fn load(path: PathBuf) -> PyResult<PyTopicModel> {
-        Ok(Self { inner: TopicModel::<_,Vocabulary<String>>::load(path, true)?.0 })
+        Ok(Self { inner: TopicModel::<_, UnderlyingPyVocabulary>::load(path, true)?.0 })
     }
 
     #[pyo3(signature = (n=None))]
@@ -127,14 +127,14 @@ impl PyTopicModel {
         minimum_phi_value: Option<f64>,
         per_word_topics: Option<bool>
     ) -> (Vec<(usize, f64)>, Option<Vec<(usize, Vec<usize>)>>, Option<Vec<(usize, Vec<(usize, f64)>)>>) {
-        TopicModelInferencer::<String, Vocabulary<String>, Self>::new(
+        TopicModelInferencer::<UnderlyingPyWord, UnderlyingPyVocabulary, Self>::new(
             &self,
             alpha,
             gamma_threshold
         ).get_doc_probability_for(
-            doc,
-            minimum_probability.unwrap_or(TopicModelInferencer::<String, Vocabulary<String>, PyTopicModel>::DEFAULT_MIN_PROBABILITY),
-            minimum_phi_value.unwrap_or(TopicModelInferencer::<String, Vocabulary<String>, PyTopicModel>::DEFAULT_MIN_PHI_VALUE),
+            doc.iter().map(|value| value.as_str()),
+            minimum_probability.unwrap_or(TopicModelInferencer::<UnderlyingPyWord, UnderlyingPyVocabulary, PyTopicModel>::DEFAULT_MIN_PROBABILITY),
+            minimum_phi_value.unwrap_or(TopicModelInferencer::<UnderlyingPyWord, UnderlyingPyVocabulary, PyTopicModel>::DEFAULT_MIN_PHI_VALUE),
             per_word_topics.unwrap_or_default()
         )
     }
@@ -149,7 +149,7 @@ impl PyTopicModel {
                 value
                     .iter()
                     .map(|v| {
-                        (self.inner.vocabulary().get_value(v.word_id).unwrap().to_string(), v.probability)
+                        (self.inner.vocabulary().get_value_by_id(v.word_id).unwrap().to_string(), v.probability)
                     })
                     .collect_vec()
             )
@@ -159,7 +159,7 @@ impl PyTopicModel {
     fn get_topic_as_words(&self, topic_id: usize) -> Option<Vec<(usize, String, f64)>> {
         Some(
             self.inner.get_topic(topic_id)?.iter().enumerate().map(|(k, v)| {
-                (k, self.inner.vocabulary().get_value(k).expect("This should not fail!").to_string(), *v)
+                (k, self.inner.vocabulary().get_value_by_id(k).expect("This should not fail!").to_string(), *v)
             }).collect_vec()
         )
     }
@@ -181,7 +181,7 @@ impl PyTopicModel {
         let voc = match word_lists {
             SingleOrVec::Single(value) => {
                 let language_hint: LanguageHint = language_hint.into();
-                let voc = Vocabulary::from((Some(language_hint), value.clone()));
+                let voc = Vocabulary::from((Some(language_hint), value.iter().map(UnderlyingPyWord::from).collect()));
                 vocab_frequency = vec![0u64; voc.len()];
                 for _ in 0..self.inner.topic_count() {
                     new_probability.push(vec![min_value; voc.len()]);
@@ -200,7 +200,7 @@ impl PyTopicModel {
                 let mut voc = Vocabulary::empty_from(language_hint);
                 let word_lists = word_lists.into_iter().map(|values| {
                     values.into_iter().map(|value| {
-                        voc.add(value)
+                        voc.add::<UnderlyingPyWord>(value.into())
                     }).collect_vec()
                 }).collect_vec();
                 vocab_frequency = vec![0u64; voc.len()];
@@ -359,29 +359,29 @@ impl TopicModelWithDocumentStats for PyTopicModel {
     }
 }
 
-impl BasicTopicModelWithVocabulary<String, Vocabulary<String>> for PyTopicModel {
+impl BasicTopicModelWithVocabulary<UnderlyingPyWord, UnderlyingPyVocabulary> for PyTopicModel {
     delegate::delegate! {
         to self.inner {
-            fn vocabulary(&self) -> &Vocabulary<String>;
-            fn get_word<'a>(&'a self, word_id: usize) -> Option<&'a HashRef<String>> where Vocabulary<String>: 'a;
-            fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, HashRef<String>>>  where Vocabulary<String>: 'a;
-            fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, HashRef<String>>>> where Vocabulary<String>: 'a;
-            fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, HashRef<String>>>> where Vocabulary<String>: 'a;
+            fn vocabulary(&self) -> &UnderlyingPyVocabulary;
+            fn get_word<'a>(&'a self, word_id: usize) -> Option<&'a UnderlyingPyWord> where UnderlyingPyVocabulary: 'a;
+            fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, UnderlyingPyWord>>  where UnderlyingPyVocabulary: 'a;
+            fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord>>> where UnderlyingPyVocabulary: 'a;
+            fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, UnderlyingPyWord>>> where UnderlyingPyVocabulary: 'a;
         }
     }
 }
 
-impl TopicModelWithVocabulary<String, Vocabulary<String>> for PyTopicModel {
+impl TopicModelWithVocabulary<UnderlyingPyWord, UnderlyingPyVocabulary> for PyTopicModel {
     delegate::delegate! {
         to self.inner {
-            fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<WordId> where String: Borrow<Q>, Q: Hash + Eq;
-            fn contains<Q: ?Sized>(&self, word: &Q) -> bool where String: Borrow<Q>, Q: Hash + Eq;
-            fn get_probability_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Probability> where String: Borrow<Q>, Q: Hash + Eq;
-            fn get_topic_probabilities_for_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicTo<Probability>> where String: Borrow<Q>, Q: Hash + Eq;
-            fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Arc<WordMeta>> where String: Borrow<Q>, Q: Hash + Eq;
-            fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, HashRef<String>>>> where String: Borrow<Q>, Q: Hash + Eq, Vocabulary<String>: 'a;
-            fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Vec<Arc<WordMeta>>> where String: Borrow<Q>, Q: Hash + Eq;
-            fn seems_equal_to<Q, VOther>(&self, other: &impl TopicModelWithVocabulary<Q, VOther>) -> bool where String: Borrow<Q>,Q: Hash + Eq + Borrow<String>, VOther: BasicVocabulary<Q>;
+            fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<WordId> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn contains<Q: ?Sized>(&self, word: &Q) -> bool where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn get_probability_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Probability> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn get_topic_probabilities_for_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicTo<Probability>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Arc<WordMeta>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq, Vocabulary<String>: 'a;
+            fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Vec<Arc<WordMeta>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn seems_equal_to<Q, VOther>(&self, other: &impl TopicModelWithVocabulary<Q, VOther>) -> bool where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq + Borrow<UnderlyingPyWord>, VOther: BasicVocabulary<Q>;
         }
     }
 }
@@ -392,8 +392,8 @@ impl Display for PyTopicModel {
     }
 }
 
-impl From<TopicModel<String, Vocabulary<String>>> for PyTopicModel {
-    fn from(inner: TopicModel<String, Vocabulary<String>>) -> Self {
+impl From<UnderlyingPyTopicModel> for PyTopicModel {
+    fn from(inner: UnderlyingPyTopicModel) -> Self {
         Self { inner }
     }
 }
@@ -410,8 +410,8 @@ impl From<ReadError<Infallible>> for PyErr {
     }
 }
 
-impl FullTopicModel<String, Vocabulary<String>> for PyTopicModel {
-    fn new(topics: TopicTo<WordTo<Probability>>, vocabulary: Vocabulary<String>, used_vocab_frequency: WordTo<WordFrequency>, doc_topic_distributions: DocumentTo<TopicTo<Probability>>, document_lengths: DocumentTo<DocumentLength>) -> Self
+impl FullTopicModel<UnderlyingPyWord, UnderlyingPyVocabulary> for PyTopicModel {
+    fn new(topics: TopicTo<WordTo<Probability>>, vocabulary: UnderlyingPyVocabulary, used_vocab_frequency: WordTo<WordFrequency>, doc_topic_distributions: DocumentTo<TopicTo<Probability>>, document_lengths: DocumentTo<DocumentLength>) -> Self
     where
         Self: Sized
     {
@@ -438,9 +438,11 @@ register_python!(struct PyTopicModel;);
 
 #[cfg(test)]
 mod test {
+    use arcstr::ArcStr;
     use crate::py::helpers::LanguageHintValue;
     use crate::py::topic_model::{PyTopicModel};
     use crate::topicmodel::model::{FullTopicModel, TopicModel};
+    use crate::topicmodel::vocabulary::MappableVocabulary;
     use crate::translate::test::create_test_data;
 
     #[test]
@@ -451,7 +453,7 @@ mod test {
                 vec![0.019, 0.018, 0.012, 0.009, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008],
                 vec![0.02, 0.002, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001],
             ],
-            voc_a,
+            voc_a.map(ArcStr::from),
             vec![10, 5, 8, 1, 2, 3, 1, 1, 1, 1, 2],
             vec![
                 vec![0.7, 0.2],

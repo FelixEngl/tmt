@@ -88,7 +88,6 @@ use serde::{Deserialize, Serialize};
 use crate::topicmodel::dictionary::direction::{AToB, BToA, DirectionKind, DirectionTuple, Invariant, Language, A, B};
 use crate::topicmodel::dictionary::search::{DictionarySearcher, SearchIndex};
 use crate::topicmodel::language_hint::LanguageHint;
-use crate::topicmodel::reference::HashRef;
 use crate::topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -226,7 +225,12 @@ impl<T, V> BasicDictionaryWithVocabulary<V> for Dictionary<T, V> {
 }
 
 impl<T, V> Dictionary<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
-    pub fn map<Q: Eq + Hash, Voc, F>(self, f: F) -> Dictionary<Q, Voc> where F: for<'a> Fn(&'a T)-> Q, Voc: BasicVocabulary<Q> {
+    pub fn map<R, Voc, F>(self, f: F) -> Dictionary<R, Voc>
+    where
+        F: Fn(T)-> R,
+        Voc: BasicVocabulary<R>,
+        R: Eq + Hash + Clone
+    {
         Dictionary::new(
             self.voc_a.map(&f),
             self.map_a_to_b,
@@ -238,7 +242,7 @@ impl<T, V> Dictionary<T, V> where T: Eq + Hash, V: MappableVocabulary<T> {
 
 impl<T, V> DictionaryWithVocabulary<T, V> for Dictionary<T, V> where V: BasicVocabulary<T> {}
 
-impl<T, V> MergingDictionary<T, V> for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Extend<T> {
+impl<T, V> MergingDictionary<T, V> for Dictionary<T, V> where T: Eq + Hash + Clone, V: VocabularyMut<T> + Extend<T> {
     fn merge(mut self, other: impl Into<Self>) -> Self
     where
         Self: Sized
@@ -270,14 +274,18 @@ impl<T, V> MergingDictionary<T, V> for Dictionary<T, V> where T: Eq + Hash, V: V
             }
         }
 
-        self.voc_a.add_all_hash_ref(other.voc_a);
-        self.voc_b.add_all_hash_ref(other.voc_b);
+        self.voc_a.add_all_value(other.voc_a);
+        self.voc_b.add_all_value(other.voc_b);
 
         self
     }
 }
 
-impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> {
+impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V>
+where
+    T: Eq + Hash + Clone,
+    V: VocabularyMut<T>
+{
 
     unsafe fn reserve_for_single_value_a(&mut self, word_id: usize) {
         if self.map_a_to_b.len() <= word_id {
@@ -351,13 +359,19 @@ impl<T, V> DictionaryMut<T, V> for  Dictionary<T, V> where T: Eq + Hash, V: Voca
         }
     }
 }
-impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, V: VocabularyMut<T> + Default  {
+impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V>
+where
+    T: Eq + Hash + Clone,
+    V: VocabularyMut<T> + Default
+{
+    type ProcessResult<U> = T;
+
     fn filter_and_process<'a, Fa, Fb, E>(&'a self, f_a: Fa, f_b: Fb) -> Result<Self, E>
     where
         Self: Sized,
         T: 'a,
-        Fa: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>,
-        Fb: Fn(&'a HashRef<T>) -> Result<Option<HashRef<T>>, E>
+        Fa: Fn(&'a T) -> Result<Option<T>, E>,
+        Fb: Fn(&'a T) -> Result<Option<T>, E>
     {
         let mut new_dict = Dictionary::default();
         for DirectionTuple{a, b, direction} in self.iter() {
@@ -436,7 +450,7 @@ impl<T, V> DictionaryFilterable<T, V>  for Dictionary<T, V> where T: Eq + Hash, 
         new_dict
     }
 
-    fn filter_by_values<'a, Fa: Fn(&'a HashRef<T>) -> bool, Fb: Fn(&'a HashRef<T>) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
+    fn filter_by_values<'a, Fa: Fn(&'a T) -> bool, Fb: Fn(&'a T) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
         let mut new_dict = Dictionary::default();
         for DirectionTuple{a, b, direction} in self.iter() {
             let a = self.convert_id_a_to_word(a).unwrap();
@@ -524,11 +538,12 @@ impl<T: Display, V: BasicVocabulary<T>> Display for Dictionary<T, V> {
 }
 
 
-impl<V> DictionaryWithSearch<String, V> for Dictionary<String, V>
+impl<T, V> DictionaryWithSearch<T, V> for Dictionary<T, V>
 where
-    V: BasicVocabulary<String>
+    V: BasicVocabulary<T>,
+    T: AsRef<str> + Send + Sync,
 {
-    fn get_searcher(&self) -> DictionarySearcher<Self, V> {
+    fn get_searcher(&self) -> DictionarySearcher<Self, V, T> {
         let index = self.search_index.get_or_init(SearchIndex::new);
         DictionarySearcher::new(self, index)
     }
@@ -542,6 +557,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use arcstr::ArcStr;
     use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMetaGen, DictionaryMutGen, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
     use crate::topicmodel::dictionary::direction::{DirectionTuple, Invariant, A, B};
     use crate::topicmodel::dictionary::metadata::classic::ClassicMetadataManager;
@@ -550,7 +566,7 @@ mod test {
 
     #[test]
     fn can_create_with_meta(){
-        let mut voc_a = Vocabulary::<String>::default();
+        let mut voc_a = Vocabulary::<ArcStr>::default();
         voc_a.extend(vec![
             "plane".to_string(),
             "aircraft".to_string(),
@@ -562,9 +578,9 @@ mod test {
             "deck".to_string(),
             "hydrofoil".to_string(),
             "foil".to_string(),
-            "bearing surface".to_string()
+            "bearing surface".to_string(),
         ]);
-        let mut voc_b = Vocabulary::<String>::default();
+        let mut voc_b = Vocabulary::<ArcStr>::default();
         voc_b.extend(vec![
             "Flugzeug".to_string(),
             "Flieger".to_string(),
@@ -584,42 +600,42 @@ mod test {
 
         let mut dict: DictionaryWithMeta<_, _, ClassicMetadataManager> = DictionaryWithMeta::from_voc(voc_a.clone(), voc_b.clone());
         {
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Ebene").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Planum").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Platane").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Maschine").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Bremsberg").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Berg").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Fläche").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("plane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Luftfahrzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Fluggerät").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("aircraft").unwrap().clone(), voc_b.get_hash_ref("Flugsystem").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Flugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airplane").unwrap().clone(), voc_b.get_hash_ref("Motorflugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("flyer").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airman").unwrap().clone(), voc_b.get_hash_ref("Flieger").unwrap().clone(),);
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("airfoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Ebene").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Planum").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Platane").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Maschine").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Bremsberg").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Berg").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Fläche").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Luftfahrzeug").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Fluggerät").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugsystem").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Motorflugzeug").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("flyer").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airman").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("airfoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictE");
             drop(meta_a);
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictC");
-            dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("wing").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("deck").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+            dict.insert_hash_ref::<Invariant>(voc_a.get_value("wing").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("deck").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("hydrofoil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("hydrofoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictC");
@@ -627,7 +643,7 @@ mod test {
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("foil").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("foil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
@@ -635,7 +651,7 @@ mod test {
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictB");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_hash_ref("bearing surface").unwrap().clone(), voc_b.get_hash_ref("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("bearing surface").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);

@@ -258,7 +258,7 @@ macro_rules! create_solved_implementation {
                 result.append(RcDoc::text("}"))
             }
 
-            pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx, is_same_word: bool) -> Result<(), WrongResolvedValueError> {
+            pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx, is_same_word: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                 $(
                     paste::paste! {
                         if let Some(ref $name) = self.$name.0 {

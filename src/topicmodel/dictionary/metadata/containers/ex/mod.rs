@@ -8,6 +8,7 @@ mod field_denom;
 mod resolved_value;
 mod solved_new_arg;
 mod metadata_field_holder;
+mod typedef;
 
 pub use metadata::*;
 use reference::*;
@@ -25,7 +26,6 @@ use crate::topicmodel::dictionary::word_infos::*;
 use crate::toolkit::typesafe_interner::*;
 use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DomainModelIndex;
 use std::ops::Deref;
-use crate::topicmodel::reference::HashRef;
 
 register_python! {
     struct LoadedMetadataEx;
@@ -37,16 +37,23 @@ macro_rules! generate_field_code {
     (
         $(
             $tt:tt {
-                $doc: literal $name: ident ($lit_name:literal): $assoc_typ: ty | $cache_typ: ty $({
+                $doc: literal $name: ident ($lit_name:literal): $assoc_typ: ty $({
                     $interner_name: ident $(: $interner_type: ident)? => $interner_method: ident
                 })?
             }
         ),+
         $(,)?
     ) => {
-        $crate::topicmodel::dictionary::metadata::ex::reference::create_ref_implementation!(
-            $($tt: $name $(, $interner_name)?: $cache_typ | $assoc_typ,)+
+        $crate::topicmodel::dictionary::metadata::ex::typedef::make_storage_type_def!(
+            $($tt: $name: $assoc_typ;)+
         );
+
+        paste::paste! {
+            $crate::topicmodel::dictionary::metadata::ex::reference::create_ref_implementation!(
+                $($tt: $name $(, $interner_name)?: [<$name:camel StoreType>]<'a>,)+
+            );
+        }
+
         $crate::topicmodel::dictionary::metadata::ex::reference_mut::create_mut_ref_implementation!(
             $($tt: $name $(, $interner_name, $interner_method)?: $assoc_typ,)+
         );
@@ -62,9 +69,11 @@ macro_rules! generate_field_code {
         $crate::topicmodel::dictionary::metadata::ex::collector::create_collector_implementation!(
             $($tt: $name: $assoc_typ,)+
         );
-        $crate::topicmodel::dictionary::metadata::ex::field_denom::generate_field_denoms!(
-            $($name($lit_name),)+
-        );
+
+        $crate::topicmodel::dictionary::metadata::ex::field_denom::generate_field_denoms! {
+            $($doc $name($lit_name),)+
+        }
+
         $crate::topicmodel::dictionary::metadata::ex::manager::update_routine!(
             $($tt: $name $(, $interner_name $(, $interner_type)?)?;)*
         );
@@ -77,97 +86,97 @@ macro_rules! generate_field_code {
 generate_field_code! {
     set {
         r#"Stores the languages of a word."#
-        languages("languages"): Language | &'a MetadataContainerValueGeneric<Language>
+        languages("languages"): Language
     },
     set {
         r#"Stores the domains of a word."#
-        domains("domains"): Domain | &'a MetadataContainerValueGeneric<Domain>
+        domains("domains"): Domain
     },
     set {
         r#"Stores the register of a word."#
-        registers("registers"): Register | &'a MetadataContainerValueGeneric<Register>
+        registers("registers"): Register
     },
     set {
         r#"Stores the gender of a word."#
-        genders("genders"): GrammaticalGender | &'a MetadataContainerValueGeneric<GrammaticalGender>
+        genders("genders"): GrammaticalGender
     },
     set {
         r#"Stores the pos of a word."#
-        pos("pos"): PartOfSpeech | &'a MetadataContainerValueGeneric<PartOfSpeech>
+        pos("pos"): PartOfSpeech
     },
     set {
         r#"Stores additional tags for the pos of a word."#
-        pos_tag("pos_tag"): PartOfSpeechTag | &'a MetadataContainerValueGeneric<PartOfSpeechTag>
+        pos_tag("pos_tag"): PartOfSpeechTag
     },
     set {
         r#"Stores the regions of a word."#
-        regions("regions"): Region | &'a MetadataContainerValueGeneric<Region>
+        regions("regions"): Region
     },
     set {
         r#"Stores the number of a word."#
-        numbers("numbers"): GrammaticalNumber | &'a MetadataContainerValueGeneric<GrammaticalNumber>
+        numbers("numbers"): GrammaticalNumber
     },
     set {
         r#"Stores an internal id, associating some words with each other."#
-        internal_ids("internal_ids"): u64 | &'a MetadataContainerValueGeneric<u64>
+        internal_ids("internal_ids"): u64
     },
     interned {
         r#"Stores the inflected value of a word."#
-        inflected("inflected"): InflectedSymbol | (&'a MetadataContainerValueGeneric<InflectedSymbol>, Vec<(&'a str, u32)>) {
+        inflected("inflected"): InflectedSymbol {
             inflected_interner: InflectedStringInterner => intern_inflected
         }
     },
     interned {
         r#"Stores the abbreviations value of a word."#
-        abbreviations("abbreviations"): AbbreviationSymbol | (&'a MetadataContainerValueGeneric<AbbreviationSymbol>, Vec<(&'a str, u32)>) {
+        abbreviations("abbreviations"): AbbreviationSymbol {
             abbreviations_interner: AbbreviationStringInterner => intern_abbreviations
         }
     },
     interned {
         r#"Stores the unaltered vocabulary value of a word."#
-        unaltered_vocabulary("unaltered_vocabulary"): UnalteredVocSymbol | (&'a MetadataContainerValueGeneric<UnalteredVocSymbol>, Vec<(&'a str, u32)>) {
+        unaltered_vocabulary("unaltered_vocabulary"): UnalteredVocSymbol {
             unaltered_vocabulary_interner: UnalteredVocStringInterner => intern_unaltered_vocabulary
         }
     },
     interned {
         r#"Stores similar words"#
-        look_at("look_at"): UnalteredVocSymbol | (&'a MetadataContainerValueGeneric<UnalteredVocSymbol>, Vec<(&'a str, u32)>) {
+        look_at("look_at"): UnalteredVocSymbol {
             unaltered_vocabulary_interner => intern_unaltered_vocabulary
         }
     },
     interned {
         r#"Stores some kind of artificial id"#
-        ids("ids"): AnyIdSymbol | (&'a MetadataContainerValueGeneric<AnyIdSymbol>, Vec<(&'a str, u32)>) {
+        ids("ids"): AnyIdSymbol {
             ids_interner: AnyIdStringInterner => intern_ids
         }
     },
     interned {
         r#"Stores outgoing ids"#
-        outgoing_ids("outgoing_ids"): AnyIdSymbol | (&'a MetadataContainerValueGeneric<AnyIdSymbol>, Vec<(&'a str, u32)>) {
+        outgoing_ids("outgoing_ids"): AnyIdSymbol {
             ids_interner => intern_ids
         }
     },
     interned {
         r#"Stores the original entry. May contain multiple is some kind of merge action is done."#
-        original_entry("original_entry"): OriginalEntrySymbol | (&'a MetadataContainerValueGeneric<OriginalEntrySymbol>, Vec<(&'a str, u32)>) {
+        original_entry("original_entry"): OriginalEntrySymbol {
             original_entry_interner: OriginalEntryStringInterner => intern_original_entry
         }
     },
     interned {
         r#"Contextual information."#
-        contextual_informations("contextual_informations"): ContextualInformationSymbol | (&'a MetadataContainerValueGeneric<ContextualInformationSymbol>, Vec<(&'a str, u32)>) {
+        contextual_informations("contextual_informations"): ContextualInformationSymbol {
             contextual_informations_interner: ContextualInformationStringInterner => intern_contextual_informations
         }
     },
     interned {
         r#"Unclassified information."#
-        unclassified("unclassified"): UnclassifiedSymbol | (&'a MetadataContainerValueGeneric<UnclassifiedSymbol>, Vec<(&'a str, u32)>) {
+        unclassified("unclassified"): UnclassifiedSymbol {
             unclassified_interner: UnclassifiedStringInterner => intern_unclassified
         }
     },
     voc {
         r#"Stores the synonyms"#
-        synonyms("synonyms"): usize | (&'a MetadataContainerValueGeneric<usize>, Vec<(&'a HashRef<String>, u32)>)
+        synonyms("synonyms"): usize
     },
 }
 

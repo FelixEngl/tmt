@@ -18,6 +18,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
+use arcstr::ArcStr;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, IntoStaticStr};
 use thiserror::Error;
@@ -113,7 +114,7 @@ impl<'b> Preprocessor for SpecialPreprocessor<'b> {
 
 
 pub struct UnifiedTranslationHelper<P = DefaultPreprocessor> {
-    dictionary: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>,
+    dictionary: DictionaryWithMeta<ArcStr, Vocabulary<ArcStr>, MetadataManagerEx>,
     preprocessor: P,
     ding_dict_id_provider: u64,
     dir: LanguageDirection,
@@ -272,9 +273,9 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         };
 
         if L::LANG.is_a() {
-            self.dictionary.voc_a().contains(word.as_ref())
+            self.dictionary.voc_a().contains_value(word.as_ref())
         } else {
-            self.dictionary.voc_b().contains(word.as_ref())
+            self.dictionary.voc_b().contains_value(word.as_ref())
         }
     }
 
@@ -319,7 +320,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         }
     }
 
-    pub fn finalize(mut self) -> Result<DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>, (DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx>, Vec<LoadByInstructionError>)> {
+    pub fn finalize(mut self) -> Result<DictionaryWithMeta<ArcStr, Vocabulary<ArcStr>, MetadataManagerEx>, (DictionaryWithMeta<ArcStr, Vocabulary<ArcStr>, MetadataManagerEx>, Vec<LoadByInstructionError>)> {
         let mut errors = Vec::new();
         for value in self.enrich_on_finalize.clone() {
             match self.read_by_instruction_impl::<true, _>(&value) {
@@ -532,7 +533,6 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 &orth,
                 &dir
             );
-            meta.add_single_to_unaltered_vocabulary(FREE_DICT, &orth);
             meta.add_single_to_original_entry(FREE_DICT, orth);
             meta.add_all_to_regions(FREE_DICT, regions);
             meta.add_all_to_abbreviations(FREE_DICT, abbrev);
@@ -597,7 +597,6 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                     &dir
                 );
                 meta.add_single_to_languages_default(lang.into());
-                meta.add_single_to_unaltered_vocabulary(FREE_DICT, &word);
                 meta.add_single_to_original_entry(FREE_DICT, word);
                 meta.add_all_to_abbreviations(FREE_DICT, abbrevs);
                 meta.add_all_to_domains(FREE_DICT, domains);
@@ -691,7 +690,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             general_domains: &[Domain],
             result: &ProcessingResult<V>
         ) {
-            meta.add_single_to_unaltered_vocabulary(DICT_CC, unchanged);
+            meta.add_single_to_original_entry(DICT_CC, unchanged);
             meta.add_single_to_original_entry(DICT_CC, &result.reconstructed);
             meta.add_all_to_domains(DICT_CC, general_domains.iter().copied().chain(result.domain.iter().copied()));
             meta.add_all_to_pos(DICT_CC, general_pos.iter().copied().chain(result.pos.iter().copied()));
@@ -798,7 +797,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             for (variant, mut meta_data) in value {
                 let (word_id, mut meta) = self.insert::<L>(DING, &variant, dir);
                 meta_data.dictionary_name(Some(DING));
-                meta.add_single_to_unaltered_vocabulary(DING, &variant);
+                meta.add_single_to_original_entry(DING, &variant);
                 meta_data.extend_internal_ids([interchangeable_id, variant_id]);
                 meta_data.build_consuming().unwrap().write_into(&mut meta);
                 ids2.push(word_id);
@@ -1388,6 +1387,7 @@ pub enum LineReaderError<T: Debug> {
 
 #[cfg(test)]
 mod test {
+    use arcstr::ArcStr;
     use crate::topicmodel::dictionary::word_infos::LanguageDirection;
     use crate::topicmodel::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
@@ -1484,7 +1484,7 @@ mod test {
                     log::info!("####\nHad an error while reading {}:\n{err}\n####", value.kind);
                 }
             }
-            let data: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = match default.finalize() {
+            let data: DictionaryWithMeta<ArcStr, Vocabulary<ArcStr>, MetadataManagerEx> = match default.finalize() {
                 Ok(value) => {
                     value
                 }
@@ -1499,7 +1499,7 @@ mod test {
             ).expect("Never fails.");
 
 
-            let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path(WriteMode::binary(true), format!("./dictionary_{}_{}.dat.zst", value.kind, i)).expect("Failed to load dictionary");
+            let _: DictionaryWithMeta<ArcStr, Vocabulary<ArcStr>, MetadataManagerEx> = DictionaryWithMeta::from_path(WriteMode::binary(true), format!("./dictionary_{}_{}.dat.zst", value.kind, i)).expect("Failed to load dictionary");
 
         }).collect::<Vec<_>>();
 
@@ -1529,12 +1529,12 @@ mod test {
         };
         data.write_to_path(
             WriteMode::binary(true),
-            "./test/dictionary4",
+            "./test/dictionary6",
         ).unwrap();
 
 
         let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
-            "./test/dictionary4.dat.zst"
+            "./test/dictionary6.dat.zst"
         ).unwrap();
 
 

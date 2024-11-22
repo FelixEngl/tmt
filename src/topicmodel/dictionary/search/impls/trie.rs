@@ -21,28 +21,30 @@ pub struct TrieSearcher {
 
 impl TrieSearcher {
     /// If no prefix is set the whole vocabulary is indexed.
-    pub fn new<V>(
+    pub fn new<V, T>(
         voc: &V,
         language: LanguageKind,
         prefix_length: Option<usize>,
     ) -> Result<Self, EmptyEntryBuilderError>
     where
-        V: BasicVocabulary<String>,
+        V: BasicVocabulary<T>,
+        T: AsRef<str> + Send + Sync,
     {
         let result = voc
             .as_ref()
             .par_iter()
             .enumerate()
-            .filter(|(_, value)| !value.is_empty())
+            .filter(|(_, value)| !value.as_ref().is_empty())
             .map(|(id, value)| {
+                let value = value.as_ref();
                 if let Some(prefix_length) = prefix_length {
                     if let Some((pos, _)) = value.char_indices().skip(prefix_length).next() {
-                        (value.slice_owned(..pos), (id, false))
+                        (&value[..pos], (id, false))
                     } else {
-                        (value.slice_owned(..), (id, true))
+                        (value, (id, true))
                     }
                 } else {
-                    (value.slice_owned(..), (id, true))
+                    (value, (id, true))
                 }
             })
             .collect_vec_list()
@@ -59,7 +61,7 @@ impl TrieSearcher {
         for (label, builder) in result {
             let entry = builder.build()?;
             is_exact = is_exact && entry.is_exclusive_exact();
-            new.push(label.as_bytes(), entry)
+            new.push(label, entry)
         }
         Ok(Self {
             search: new.build(),

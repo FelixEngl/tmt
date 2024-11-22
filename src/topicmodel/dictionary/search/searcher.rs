@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use crate::toolkit::rw_ext::RWLockUnwrapped;
 use crate::topicmodel::dictionary::direction::LanguageKind;
 use crate::topicmodel::dictionary::search::impls::scanning::{
@@ -8,11 +9,11 @@ use crate::topicmodel::dictionary::search::impls::trie::TrieSearcher;
 use crate::topicmodel::dictionary::search::index::{SearchIndex, ShareableTrieSearcherRef};
 use crate::topicmodel::dictionary::search::{SearchInput, SearchType};
 use crate::topicmodel::dictionary::DictionaryWithVocabulary;
-use crate::topicmodel::reference::HashRef;
-use crate::topicmodel::vocabulary::{SearchableVocabulary};
+use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary};
 use either::Either;
 use itertools::{EitherOrBoth, Itertools};
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::RwLockReadGuard;
@@ -23,13 +24,21 @@ use thiserror::Error;
 
 /// A lightweight searcher to combine the dictionary and the search index
 #[derive(Debug, Copy, Clone)]
-pub struct DictionarySearcher<'a, D: ?Sized, V, I = SearchIndex> {
+pub struct DictionarySearcher<'a, D: ?Sized, V, T, I = SearchIndex>
+where
+    D: DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T>
+{
     dictionary: &'a D,
     index: &'a I,
-    _phantom: PhantomData<V>,
+    _phantom: PhantomData<fn(V) -> T>,
 }
 
-impl<'a, D, V, I> DictionarySearcher<'a, D, V, I> where D: ?Sized {
+impl<'a, D: ?Sized, V, T, I> DictionarySearcher<'a, D, V, T, I>
+where
+    D: DictionaryWithVocabulary<T, V>,
+    V: BasicVocabulary<T>
+{
     pub fn new(dictionary: &'a D, index: &'a I) -> Self {
         Self {
             dictionary,
@@ -41,7 +50,7 @@ impl<'a, D, V, I> DictionarySearcher<'a, D, V, I> where D: ?Sized {
 
 type SearchResult = Option<
     Either<
-        EitherOrBoth<Vec<(usize, HashRef<String>)>>,
+        EitherOrBoth<Vec<(usize, String)>>,
         EitherOrBoth<HashMap<String, Vec<(String, Vec<usize>)>>>,
     >,
 >;
@@ -49,10 +58,11 @@ type SearchResult = Option<
 type TrieRefs<'a> = (ShareableTrieSearcherRef<'a>, ShareableTrieSearcherRef<'a>);
 type ShareableTrieSearcherAccess<'a> = RwLockReadGuard<'a, TrieSearcher>;
 
-impl<'a, D, V> DictionarySearcher<'a, D, V, SearchIndex>
+impl<'a, D, V, T> DictionarySearcher<'a, D, V, T, SearchIndex>
 where
-    D: DictionaryWithVocabulary<String, V> + ?Sized,
-    V: SearchableVocabulary<String>,
+    D: DictionaryWithVocabulary<T, V> + ?Sized,
+    V: SearchableVocabulary<T>,
+    T: AsRef<str> + Send + Sync + Borrow<str> + Eq + Hash + Clone,
 {
     fn get_trie_searcher_a(&self) -> ShareableTrieSearcherRef<'a> {
         self.index.get_or_init_trie_searcher_a(self.dictionary)
@@ -339,11 +349,12 @@ where
             pack_as_search_result(value)
         }
 
-        fn pack_primitive_search_result(
-            value: Vec<(LanguageKind, usize, HashRef<String>)>,
+        fn pack_primitive_search_result<T: AsRef<str>>(
+            value: Vec<(LanguageKind, usize, T)>,
         ) -> SearchResult {
             let (a, b) = value
                 .into_iter()
+                .map(|(a, b, c)| (a, b, c.as_ref().to_string()))
                 .partition::<Vec<_>, _>(|(lang, _, _)| lang.is_a());
             let result = if a.is_empty() && b.is_empty() {
                 return None;
