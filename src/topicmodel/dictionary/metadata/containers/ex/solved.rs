@@ -1,60 +1,59 @@
 macro_rules! convert_to_string_call {
-    (voc: $self:ident, $f: ident, $name: ident) => {
-        $crate::topicmodel::dictionary::metadata::ex::solved::convert_to_string_call!(
-            interned: $self, $f, $name
-        );
-    };
-    (interned: $self:ident, $f: ident, $name: ident) => {
-        $f = $f.nest(2);
-        if let Some(ref o) = $self.$name.0 {
-            $f = $f.append(RcDoc::text("default:")).append(Doc::hardline()).append(
-                RcDoc::intersperse(
-                    o.iter().map(|value| RcDoc::text("\"").append(RcDoc::text(value.to_string())).append(RcDoc::text("\""))),
-                    Doc::line()
+    ($name: ident) => {
+
+        paste::paste! {
+            fn [<pretty_ $name>]<'b, D, A>(&'b self, allocator: &'b D) -> pretty::DocBuilder<'b, D, A>
+            where
+                D: pretty::DocAllocator<'b, A>,
+                D::Doc: Clone,
+                A: Clone,
+            {
+                use pretty::*;
+
+                allocator.hardline().append(
+                    allocator.text(format!("{}: ", stringify!($name))).append(
+                        allocator.hardline().append(
+                            if let Some(ref o) = self.$name.0 {
+                                allocator.text("default: ").append(
+                                    allocator.hardline().append(
+                                        allocator.intersperse(
+                                            o.iter().map(|value| allocator.text(format!("{}", value.to_string()))),
+                                            allocator.line()
+                                        ).indent(2)
+                                    ).append(allocator.hardline()).braces()
+                                )
+                            } else {
+                                allocator.text("default: -!-")
+                            }.indent(2)
+                        ).append(allocator.hardline())
+                            .append(
+                                if let Some(found) = self.$name.1.as_ref() {
+                                    allocator.intersperse(
+                                        found.iter().map(
+                                            |(k, v)|
+                                                allocator.text(format!("\"{k}\": ")).append(
+                                                    allocator.hardline().append(
+                                                        allocator.intersperse(
+                                                            v.iter().map(|value| allocator.as_string(value).indent(2)),
+                                                            allocator.line()
+                                                        )
+                                                    ).append(allocator.hardline()).braces()
+                                                )
+                                        ),
+                                        allocator.hardline()
+                                    )
+                                } else {
+                                    allocator.text("-! no other dicts !-")
+                                }.indent(2)
+                            ).append(allocator.hardline()).braces()
+                    ).indent(2)
                 )
-            ).append(Doc::hardline());
-        } else {
-            $f = $f.append(RcDoc::text("default: -!-")).append(Doc::hardline());
-        }
-        if let Some(found) = $self.$name.1.as_ref() {
-            for (k, v) in found.iter() {
-                $f = $f.append(RcDoc::text(format!("\"{}\":", k))).append(Doc::hardline()).append(
-                    RcDoc::intersperse(
-                        v.iter().map(|value| RcDoc::text("\"").append(RcDoc::text(value.to_string())).append(RcDoc::text("\""))),
-                        Doc::line()
-                    )
-                ).append(Doc::hardline());
             }
         }
-
-        $f = $f.nest(-2);
-    };
-    (set: $self:ident, $f: ident, $name: ident) => {
-        $f = $f.nest(2);
-        if let Some(ref o) = $self.$name.0 {
-            $f = $f.append(RcDoc::text("default:")).append(Doc::hardline()).append(
-                RcDoc::intersperse(
-                    o.iter().map(|value| RcDoc::text(value.to_string())),
-                    Doc::line()
-                )
-            ).append(Doc::hardline());
-        } else {
-            $f = $f.append(RcDoc::text("default: -!-")).append(Doc::hardline());
-        }
-        if let Some(found) = $self.$name.1.as_ref() {
-            for (k, v) in found.iter() {
-                $f = $f.append(RcDoc::text(format!("\"{}\":", k))).append(Doc::hardline()).append(
-                    RcDoc::intersperse(
-                        v.iter().map(|value| RcDoc::text(value.to_string())),
-                        Doc::line()
-                    )
-                ).append(Doc::hardline());
-            }
-        }
-
-        $f = $f.nest(-2);
     };
 }
+
+use pretty::{BoxAllocator, DocAllocator};
 pub(super) use convert_to_string_call;
 
 
@@ -245,17 +244,32 @@ macro_rules! create_solved_implementation {
 
 
         impl LoadedMetadataEx {
-            pub fn get_doc(&self) -> pretty::RcDoc {
+
+            $(
+            $crate::topicmodel::dictionary::metadata::ex::solved::convert_to_string_call!(
+                    $name
+            );
+            )+
+
+            pub fn pretty<'b, D, A>(&'b self, allocator: &'b D) -> pretty::DocBuilder<'b, D, A>
+            where
+                D: pretty::DocAllocator<'b, A>,
+                D::Doc: Clone,
+                A: Clone,
+            {
                 use pretty::*;
-                let mut result = RcDoc::text("Metadata {");
-                $(
-                result = result.nest(2).append(RcDoc::text(stringify!($name))).append(RcDoc::text(":")).append(RcDoc::hardline());
-                $crate::topicmodel::dictionary::metadata::ex::solved::convert_to_string_call!(
-                        $tt: self, result, $name
+
+                let mut s = allocator.text("Metadata: ").append(
+                    allocator.hardline().
                 );
-                result = result.append(RcDoc::hardline()).nest(-2);
-                )+
-                result.append(RcDoc::text("}"))
+                paste::paste! {
+                    $(
+                    s = s.append(self.[<pretty_ $name>](allocator));
+                    )+
+                }
+                s
+                    .append(allocator.hardline())
+                    .braces()
             }
 
             pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx, is_same_word: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
@@ -291,6 +305,7 @@ impl<'a> From<MetadataRefEx<'a>> for LoadedMetadataEx {
 
 impl std::fmt::Display for LoadedMetadataEx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.get_doc().render_fmt(80, f)
+        self.pretty::<_, ()>(&BoxAllocator).1.render_fmt(80, f)
+        // self.get_doc().render_fmt(80, f)
     }
 }

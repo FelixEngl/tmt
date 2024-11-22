@@ -65,6 +65,7 @@ macro_rules! convert_into {
 
 }
 
+use pretty::DocBuilder;
 pub(super) use convert_into;
 
 macro_rules! create_cached_getter {

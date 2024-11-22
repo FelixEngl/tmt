@@ -292,7 +292,7 @@ mod test {
 
         let tokenizer = builder.build();
         for (original, value) in tokenizer.process("a b c d e") {
-            println!("{original} {}", value.lemma());
+            println!("{original} | {}", value.lemma());
         }
     }
 }

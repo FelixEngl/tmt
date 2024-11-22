@@ -167,7 +167,7 @@ pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadat
 #[cfg(test)]
 mod test {
     use arcstr::ArcStr;
-    use crate::topicmodel::dictionary::{BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, EfficientDictWithMetaDefault};
+    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, EfficientDictWithMetaDefault};
     use crate::topicmodel::dictionary::direction::{DirectionTuple};
     use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
     use crate::topicmodel::dictionary::metadata::MetadataManager;
@@ -225,15 +225,15 @@ mod test {
 
 
         let new_d = d.filter_and_process(
-            |a| Ok::<_, ()>(Some(ArcStr::from(&a[0..1]).into())),
-            |a| Ok::<_, ()>(Some(ArcStr::from(&a[0..1]).into())),
+            |a| Ok::<_, ()>(Some((ArcStr::from(&a[0..1]), ArcStr::from(a)).into())),
+            |a| Ok::<_, ()>(Some((ArcStr::from(&a[0..1]), ArcStr::from(a)).into())),
         ).unwrap();
         println!("-------------------------");
         for value in new_d.voc_a().iter() {
             println!("{}", value);
         }
-        for value in new_d.metadata.meta_a() {
-            println!("{}", value);
+        for DirectionTuple{a, b, direction:_} in new_d.iter_with_meta() {
+            println!("{}", a.1.unwrap().create_solved());
         }
     }
 }

@@ -291,7 +291,7 @@ mod test {
         tokenizer.stemmer(Some((Algorithm::German, false)));
         let tokenizer = tokenizer.build();
         for (original, value) in tokenizer.stem("Hallo Welt was tue ich hier? Skiing umgebung") {
-            println!("{original} {}", value.lemma())
+            println!("{original} | {}", value.lemma())
         }
     }
 }
