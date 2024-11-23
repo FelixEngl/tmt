@@ -24,7 +24,7 @@ use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, SearchableVocabulary, Vocabulary};
 use itertools::{EitherOrBoth, Itertools};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::{pyclass, pymethods, PyRef, PyResult};
+use pyo3::{pyclass, pymethods, Bound, PyRef, PyResult};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -32,6 +32,9 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use arcstr::ArcStr;
 use camino::Utf8PathBuf;
 use either::Either;
+use pyo3::prelude::PyAnyMethods;
+use pyo3::types::PyTuple;
+use strum::{EnumCount, IntoEnumIterator};
 use crate::py::tokenizer::PyAlignedArticleProcessor;
 use crate::{define_py_method, register_python, type_def_wrapper};
 use crate::py::aliases::{UnderlyingPyVocabulary, UnderlyingPyWord};
@@ -528,6 +531,42 @@ impl PyDictionary {
         Some(meta.into())
     }
 
+    pub fn process_and_filter<'py>(&self, lang_a_proc: ProcessAndFilterDictionaryMethod<'py>, lang_b_proc: ProcessAndFilterDictionaryMethod<'py>) -> PyResult<Self> {
+        let read = self.get();
+        Ok(
+            Self {
+                inner: Arc::new(RwLock::new(read.filter_and_process(
+                    |value| {
+                        lang_a_proc.call(value.to_string()).map(
+                            |value| {
+                                value.map(|(word, unstemmed)| {
+                                    if let Some(u) = unstemmed {
+                                        DictionaryWithMetaProcessResult::with_unprocessed(word.into(), u.into())
+                                    } else {
+                                        DictionaryWithMetaProcessResult::new(word.into())
+                                    }
+                                })
+                            }
+                        )
+                    },
+                    |value| {
+                        lang_b_proc.call(value.to_string()).map(
+                            |value| {
+                                value.map(|(word, unstemmed)| {
+                                    if let Some(u) = unstemmed {
+                                        DictionaryWithMetaProcessResult::with_unprocessed(word.into(), u.into())
+                                    } else {
+                                        DictionaryWithMetaProcessResult::new(word.into())
+                                    }
+                                })
+                            }
+                        )
+                    },
+                )?))
+            }
+        )
+    }
+
     /// Creates a new dictionary where the processor was applied.
     ///Requires that both languages (a+b) are properly set.
     pub fn process_with_tokenizer(
@@ -619,16 +658,43 @@ impl PyDictionary {
         self.get().len()
     }
 
+    /// Returns a list of fields that hold data.
+    fn get_fields_with_content(&self) -> Vec<MetaField> {
+        let read = self.get();
+        MetaField::iter().filter(|value| read.metadata().has_content_for_field(*value)).collect_vec()
+    }
+
     /// Drops the metadata from a field.
     /// Returns true iff data was lost.
     fn drop_metadata_field(&mut self, field: MetaField) -> bool {
         self.get_mut().metadata_mut().drop_field(field)
+    }
+
+    /// Drops all fields except the one in the args.
+    /// Returns a list of dropped fields and if data was dropped.
+    #[pyo3(signature = (*py_args))]
+    fn drop_all_except(&mut self, py_args: &Bound<'_, PyTuple>) -> PyResult<Vec<(MetaField, bool)>> {
+        let to_keep: HashSet<_> = HashSet::from_iter(py_args.extract::<Vec<MetaField>>()?);
+        let mut r = self.get_mut();
+        let mut result = Vec::with_capacity(MetaField::COUNT - to_keep.len());
+        for value in MetaField::iter() {
+            if to_keep.contains(&value) {
+                continue
+            }
+            let rem = r.metadata_mut().drop_field(value);
+            result.push((value, rem));
+        }
+        Ok(result)
     }
 }
 
 
 define_py_method!{
     FilterDictionary(word: String, loaded: Option<LoadedMetadataEx>) -> bool
+}
+
+define_py_method!{
+    ProcessAndFilterDictionary(word: String) -> Option<(String, Option<String>)>
 }
 
 

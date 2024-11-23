@@ -257,4 +257,5 @@ create_interned_typesafe_symbol! {
     ContextualInformation,
     Unclassified,
     VariableName,
+    Word
 }

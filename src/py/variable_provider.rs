@@ -18,9 +18,9 @@ use arcstr::ArcStr;
 use evalexpr::{Value};
 use pyo3::{pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use crate::py::aliases::UnderlyingPyWord;
 use crate::variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
 use crate::register_python;
+use crate::toolkit::typesafe_interner::{VariableNameStringInterner, VariableNameSymbol, WordStringInterner, WordSymbol};
 use crate::topicmodel::dictionary::{BasicDictionaryWithVocabulary};
 use crate::topicmodel::vocabulary::{SearchableVocabulary};
 use crate::translate::TranslatableTopicMatrix;
@@ -34,14 +34,16 @@ impl From<VariableProviderError> for PyErr {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PyVariableProvider {
-    global: HashMap<UnderlyingPyWord, Value>,
-    per_topic: HashMap<usize, Vec<(UnderlyingPyWord, Value)>>,
-    per_word_a: HashMap<UnderlyingPyWord, Vec<(UnderlyingPyWord, Value)>>,
-    per_word_b: HashMap<UnderlyingPyWord, Vec<(UnderlyingPyWord, Value)>>,
-    per_topic_per_word_a: HashMap<usize, HashMap<UnderlyingPyWord, Vec<(UnderlyingPyWord, Value)>>>,
-    per_topic_per_word_b: HashMap<usize, HashMap<UnderlyingPyWord, Vec<(UnderlyingPyWord, Value)>>>,
+    key_interner: VariableNameStringInterner,
+    word_interner: WordStringInterner,
+    global: HashMap<VariableNameSymbol, Value>,
+    per_topic: HashMap<usize, Vec<(VariableNameSymbol, Value)>>,
+    per_word_a: HashMap<WordSymbol, Vec<(VariableNameSymbol, Value)>>,
+    per_word_b: HashMap<WordSymbol, Vec<(VariableNameSymbol, Value)>>,
+    per_topic_per_word_a: HashMap<usize, HashMap<WordSymbol, Vec<(VariableNameSymbol, Value)>>>,
+    per_topic_per_word_b: HashMap<usize, HashMap<WordSymbol, Vec<(VariableNameSymbol, Value)>>>,
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -50,41 +52,50 @@ impl PyVariableProvider {
 
     #[new]
     fn new() -> Self {
-        Self::default()
+        Self {
+            key_interner: VariableNameStringInterner::new(),
+            word_interner: WordStringInterner::new(),
+            global: HashMap::new(),
+            per_topic: HashMap::new(),
+            per_word_a: HashMap::new(),
+            per_word_b: HashMap::new(),
+            per_topic_per_word_a: HashMap::new(),
+            per_topic_per_word_b: HashMap::new(),
+        }
     }
-    
+
     fn add_global(&mut self, key: String, value: PyExprValue) -> PyResult<Option<PyExprValue>> {
-        Ok(self.global.insert(key.into(), Value::try_from(value)?).map(PyExprValue::from))
+        Ok(self.global.insert(self.key_interner.get_or_intern(key), Value::try_from(value)?).map(PyExprValue::from))
     }
     fn add_for_topic(&mut self, topic_id: usize, key: String, value: PyExprValue) -> PyResult<()> {
         match self.per_topic.entry(topic_id) {
             Entry::Occupied(mut v) => {
-                v.get_mut().push((key.into(), Value::try_from(value)?))
+                v.get_mut().push((self.key_interner.get_or_intern(key), Value::try_from(value)?))
             }
             Entry::Vacant(empty) => {
-                empty.insert(vec![(key.into(), Value::try_from(value)?)]);
+                empty.insert(vec![(self.key_interner.get_or_intern(key), Value::try_from(value)?)]);
             }
         }
         Ok(())
     }
     fn add_for_word_a(&mut self, word: String, key: String, value: PyExprValue) -> PyResult<()> {
-        match self.per_word_a.entry(word.into()) {
+        match self.per_word_a.entry(self.word_interner.get_or_intern(word)) {
             Entry::Occupied(mut v) => {
-                v.get_mut().push((key.into(), Value::try_from(value)?))
+                v.get_mut().push((self.key_interner.get_or_intern(key), Value::try_from(value)?))
             }
             Entry::Vacant(empty) => {
-                empty.insert(vec![(key.into(), Value::try_from(value)?)]);
+                empty.insert(vec![(self.key_interner.get_or_intern(key), Value::try_from(value)?)]);
             }
         }
         Ok(())
     }
     fn add_for_word_b(&mut self, word: String, key: String, value: PyExprValue) -> PyResult<()> {
-        match self.per_word_b.entry(word.into()) {
+        match self.per_word_b.entry(self.word_interner.get_or_intern(word)) {
             Entry::Occupied(mut v) => {
-                v.get_mut().push((key.into(), Value::try_from(value)?))
+                v.get_mut().push((self.key_interner.get_or_intern(key), Value::try_from(value)?))
             }
             Entry::Vacant(empty) => {
-                empty.insert(vec![(key.into(), Value::try_from(value)?)]);
+                empty.insert(vec![(self.key_interner.get_or_intern(key), Value::try_from(value)?)]);
             }
         }
         Ok(())
@@ -92,18 +103,18 @@ impl PyVariableProvider {
     fn add_for_word_in_topic_a(&mut self, topic_id: usize, word: String, key: String, value: PyExprValue) -> PyResult<()> {
         match self.per_topic_per_word_a.entry(topic_id) {
             Entry::Occupied(mut v) => {
-                match v.get_mut().entry(word.into()) {
+                match v.get_mut().entry(self.word_interner.get_or_intern(word)) {
                     Entry::Occupied(mut v) => {
-                        v.get_mut().push((key.into(), Value::try_from(value)?));
+                        v.get_mut().push((self.key_interner.get_or_intern(key), Value::try_from(value)?));
                     }
                     Entry::Vacant(empty) => {
-                        empty.insert(vec![(key.into(), Value::try_from(value)?)]);
+                        empty.insert(vec![(self.key_interner.get_or_intern(key), Value::try_from(value)?)]);
                     }
                 }
             }
             Entry::Vacant(empty) => {
                 let mut inner = HashMap::new();
-                inner.insert(word.into(), vec![(key.into(), Value::try_from(value)?)]);
+                inner.insert(self.word_interner.get_or_intern(word), vec![(self.key_interner.get_or_intern(key), Value::try_from(value)?)]);
                 empty.insert(inner);
             }
         }
@@ -113,18 +124,18 @@ impl PyVariableProvider {
     fn add_for_word_in_topic_b(&mut self, topic_id: usize, word: String, key: String, value: PyExprValue) -> PyResult<()> {
         match self.per_topic_per_word_b.entry(topic_id) {
             Entry::Occupied(mut v) => {
-                match v.get_mut().entry(word.into()) {
+                match v.get_mut().entry(self.word_interner.get_or_intern(word)) {
                     Entry::Occupied(mut v) => {
-                        v.get_mut().push((key.into(), Value::try_from(value)?));
+                        v.get_mut().push((self.key_interner.get_or_intern(key), Value::try_from(value)?));
                     }
                     Entry::Vacant(empty) => {
-                        empty.insert(vec![(key.into(), Value::try_from(value)?)]);
+                        empty.insert(vec![(self.key_interner.get_or_intern(key), Value::try_from(value)?)]);
                     }
                 }
             }
             Entry::Vacant(empty) => {
                 let mut inner = HashMap::new();
-                inner.insert(word.into(), vec![(key.into(), Value::try_from(value)?)]);
+                inner.insert(self.word_interner.get_or_intern(word), vec![(self.key_interner.get_or_intern(key), Value::try_from(value)?)]);
                 empty.insert(inner);
             }
         }
@@ -149,44 +160,44 @@ impl AsVariableProvider<ArcStr> for PyVariableProvider {
             dictionary.voc_b().len()
         );
 
-        for (k, v) in self.global.iter() {
-            variable_provider.add_global(k, v.clone()).unwrap()
-        }
-
-        for (topic_id, values) in self.per_topic.iter() {
-            for (k, v) in values.iter() {
-                variable_provider.add_for_topic(*topic_id, k, v.clone()).unwrap()
+        unsafe {
+            for (k, v) in self.global.iter() {
+                variable_provider.add_global(self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
             }
-        }
-
-        for (word, values) in self.per_word_a.iter() {
-            let word_id = dictionary.voc_a().get_id(word.as_str()).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
-            for (k, v) in values.iter() {
-                variable_provider.add_for_word_a(word_id, k, v.clone()).unwrap()
-            }
-        }
-
-        for (word, values) in self.per_word_b.iter() {
-            let word_id = dictionary.voc_b().get_id(word.as_str()).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
-            for (k, v) in values.iter() {
-                variable_provider.add_for_word_b(word_id, k, v.clone()).unwrap()
-            }
-        }
-
-        for (topic_id, words) in self.per_topic_per_word_a.iter() {
-            for (word, values) in words {
-                let word_id = dictionary.voc_a().get_id(word.as_str()).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+            for (topic_id, values) in self.per_topic.iter() {
                 for (k, v) in values.iter() {
-                    variable_provider.add_for_word_in_topic_a(*topic_id, word_id, k, v.clone()).unwrap()
+                    variable_provider.add_for_topic(*topic_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
                 }
             }
-        }
-
-        for (topic_id, words) in self.per_topic_per_word_b.iter() {
-            for (word, values) in words {
-                let word_id = dictionary.voc_b().get_id(word.as_str()).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+            for (word, values) in self.per_word_a.iter() {
+                let word_id = dictionary.voc_a().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
                 for (k, v) in values.iter() {
-                    variable_provider.add_for_word_in_topic_b(*topic_id, word_id, k, v.clone()).unwrap()
+                    variable_provider.add_for_word_a(word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
+                }
+            }
+
+            for (word, values) in self.per_word_b.iter() {
+                let word_id = dictionary.voc_b().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+                for (k, v) in values.iter() {
+                    variable_provider.add_for_word_b(word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
+                }
+            }
+
+            for (topic_id, words) in self.per_topic_per_word_a.iter() {
+                for (word, values) in words {
+                    let word_id = dictionary.voc_a().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+                    for (k, v) in values.iter() {
+                        variable_provider.add_for_word_in_topic_a(*topic_id, word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
+                    }
+                }
+            }
+
+            for (topic_id, words) in self.per_topic_per_word_b.iter() {
+                for (word, values) in words {
+                    let word_id = dictionary.voc_b().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
+                    for (k, v) in values.iter() {
+                        variable_provider.add_for_word_in_topic_b(*topic_id, word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
+                    }
                 }
             }
         }

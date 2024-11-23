@@ -46,8 +46,12 @@ macro_rules! create_python_getter {
                 
                 let hs: std::collections::HashMap<MetaField, SolvedMetadataField> = values.into();
             
-                
+                let mut cl = std::collections::HashSet::new();
                 for (k, v) in hs.into_iter() {
+                    if let Some(ref v) = v.1 {
+                        cl.extend(v.keys().cloned());
+                    }
+
                     match k {
                         $(
                         MetaField::$enum_name => {
@@ -62,6 +66,7 @@ macro_rules! create_python_getter {
                     Self {
                         $($name: std::sync::Arc::new($name.unwrap_or_else(|| SolvedMetadataField::empty())),
                         )+
+                        dictionaries: std::sync::Arc::new(cl),
                     }
                 )
             }
@@ -131,6 +136,39 @@ macro_rules! create_python_getter {
                 }
             }
 
+            pub fn topic_vector(&self) -> $crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::TopicVector {
+                use $crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::TopicVector;
+                use $crate::topicmodel::dictionary::metadata::containers::ex::*;
+
+                let mut tv = TopicVector::new();
+                if let Some(ref dg) = self.domains.0 {
+                    for ResolvedValue(dir, value) in dg {
+                        match dir {
+                            ResolvableValue::Domain(d) => {
+                                tv.increment_by(*d, *value as f64)
+                            }
+                            _ => unreachable!("You somehow managed to associate a domain with something else. Wtf.")
+                        }
+                    }
+                }
+                if let Some(ref rg) = self.registers.0 {
+                    for ResolvedValue(dir, value) in rg {
+                        match dir {
+                            ResolvableValue::Register(d) => {
+                                tv.increment_by(*d, *value as f64)
+                            }
+                            _ => unreachable!("You somehow managed to associate a domain with something else. Wtf.")
+                        }
+                    }
+                }
+                tv
+            }
+
+            /// Returns the associated dictionaries.
+            pub fn associated_dictionaries(&self) -> std::collections::HashSet<String> {
+                self.dictionaries.as_ref().clone()
+            }
+
             /// Returns the metadata as dict.
             pub fn as_dict(&self) -> std::collections::HashMap<MetaField, SolvedMetadataField> {
                 use strum::EnumCount;
@@ -161,6 +199,7 @@ macro_rules! create_solved_implementation {
         pub struct LoadedMetadataEx {
             $(pub(in super) $name: std::sync::Arc<SolvedMetadataField>,
             )+
+            pub(in super) dictionaries: std::sync::Arc<std::collections::HashSet<String>>,
         }
 
         impl LoadedMetadataEx {

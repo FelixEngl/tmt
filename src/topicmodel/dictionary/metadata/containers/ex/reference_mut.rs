@@ -275,11 +275,20 @@ impl<'a> MetadataMutRefEx<'a> {
     }
 
     pub fn add_dictionary_static(&mut self, name: &'static str) -> DictionaryOriginSymbol {
-        self.meta_container_mut().intern_dictionary_origin_static(name)
+        let interned = self.meta_container_mut().intern_dictionary_origin_static(name);
+        self.touch_dict(interned);
+        interned
     }
 
     pub fn add_dictionary(&mut self, name: impl AsRef<str>) -> DictionaryOriginSymbol {
-        self.meta_container_mut().intern_dictionary_origin(name)
+        let interned = self.meta_container_mut().intern_dictionary_origin(name);
+        self.touch_dict(interned);
+        interned
+    }
+
+    pub fn has_dictionary(&self, name: impl AsRef<str>) -> bool {
+        let interned = self.meta_container_mut().intern_dictionary_origin(name);
+        self.get_associated_metadata(interned).is_some()
     }
 
     #[inline(always)]

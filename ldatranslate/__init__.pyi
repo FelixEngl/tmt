@@ -13,8 +13,17 @@ type PyExprValueSingle = str | float | int | bool | None | list[PyExprValueSingl
 type SearchTypeUnionType = SearchType | typing.Literal["a", "auto", "e", "exact", "c", "contains", "start", "starts_with", "end", "ends_with", "r", "reg", "regex", "h", "ham", "hamming", "l", "lev", "levensthein", "o", "osa", "osa_dist", "osa_distance", "l+n", "lev_norm", "lev_normalized", "dl", "dam_lev", "damerau_levensthein", "dl+n", "dam_lev_norm", "damerau_levensthein_norm", "damerau_levensthein_normalized", "j", "jaro", "jw", "jaro_winkler", "s", "soren", "sorensen_dice", "cp", "com_pre", "common_prefix"]
 type SearchResultContainerType = tuple[list[str] | dict[str, dict[str, set[str]]], list[str] | dict[str, dict[str, set[str]]]] | tuple[list[str] | dict[str, dict[str, set[str]]], None] | tuple[None, list[str] | dict[str, dict[str, set[str]]]]
 type ResolvedValueType = ResolvedValueTypeOut
-type ResolvedValueTypeIn = DictionaryLanguage | Domain | Register | GrammaticalGender | PartOfSpeech | Region | GrammaticalNumber | PartOfSpeechTag | str | int
-type ResolvedValueTypeOut = DictionaryLanguage | Domain | Register | GrammaticalGender | PartOfSpeech | Region | GrammaticalNumber | PartOfSpeechTag | str | int
+type ResolvedValueTypeIn = tuple[DictionaryLanguage, int] | tuple[Domain, int] | tuple[Register, int] | tuple[GrammaticalGender, int] | tuple[PartOfSpeech, int] | tuple[Region, int] | tuple[GrammaticalNumber, int] | tuple[PartOfSpeechTag, int] | tuple[str, int] | tuple[int, int]
+type ResolvedValueTypeOut = tuple[DictionaryLanguage, int] | tuple[Domain, int] | tuple[Register, int] | tuple[GrammaticalGender, int] | tuple[PartOfSpeech, int] | tuple[Region, int] | tuple[GrammaticalNumber, int] | tuple[PartOfSpeechTag, int] | tuple[str, int] | tuple[int, int]
+
+
+class DictMetaTopicModel:
+    def __new__(cls,capacity = ...): ...
+    def __str__(self) -> str:
+        ...
+
+    def to_list(self) -> list[TopicVector]:
+        ...
 
 
 class DictionaryLanguageDirection:
@@ -52,15 +61,6 @@ class DictionaryLanguageDirection:
         r"""
         Returns true if this points from [lang_a] to [lang_b]
         """
-        ...
-
-
-class DomainModel:
-    def __new__(cls,capacity = ...): ...
-    def __str__(self) -> str:
-        ...
-
-    def to_list(self) -> list[TopicVector]:
         ...
 
 
@@ -492,6 +492,15 @@ class LoadedMetadataEx:
     def get_field(self, field:MetaField) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
         r"""
         Get the metadata of this specific field.
+        """
+        ...
+
+    def topic_vector(self) -> TopicVector:
+        ...
+
+    def associated_dictionaries(self) -> set[str]:
+        r"""
+        Returns the associated dictionaries.
         """
         ...
 
@@ -1012,14 +1021,7 @@ class PyDictionary:
     voc_a_py: PyVocabulary
     voc_b_py: PyVocabulary
     def __new__(cls,language_a:typing.Optional[str | LanguageHint], language_b:typing.Optional[str | LanguageHint]): ...
-    def search(
-            self,
-            query:str | list[str] | typing.Callable[[LanguageKind, str], bool] = None,
-            search_type:typing.Optional[SearchTypeUnionType] = None,
-            threshold:typing.Optional[int | float] = None,
-            target_language:typing.Optional[LanguageKind] = None,
-            ignores_ascii_case:typing.Optional[bool] = None
-    ) -> SearchResultContainerType:
+    def search(self, query:str | list[str] | typing.Callable[[LanguageKind, str], bool] = None, search_type:typing.Optional[SearchTypeUnionType] = None, threshold:typing.Optional[int | float] = None, target_language:typing.Optional[LanguageKind] = None, ignores_ascii_case:typing.Optional[bool] = None) -> SearchResultContainerType:
         r"""
         A search function for the dictionary, requires a query or matcher as first argument.
         
@@ -1055,6 +1057,38 @@ class PyDictionary:
     def set_translation_direction(self, direction:tuple[typing.Optional[str | LanguageHint], typing.Optional[str | LanguageHint]]) -> None:
         r"""
         Allows to set the translation languages. This is usually not necessary, except you build your own.
+        """
+        ...
+
+    def topic_vector_a(self, word:str) -> typing.Optional[TopicVector]:
+        r"""
+        Returns the topic vetor vor a specific word. Can be None if the word does not exist or
+        no metadata is set.
+        """
+        ...
+
+    def topic_vector_b(self, word:str) -> typing.Optional[TopicVector]:
+        r"""
+        Returns the topic vetor vor a specific word. Can be None if the word does not exist or
+        no metadata is set.
+        """
+        ...
+
+    def has_unaltered_voc(self) -> bool:
+        r"""
+        Returns true iff there is any content in the unaltered voc.
+        """
+        ...
+
+    def meta_len(self) -> tuple[int, int]:
+        r"""
+        The length of the metadata
+        """
+        ...
+
+    def count_unaltered_voc(self) -> tuple[int, int]:
+        r"""
+        Returns the number of words that know their unaltered vocabulary
         """
         ...
 
@@ -1139,6 +1173,12 @@ class PyDictionary:
     def __iter__(self) -> PyDictIter:
         ...
 
+    def iter_meta_a(self) -> PyMetaIter:
+        ...
+
+    def iter_meta_b(self) -> PyMetaIter:
+        ...
+
     def filter(self, filter_a:typing.Callable[[str, typing.Optional[LoadedMetadataEx]], bool], filter_b:typing.Callable[[str, typing.Optional[LoadedMetadataEx]], bool]) -> PyDictionary:
         r"""
         Filters a dictionary by the defined methods and returns a new instance.
@@ -1155,6 +1195,9 @@ class PyDictionary:
         r"""
         Returns the meta for a specific word in b
         """
+        ...
+
+    def process_and_filter(self, lang_a_proc:typing.Callable[[str], typing.Optional[tuple[str, typing.Optional[str]]]], lang_b_proc:typing.Callable[[str], typing.Optional[tuple[str, typing.Optional[str]]]]) -> PyDictionary:
         ...
 
     def process_with_tokenizer(self, processor:PyAlignedArticleProcessor) -> PyDictionary:
@@ -1184,6 +1227,34 @@ class PyDictionary:
         r"""
         Returns a len object, containing the counts of the single parts
         """
+        ...
+
+    def get_fields_with_content(self) -> list[MetaField]:
+        r"""
+        Returns a list of fields that hold data.
+        """
+        ...
+
+    def drop_metadata_field(self, field:MetaField) -> bool:
+        r"""
+        Drops the metadata from a field.
+        Returns true iff data was lost.
+        """
+        ...
+
+    def drop_all_except(self, * py_args) -> list[tuple[MetaField, bool]]:
+        r"""
+        Drops all fields except the one in the args.
+        Returns a list of dropped fields and if data was dropped.
+        """
+        ...
+
+
+class PyMetaIter:
+    def __iter__(self) -> PyMetaIter:
+        ...
+
+    def __next__(self) -> typing.Optional[tuple[int, str, typing.Optional[LoadedMetadataEx]]]:
         ...
 
 

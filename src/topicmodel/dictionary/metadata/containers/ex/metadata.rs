@@ -1137,6 +1137,16 @@ impl MetadataEx {
         }
         topic_vector_set.then_some(topic_vector)
     }
+
+    pub fn touch_dict(&mut self, dictionary_origin: DictionaryOriginSymbol) {
+        self.get_or_create(dictionary_origin);
+    }
+
+    pub fn get_associated_dictionaries(&self) -> Vec<DictionaryOriginSymbol> {
+        self.associated_metadata.iter().enumerate().filter(|(_, v)| v.get().is_some()).map(|(o, _)| {
+            unsafe{DictionaryOriginSymbol::from_u64(o as u64)}
+        }).collect()
+    }
 }
 
 impl Display for MetadataEx {
@@ -1257,6 +1267,7 @@ impl<'a> Iterator for IterMut<'a> {
 
 
 /// A lazy loading structure for associated metadata.
+/// The cell is initialized when the dictionary contains the entry.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq)]
 #[repr(transparent)]
 // #[serde(transparent)]
@@ -1300,6 +1311,11 @@ impl LazyAssociatedMetadata {
 
     pub fn into_inner(self) -> std::cell::OnceCell<AssociatedMetadata> {
         self.inner
+    }
+
+    #[inline(always)]
+    pub fn is_init(&self) -> bool {
+        self.inner.get().is_some()
     }
 
     #[inline(always)]

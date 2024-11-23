@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 use itertools::Itertools;
-use pyo3::{PyObject, Python};
 use pyo3_stub_gen::{PyStubType, TypeInfo};
 
 pub struct TypeInfoBuilder {

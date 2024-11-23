@@ -268,6 +268,13 @@ macro_rules! create_ref_implementation {
                     $(
                     $name: std::sync::Arc::new($name),
                     )+
+                    dictionaries: std::sync::Arc::new(
+                        self.raw
+                            .get_associated_dictionaries()
+                            .into_iter()
+                            .map(|value| unsafe{self.manager_ref.dictionary_interner.resolve_unchecked(value).to_string()})
+                            .collect()
+                    ),
                 }
             }
         }

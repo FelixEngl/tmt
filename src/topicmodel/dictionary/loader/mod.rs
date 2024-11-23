@@ -295,6 +295,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
         };
         let lang = self.get_lang::<L>();
         let mut meta = self.dictionary.get_or_create_meta_for::<L>(orth_id);
+        meta.add_dictionary(dict);
         meta.add_single_to_languages_default(lang);
         (orth_id, meta)
     }
@@ -533,6 +534,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 &orth,
                 &dir
             );
+            assert!(meta.has_dictionary(FREE_DICT));
             meta.add_single_to_original_entry(FREE_DICT, orth);
             meta.add_all_to_regions(FREE_DICT, regions);
             meta.add_all_to_abbreviations(FREE_DICT, abbrev);
@@ -612,6 +614,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                     FREE_DICT,
                     chain!(colloc, contextual)
                 );
+                assert!(meta.has_dictionary(FREE_DICT));
                 word_id
             };
 
@@ -702,6 +705,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             meta.add_all_to_abbreviations(DICT_CC, result.abbrev.iter());
             meta.add_all_to_contextual_informations(DICT_CC, result.contextualisation.iter().map(|v| v.to_string()));
             meta.add_all_to_unclassified(DICT_CC, result.latin_names.iter());
+            assert!(meta.has_dictionary(DICT_CC));
         }
 
         for value in words_a.into_iter() {
@@ -800,6 +804,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 meta.add_single_to_original_entry(DING, &variant);
                 meta_data.extend_internal_ids([interchangeable_id, variant_id]);
                 meta_data.build_consuming().unwrap().write_into(&mut meta);
+                assert!(meta.has_dictionary(DING));
                 ids2.push(word_id);
             }
             ids.push(ids2);
@@ -864,16 +869,18 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
 
 
                 for word in words {
-                    let (id, mut outp) = self.insert::<A>(IATE, &word, dir);
+                    let (id, mut meta) = self.insert::<A>(IATE, &word, dir);
                     a_word.push(id);
-                    builder.build().unwrap().write_into(&mut outp);
+                    builder.build().unwrap().write_into(&mut meta);
+                    assert!(meta.has_dictionary(IATE));
                 }
 
                 builder.push_contextual_informations("phrase".to_string());
                 for word in phrases {
-                    let (id, mut outp) = self.insert::<A>(IATE, &word, dir);
+                    let (id, mut meta) = self.insert::<A>(IATE, &word, dir);
                     a_phrase.push(id);
-                    builder.build().unwrap().write_into(&mut outp);
+                    builder.build().unwrap().write_into(&mut meta);
+                    assert!(meta.has_dictionary(IATE));
                 }
             }
             {
@@ -895,16 +902,18 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 builder.push_languages(dir.lang_b());
 
                 for word in words {
-                    let (id, mut outp) = self.insert::<B>(IATE, &word, dir);
+                    let (id, mut meta) = self.insert::<B>(IATE, &word, dir);
                     b_word.push(id);
-                    builder.build().unwrap().write_into(&mut outp);
+                    builder.build().unwrap().write_into(&mut meta);
+                    assert!(meta.has_dictionary(IATE));
                 }
 
                 builder.push_contextual_informations("phrase".to_string());
                 for word in phrases {
-                    let (id, mut outp) = self.insert::<B>(IATE, &word, dir);
+                    let (id, mut meta) = self.insert::<B>(IATE, &word, dir);
                     b_phrase.push(id);
-                    builder.build().unwrap().write_into(&mut outp);
+                    builder.build().unwrap().write_into(&mut meta);
+                    assert!(meta.has_dictionary(IATE));
                 }
             }
 
@@ -973,6 +982,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 meta.add_single_to_contextual_informations(OMEGA, meta_info);
             }
         }
+        assert!(meta.has_dictionary(OMEGA));
         id
     }
 
@@ -1039,14 +1049,16 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
 
                 match lang {
                     a if a == dir.lang_a() => {
-                        let (id, mut outp) = self.insert::<A>(MS_TERMS, &term, dir);
+                        let (id, mut meta) = self.insert::<A>(MS_TERMS, &term, dir);
                         lang_a_values.push(id);
-                        builder.build().unwrap().write_into(&mut outp);
+                        builder.build().unwrap().write_into(&mut meta);
+                        assert!(meta.has_dictionary(MS_TERMS));
                     }
                     b if b == dir.lang_b() => {
-                        let (id, mut outp) = self.insert::<B>(MS_TERMS, &term, dir);
+                        let (id, mut meta) = self.insert::<B>(MS_TERMS, &term, dir);
                         lang_b_values.push(id);
-                        builder.build().unwrap().write_into(&mut outp);
+                        builder.build().unwrap().write_into(&mut meta);
+                        assert!(meta.has_dictionary(MS_TERMS));
                     }
                     other => {
                         // We go into a safe state. Therefore we can not simply drop out.
@@ -1206,6 +1218,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
 
             let build = content.build().unwrap();
             build.write_to(&mut meta);
+            assert!(meta.has_dictionary(WIKTIONARY));
             build
         };
 
@@ -1222,6 +1235,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 }
             };
             v.build_consuming().unwrap().write_into(&mut meta);
+            assert!(meta.has_dictionary(WIKTIONARY));
         }
 
         Ok(())
@@ -1256,6 +1270,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
 
             let build = content.build().unwrap();
             build.write_to(&mut meta);
+            assert!(meta.has_dictionary(WIKTIONARY));
             build
         };
 
@@ -1272,6 +1287,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 }
             };
             v.build_consuming().unwrap().write_into(&mut meta);
+            assert!(meta.has_dictionary(WIKTIONARY));
             lang_a_variants.push(word);
         }
 
@@ -1288,6 +1304,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                     unsafe{ self.insert_pipeline::<B>(WIKTIONARY, &word) }
                 };
                 data.write_into(&mut meta);
+                assert!(meta.has_dictionary(WIKTIONARY));
                 lang_a_variants.push(word);
             } else {
                 // todo: Do we want to transfer the meta to the translations?
@@ -1297,6 +1314,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                     unsafe{ self.insert_pipeline::<A>(WIKTIONARY, &word) }
                 };
                 data.write_into(&mut meta);
+                assert!(meta.has_dictionary(WIKTIONARY));
                 lang_b_variants.push(word);
             }
         }
@@ -1529,12 +1547,12 @@ mod test {
         };
         data.write_to_path(
             WriteMode::binary(true),
-            "./test/dictionary_final",
+            "./test/dictionary_final2",
         ).unwrap();
 
 
         let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
-            "./test/dictionary_final.dat.zst"
+            "./test/dictionary_final2.dat.zst"
         ).unwrap();
 
 

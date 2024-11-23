@@ -307,8 +307,11 @@ mod test {
         // }
 
         for (id, meta) in new_d.iter_meta_a() {
+            let meta = meta.unwrap();
             println!("WordId: {} - {}\n", id, new_d.voc_b().id_to_entry(id).unwrap());
-            println!("{}\n", meta.map(|v| v.create_solved().to_string()).unwrap_or_else(||"empty".to_string()));
+            println!("{:?}", meta.topic_vector());
+            println!("{:?}", meta.create_solved().topic_vector());
+            println!("{}\n", meta.create_solved().to_string());
             println!("\n######\n");
         }
 
