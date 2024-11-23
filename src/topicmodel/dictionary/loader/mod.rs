@@ -1529,12 +1529,12 @@ mod test {
         };
         data.write_to_path(
             WriteMode::binary(true),
-            "./test/dictionary6",
+            "./test/dictionary_final",
         ).unwrap();
 
 
         let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
-            "./test/dictionary6.dat.zst"
+            "./test/dictionary_final.dat.zst"
         ).unwrap();
 
 

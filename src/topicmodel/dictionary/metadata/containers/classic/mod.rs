@@ -57,6 +57,10 @@ impl MetadataManager for ClassicMetadataManager {
     type Reference<'a> = ClassicMetadataRef<'a>;
     type MutReference<'a> = ClassicMetadataMutRef<'a>;
 
+    fn len(&self) -> (usize, usize) {
+        (self.meta_a.len(), self.meta_b.len())
+    }
+
     fn meta_a(&self) -> &[Self::Metadata] {
         self.meta_a.as_slice()
     }
@@ -148,6 +152,14 @@ impl MetadataManager for ClassicMetadataManager {
 
     }
 
+    fn has_content_for_field(&self, _field: Self::FieldName) -> bool {
+        false
+    }
+
+    fn count_metas_with_content_for_field(&self, _: Self::FieldName) -> (usize, usize) {
+        (0, 0)
+    }
+
     fn drop_field(&mut self, _: Self::FieldName) -> bool {
         false
     }
@@ -159,6 +171,8 @@ impl MetadataManager for ClassicMetadataManager {
     fn convert_to_bound_value<T: Into<Self::FieldValue>>(&mut self, _field: Self::FieldName, _value: T) -> Result<Self::BoundFieldValue, (Self::FieldName, Self::FieldValue)> {
         Ok(())
     }
+
+
 
 }
 

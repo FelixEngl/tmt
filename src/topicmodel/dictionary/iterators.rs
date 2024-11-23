@@ -14,7 +14,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::iter::{Chain, Cloned, Enumerate, FlatMap, Map};
+use std::iter::{Cloned, Enumerate, FlatMap, Map};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::slice::Iter;
@@ -72,21 +72,47 @@ pub struct DictIterImpl<'a> {
     a_to_b: &'a Vec<Vec<usize>>,
     b_to_a: &'a Vec<Vec<usize>>,
     used: HashSet<(usize, usize)>,
-    iter: Chain<ABIter<'a>, BAIter<'a>>,
+    iter_a_b: ABIter<'a>,
+    iter_b_a: BAIter<'a>,
+    direction: DirectionKind
 }
 
 type ABIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleFirst<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>>;
 type BAIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>>;
 impl<'a> DictIterImpl<'a> {
-    pub(in crate::topicmodel::dictionary) fn new(dict: &'a (impl BasicDictionary + ?Sized)) -> Self {
+
+    pub fn direction(&self) -> DirectionKind {
+        self.direction
+    }
+
+    pub(in crate::topicmodel::dictionary) fn new(
+        dict: &'a (impl BasicDictionary + ?Sized),
+        direction: DirectionKind
+    ) -> Self {
         let a_to_b: ABIter = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a).map(|(a, b) | DirectionTuple::a_to_b(a, b)));
         let b_to_a: BAIter = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b).map(|(a, b) | DirectionTuple::b_to_a(a, b)));
-        let iter: Chain<ABIter, BAIter> = a_to_b.chain(b_to_a);
+        // let iter: Chain<ABIter, BAIter> = a_to_b.chain(b_to_a);
         Self {
             a_to_b: dict.map_a_to_b(),
             b_to_a: dict.map_b_to_a(),
             used: HashSet::new(),
-            iter
+            iter_a_b: a_to_b,
+            iter_b_a: b_to_a,
+            direction
+        }
+    }
+
+    fn next_impl(&mut self) -> Option<DirectionTuple<usize, usize>> {
+        match self.direction {
+            DirectionKind::AToB => {
+                self.iter_a_b.next()
+            }
+            DirectionKind::BToA => {
+                self.iter_b_a.next()
+            }
+            DirectionKind::Invariant => {
+                self.iter_a_b.next().or_else(|| self.iter_b_a.next())
+            }
         }
     }
 }
@@ -94,19 +120,19 @@ impl<'a> Iterator for DictIterImpl<'a> {
     type Item = DirectionTuple<usize, usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut tuple = self.iter.next()?;
+        let mut tuple = self.next_impl()?;
         while !self.used.insert(tuple.value_tuple()) {
-            tuple = self.iter.next()?;
+            tuple = self.next_impl()?;
         }
         match &tuple.direction {
             DirectionKind::AToB => {
                 if self.b_to_a[tuple.b].contains(&tuple.a) {
-                    tuple.direction = DirectionKind::Invariant
+                    tuple.direction = self.direction
                 }
             }
             DirectionKind::BToA => {
                 if self.a_to_b[tuple.a].contains(&tuple.b) {
-                    tuple.direction = DirectionKind::Invariant
+                    tuple.direction = self.direction
                 }
             }
             _ => unreachable!()

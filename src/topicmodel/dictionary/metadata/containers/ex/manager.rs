@@ -74,18 +74,22 @@ macro_rules! create_struct {
             type Reference<'a> = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataRefEx<'a> where Self: 'a;
             type MutReference<'a> = $crate::topicmodel::dictionary::metadata::containers::ex::MetadataMutRefEx<'a> where Self: 'a;
 
+            fn len(&self) -> (usize, usize) {
+                (self.meta_a.len(), self.meta_b.len())
+            }
+
             fn unprocessed_field() -> Option<Self::FieldName> {
                 Some($crate::topicmodel::dictionary::metadata::containers::ex::MetaField::UnalteredVocabulary)
             }
 
             fn drop_field(&mut self, field: Self::FieldName) -> bool {
-                let a = self.meta_a.iter_mut().map(|value| {
-                    value.drop_field(field)
-                }).any(|value| value);
+                let a = self.meta_a.iter_mut().fold(false, |acc, value| {
+                    value.drop_field(field) || acc
+                });
 
-                let b = self.meta_b.iter_mut().map(|value| {
-                    value.drop_field(field)
-                }).any(|value| value);
+                let b = self.meta_b.iter_mut().fold(false, |acc, value| {
+                    value.drop_field(field) || acc
+                });
 
                 let had_drop = a || b;
                 if had_drop {
@@ -95,8 +99,8 @@ macro_rules! create_struct {
             }
 
             fn drop_all_fields(&mut self) -> bool {
-                let a = self.meta_a.iter_mut().map(|value| value.drop_all_fields()).any(|value| value);
-                let b = self.meta_b.iter_mut().map(|value| value.drop_all_fields()).any(|value| value);
+                let a = self.meta_a.iter_mut().fold(false, |acc, value| value.drop_all_fields() || acc);
+                let b = self.meta_b.iter_mut().fold(false, |acc, value| value.drop_all_fields() || acc);
                 $(
                     if !self.$name.is_empty() {
                         self.$name = $ty::new();
@@ -237,6 +241,17 @@ macro_rules! create_struct {
             #[inline(always)]
             fn convert_to_bound_value<T: Into<Self::FieldValue>>(&mut self, field: Self::FieldName, value: T) -> Result<Self::BoundFieldValue, (Self::FieldName, Self::FieldValue)> {
                 self.convert_value(field, value)
+            }
+
+            fn has_content_for_field(&self, field: Self::FieldName) -> bool {
+                self.meta_a.iter().any(|value| !value.field_is_empty(field))
+                || self.meta_b.iter().any(|value| !value.field_is_empty(field))
+            }
+
+            fn count_metas_with_content_for_field(&self, field: Self::FieldName) -> (usize, usize) {
+                let a = self.meta_a.iter().filter(|value| !value.field_is_empty(field)).count();
+                let b = self.meta_b.iter().filter(|value| !value.field_is_empty(field)).count();
+                (a, b)
             }
         }
     };
@@ -380,7 +395,7 @@ pub(super) use clean_routine_declaration_implementation;
 
 macro_rules! clean_routine_counts_implementation {
     (interned: $field: ident; $($tt:tt)*) => {
-        $field += 2;
+        $field += 1;
         $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_counts_implementation!($($tt)*);
     };
     ($marker:tt: ; $($tt:tt)*) => {
@@ -395,8 +410,11 @@ pub(super) use clean_routine_counts_implementation;
 macro_rules! clean_routine_check_empty_implementation {
     (interned: $var: ident, $name: ident, $field_name: ident; $($tt:tt)*) => {
         paste::paste! {
-            if $var.field_is_empty($crate::topicmodel::dictionary::metadata::ex::MetaField::[<$name:camel>]) {
-                $field_name -= 1;
+            {
+                use $crate::topicmodel::dictionary::metadata::containers::MetadataManager;
+                if !$var.has_content_for_field($crate::topicmodel::dictionary::metadata::ex::MetaField::[<$name:camel>]) {
+                    $field_name -= 1;
+                }
             }
         }
         $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_check_empty_implementation!($($tt)*);
@@ -515,11 +533,11 @@ macro_rules! update_routine {
                     $($marker: $($target_intern)?;)*
                 );
 
-                for value in self.meta_a.iter().chain(self.meta_b.iter()) {
-                    $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_check_empty_implementation!(
-                        $($marker: value, $target_field $(, $target_intern)?;)*
-                    );
-                }
+
+
+                $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_check_empty_implementation!(
+                    $($marker: self, $target_field $(, $target_intern)?;)*
+                );
 
                 $crate::topicmodel::dictionary::metadata::ex::manager::clean_routine_clear_empty_implementation!(
                     $($marker: self $(, $target_intern $(, $ty)?)?;)*
@@ -644,3 +662,5 @@ impl MetadataManagerEx {
         })
     }
 }
+
+

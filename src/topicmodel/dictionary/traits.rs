@@ -11,7 +11,7 @@ use crate::topicmodel::dictionary::hacks::ABMutReference;
 use crate::topicmodel::dictionary::iterators::{DictIter, DictIterImpl, DictLangIter};
 use crate::topicmodel::dictionary::len::Len;
 use crate::topicmodel::dictionary::metadata::containers::MetadataManager;
-use crate::topicmodel::dictionary::metadata::{DictionaryWithMetaIter, MetadataMutReference};
+use crate::topicmodel::dictionary::metadata::{DictionaryWithMetaIter, MetaIter, MetaMutIter, MetadataMutReference};
 use crate::topicmodel::dictionary::search::DictionarySearcher;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabulary, SearchableVocabulary, VocabularyMut};
@@ -35,7 +35,21 @@ pub trait BasicDictionary: Send + Sync {
 
     /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
     fn iter(&self) -> DictIter {
-        DictIterImpl::new(self)
+        self.iter_dir(DirectionKind::Invariant)
+    }
+
+    fn iter_dir(&self, direction: DirectionKind) -> DictIter {
+        DictIterImpl::new(self, direction)
+    }
+
+    /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
+    fn iter_a(&self) -> DictIter {
+        self.iter_dir(DirectionKind::AToB)
+    }
+
+    /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
+    fn iter_b(&self) -> DictIter {
+        self.iter_dir(DirectionKind::BToA)
     }
 }
 
@@ -461,8 +475,24 @@ where
 
     fn metadata_mut(&mut self) -> &mut M;
 
+    fn iter_with_meta_dir(&self, direction: DirectionKind) -> DictionaryWithMetaIter<Self, M, V> {
+        DictionaryWithMetaIter::new(self, direction)
+    }
+
     fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M, V> {
-        DictionaryWithMetaIter::new(self)
+        self.iter_with_meta_dir(DirectionKind::Invariant)
+    }
+
+    fn iter_meta(&self) -> MetaIter<Self, M, V> {
+        MetaIter::new(self, DirectionKind::Invariant)
+    }
+
+    fn iter_meta_a(&self) -> MetaIter<Self, M, V> {
+        MetaIter::new(self, DirectionKind::AToB)
+    }
+
+    fn iter_meta_b(&self) -> MetaIter<Self, M, V> {
+        MetaIter::new(self, DirectionKind::BToA)
     }
 
     fn get_meta_for_a<'a>(&'a self, word_id: usize) -> Option<<M as MetadataManager>::Reference<'a>>;
@@ -476,6 +506,19 @@ where
     M: MetadataManager,
     V: AnonymousVocabulary + AnonymousVocabularyMut
 {
+
+    fn iter_meta_mut(&mut self) -> MetaMutIter<Self, M, V> {
+        MetaMutIter::new(self, DirectionKind::Invariant)
+    }
+
+    fn iter_meta_a_mut(&mut self) -> MetaMutIter<Self, M, V> {
+        MetaMutIter::new(self, DirectionKind::AToB)
+    }
+
+    fn iter_meta_b_mut(&mut self) -> MetaMutIter<Self, M, V> {
+        MetaMutIter::new(self, DirectionKind::BToA)
+    }
+
     fn get_mut_meta_a<'a>(&'a mut self, word_id: usize) -> Option<<M as MetadataManager>::MutReference<'a>>;
     fn get_mut_meta_b<'a>(&'a mut self, word_id: usize) -> Option<<M as MetadataManager>::MutReference<'a>>;
 

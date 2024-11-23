@@ -28,6 +28,8 @@ pub trait MetadataManager: Default + Clone {
     type Reference<'a>: MetadataReference<'a, Self> where Self: 'a;
     type MutReference<'a>: MetadataMutReference<'a, Self> where Self: 'a;
 
+    /// Returns the len of meta a and b
+    fn len(&self) -> (usize, usize);
 
     fn meta_a(&self) -> &[Self::Metadata];
     fn meta_b(&self) -> &[Self::Metadata];
@@ -86,6 +88,12 @@ pub trait MetadataManager: Default + Clone {
 
     /// Clean up the metadata from unecessary cludder.
     fn optimize(&mut self);
+
+    /// Dropbs a specific field. Returns false if it fails.
+    fn has_content_for_field(&self, field: Self::FieldName) -> bool;
+
+    /// Returns the number of meta entries containing the field.
+    fn count_metas_with_content_for_field(&self, field: Self::FieldName) -> (usize, usize);
 
     /// Dropbs a specific field. Returns false if it fails.
     fn drop_field(&mut self, field: Self::FieldName) -> bool;
@@ -169,18 +177,64 @@ mod test {
     use arcstr::ArcStr;
     use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, EfficientDictWithMetaDefault};
     use crate::topicmodel::dictionary::direction::{DirectionTuple};
-    use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
-    use crate::topicmodel::dictionary::metadata::MetadataManager;
+    use crate::topicmodel::dictionary::metadata::ex::{MetaField, MetadataCollectionBuilder};
+    use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataMutReference};
     use crate::topicmodel::dictionary::word_infos::*;
-    use crate::topicmodel::vocabulary::BasicVocabulary;
+    use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 
     #[test]
     fn can_initialize(){
         let mut d: EfficientDictWithMetaDefault = Default::default();
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a1", "b1");
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a2", "b2");
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a3", "b3");
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a4", "b4");
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a11", "b1");
+        {
+            d.get_or_create_meta_a(a).insert_value(
+                MetaField::Genders,
+                None,
+                GrammaticalGender::Neutral
+            ).expect("This should work");
+
+            d.get_or_create_meta_b(b).insert_value(
+                MetaField::Domains,
+                None,
+                Domain::Stocks
+            ).expect("This should work");
+        }
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a12", "b2");
+        {
+            d.get_or_create_meta_a(a).insert_value(
+                MetaField::Genders,
+                None,
+                GrammaticalGender::Masculine
+            ).expect("This should work");
+
+            d.get_or_create_meta_b(b).insert_value(
+                MetaField::Domains,
+                None,
+                Domain::Pharm
+            ).expect("This should work");
+        }
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a13", "b3");
+        {
+            d.get_or_create_meta_a(a).insert_value(
+                MetaField::Genders,
+                None,
+                GrammaticalGender::Feminine
+            ).expect("This should work");
+
+            d.get_or_create_meta_b(b).insert_value(
+                MetaField::Domains,
+                None,
+                Domain::Watches
+            ).expect("This should work");
+        }
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a24", "b4");
+        {
+            d.get_or_create_meta_b(b).insert_value(
+                MetaField::Domains,
+                None,
+                Domain::Mil
+            ).expect("This should work");
+        }
 
         let mut x = MetadataCollectionBuilder::with_name(Some("Dict1"));
         MetadataCollectionBuilder::push_domains(&mut x, Domain::Acad);
@@ -197,7 +251,15 @@ mod test {
             x.build().unwrap().write_into(&mut y);
         }
 
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a5", "b5");
+        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a25", "b5");
+        {
+            d.get_or_create_meta_b(b).insert_value(
+                MetaField::Domains,
+                None,
+                Domain::Cosmet
+            ).expect("This should work");
+        }
+
         let mut x = MetadataCollectionBuilder::with_name(Some("Dict1"));
         MetadataCollectionBuilder::push_domains(&mut x, Domain::Acad);
         MetadataCollectionBuilder::push_domains(&mut x, Domain::Alchemy);
@@ -207,33 +269,63 @@ mod test {
         MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Prefix);
         MetadataCollectionBuilder::push_pos(&mut x, PartOfSpeech::Adj);
 
-        MetadataCollectionBuilder::push_synonyms(&mut x, "a3".to_string());
+        MetadataCollectionBuilder::push_synonyms(&mut x, "a13".to_string());
 
         {
             let mut y = d.get_or_create_meta_a(a);
             x.build().unwrap().write_into(&mut y);
         }
 
-        for value in d.metadata.meta_a() {
-            println!("{}", value);
-            println!("{:?}", value.collect_all_associated_word_ids());
-            for value in value.iter() {
-                println!("inner --- {}", value.meta());
-            }
-        }
+        // for value in d.metadata.meta_a() {
+        //     println!("{}", value);
+        //     println!("{:?}", value.collect_all_associated_word_ids());
+        //     for value in value.iter() {
+        //         println!("inner --- {}", value.meta());
+        //     }
+        // }
 
 
 
-        let new_d = d.filter_and_process(
-            |a| Ok::<_, ()>(Some((ArcStr::from(&a[0..1]), ArcStr::from(a)).into())),
-            |a| Ok::<_, ()>(Some((ArcStr::from(&a[0..1]), ArcStr::from(a)).into())),
+        let mut new_d = d.filter_and_process(
+            |a| Ok::<_, ()>(Some((ArcStr::from(&a[0..2]), ArcStr::from(a)).into())),
+            |a| Ok::<_, ()>(Some((ArcStr::from(&a[0..2]), ArcStr::from(a)).into())),
         ).unwrap();
         println!("-------------------------");
-        for value in new_d.voc_a().iter() {
-            println!("{}", value);
+        for (idx, value) in new_d.voc_a().iter().enumerate() {
+            println!("{idx}: {}", value);
         }
-        for DirectionTuple{a, b, direction:_} in new_d.iter_with_meta() {
-            println!("{}", a.1.unwrap().create_solved());
+        println!("-------------------------");
+        for (idx, value) in new_d.voc_b().iter().enumerate() {
+            println!("{idx}: {}", value);
         }
+        println!("-------------------------");
+
+        // for (id, meta) in new_d.iter_meta_a() {
+        //     println!("WordId: {}\n", id);
+        //     println!("{}\n", meta.map(|v| v.create_solved().to_string()).unwrap_or_else(||"empty".to_string()));
+        //     println!("\n######\n");
+        // }
+
+        for (id, meta) in new_d.iter_meta_a() {
+            println!("WordId: {} - {}\n", id, new_d.voc_b().id_to_entry(id).unwrap());
+            println!("{}\n", meta.map(|v| v.create_solved().to_string()).unwrap_or_else(||"empty".to_string()));
+            println!("\n######\n");
+        }
+
+        // new_d.metadata_mut().drop_field(MetaField::Genders);
+        println!("{}", new_d.metadata_mut().drop_field(MetaField::UnalteredVocabulary));
+        println!("-------------------------");
+        for (id, meta) in new_d.iter_meta_a_mut() {
+
+            let mut targ = meta.unwrap();
+            println!("Drop: {id}: {}", targ.drop_field(MetaField::UnalteredVocabulary));
+            assert!(!targ.drop_field(MetaField::UnalteredVocabulary));
+
+            // println!("WordId: {} - {}\n", id, new_d.voc_a().id_to_entry(id).unwrap());
+            // println!("{}\n", meta.map(|v| v.create_solved().to_string()).unwrap_or_else(||"empty".to_string()));
+            // println!("\n######\n");
+        }
+
+        println!("{}", new_d.metadata.unaltered_vocabulary_interner.len());
     }
 }

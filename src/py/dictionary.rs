@@ -17,8 +17,8 @@ use crate::py::helpers::LanguageHintValue;
 use crate::py::vocabulary::PyVocabulary;
 use crate::topicmodel::dictionary::direction::{DirectionKind, DirectionTuple, LanguageKind};
 use crate::topicmodel::dictionary::iterators::{DictionaryWithMetaIterator};
-use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetadataEx};
-use crate::topicmodel::dictionary::metadata::{MetadataManager};
+use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetadataEx, MetaField};
+use crate::topicmodel::dictionary::metadata::{MetaIterOwned, MetadataManager};
 use crate::topicmodel::dictionary::*;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, SearchableVocabulary, Vocabulary};
@@ -40,6 +40,7 @@ use crate::toolkit::from_str_ex::ParseEx;
 use crate::toolkit::special_python_values::{PyEither, PyEitherOrBoth};
 use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 use crate::topicmodel::dictionary::len::Len;
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::TopicVector;
 use crate::topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
 
 pub type DefaultDict = EfficientDictWithMetaDefault;
@@ -163,6 +164,8 @@ impl PyDictionary {
                 }
             }
         }).transpose().map_err(|value| PyValueError::new_err(format!("Failed to parse argument: {value}")))?;
+
+
 
         let result = searcher.search(
             query,
@@ -310,6 +313,41 @@ impl PyDictionary {
         )
     }
 
+    /// Returns the topic vetor vor a specific word. Can be None if the word does not exist or
+    /// no metadata is set.
+    pub fn topic_vector_a(&self, word: &str) -> Option<TopicVector> {
+        let read = self.get();
+        let entry = read.voc_a().get_id(word)?;
+        read.metadata().get_meta_a(entry)?.topic_vector()
+    }
+
+    /// Returns the topic vetor vor a specific word. Can be None if the word does not exist or
+    /// no metadata is set.
+    pub fn topic_vector_b(&self, word: &str) -> Option<TopicVector> {
+        let read = self.get();
+        let entry = read.voc_b().get_id(word)?;
+        read.metadata().get_meta_b(entry)?.topic_vector()
+    }
+
+    /// Returns true iff there is any content in the unaltered voc.
+    fn has_unaltered_voc(&self) -> bool {
+        self.get().metadata().has_content_for_field(
+            MetadataManagerEx::unprocessed_field().expect("The metadata needs a unprocessed field.")
+        )
+    }
+
+    /// The length of the metadata
+    fn meta_len(&self) -> (usize, usize) {
+        self.get().metadata().len()
+    }
+
+    /// Returns the number of words that know their unaltered vocabulary
+    fn count_unaltered_voc(&self) -> (usize, usize) {
+        self.get().metadata().count_metas_with_content_for_field(
+            MetadataManagerEx::unprocessed_field().expect("The metadata needs a unprocessed field.")
+        )
+    }
+
     /// Returns true if voc a contains the value
     fn voc_a_contains(&self, value: &str) -> bool {
         self.get().voc_a().contains_value(value)
@@ -448,6 +486,14 @@ impl PyDictionary {
         PyDictIter::new(self)
     }
 
+    fn iter_meta_a(&self) -> PyMetaIter {
+        PyMetaIter::new(self, DirectionKind::AToB)
+    }
+
+    fn iter_meta_b(&self) -> PyMetaIter {
+        PyMetaIter::new(self, DirectionKind::BToA)
+    }
+
     /// Filters a dictionary by the defined methods and returns a new instance.
     fn filter<'py>(&self, filter_a: FilterDictionaryMethod<'py>, filter_b: FilterDictionaryMethod<'py>) -> PyResult<Self> {
         let created = self.get().create_subset_with_filters(
@@ -573,6 +619,11 @@ impl PyDictionary {
         self.get().len()
     }
 
+    /// Drops the metadata from a field.
+    /// Returns true iff data was lost.
+    fn drop_metadata_field(&mut self, field: MetaField) -> bool {
+        self.get_mut().metadata_mut().drop_field(field)
+    }
 }
 
 
@@ -580,45 +631,6 @@ define_py_method!{
     FilterDictionary(word: String, loaded: Option<LoadedMetadataEx>) -> bool
 }
 
-
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
-#[pyclass]
-pub struct PyDictIter {
-    inner: DictionaryWithMetaIterator<DefaultDict, ArcStr, Vocabulary<ArcStr>, MetadataManagerEx>,
-}
-
-unsafe impl Send for PyDictIter{}
-unsafe impl Sync for PyDictIter{}
-
-impl PyDictIter {
-    pub fn new(inner: &PyDictionary) -> Self {
-        Self {
-            inner: DictionaryWithMetaIterator::new(inner.inner.clone())
-        }
-    }
-}
-
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
-#[pymethods]
-impl PyDictIter {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __next__(&mut self) -> Option<((usize, String, Option<LoadedMetadataEx>), (usize, String, Option<LoadedMetadataEx>), DirectionKind)> {
-        let DirectionTuple{
-            a: (a, word_a, meta_a),
-            b: (b, word_b, meta_b),
-            direction
-        } = self.inner.next()?;
-
-        Some((
-            (a, word_a.to_string(), meta_a),
-            (b, word_b.to_string(), meta_b),
-            direction
-        ))
-    }
-}
 
 
 impl From<Dictionary<UnderlyingPyWord, UnderlyingPyVocabulary>> for PyDictionary {
@@ -653,7 +665,85 @@ impl FromVoc<UnderlyingPyWord, UnderlyingPyVocabulary> for PyDictionary {
     }
 }
 
+
+
+
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+pub struct PyDictIter {
+    inner: DictionaryWithMetaIterator<DefaultDict, ArcStr, Vocabulary<ArcStr>, MetadataManagerEx>,
+}
+
+unsafe impl Send for crate::py::dictionary::PyDictIter {}
+unsafe impl Sync for crate::py::dictionary::PyDictIter {}
+
+impl crate::py::dictionary::PyDictIter {
+    pub fn new(inner: &PyDictionary) -> Self {
+        Self {
+            inner: DictionaryWithMetaIterator::new(inner.inner.clone())
+        }
+    }
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl crate::py::dictionary::PyDictIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> Option<((usize, String, Option<LoadedMetadataEx>), (usize, String, Option<LoadedMetadataEx>), DirectionKind)> {
+        let DirectionTuple{
+            a: (a, word_a, meta_a),
+            b: (b, word_b, meta_b),
+            direction
+        } = self.inner.next()?;
+
+        Some((
+            (a, word_a.to_string(), meta_a),
+            (b, word_b.to_string(), meta_b),
+            direction
+        ))
+    }
+}
+
+
+
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+pub struct PyMetaIter {
+    inner: MetaIterOwned<DefaultDict, ArcStr, Vocabulary<ArcStr>, MetadataManagerEx>,
+}
+
+unsafe impl Send for PyMetaIter {}
+unsafe impl Sync for PyMetaIter {}
+
+impl PyMetaIter {
+    pub fn new(inner: &PyDictionary, direction: DirectionKind) -> Self {
+        Self {
+            inner: MetaIterOwned::new(inner.inner.clone(), direction)
+        }
+    }
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyMetaIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> Option<(usize, String, Option<LoadedMetadataEx>)> {
+        self.inner.next().map(|(word_id, word, meta)| {
+            (word_id, word.to_string(), meta)
+        })
+    }
+}
+
 register_python! {
     struct PyDictionary;
     struct PyDictIter;
+    struct PyMetaIter;
 }

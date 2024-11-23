@@ -2,7 +2,7 @@ mod index;
 
 pub use index::*;
 
-use crate::topicmodel::dictionary::metadata::ex::{AssociatedMetadata, LoadedMetadataEx};
+use crate::topicmodel::dictionary::metadata::ex::{AssociatedMetadata, LoadedMetadataEx, SolvedMetadataField};
 use crate::topicmodel::dictionary::word_infos::{Domain, Register};
 use crate::{impl_py_stub, register_python};
 use itertools::Itertools;
@@ -228,7 +228,7 @@ impl TopicVector {
     pub fn from_meta(meta: &LoadedMetadataEx) -> Self {
         let mut new = Self::new();
         {
-            let (a, b) = meta.domains();
+            let SolvedMetadataField(a, b) = meta.domains();
             if let Some(a) = a {
                 for x in a {
                     let domain: (Domain, u32) = x.clone().try_into().unwrap();
@@ -243,7 +243,7 @@ impl TopicVector {
             }
         }
         {
-            let (a, b) = meta.registers();
+            let SolvedMetadataField(a, b) = meta.registers();
             if let Some(a) = a {
                 for x in a {
                     let domain: (Register, u32) = x.clone().try_into().unwrap();

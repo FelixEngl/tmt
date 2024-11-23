@@ -2,7 +2,9 @@ macro_rules! convert_into {
     (voc: $reference:ident => $name: ident) => {
         paste::paste! {
             let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
+                use $crate::topicmodel::dictionary::metadata::ex::Storage;
+                use $crate::topicmodel::dictionary::metadata::ex::SolvedMetadataField;
+                let data: &Storage<_> = $reference.[<get_ $name>]();
                 let def = data.default.as_ref().map(|(_, v)| v.iter().map(|(x, y)|(x.to_string(), *y).into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
@@ -16,14 +18,16 @@ macro_rules! convert_into {
                 } else {
                     Some(other)
                 };
-                (def, other)
+                SolvedMetadataField(def, other)
             };
         }
     };
     (set: $reference:ident => $name: ident) => {
         paste::paste! {
             let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
+                use $crate::topicmodel::dictionary::metadata::ex::Storage;
+                use $crate::topicmodel::dictionary::metadata::ex::SolvedMetadataField;
+                let data: &Storage<_> = $reference.[<get_ $name>]();
                 let def = data.default.as_ref().map(|value| value.iter().map(|(a, b)| (a, b.get()).into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
@@ -37,14 +41,16 @@ macro_rules! convert_into {
                 } else {
                     Some(other)
                 };
-                (def, other)
+                SolvedMetadataField(def, other)
             };
         }
     };
     (interned: $reference:ident => $name: ident) => {
         paste::paste! {
             let $name = {
-                let data: &$crate::topicmodel::dictionary::metadata::ex::Storage<_> = $reference.[<get_ $name>]();
+                use $crate::topicmodel::dictionary::metadata::ex::Storage;
+                use $crate::topicmodel::dictionary::metadata::ex::SolvedMetadataField;
+                let data: &Storage<_> = $reference.[<get_ $name>]();
                 let def = data.default.as_ref().map(|(_, v)| v.iter().map(|(x, y)| (x.to_string(), *y).into()).collect());
                 let other = data.mapped.iter().filter_map(|(k, v)|{
                     if let Some(v) = v {
@@ -58,14 +64,13 @@ macro_rules! convert_into {
                 } else {
                     Some(other)
                 };
-                (def, other)
+                SolvedMetadataField(def, other)
             };
         }
     };
 
 }
 
-use pretty::DocBuilder;
 pub(super) use convert_into;
 
 macro_rules! create_cached_getter {

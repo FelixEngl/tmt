@@ -10,7 +10,7 @@ use build_html::{Container, Html, HtmlContainer, HtmlPage, Table, TableCell, Tab
 use build_html::ContainerType::*;
 use itertools::Itertools;
 use rayon::prelude::*;
-use crate::topicmodel::dictionary::metadata::ex::{LoadedMetadataEx, MetadataManagerEx};
+use crate::topicmodel::dictionary::metadata::ex::{LoadedMetadataEx, MetadataManagerEx, SolvedMetadataField};
 
 
 macro_rules! div {
@@ -158,7 +158,7 @@ where
                                                                                     .with_header_row(["MetaField", "Origin", "Data"]);
                                                                                 let mut loaded = LoadedMetadataEx::from(cont).as_dict().into_iter().collect_vec();
                                                                                 loaded.sort_by_key(|value| value.0);
-                                                                                for (field, (general, dict)) in loaded {
+                                                                                for (field, SolvedMetadataField(general, dict)) in loaded {
                                                                                     if let Some(general) = general  {
                                                                                         if !general.is_empty() {
                                                                                             let mut entry = Vec::from_iter(general);
@@ -307,9 +307,10 @@ where
                                     .with_header(
                                         2,
                                         format!(
-                                            "{} to {}",
+                                            "{} to {} ({})",
                                             self.voc_a().language().map(|value| value.to_string()).unwrap_or_else(|| "A".to_string()),
-                                            self.voc_b().language().map(|value| value.to_string()).unwrap_or_else(|| "B".to_string())
+                                            self.voc_b().language().map(|value| value.to_string()).unwrap_or_else(|| "B".to_string()),
+                                            self.map_a_to_b().len()
                                         )
                                     )
                                     .with_container(
@@ -325,9 +326,10 @@ where
                                     .with_header(
                                         2,
                                         format!(
-                                            "{} to {}",
+                                            "{} to {} ({})",
                                             self.voc_b().language().map(|value| value.to_string()).unwrap_or_else(|| "B".to_string()),
                                             self.voc_a().language().map(|value| value.to_string()).unwrap_or_else(|| "A".to_string()),
+                                            self.map_b_to_a().len()
                                         )
                                     )
                                     .with_container({

@@ -1,61 +1,3 @@
-macro_rules! convert_to_string_call {
-    ($name: ident) => {
-
-        paste::paste! {
-            fn [<pretty_ $name>]<'b, D, A>(&'b self, allocator: &'b D) -> pretty::DocBuilder<'b, D, A>
-            where
-                D: pretty::DocAllocator<'b, A>,
-                D::Doc: Clone,
-                A: Clone,
-            {
-                use pretty::*;
-
-                allocator.hardline().append(
-                    allocator.text(format!("{}: ", stringify!($name))).append(
-                        allocator.hardline().append(
-                            if let Some(ref o) = self.$name.0 {
-                                allocator.text("default: ").append(
-                                    allocator.hardline().append(
-                                        allocator.intersperse(
-                                            o.iter().map(|value| allocator.text(format!("{}", value.to_string()))),
-                                            allocator.line()
-                                        ).indent(2)
-                                    ).append(allocator.hardline()).braces()
-                                )
-                            } else {
-                                allocator.text("default: -!-")
-                            }.indent(2)
-                        ).append(allocator.hardline())
-                            .append(
-                                if let Some(found) = self.$name.1.as_ref() {
-                                    allocator.intersperse(
-                                        found.iter().map(
-                                            |(k, v)|
-                                                allocator.text(format!("\"{k}\": ")).append(
-                                                    allocator.hardline().append(
-                                                        allocator.intersperse(
-                                                            v.iter().map(|value| allocator.as_string(value).indent(2)),
-                                                            allocator.line()
-                                                        )
-                                                    ).append(allocator.hardline()).braces()
-                                                )
-                                        ),
-                                        allocator.hardline()
-                                    )
-                                } else {
-                                    allocator.text("-! no other dicts !-")
-                                }.indent(2)
-                            ).append(allocator.hardline()).braces()
-                    ).indent(2)
-                )
-            }
-        }
-    };
-}
-
-use pretty::{BoxAllocator, DocAllocator};
-pub(super) use convert_to_string_call;
-
 
 macro_rules! create_python_getter {
     ($(
@@ -96,6 +38,8 @@ macro_rules! create_python_getter {
             fn py_new(
                 values: NewSolvedArgs
             ) -> pyo3::PyResult<Self> {
+                use $crate::topicmodel::dictionary::metadata::ex::SolvedMetadataField;
+
                 $(
                 let mut $name: Option<SolvedMetadataField> = None;
                 )+
@@ -116,7 +60,7 @@ macro_rules! create_python_getter {
             
                 Ok(
                     Self {
-                        $($name: std::sync::Arc::new($name.unwrap_or_else(|| (None, None))),
+                        $($name: std::sync::Arc::new($name.unwrap_or_else(|| SolvedMetadataField::empty())),
                         )+
                     }
                 )
@@ -242,36 +186,27 @@ macro_rules! create_solved_implementation {
             );
         }
 
+        impl<'a, 'b, D, A> pretty::Pretty<'a, D, A> for &'b LoadedMetadataEx
+        where
+            A: 'a + Clone,
+            D: pretty::DocAllocator<'a, A>,
+            D::Doc: Clone,
+        {
+            fn pretty(self, allocator: &'a D) -> pretty::DocBuilder<'a, D, A> {
+                let mut s = allocator.nil();
+
+                $(
+                s = s.append((&self.$name).as_pretty(stringify!($name)));
+                )+
+
+
+                allocator.text("Metadata: ").append(
+                    s.append(allocator.hardline()).braces()
+                )
+            }
+        }
 
         impl LoadedMetadataEx {
-
-            $(
-            $crate::topicmodel::dictionary::metadata::ex::solved::convert_to_string_call!(
-                    $name
-            );
-            )+
-
-            pub fn pretty<'b, D, A>(&'b self, allocator: &'b D) -> pretty::DocBuilder<'b, D, A>
-            where
-                D: pretty::DocAllocator<'b, A>,
-                D::Doc: Clone,
-                A: Clone,
-            {
-                use pretty::*;
-
-                let mut s = allocator.text("Metadata: ").append(
-                    allocator.hardline().
-                );
-                paste::paste! {
-                    $(
-                    s = s.append(self.[<pretty_ $name>](allocator));
-                    )+
-                }
-                s
-                    .append(allocator.hardline())
-                    .braces()
-            }
-
             pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx, is_same_word: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
                 $(
                     paste::paste! {
@@ -296,6 +231,7 @@ pub(super) use create_solved_implementation;
 
 
 use super::*;
+use pretty::*;
 
 impl<'a> From<MetadataRefEx<'a>> for LoadedMetadataEx {
     fn from(value: MetadataRefEx<'a>) -> Self {
@@ -305,7 +241,7 @@ impl<'a> From<MetadataRefEx<'a>> for LoadedMetadataEx {
 
 impl std::fmt::Display for LoadedMetadataEx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.pretty::<_, ()>(&BoxAllocator).1.render_fmt(80, f)
-        // self.get_doc().render_fmt(80, f)
+        // self.pretty(&RcAllocator).1.render_fmt()
+        RcDoc::<()>::nil().append(self).render_fmt(80, f)
     }
 }

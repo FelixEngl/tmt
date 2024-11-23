@@ -503,9 +503,10 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 use either::Either;
 use itertools::{Itertools, Position};
-use strum::EnumIs;
+use strum::{EnumIs};
 use thiserror::Error;
 use tinyset::Fits64;
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::TopicVector;
 use super::*;
 
 
@@ -934,6 +935,23 @@ pub struct AssociatedMetadataImpl {
 
 impl AssociatedMetadataImpl {
 
+    pub fn topic_vector(&self) ->  TopicVector {
+        let mut new = TopicVector::new();
+        if let Some(domains) = self.inner.get(&MetaField::Domains) {
+            let domains = unsafe{domains.as_ref_unchecked_domains()};
+            for (idx, value) in domains.iter_counts() {
+                *new.get_mut(idx) += value.get() as f64;
+            }
+        }
+        if let Some(registers) = self.inner.get(&MetaField::Registers) {
+            let registers = unsafe{registers.as_ref_unchecked_registers()};
+            for (idx, value) in registers.iter_counts() {
+                *new.get_mut(idx) += value.get() as f64;
+            }
+        }
+        new
+    }
+
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
             || self.inner.values().all(|value| value.is_empty())
@@ -1102,6 +1120,22 @@ impl MetadataEx {
         } else {
             Some(collection)
         }
+    }
+
+    pub fn topic_vector(&self) ->  Option<TopicVector> {
+        let mut topic_vector = TopicVector::new();
+        let mut topic_vector_set = false;
+        if let Some(topic) = self.general_metadata.get().and_then(|m| m.get()) {
+            topic_vector_set = true;
+            topic_vector += topic.topic_vector();
+        }
+        for value in self.associated_metadata.iter() {
+            if let Some(topic) = value.get().and_then(|m| m.get()) {
+                topic_vector_set = true;
+                topic_vector += topic.topic_vector();
+            }
+        }
+        topic_vector_set.then_some(topic_vector)
     }
 }
 
@@ -1298,6 +1332,10 @@ impl LazyAssociatedMetadata {
     pub fn collect_all_known_ids(&self) -> Option<Set64<usize>> {
         self.get()?.collect_all_known_ids()
     }
+
+    pub fn topic_vector(&self) ->  Option<TopicVector> {
+        self.get().and_then(|value| value.topic_vector())
+    }
 }
 
 impl PartialEq for LazyAssociatedMetadata {
@@ -1385,6 +1423,10 @@ impl AssociatedMetadata {
 
     pub fn drop_all_fields(&mut self) -> bool {
         self.inner.take().is_some_and(|value| !value.is_empty())
+    }
+
+    pub fn topic_vector(&self) ->  Option<TopicVector> {
+        self.get().map(|value| value.topic_vector())
     }
 }
 

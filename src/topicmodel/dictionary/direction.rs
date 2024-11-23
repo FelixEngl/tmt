@@ -128,7 +128,6 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> where Ta: Clone, Tb: Clone {
     }
 }
 
-
 impl<T> DirectionTuple<T, T>  {
     pub fn map_both<R, F: Fn(T) -> R>(self, mapping: F) -> DirectionTuple<R, R> {
         DirectionTuple {
