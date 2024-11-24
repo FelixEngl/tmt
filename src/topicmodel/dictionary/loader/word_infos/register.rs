@@ -5,7 +5,7 @@ use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr};
 use tinyset::Fits64;
 use crate::register_python;
 use crate::topicmodel::dictionary::loader::iate_reader::AdministrativeStatus;
-use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DomainModelIndex;
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, NotAIndexFor};
 use crate::topicmodel::dictionary::metadata::ex::impl_try_from_as_unpack;
 use crate::topicmodel::dictionary::word_infos::Domain;
 
@@ -178,7 +178,15 @@ impl Register {
 impl DomainModelIndex for Register {
     #[inline(always)]
     fn as_index(self) -> usize {
-        Domain::COUNT + (self as u64) as usize
+        Domain::COUNT + (self as u16) as usize
+    }
+
+    fn from_index(index: usize) -> Result<Self, NotAIndexFor> {
+        if index < Domain::COUNT {
+            return Err(NotAIndexFor("Register", index));
+        }
+        Register::try_from((index - Domain::COUNT) as u16)
+            .map_err(|_| NotAIndexFor("Register", index))
     }
 }
 

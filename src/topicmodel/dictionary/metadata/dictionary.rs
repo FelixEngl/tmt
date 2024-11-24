@@ -181,6 +181,7 @@ where
         meta
     }
 
+    /// Keeps every entry where the filter functions return true
     pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V, M>
     where
         F1: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool,

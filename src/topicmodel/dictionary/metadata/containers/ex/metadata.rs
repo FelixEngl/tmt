@@ -274,77 +274,76 @@ macro_rules! impl_keys {
         }
 
 
-        const _: () = {
-            use $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
-            use $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric;
-            impl MetadataContainerValue {
+        impl MetadataContainerValue {
 
-                pub fn create_for_key(key: MetaField) -> Self {
-                    match key {
-                        $(
-                        MetaField::$enum_var_name => Self::$enum_var_name(MetadataContainerValueGeneric::new()),
-                        )+
-                    }
-                }
-
-                pub fn is_empty(&self) -> bool {
-                    match self {
-                        $(
-                        MetadataContainerValue::$enum_var_name(slf) => slf.is_empty(),
-                        )+
-                    }
-                }
-
-                pub fn update(&mut self, other: &MetadataContainerValue, add_only_associated_count: bool) {
-                    match (self, other) {
-                        $(
-                        (MetadataContainerValue::$enum_var_name(slf), MetadataContainerValue::$enum_var_name(othr)) => slf.update(othr, add_only_associated_count),
-                        )+
-                        _ => {}
-                    }
-                }
-
-                paste::paste! {
+            pub fn create_for_key(key: $crate::topicmodel::dictionary::metadata::containers::ex::MetaField) -> Self {
+                use $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric;
+                use $crate::topicmodel::dictionary::metadata::containers::ex::MetaField;
+                match key {
                     $(
-                    pub fn [<as_ref_ $normal_name>](&self) -> Option<&MetadataContainerValueGeneric<$typ>> {
-                        match self {
-                            Self::$enum_var_name(resolved_value) => {
-                                Some(resolved_value)
-                            }
-                            _ => None
-                        }
-                    }
-
-                    pub fn [<as_mut_ $normal_name>](&mut self) -> Option<&mut MetadataContainerValueGeneric<$typ>> {
-                        match self {
-                            Self::$enum_var_name(resolved_value) => {
-                                Some(resolved_value)
-                            }
-                            _ => None
-                        }
-                    }
-
-                    pub unsafe fn [<as_ref_unchecked_ $normal_name>](&self) -> &MetadataContainerValueGeneric<$typ> {
-                        match self {
-                            Self::$enum_var_name(resolved_value) => {
-                                resolved_value
-                            }
-                            _ => panic!("Illegal conversion for {}", stringify!($typ))
-                        }
-                    }
-
-                    pub unsafe fn [<as_mut_unchecked_ $normal_name>](&mut self) -> &mut MetadataContainerValueGeneric<$typ> {
-                        match self {
-                            Self::$enum_var_name(resolved_value) => {
-                                resolved_value
-                            }
-                            _ => panic!("Illegal conversion for {}", stringify!($typ))
-                        }
-                    }
+                    MetaField::$enum_var_name => Self::$enum_var_name(MetadataContainerValueGeneric::new()),
                     )+
                 }
             }
-        };
+
+            pub fn is_empty(&self) -> bool {
+                match self {
+                    $(
+                    MetadataContainerValue::$enum_var_name(slf) => slf.is_empty(),
+                    )+
+                }
+            }
+
+            pub fn update(&mut self, other: &$crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValue, add_only_associated_count: bool) {
+                use $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValue;
+                match (self, other) {
+                    $(
+                    (MetadataContainerValue::$enum_var_name(slf), MetadataContainerValue::$enum_var_name(othr)) => slf.update(othr, add_only_associated_count),
+                    )+
+                    _ => {}
+                }
+            }
+
+            paste::paste! {
+                $(
+                pub fn [<as_ref_ $normal_name>](&self) -> Option<&$crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ>> {
+                    match self {
+                        Self::$enum_var_name(resolved_value) => {
+                            Some(resolved_value)
+                        }
+                        _ => None
+                    }
+                }
+
+                pub fn [<as_mut_ $normal_name>](&mut self) -> Option<&mut $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ>> {
+                    match self {
+                        Self::$enum_var_name(resolved_value) => {
+                            Some(resolved_value)
+                        }
+                        _ => None
+                    }
+                }
+
+                pub unsafe fn [<as_ref_unchecked_ $normal_name>](&self) -> &$crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ> {
+                    match self {
+                        Self::$enum_var_name(resolved_value) => {
+                            resolved_value
+                        }
+                        _ => panic!("Illegal conversion for {}", stringify!($typ))
+                    }
+                }
+
+                pub unsafe fn [<as_mut_unchecked_ $normal_name>](&mut self) -> &mut $crate::topicmodel::dictionary::metadata::containers::ex::MetadataContainerValueGeneric<$typ> {
+                    match self {
+                        Self::$enum_var_name(resolved_value) => {
+                            resolved_value
+                        }
+                        _ => panic!("Illegal conversion for {}", stringify!($typ))
+                    }
+                }
+                )+
+            }
+        }
 
 
     };
@@ -986,9 +985,23 @@ impl AssociatedMetadataImpl {
         self.inner.get_mut(&key)
     }
 
+    pub fn drop_all_fields(&mut self) {
+        self.inner = HashMap::new();
+    }
+
     /// Returns true if there was a non-empty field dropped
     pub fn drop_field(&mut self, key: MetaField) -> bool {
-        self.inner.remove(&key).is_some_and(|value| !value.is_empty())
+        let removed = self.inner.remove(&key).is_some_and(|value| !value.is_empty());
+        if self.inner.is_empty() {
+            if self.inner.capacity() != 0 {
+                self.inner = HashMap::new();
+                assert_eq!(self.inner.capacity(), 0, "Failed to shrink the capacity to 0!");
+            }
+        }
+        if (self.inner.len() as f64 / self.inner.capacity() as f64) < 0.5 {
+            self.inner.shrink_to_fit();
+        }
+        removed
     }
 }
 
@@ -1038,14 +1051,14 @@ impl MetadataEx {
     /// Returns true when some kind of data was dropped.
     pub fn drop_field(&mut self, key: MetaField) -> bool {
         self.general_metadata.drop_field(key) 
-            | self.associated_metadata.iter_mut().map(|m| m.drop_field(key)).any(|x| x)
+            | self.associated_metadata.iter_mut().fold(false, |acc, m| m.drop_field(key) || acc)
     }
 
     /// Drops all field in the metadata.
     /// Returns true when some kind of data was dropped.
     pub fn drop_all_fields(&mut self) -> bool {
         self.general_metadata.drop_all_fields()
-            | self.associated_metadata.iter_mut().map(|m| m.drop_all_fields()).any(|x| x)
+            | self.associated_metadata.iter_mut().fold(false, |acc, m| m.drop_all_fields() || acc)
     }
 
     pub fn get_general_metadata(&self) -> Option<&AssociatedMetadata> {
@@ -1138,6 +1151,32 @@ impl MetadataEx {
         topic_vector_set.then_some(topic_vector)
     }
 
+    pub fn topic_exists_vector(&self) -> [bool; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
+        let mut result = [false; DOMAIN_MODEL_ENTRY_MAX_SIZE];
+
+        if let Some(v) = self.general_metadata.get() {
+            let r = v.registers();
+            if let Some(v) = r {
+                v.inner.iter().for_each(|m| result[m.as_index()] = true);
+            }
+            let d = v.domains();
+            if let Some(v) = d {
+                v.inner.iter().for_each(|m| result[m.as_index()] = true);
+            }
+        }
+        for v in self.associated_metadata.iter().filter_map(|v| v.get()) {
+            let r = v.registers();
+            if let Some(v) = r {
+                v.inner.iter().for_each(|m| result[m.as_index()] = true);
+            }
+            let d = v.domains();
+            if let Some(v) = d {
+                v.inner.iter().for_each(|m| result[m.as_index()] = true);
+            }
+        }
+        result
+    }
+
     pub fn touch_dict(&mut self, dictionary_origin: DictionaryOriginSymbol) {
         self.get_or_create(dictionary_origin);
     }
@@ -1146,6 +1185,12 @@ impl MetadataEx {
         self.associated_metadata.iter().enumerate().filter(|(_, v)| v.get().is_some()).map(|(o, _)| {
             unsafe{DictionaryOriginSymbol::from_u64(o as u64)}
         }).collect()
+    }
+
+    pub fn get_raw_metadata(&self, meta_field: MetaField) -> (Option<&MetadataContainerValue>, Vec<Option<&MetadataContainerValue>>) {
+        let general  =self.general_metadata.get().and_then(|v| v.get()).and_then(|m| m.get(meta_field));
+        let other = self.associated_metadata.iter().map(|v| v.get().and_then(|v| v.get()).and_then(|m| m.get(meta_field))).collect_vec();
+        (general, other)
     }
 }
 
@@ -1438,7 +1483,10 @@ impl AssociatedMetadata {
     }
 
     pub fn drop_all_fields(&mut self) -> bool {
-        self.inner.take().is_some_and(|value| !value.is_empty())
+        self.inner.get_mut().is_some_and(|value| {
+            value.drop_all_fields();
+            true
+        })
     }
 
     pub fn topic_vector(&self) ->  Option<TopicVector> {

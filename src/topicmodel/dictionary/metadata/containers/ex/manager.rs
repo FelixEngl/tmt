@@ -1,18 +1,12 @@
 macro_rules! create_struct {
     ($($name: ident: $ty:ident => $method: ident: $r_typ: ty),* $(,)?) => {
 
-        pub type DomainCounts = ([u64; $crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE], [u64; $crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE]);
-
         #[derive(Clone, serde::Serialize, serde::Deserialize)]
         pub struct MetadataManagerEx {
             meta_a: Vec<$crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx>,
             meta_b: Vec<$crate::topicmodel::dictionary::metadata::containers::ex::MetadataEx>,
-            pub(in crate::topicmodel::dictionary) dictionary_interner: $crate::toolkit::typesafe_interner::DictionaryOriginStringInterner,
-            #[serde(default, skip)]
-            changed: bool,
-            #[serde(default, skip)]
-            domain_count: std::cell::RefCell<Option<DomainCounts>>,
-            $(pub(in crate::topicmodel::dictionary) $name: $ty,
+            pub(crate) dictionary_interner: $crate::toolkit::typesafe_interner::DictionaryOriginStringInterner,
+            $(pub(crate) $name: $ty,
             )*
         }
 
@@ -56,8 +50,6 @@ macro_rules! create_struct {
                     meta_a: Vec::new(),
                     meta_b: Vec::new(),
                     dictionary_interner: $crate::toolkit::typesafe_interner::DictionaryOriginStringInterner::new(),
-                    changed: false,
-                    domain_count: Default::default(),
                     $($name: $ty::new(),
                     )*
                 }
@@ -122,8 +114,6 @@ macro_rules! create_struct {
                     meta_a: self.meta_b,
                     meta_b: self.meta_a,
                     dictionary_interner: self.dictionary_interner,
-                    changed: false,
-                    domain_count: Default::default(),
                     $($name: self.$name,
                     )*
                 }
@@ -142,7 +132,6 @@ macro_rules! create_struct {
                 } else {
                     value.meta_b.get_mut(word_id)
                 }?;
-                self.changed = true;
                 let vocabulary = unsafe {
                     std::mem::transmute::<_, &'static mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut>(vocabulary)
                 } as *mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut;
@@ -178,7 +167,6 @@ macro_rules! create_struct {
                     std::mem::transmute::<_, &'static mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut>(vocabulary)
                 } as *mut dyn $crate::topicmodel::vocabulary::AnonymousVocabularyMut;
 
-                self.changed = true;
                 unsafe{
                     MetadataMutRefEx::new(
                         vocabulary,
@@ -216,8 +204,6 @@ macro_rules! create_struct {
                     meta_a: Default::default(),
                     meta_b: Default::default(),
                     dictionary_interner: self.dictionary_interner.clone(),
-                    changed: false,
-                    domain_count: Default::default(),
                     $($name: self.$name.clone(),
                     )*
                 }

@@ -188,7 +188,7 @@ impl TopicVector {
         Self::ZERO
     }
 
-    pub fn __add__(&self, other: ValidAdd) -> Self {
+    fn __add__(&self, other: ValidAdd) -> Self {
         match other {
             ValidAdd::Entry(value) => self.add(value),
             ValidAdd::Domain(domain, value) => {
@@ -207,19 +207,19 @@ impl TopicVector {
     /// Allows to get the value for a specific topic vector.
     /// Fails with an IndexError iff the index is outside of ht len of this vector.
     ///
-    pub fn __getitem__(&self, index: TopicVectorPyIndex) -> Value {
+    fn __getitem__(&self, index: TopicVectorIndex) -> Value {
         self.get(index)
     }
 
-    pub fn __str__(&self) -> String {
+    fn __str__(&self) -> String {
         self.to_string()
     }
 
-    pub fn __len__(&self) -> usize {
+    fn __len__(&self) -> usize {
         DOMAIN_MODEL_ENTRY_MAX_SIZE
     }
 
-    pub fn to_list(&self) -> Vec<Value> {
+    fn to_list(&self) -> Vec<Value> {
         self.inner.to_vec()
     }
 }

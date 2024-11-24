@@ -8,9 +8,10 @@ use std::path::Path;
 use flate2::bufread::GzDecoder;
 use rayon::iter::{IterBridge, Map};
 use rayon::prelude::{IntoParallelIterator, ParallelBridge, ParallelIterator};
+use strum::ParseError;
 use thiserror::Error;
 use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
-use crate::topicmodel::dictionary::word_infos::{AnyWordInfo, Domain, Language, PartOfSpeech, PartOfSpeechTag};
+use crate::topicmodel::dictionary::word_infos::{AnyWordInfo, Domain, Language, PartOfSpeech, PartOfSpeechTag, Register};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ExtractedWord {
@@ -517,14 +518,31 @@ pub fn convert_entry_to_entries(
     }
     fn parse_topics(word_meta_builder: &mut MetadataCollectionBuilder<String>, topics: Vec<String>) {
         for topic in topics {
-            match topic.parse::<Domain>() {
+            let topic = topic.as_str();
+            // Original: only topic parse, but I hope this code improves the quality of extraction. Even it if costs a little bit more.
+            match topic.parse::<Domain>()
+                .or_else(|_| topic.trim().parse::<Domain>())
+                .or_else(|_| topic.to_lowercase().parse::<Domain>())
+            {
                 Ok(value) => {
                     word_meta_builder.push_domains(value);
+                    continue
                 }
-                Err(_) => {
-                    word_meta_builder.push_unclassified(format!("#topic:{}", topic));
-                }
+                _ => {}
             }
+
+            match topic.parse::<Register>()
+                .or_else(|_| topic.trim().parse::<Register>())
+                .or_else(|_| topic.to_lowercase().parse::<Register>())
+            {
+                Ok(value) => {
+                    word_meta_builder.push_registers(value);
+                    continue
+                }
+                _ => {}
+            }
+
+            word_meta_builder.push_unclassified(format!("#topic:{}", topic));
         }
     }
 

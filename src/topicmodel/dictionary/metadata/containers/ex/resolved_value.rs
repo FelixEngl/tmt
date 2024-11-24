@@ -22,8 +22,8 @@ pub enum ResolvableValue {
     #[strum(to_string = "{0:?}")] PartOfSpeechTag(PartOfSpeechTag),
     #[strum(to_string = "{0:?}")] Region(Region),
     #[strum(to_string = "{0:?}")] GrammaticalNumber(GrammaticalNumber),
-    #[strum(to_string = "{0:?}")] RawId(u64),
-    #[strum(to_string = "{0:?}")] String(String),
+    #[strum(to_string = "{0}")] RawId(u64),
+    #[strum(to_string = "{0}")] String(String),
 }
 
 // macro_rules! impl_try_into {

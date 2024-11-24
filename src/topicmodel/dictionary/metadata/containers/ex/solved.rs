@@ -30,8 +30,8 @@ macro_rules! create_python_getter {
             }
         }
 
-        #[pyo3::pymethods]
         #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+        #[pyo3::pymethods]
         impl LoadedMetadataEx {
             /// Creates some new metadata for a word.
             #[new]

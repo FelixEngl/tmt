@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::str::FromStr;
+use byte_unit::Byte;
 use camino::{Utf8Path, Utf8PathBuf};
 use itertools::Itertools;
 use sealed::sealed;
@@ -313,10 +314,34 @@ impl<D> WriteableDictionary for D where D: BasicDictionary + Serialize {
 impl<D> ReadableDictionary for D where D: BasicDictionary + DeserializeOwned + Sized {
 
     fn from_path(mode: WriteMode, path: impl AsRef<Utf8Path>) -> Result<Self, IoError> {
+        let mut file = File::options().read(true).open(path.as_ref())?;
+
+        const MAX_IN_MEMORY: u64 = match Byte::from_u64_with_unit(
+            500,
+            byte_unit::Unit::MB
+        ) {
+            Some(value) => {
+                value.as_u64()
+            }
+            _ => unreachable!()
+        };
+
+        if mode.compressed() {
+            let file_size = file.metadata().map_or(u64::MAX, |v| v.len());
+            if file_size <= MAX_IN_MEMORY {
+                let mut buffer = Vec::with_capacity(file_size as usize);
+                file.read_to_end(&mut buffer)?;
+                return <Self as ReadableDictionary>::from_reader(
+                    mode,
+                    Cursor::new(buffer)
+                )
+            }
+        }
         <Self as ReadableDictionary>::from_reader(
             mode,
-            File::options().read(true).open(path.as_ref())?
+            file
         )
+
     }
 
 

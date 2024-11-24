@@ -182,6 +182,8 @@ mod test {
     use crate::topicmodel::dictionary::word_infos::*;
     use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 
+
+
     #[test]
     fn can_initialize(){
         let mut d: EfficientDictWithMetaDefault = Default::default();

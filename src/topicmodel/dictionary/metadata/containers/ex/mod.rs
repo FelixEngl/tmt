@@ -7,16 +7,13 @@ mod collector;
 mod field_denom;
 mod resolved_value;
 mod solved_new_arg;
-mod metadata_field_holder;
 mod typedef;
 
+use std::collections::HashMap;
+use std::fmt::{Display};
 pub use metadata::*;
 use reference::*;
 pub use reference_mut::*;
-// pub use solved::*;
-// pub use manager::*;
-// pub use collector::*;
-// pub use field_denom::*;
 pub use resolved_value::*;
 pub use solved_new_arg::*;
 
@@ -24,12 +21,15 @@ use tinyset::Set64;
 use crate::register_python;
 use crate::topicmodel::dictionary::word_infos::*;
 use crate::toolkit::typesafe_interner::*;
-use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DomainModelIndex;
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, TopicVectorIndex, DOMAIN_MODEL_ENTRY_MAX_SIZE};
 use std::ops::Deref;
+use pretty::*;
+use pyo3::{pyclass, pymethods};
 
 register_python! {
     struct LoadedMetadataEx;
     struct MetaField;
+    struct DomainCounts;
 }
 
 
@@ -180,9 +180,118 @@ generate_field_code! {
     },
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+#[derive(Debug, Copy, Clone)]
+pub struct DomainCounts {
+    counts_a: [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE],
+    counts_b: [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE],
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl DomainCounts {
+    fn a(&self) -> HashMap<TopicVectorIndex, u64> {
+        self.counts_a.iter().enumerate().map(|(i, value)| {
+            (TopicVectorIndex::from_index(i).unwrap(), *value)
+        }).collect()
+    }
+
+    fn b(&self) -> HashMap<TopicVectorIndex, u64> {
+        self.counts_b.iter().enumerate().map(|(i, value)| {
+            (TopicVectorIndex::from_index(i).unwrap(), *value)
+        }).collect()
+    }
+
+    fn __len__(&self) -> usize {
+        DOMAIN_MODEL_ENTRY_MAX_SIZE
+    }
+
+    fn __getitem__(&self, index: TopicVectorIndex) -> (u64, u64) {
+        let idx = index.as_index();
+        (self.counts_a[idx], self.counts_b[idx])
+    }
+
+    fn sum(&self) -> (u64, u64) {
+        (self.counts_a.iter().sum(), self.counts_b.iter().sum())
+    }
+
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl<'a, 'b, D, A> pretty::Pretty<'a, D, A> for &'b DomainCounts
+where
+    A: 'a + Clone,
+    D: DocAllocator<'a, A>,
+    D::Doc: Clone,
+{
+    fn pretty(self, alloc: &'a D) -> DocBuilder<'a, D, A> {
+        let (a, b) = self.sum();
+        alloc.text("DomainCounts: ")
+            .append(
+                alloc.hardline().append(
+                    alloc.hardline()
+                        .append(
+                            alloc
+                                .text(format!("a ({a}): "))
+                                .append(alloc.hardline()
+                                    .append(
+                                        alloc.intersperse(
+                                            self.counts_a.iter().enumerate().map(|(id, ct)| {
+                                                alloc.text(format!("{}: {}", TopicVectorIndex::from_index(id).unwrap(), ct))
+                                            }),
+                                            alloc.text(",").append(alloc.hardline())
+                                        ).indent(2)
+                                    ).append(alloc.hardline()).brackets()
+                                )
+                                .indent(2)
+                        )
+                        .append(alloc.hardline())
+                        .append(
+                            alloc
+                                .text(format!("b ({b}): "))
+                                .append(alloc.hardline()
+                                    .append(
+                                        alloc.intersperse(
+                                            self.counts_b.iter().enumerate().map(|(id, ct)| {
+                                                alloc.text(format!("{}: {}", TopicVectorIndex::from_index(id).unwrap(), ct))
+                                            }),
+                                            alloc.text(",").append(alloc.hardline())
+                                        ).indent(2)
+                                    ).append(alloc.hardline()).brackets()
+                                )
+                                .indent(2)
+                        )
+                        .append(alloc.hardline())
+                        .brackets()
+                ).braces()
+            )
+
+    }
+}
+
+impl DomainCounts {
+    pub fn new(counts_a: [u64; 182], counts_b: [u64; 182]) -> Self {
+        Self { counts_a, counts_b }
+    }
+}
+
+impl Display for DomainCounts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        RcDoc::<()>::nil().append(self).render_fmt(80, f)
+    }
+}
+
+
 
 impl MetadataManagerEx {
-    pub fn domain_count(&self) -> DomainCounts {
+
+    /// Returns the domain count. The left size is the exact count over all dictionaries,
+    /// the second one counts the appearance og the domain count in the
+    pub fn domain_count(&self) -> (DomainCounts, DomainCounts) {
         use std::sync::Arc;
         use itertools::Itertools;
         use lockfree_object_pool::LinearObjectPool;
@@ -200,48 +309,53 @@ impl MetadataManagerEx {
 
         unsafe impl Sync for Wrap<'_> {}
 
-        fn sum_up_meta(pool: Arc<LinearObjectPool<[u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]>>, meta: &[MetadataEx]) -> [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
-            meta.iter().map(|v| Wrap(v)).collect_vec().into_par_iter().map(|value| {
-                let mut ct = pool.pull_owned();
+
+        fn sum_up_meta(pool: Arc<LinearObjectPool<[u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]>>, meta: &[MetadataEx]) -> ([u64; DOMAIN_MODEL_ENTRY_MAX_SIZE], [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]) {
+            let (result, result_exist) = meta.iter().map(|v| Wrap(v)).collect_vec().into_par_iter().map(|value| {
+                let mut ct_full = pool.pull_owned();
+                let mut ct_exist = pool.pull_owned();
                 for value in value.iter() {
                     match value {
                         MetadataWithOrigin::General(value)
                         | MetadataWithOrigin::Associated(_, value) => {
                             if let Some(reg) = value.registers() {
                                 for (k, v) in reg.iter() {
-                                    ct[k.as_index()] += v.get() as u64;
+                                    ct_full[k.as_index()] += v.get() as u64;
+                                    ct_exist[k.as_index()] = 1;
                                 }
                             }
                             if let Some(dom) = value.domains() {
                                 for (k, v) in dom.iter() {
-                                    ct[k.as_index()] += v.get() as u64;
+                                    ct_full[k.as_index()] += v.get() as u64;
+                                    ct_exist[k.as_index()] = 1;
                                 }
                             }
                         }
                     }
                 }
-                ct
+                (ct_full, ct_exist)
             }).reduce(
-                || pool.pull_owned(),
-                |mut value, value2| {
+                || (pool.pull_owned(), pool.pull_owned()),
+                |(mut value, mut exist), (value2, exist2)| {
                     value.iter_mut().zip_eq(value2.into_iter()).for_each(|(a, b)| {
                         *a += b;
                     });
-                    value
+                    exist.iter_mut().zip_eq(exist2.into_iter()).for_each(|(a, b)| {
+                        *a += b;
+                    });
+                    (value, exist)
                 }
-            ).clone()
+            );
+            (result.clone(), result_exist.clone())
         }
 
-        if self.changed || self.domain_count.borrow().is_none() {
-            let pool = Arc::new(LinearObjectPool::new(
-                || [0u64; DOMAIN_MODEL_ENTRY_MAX_SIZE],
-                |value| value.fill(0)
-            ));
-            let a = sum_up_meta(pool.clone(), &self.meta_a);
-            let b = sum_up_meta(pool.clone(), &self.meta_b);
-            self.domain_count.replace(Some((a, b)));
-        }
+        let pool = Arc::new(LinearObjectPool::new(
+            || [0u64; DOMAIN_MODEL_ENTRY_MAX_SIZE],
+            |value| value.fill(0)
+        ));
 
-        self.domain_count.borrow().clone().unwrap()
+        let (a, a_exist) = sum_up_meta(pool.clone(), &self.meta_a);
+        let (b, b_exist) = sum_up_meta(pool.clone(), &self.meta_b);
+        (DomainCounts::new(a, b), DomainCounts::new(a_exist, b_exist))
     }
 }

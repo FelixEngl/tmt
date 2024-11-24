@@ -101,244 +101,30 @@ class LoadedMetadataEx:
     It contains general metadata, usually set by users and associated metadata,
     extracted from the original dictionaries.
     """
-    def py_new(self, values:dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]] | dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]] | dict[MetaField, tuple[typing.Optional[ResolvedValueTypeOut | list[ResolvedValueTypeOut]], typing.Optional[dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]] | tuple[typing.Optional[dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]], typing.Optional[dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]]) -> LoadedMetadataEx:
-        r"""
-        Creates some new metadata for a word.
-        """
-        ...
-
+    languages_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    domains_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    registers_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    genders_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    pos_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    pos_tag_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    regions_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    numbers_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    internal_ids_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    inflected_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    abbreviations_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    unaltered_vocabulary_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    look_at_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    ids_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    outgoing_ids_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    original_entry_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    contextual_informations_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    unclassified_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    synonyms_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+    def __new__(cls,values:dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]] | dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]] | dict[MetaField, tuple[typing.Optional[ResolvedValueTypeOut | list[ResolvedValueTypeOut]], typing.Optional[dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]] | tuple[typing.Optional[dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]], typing.Optional[dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]]): ...
     def domain_vector(self) -> TopicVector:
         r"""
         Returns a domain vector. The returned TopicVector consists of the counts of the
         single topics [Domain] and [Register].
-        """
-        ...
-
-    def languages_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def domains_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def registers_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def genders_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def pos_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def pos_tag_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def regions_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def numbers_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def internal_ids_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def inflected_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def abbreviations_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def unaltered_vocabulary_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def look_at_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def ids_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def outgoing_ids_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def original_entry_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def contextual_informations_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def unclassified_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
-        """
-        ...
-
-    def synonyms_py(self) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
-        r"""
-        Get the content of a specific field, the tuple consists of two values:
-        The first is the general information, not bound to any dictionary.
-        
-        The second value contains a dict with metadata from specific dictionaries.
-        
-        Please note: The general metadata is NOT a superset of the dictionary associated
-        metadata. They can differ greatly.
         """
         ...
 
@@ -955,10 +741,10 @@ class PyAlignedArticleProcessor:
 
 
 class PyArticle:
-    py_is_list: bool
-    py_lang: LanguageHint
-    py_categories: typing.Optional[list[int]]
-    py_content: typing.Optional[str]
+    is_list: bool
+    lang: LanguageHint
+    categories: typing.Optional[list[int]]
+    content: typing.Optional[str]
     def __new__(cls,language_hint,content,categories = ...,is_list = ...): ...
     def __str__(self) -> str:
         ...
@@ -1409,7 +1195,7 @@ class PyTokenizerBuilder:
 
 
 class PyTopicModel:
-    py_k: int
+    k: int
     def __new__(cls,topics:typing.Sequence[typing.Sequence[float]], vocabulary:PyVocabulary, used_vocab_frequency:typing.Sequence[int], doc_topic_distributions:typing.Sequence[typing.Sequence[float]], document_lengths:typing.Sequence[int]): ...
     def get_topic(self, topic_id:int) -> typing.Optional[list[float]]:
         ...
