@@ -1,10 +1,11 @@
 use std::borrow::Borrow;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use arcstr::ArcStr;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithVocabulary, FromVoc, MergingDictionary};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithSearch, DictionaryWithVocabulary, FromVoc, MergingDictionary};
 use crate::topicmodel::dictionary::direction::{DirectionTuple, Language, LanguageKind, A, B};
 use crate::topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
 use crate::topicmodel::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference, MetadataReference, MetadataManagerGen};
@@ -16,6 +17,7 @@ use crate::topicmodel::dictionary::metadata::classic::{
 use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTopicModel;
 use crate::topicmodel::dictionary::metadata::ex::{MetadataEx, MetadataManagerEx, MetadataWithOrigin};
 use crate::topicmodel::dictionary::metadata::update::WordIdUpdate;
+use crate::topicmodel::dictionary::search::{DictionarySearcher, SearchIndex};
 
 pub type DictWithMeta<T> = DictionaryWithMeta<T, Vocabulary<T>, MetadataManagerEx>;
 pub type EfficientDictWithMetaDefault = DictWithMeta<ArcStr>;
@@ -23,9 +25,9 @@ pub type EfficientDictWithMetaDefault = DictWithMeta<ArcStr>;
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct DictionaryWithMeta<T, V, C> {
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
-    pub(crate) inner: Dictionary<T, V>,
+    inner: Dictionary<T, V>,
     #[serde(bound(serialize = "C: Serialize", deserialize = "C: Deserialize<'de>"))]
-    pub(crate) metadata: C
+    metadata: C
 }
 
 unsafe impl<T, V, M> Send for DictionaryWithMeta<T, V, M>{}
@@ -48,6 +50,9 @@ impl<T, V> DictionaryWithMeta<T, V, ClassicMetadataManager> {
         &self.metadata.unstemmed_voc
     }
 }
+
+
+
 
 
 
@@ -164,7 +169,7 @@ where
         &'b mut self,
         word_id: usize,
         metadata_ref: M::Reference<'a>,
-        is_exact_same_word: bool,
+        add_only_associated_count: bool,
     ) -> M::MutReference<'b> {
         let mut meta = self.metadata.get_or_create_meta::<L>(
             match L::LANG {
@@ -177,7 +182,7 @@ where
             },
             word_id
         );
-        meta.update_with_reference(metadata_ref, is_exact_same_word);
+        meta.update_with_reference(metadata_ref, add_only_associated_count);
         meta
     }
 
@@ -188,7 +193,7 @@ where
         F2: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool
     {
 
-        let mut new = Self {
+        let mut new_dictionary = Self {
             inner: Dictionary::new_with(
                 self.inner.voc_a.language().cloned(),
                 self.inner.voc_b.language().cloned()
@@ -201,67 +206,83 @@ where
             self.voc_b().len()
         );
 
+        let mut post_update_a = HashSet::new();
+        let mut post_update_b = HashSet::new();
+
+        let mut meta_a_added = vec![false; self.voc_a().len()];
+        let mut meta_b_added = vec![false; self.voc_b().len()];
+
         for DirectionTuple{
-            a: (word_id_a, meta_a),
-            b: (word_id_b, meta_b),
+            a: (original_word_id_a, original_meta_a),
+            b: (original_word_id_b, original_meta_b),
             direction
         } in self.iter_with_meta() {
-            if filter_a(self, word_id_a, meta_a.as_ref()) {
-                if filter_b(self, word_id_b, meta_b.as_ref()) {
-                    let word_a = self.inner.voc_a.get_value_by_id(word_id_a).unwrap();
-                    let word_b = self.inner.voc_b.get_value_by_id(word_id_b).unwrap();
+            if filter_a(self, original_word_id_a, original_meta_a.as_ref()) {
+                if filter_b(self, original_word_id_b, original_meta_b.as_ref()) {
+                    let word_a = self.voc_a().get_value_by_id(original_word_id_a).unwrap();
+                    let word_b = self.voc_b().get_value_by_id(original_word_id_b).unwrap();
+                    let word_a_processed_is_known = new_dictionary.voc_a().contains_value(word_a);
+                    let word_b_processed_is_known = new_dictionary.voc_b().contains_value(word_b);
                     let DirectionTuple{
-                        a: word_a,
-                        b: word_b,
+                        a: id_a_processed,
+                        b: id_b_processed,
                         direction: _
-                    } = new.insert_hash_ref_dir(direction, word_a.clone(), word_b.clone());
-                    if let Some(meta_a) = meta_a {
-                        if let Some(a) = meta_a.collect_all_associated_word_ids() {
-                            for value in a.iter() {
-                                if let Some(value) = self.voc_a().get_value_by_id(value) {
-                                    update.add_id::<A>(
-                                        word_id_a,
-                                        new.inner.voc_a.add_value(value.clone())
-                                    )
+                    } = new_dictionary.insert_value_dir(direction, word_a.clone(), word_b.clone());
+                    update.add_id::<A>(original_word_id_a, id_a_processed);
+                    update.add_id::<B>(original_word_id_b, id_b_processed);
+
+                    if let Some(original_meta_a) = original_meta_a {
+                        if let Some(associated_word_ids) = original_meta_a.collect_all_associated_word_ids() {
+                            for value in associated_word_ids.iter() {
+                                if let Some(word) = self.voc_a().get_value_by_id(value) {
+                                    if let Some(new_id_assoc) = new_dictionary.voc_a().get_id(word) {
+                                        update.add_id::<A>(original_word_id_a, new_id_assoc)
+                                    } else {
+                                        // This is necessary to properly insert the words if they are encountered during the main loop.
+                                        post_update_a.insert((original_word_id_a, word.clone()));
+                                    }
                                 }
                             }
                         }
-                        {
-                            new.insert_meta_for_create_subset::<A>(
-                                word_a,
-                                meta_a,
-                                true
-                            );
+                        if unsafe{!meta_a_added.get_unchecked(original_word_id_a)} {
+                            meta_a_added[original_word_id_a] = true;
+                            new_dictionary.insert_meta_for_create_subset::<A>(id_a_processed, original_meta_a, word_a_processed_is_known);
                         }
                     }
-                    if let Some(meta_b) = meta_b {
-                        if let Some(b) = meta_b.collect_all_associated_word_ids() {
-                            for value in b.iter() {
-                                if let Some(value) = self.voc_b().get_value_by_id(value) {
-                                    update.add_id::<B>(
-                                        word_id_b,
-                                        new.inner.voc_b.add_value(value.clone())
-                                    )
+                    if let Some(original_meta_b) = original_meta_b {
+                        if let Some(associated_word_ids) = original_meta_b.collect_all_associated_word_ids() {
+                            for value in associated_word_ids.iter() {
+                                if let Some(word) = self.voc_b().get_value_by_id(value) {
+                                    if let Some(new_id_assoc) = new_dictionary.voc_b().get_id(word) {
+                                        update.add_id::<B>(original_word_id_b, new_id_assoc)
+                                    } else {
+                                        // This is necessary to properly insert the words if they are encountered during the main loop.
+                                        post_update_b.insert((original_word_id_b, word.clone()));
+                                    }
                                 }
                             }
                         }
 
-                        {
-                            new.insert_meta_for_create_subset::<B>(
-                                word_b,
-                                meta_b,
-                                true
-                            );
+                        if unsafe{!meta_b_added.get_unchecked(original_word_id_b)} {
+                            meta_b_added[original_word_id_b] = true;
+                            new_dictionary.insert_meta_for_create_subset::<B>(id_b_processed, original_meta_b, word_b_processed_is_known);
                         }
                     }
-                    update.add_id::<A>(word_id_a, word_a);
-                    update.add_id::<B>(word_id_b, word_b);
+
                 }
             }
         }
-        new.metadata.update_ids(&update);
-        new.metadata.optimize();
-        new
+
+        for (a, v) in post_update_a {
+            update.add_id::<A>(a, new_dictionary.voc_a_mut().add_value(v));
+        }
+        for (b, v) in post_update_b {
+            update.add_id::<B>(b, new_dictionary.voc_b_mut().add_value(v));
+        }
+
+        new_dictionary.metadata.update_ids(&update);
+        new_dictionary.metadata.optimize();
+        new_dictionary
     }
 }
 
@@ -365,6 +386,19 @@ where
 }
 
 
+impl<T, V, C> DictionaryWithSearch<T, V> for DictionaryWithMeta<T, V, C>
+where
+    V: BasicVocabulary<T>,
+    T: AsRef<str> + Send + Sync,
+    C: MetadataManager
+{
+    fn get_searcher(&self) -> DictionarySearcher<Self, V, T> {
+        let index = self.inner.search_index.get_or_init(SearchIndex::new);
+        DictionarySearcher::new(self, index)
+    }
+}
+
+
 
 impl<T, V, M> DictionaryWithMeta<T, V, M> where T: Eq + Hash, V: MappableVocabulary<T>, M: Clone {
     pub fn map<R, Voc, F>(self, f: F) -> DictionaryWithMeta<R, Voc, M>
@@ -458,6 +492,7 @@ impl<T> From<(T, Option<T>)> for DictionaryWithMetaProcessResult<T> {
     }
 }
 
+
 impl<T, V, M> DictionaryFilterable<T, V>  for DictionaryWithMeta<T, V, M>
 where
     V: VocabularyMut<T> + From<Option<LanguageHint>> + AnonymousVocabulary + AnonymousVocabularyMut,
@@ -475,10 +510,10 @@ where
         Fa: Fn(&'a T) -> Result<Option<Self::ProcessResult<T>>, E>,
         Fb: Fn(&'a T) -> Result<Option<Self::ProcessResult<T>>, E>
     {
-        let mut new = Self {
+        let mut new_dictionary = Self {
             inner: Dictionary::new_with(
-                self.inner.voc_a.language().cloned(),
-                self.inner.voc_b.language().cloned()
+                self.voc_a().language().cloned(),
+                self.voc_b().language().cloned()
             ),
             metadata: self.metadata.copy_keep_vocabulary()
         };
@@ -488,91 +523,130 @@ where
             self.voc_b().len()
         );
 
+        let mut post_update_a = HashSet::new();
+        let mut post_update_b = HashSet::new();
+
+        let mut meta_a_added = vec![false; self.voc_a().len()];
+        let mut meta_b_added = vec![false; self.voc_b().len()];
+
         for DirectionTuple{
-            a: (word_id_a, meta_a),
-            b: (word_id_b, meta_b),
+            a: (original_word_id_a, original_meta_a),
+            b: (original_word_id_b, original_meta_b),
             direction
         } in self.iter_with_meta() {
-            if let Some(
-                DictionaryWithMetaProcessResult{
-                    word: a,
-                    unprocessed: a_unprocessed
+            let DictionaryWithMetaProcessResult{
+                word: word_a_processed,
+                unprocessed: word_a_unprocessed
+            } = match f_a(self.voc_a().get_value_by_id(original_word_id_a).unwrap())? {
+                None => {
+                    continue;
                 }
-            ) = f_a(self.voc_a().get_value_by_id(word_id_a).unwrap())? {
-                if let Some(
-                    DictionaryWithMetaProcessResult {
-                        word: b,
-                        unprocessed: b_unprocessed
-                    }
-                ) = f_b(self.voc_b().get_value_by_id(word_id_b).unwrap())? {
-                    let DirectionTuple{
-                        a: word_a,
-                        b: word_b,
-                        direction: _
-                    } = new.insert_hash_ref_dir(direction, a, b);
-                    if let Some(meta_a) = meta_a {
-                        if let Some(a) = meta_a.collect_all_associated_word_ids() {
-                            for value in a.iter() {
-                                if let Some(value) = self.voc_a().get_value_by_id(value) {
-                                    if let Some(value) = f_a(value)? {
-                                        update.add_id::<A>(
-                                            word_id_a,
-                                            new.inner.voc_a.add_value(value.word.clone())
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        {
-                            let mut r = new.insert_meta_for_create_subset::<A>(word_a, meta_a, false);
-                            if let Some(a_unprocessed) = a_unprocessed {
-                                if let Some(targ) = M::unprocessed_field() {
-                                    match r.insert_value(targ, None, a_unprocessed.as_ref()) {
-                                        Ok(_) => {}
-                                        Err(err) => {
-                                            log::error!("Failed to insert unprocessed word a {} into metadata {:?}", word_a, err);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if let Some(meta_b) = meta_b {
-                        if let Some(b) = meta_b.collect_all_associated_word_ids() {
-                            for value in b.iter() {
-                                if let Some(value) = self.voc_b().get_value_by_id(value) {
-                                    if let Some(value) = f_b(value)? {
-                                        update.add_id::<B>(
-                                            word_id_b,
-                                            new.inner.voc_b.add_value(value.word)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        {
-                            let mut r = new.insert_meta_for_create_subset::<B>(word_b, meta_b, false);
-                            if let Some(b_unprocessed) = b_unprocessed {
-                                if let Some(targ) = M::unprocessed_field() {
-                                    match r.insert_value(targ, None, b_unprocessed.as_ref()) {
-                                        Ok(_) => {}
-                                        Err(err) => {
-                                            log::error!("Failed to insert unprocessed word b {} into metadata {:?}", word_a, err);
-                                        }
-                                    }
+                Some(value) => {
+                    value
+                }
+            };
+
+            let DictionaryWithMetaProcessResult {
+                word: word_b_processed,
+                unprocessed: word_b_unprocessed
+            } = match f_b(self.voc_b().get_value_by_id(original_word_id_b).unwrap())? {
+                None => {
+                    continue;
+                }
+                Some(value) => {
+                    value
+                }
+            };
+
+            let word_a_processed_is_known = new_dictionary.voc_a().contains_value(&word_a_processed);
+            let word_b_processed_is_known = new_dictionary.voc_b().contains_value(&word_b_processed);
+
+            let DirectionTuple{
+                a: id_a_processed,
+                b: id_b_processed,
+                direction: _
+            } = new_dictionary.insert_value_dir(direction, word_a_processed, word_b_processed);
+
+            update.add_id::<A>(original_word_id_a, id_a_processed);
+            update.add_id::<B>(original_word_id_b, id_b_processed);
+
+            // Update meta a
+            if let Some(original_meta_a) = original_meta_a {
+                if let Some(associated_word_ids) = original_meta_a.collect_all_associated_word_ids() {
+                    for value in associated_word_ids.iter() {
+                        if let Some(value) = self.voc_a().get_value_by_id(value) {
+                            if let Some(DictionaryWithMetaProcessResult{word, ..}) = f_a(value)? {
+                                if let Some(new_id_assoc) = new_dictionary.voc_a().get_id(&word) {
+                                    update.add_id::<A>(original_word_id_a, new_id_assoc)
+                                } else {
+                                    // This is necessary to properly insert the words if they are encountered during the main loop.
+                                    post_update_a.insert((original_word_id_a, word));
                                 }
                             }
                         }
                     }
-                    update.add_id::<A>(word_id_a, word_a);
-                    update.add_id::<B>(word_id_b, word_b);
+                }
+                if unsafe{!meta_a_added.get_unchecked(original_word_id_a)} {
+                    meta_a_added[original_word_id_a] = true;
+                    new_dictionary.insert_meta_for_create_subset::<A>(id_a_processed, original_meta_a, word_a_processed_is_known);
                 }
             }
+
+            // Update meta b
+            if let Some(original_meta_b) = original_meta_b {
+                if let Some(associated_word_ids) = original_meta_b.collect_all_associated_word_ids() {
+                    for value in associated_word_ids.iter() {
+                        if let Some(value) = self.voc_b().get_value_by_id(value) {
+                            if let Some(DictionaryWithMetaProcessResult{word, ..}) = f_b(value)? {
+                                if let Some(new_id_assoc) = new_dictionary.voc_b().get_id(&word) {
+                                    update.add_id::<B>(original_word_id_b, new_id_assoc)
+                                } else {
+                                    // This is necessary to properly insert the words if they are encountered during the main loop.
+                                    post_update_b.insert((original_word_id_b, word));
+                                }
+                            }
+                        }
+                    }
+                }
+                if unsafe{!meta_b_added.get_unchecked(original_word_id_b)} {
+                    meta_b_added[original_word_id_b] = true;
+                    new_dictionary.insert_meta_for_create_subset::<B>(id_b_processed, original_meta_b, word_b_processed_is_known);
+                }
+            }
+
+            if let Some(targ) = M::unprocessed_field() {
+                if let Some(a_unprocessed) = word_a_unprocessed {
+                    match new_dictionary.get_or_create_meta_a(id_a_processed).insert_value(targ.clone(), None, a_unprocessed.as_ref()) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            log::error!("Failed to insert unprocessed word a {} into metadata {:?}", id_a_processed, err);
+                        }
+                    }
+                }
+
+                if let Some(b_unprocessed) = word_b_unprocessed {
+                    match new_dictionary.get_or_create_meta_b(id_b_processed).insert_value(targ, None, b_unprocessed.as_ref()) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            log::error!("Failed to insert unprocessed word b {} into metadata {:?}", id_b_processed, err);
+                        }
+                    }
+                }
+            }
+
+
         }
 
-        new.metadata.update_ids(&update);
-        new.metadata.optimize();
-        Ok(new)
+        for (a, v) in post_update_a {
+            update.add_id::<A>(a, new_dictionary.voc_a_mut().add_value(v));
+        }
+        for (b, v) in post_update_b {
+            update.add_id::<B>(b, new_dictionary.voc_b_mut().add_value(v));
+        }
+
+        new_dictionary.metadata.update_ids(&update);
+        new_dictionary.metadata.optimize();
+        Ok(new_dictionary)
     }
 
     fn filter_by_ids<Fa, Fb>(&self, filter_a: Fa, filter_b: Fb) -> Self
@@ -593,11 +667,9 @@ where
         Fa: Fn(&'a T) -> bool,
         Fb: Fn(&'a T) -> bool
     {
-        let voc_a = self.voc_a();
-        let voc_b = self.voc_b();
         self.create_subset_with_filters(
-            |_, a, _| filter_a(voc_a.get_value_by_id(a).unwrap()),
-            |_, b, _| filter_b(voc_b.get_value_by_id(b).unwrap())
+            |slf, a, _| filter_a(slf.voc_a().get_value_by_id(a).unwrap()),
+            |slf, b, _| filter_b(slf.voc_b().get_value_by_id(b).unwrap())
         )
     }
 }
@@ -673,7 +745,7 @@ where
                 a: word_a,
                 b: word_b,
                 direction: _
-            } = self.insert_hash_ref_dir(direction, word_a.clone(), word_b.clone());
+            } = self.insert_value_dir(direction, word_a.clone(), word_b.clone());
             if let Some(meta_a) = meta_a {
                 if let Some(a) = meta_a.collect_all_associated_word_ids() {
                     for value in a.iter() {

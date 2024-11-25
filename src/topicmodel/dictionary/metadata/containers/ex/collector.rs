@@ -367,6 +367,7 @@ macro_rules! create_collector_implementation {
         impl<T: AsRef<str>> MetadataCollection<T> {
             pub fn write_into(self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx) {
                 if let Some(dictionary_name) = self.dictionary_name {
+                    target.add_dictionary(dictionary_name);
                     $(
                     if let Some(content) = self.$name {
                         crate::topicmodel::dictionary::metadata::ex::collector::generate_insert!(
@@ -387,6 +388,7 @@ macro_rules! create_collector_implementation {
         impl<T: AsRef<str> + Clone> MetadataCollection<T> {
             pub fn write_to(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx) {
                 if let Some(ref dictionary_name) = self.dictionary_name {
+                    target.add_dictionary(*dictionary_name);
                     $(
                     if let Some(ref content) = self.$name {
                         crate::topicmodel::dictionary::metadata::ex::collector::generate_insert!(

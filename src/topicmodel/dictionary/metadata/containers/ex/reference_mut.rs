@@ -288,7 +288,7 @@ impl<'a> MetadataMutRefEx<'a> {
 
     pub fn has_dictionary(&self, name: impl AsRef<str>) -> bool {
         let interned = self.meta_container_mut().intern_dictionary_origin(name);
-        self.get_associated_metadata(interned).is_some()
+        self.meta.associated_dictionaries().contains(&interned)
     }
 
     #[inline(always)]

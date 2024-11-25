@@ -56,9 +56,9 @@ where
             if let Some(other) = other {
                 for o in other {
                     if L::LANG.is_a() {
-                        dict.insert_hash_ref::<L>(t.clone(), (*o).clone());
+                        dict.insert_value::<L>(t.clone(), (*o).clone());
                     } else {
-                        dict.insert_hash_ref::<L>((*o).clone(), t.clone());
+                        dict.insert_value::<L>((*o).clone(), t.clone());
                     }
                 }
             }

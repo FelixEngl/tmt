@@ -127,12 +127,12 @@ impl<'a> Iterator for DictIterImpl<'a> {
         match &tuple.direction {
             DirectionKind::AToB => {
                 if self.b_to_a[tuple.b].contains(&tuple.a) {
-                    tuple.direction = self.direction
+                    tuple.direction = DirectionKind::Invariant
                 }
             }
             DirectionKind::BToA => {
                 if self.a_to_b[tuple.a].contains(&tuple.b) {
-                    tuple.direction = self.direction
+                    tuple.direction = DirectionKind::Invariant
                 }
             }
             _ => unreachable!()

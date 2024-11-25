@@ -119,7 +119,7 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
 
     /// Converts to a real tuple
     pub fn to_tuple(self) -> (Ta, Tb, DirectionKind) {
-        return (self.a, self.b, self.direction)
+        (self.a, self.b, self.direction)
     }
 }
 impl<Ta, Tb> DirectionTuple<Ta, Tb> where Ta: Clone, Tb: Clone {

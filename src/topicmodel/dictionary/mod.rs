@@ -253,19 +253,19 @@ impl<T, V> MergingDictionary<T, V> for Dictionary<T, V> where T: Eq + Hash + Clo
             unsafe {
                 match direction {
                     DirectionKind::AToB => {
-                        self.insert_hash_ref::<AToB>(
+                        self.insert_value::<AToB>(
                             other.voc_a().get_value_unchecked(a).clone(),
                             other.voc_b().get_value_unchecked(b).clone(),
                         );
                     }
                     DirectionKind::BToA => {
-                        self.insert_hash_ref::<BToA>(
+                        self.insert_value::<BToA>(
                             other.voc_a().get_value_unchecked(a).clone(),
                             other.voc_b().get_value_unchecked(b).clone(),
                         );
                     }
                     DirectionKind::Invariant => {
-                        self.insert_hash_ref::<Invariant>(
+                        self.insert_value::<Invariant>(
                             other.voc_a().get_value_unchecked(a).clone(),
                             other.voc_b().get_value_unchecked(b).clone(),
                         );
@@ -379,19 +379,19 @@ where
                 if let Some(b) = f_b(self.convert_id_b_to_word(b).unwrap())? {
                     match direction {
                         DirectionKind::AToB => {
-                            new_dict.insert_hash_ref::<AToB>(
+                            new_dict.insert_value::<AToB>(
                                 a,
                                 b
                             );
                         }
                         DirectionKind::BToA => {
-                            new_dict.insert_hash_ref::<BToA>(
+                            new_dict.insert_value::<BToA>(
                                 a,
                                 b
                             );
                         }
                         DirectionKind::Invariant => {
-                            new_dict.insert_hash_ref::<Invariant>(
+                            new_dict.insert_value::<Invariant>(
                                 a,
                                 b
                             );
@@ -412,7 +412,7 @@ where
             match direction {
                 DirectionKind::AToB => {
                     if filter_a(a) {
-                        new_dict.insert_hash_ref::<AToB>(
+                        new_dict.insert_value::<AToB>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
                             self.convert_id_b_to_word(b).unwrap().clone()
                         );
@@ -420,7 +420,7 @@ where
                 }
                 DirectionKind::BToA => {
                     if filter_b(b) {
-                        new_dict.insert_hash_ref::<BToA>(
+                        new_dict.insert_value::<BToA>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
                             self.convert_id_b_to_word(b).unwrap().clone()
                         );
@@ -428,17 +428,17 @@ where
                 }
                 DirectionKind::Invariant => {
                     if filter_a(a) && filter_b(b) {
-                        new_dict.insert_hash_ref::<Invariant>(
+                        new_dict.insert_value::<Invariant>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
                             self.convert_id_b_to_word(b).unwrap().clone()
                         );
                     } else if filter_a(a) {
-                        new_dict.insert_hash_ref::<AToB>(
+                        new_dict.insert_value::<AToB>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
                             self.convert_id_b_to_word(b).unwrap().clone()
                         );
                     } else if filter_b(b) {
-                        new_dict.insert_hash_ref::<BToA>(
+                        new_dict.insert_value::<BToA>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
                             self.convert_id_b_to_word(b).unwrap().clone()
                         );
@@ -458,7 +458,7 @@ where
             match direction {
                 DirectionKind::AToB => {
                     if filter_a(a) {
-                        new_dict.insert_hash_ref::<AToB>(
+                        new_dict.insert_value::<AToB>(
                             a.clone(),
                             b.clone()
                         );
@@ -466,7 +466,7 @@ where
                 }
                 DirectionKind::BToA => {
                     if filter_b(b) {
-                        new_dict.insert_hash_ref::<BToA>(
+                        new_dict.insert_value::<BToA>(
                             a.clone(),
                             b.clone()
                         );
@@ -476,17 +476,17 @@ where
                     let filter_a = filter_a(a);
                     let filter_b = filter_b(b);
                     if filter_a && filter_b {
-                        new_dict.insert_hash_ref::<Invariant>(
+                        new_dict.insert_value::<Invariant>(
                             a.clone(),
                             b.clone()
                         );
                     } else if filter_a {
-                        new_dict.insert_hash_ref::<AToB>(
+                        new_dict.insert_value::<AToB>(
                             a.clone(),
                             b.clone()
                         );
                     } else if filter_b {
-                        new_dict.insert_hash_ref::<BToA>(
+                        new_dict.insert_value::<BToA>(
                             a.clone(),
                             b.clone()
                         );
@@ -600,42 +600,42 @@ mod test {
 
         let mut dict: DictionaryWithMeta<_, _, ClassicMetadataManager> = DictionaryWithMeta::from_voc(voc_a.clone(), voc_b.clone());
         {
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Ebene").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Planum").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Platane").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Maschine").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Bremsberg").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Berg").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Fläche").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Luftfahrzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Fluggerät").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugsystem").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Motorflugzeug").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("flyer").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("airman").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("airfoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Ebene").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Planum").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Platane").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Maschine").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Bremsberg").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Berg").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Fläche").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Luftfahrzeug").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Fluggerät").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("aircraft").unwrap().clone(), voc_b.get_value("Flugsystem").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Motorflugzeug").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("flyer").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("airman").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("airfoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictE");
             drop(meta_a);
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictC");
-            dict.insert_hash_ref::<Invariant>(voc_a.get_value("wing").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("deck").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            dict.insert_value::<Invariant>(voc_a.get_value("wing").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("deck").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("hydrofoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("hydrofoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictC");
@@ -643,7 +643,7 @@ mod test {
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("foil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("foil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
@@ -651,7 +651,7 @@ mod test {
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictB");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_hash_ref::<Invariant>(voc_a.get_value("bearing surface").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("bearing surface").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);

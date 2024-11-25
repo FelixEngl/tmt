@@ -35,8 +35,10 @@ macro_rules! create_python_getter {
         impl LoadedMetadataEx {
             /// Creates some new metadata for a word.
             #[new]
+            #[pyo3(signature = (values, additional_dictionaries = None))]
             fn py_new(
-                values: NewSolvedArgs
+                values: NewSolvedArgs,
+                additional_dictionaries: Option<Vec<String>>
             ) -> pyo3::PyResult<Self> {
                 use $crate::topicmodel::dictionary::metadata::ex::SolvedMetadataField;
 
@@ -47,6 +49,9 @@ macro_rules! create_python_getter {
                 let hs: std::collections::HashMap<MetaField, SolvedMetadataField> = values.into();
             
                 let mut cl = std::collections::HashSet::new();
+                if let Some(additional_dictionaries) = additional_dictionaries {
+                    cl.extend(additional_dictionaries)
+                }
                 for (k, v) in hs.into_iter() {
                     if let Some(ref v) = v.1 {
                         cl.extend(v.keys().cloned());
@@ -234,12 +239,24 @@ macro_rules! create_solved_implementation {
             fn pretty(self, allocator: &'a D) -> pretty::DocBuilder<'a, D, A> {
                 let mut s = allocator.nil();
 
+                s = s.append(
+                    allocator
+                    .text("Dictionaries: ")
+                    .append(allocator.hardline())
+                    .append(allocator.intersperse(
+                        self.dictionaries.iter().map(|value| allocator.text(format!("{:?}", value))),
+                        allocator.text(",").append(allocator.space())
+                    ).indent(2))
+                    .braces()
+                ).append(allocator.text(",")).append(allocator.hardline());
+
                 $(
                 s = s.append((&self.$name).as_pretty(stringify!($name)));
                 )+
 
 
-                allocator.text("Metadata: ").append(
+                allocator.text("Metadata: ")
+                .append(
                     s.append(allocator.hardline()).braces()
                 )
             }
@@ -247,6 +264,10 @@ macro_rules! create_solved_implementation {
 
         impl LoadedMetadataEx {
             pub fn write_into(&self, target: &mut $crate::topicmodel::dictionary::metadata::ex::MetadataMutRefEx, is_same_word: bool) -> Result<(), $crate::topicmodel::dictionary::metadata::ex::WrongResolvedValueError<$crate::topicmodel::dictionary::metadata::ex::ResolvedValue>> {
+                for value in self.dictionaries.iter() {
+                    target.add_dictionary(value.as_str());
+                }
+
                 $(
                     paste::paste! {
                         if let Some(ref $name) = self.$name.0 {

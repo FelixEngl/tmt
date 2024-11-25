@@ -8,7 +8,6 @@ use std::path::Path;
 use flate2::bufread::GzDecoder;
 use rayon::iter::{IterBridge, Map};
 use rayon::prelude::{IntoParallelIterator, ParallelBridge, ParallelIterator};
-use strum::ParseError;
 use thiserror::Error;
 use crate::topicmodel::dictionary::metadata::ex::MetadataCollectionBuilder;
 use crate::topicmodel::dictionary::word_infos::{AnyWordInfo, Domain, Language, PartOfSpeech, PartOfSpeechTag, Register};

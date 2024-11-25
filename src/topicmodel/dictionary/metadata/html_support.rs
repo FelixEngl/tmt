@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Write};
 use camino::{Utf8Path, Utf8PathBuf};
-use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithVocabulary, DictionaryWithMeta, DictionaryWithVocabulary};
+use crate::topicmodel::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithMeta, DictionaryWithVocabulary};
 use crate::topicmodel::dictionary::direction::{Language, A, B};
 use crate::topicmodel::dictionary::metadata::{MetadataManagerGen};
 use crate::topicmodel::vocabulary::{AlphabeticalVocabulary, AnonymousVocabulary, BasicVocabulary};
@@ -150,7 +150,7 @@ where
                                                             class="col-xs-6" {
                                                                 + {
                                                                     let v: &dyn AnonymousVocabulary = voc_origin;
-                                                                    if let Some(cont) = self.metadata.get_meta_ref::<L>(v, id_a) {
+                                                                    if let Some(cont) = self.metadata().get_meta_ref::<L>(v, id_a) {
                                                                         Container::default().with_table(
                                                                             {
                                                                                 let mut subtab = Table::new()

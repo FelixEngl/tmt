@@ -300,27 +300,21 @@ where
     unsafe fn reserve_for_single_value_a(&mut self, word_id: usize);
     unsafe fn reserve_for_single_value_b(&mut self, word_id: usize);
 
-    fn insert_single_hash_ref_a(&mut self, word: T) -> usize {
+    fn insert_single_word_a(&mut self, word: T) -> usize {
         let word_id =  self.voc_a_mut().add_value(word);
         unsafe{self.reserve_for_single_value_a(word_id);}
         word_id
     }
-    fn insert_single_hash_ref_b(&mut self, word: T) -> usize {
+    fn insert_single_word_b(&mut self, word: T) -> usize {
         let word_id =  self.voc_b_mut().add_value(word);
         unsafe{self.reserve_for_single_value_b(word_id);}
         word_id
     }
 
-    fn insert_single_word_a(&mut self, word: T) -> usize {
-        self.insert_single_hash_ref_a(word)
-    }
-    fn insert_single_word_b(&mut self, word: T) -> usize {
-        self.insert_single_hash_ref_b(word)
-    }
-
     fn insert_single_a(&mut self, word: impl Into<T>) -> usize {
         self.insert_single_word_a(word.into())
     }
+
     fn insert_single_b(&mut self, word: impl Into<T>) -> usize {
         self.insert_single_word_b(word.into())
     }
@@ -332,51 +326,38 @@ where
         self.insert_raw_values_b_to_a(word_id_a, word_id_b);
     }
 
-    fn insert_hash_ref_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         let id_a = self.voc_a_mut().add_value(word_a);
         let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_a_to_b(id_a, id_b); }
         DirectionTuple::new(id_a, id_b, DirectionKind::AToB)
     }
-    fn insert_hash_ref_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         let id_a = self.voc_a_mut().add_value(word_a);
         let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_b_to_a(id_a, id_b); }
         DirectionTuple::new(id_a, id_b, DirectionKind::BToA)
     }
-    fn insert_hash_ref_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         let id_a = self.voc_a_mut().add_value(word_a);
         let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_invariant(id_a, id_b); }
         DirectionTuple::new(id_a, id_b, DirectionKind::Invariant)
     }
-    fn insert_hash_ref_dir(&mut self, dir: DirectionKind, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_value_dir(&mut self, dir: DirectionKind, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
         match dir {
             DirectionKind::AToB => {
-                self.insert_hash_ref_a_to_b(word_a, word_b)
+                self.insert_word_a_to_b(word_a, word_b)
             }
             DirectionKind::BToA => {
-                self.insert_hash_ref_b_to_a(word_a, word_b)
+                self.insert_word_b_to_a(word_a, word_b)
             }
             DirectionKind::Invariant => {
-                self.insert_hash_ref_invariant(word_a, word_b)
+                self.insert_word_invariant(word_a, word_b)
             }
         }
     }
 
-
-    fn insert_word_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_a_to_b(word_a, word_b)
-    }
-    fn insert_word_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_b_to_a(word_a, word_b)
-    }
-    fn insert_word_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_invariant(word_a, word_b)
-    }
-    fn insert_value_dir(&mut self, dir: DirectionKind, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_dir(dir, word_a, word_b)
-    }
 
     fn insert_a_to_b(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
         self.insert_word_a_to_b(word_a.into(), word_b.into())
@@ -402,8 +383,6 @@ where
         T: Borrow<Q> + Eq + Hash,
         Q: Hash + Eq,
         V: SearchableVocabulary<T>;
-
-
 }
 
 pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash + Clone, V: VocabularyMut<T> {
@@ -417,12 +396,14 @@ pub trait DictionaryFilterable<T, V>: DictionaryMut<T, V> where T: Eq + Hash + C
         Fa: Fn(&'a T) -> Result<Option<Self::ProcessResult<T>>, E>,
         Fb: Fn(&'a T) -> Result<Option<Self::ProcessResult<T>>, E>;
 
+    /// Keeps every entry where the filter functions return true
     fn filter_by_ids<Fa, Fb>(&self, filter_a: Fa, filter_b: Fb) -> Self
     where
         Self: Sized,
         Fa: Fn(usize) -> bool,
         Fb: Fn(usize) -> bool;
 
+    /// Keeps every entry where the filter functions return true
     fn filter_by_values<'a, Fa, Fb>(&'a self, filter_a: Fa, filter_b: Fb) -> Self
     where
         Self: Sized,
@@ -540,17 +521,17 @@ where
 {
 
     fn push_hash_ref_a_to_b<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
-        let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_a_to_b(a, b);
+        let DirectionTuple { a, b, direction: _ } = self.insert_word_a_to_b(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_hash_ref_b_to_a<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
-        let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_b_to_a(a, b);
+        let DirectionTuple { a, b, direction: _ } = self.insert_word_b_to_a(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_hash_ref_invariant<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
-        let DirectionTuple { a, b, direction: _ } = self.insert_hash_ref_invariant(a, b);
+        let DirectionTuple { a, b, direction: _ } = self.insert_word_invariant(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
@@ -590,7 +571,7 @@ where
         meta: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<usize, (usize, <M as MetadataManager>::UpdateError)> {
         let exists = self.voc_a().contains_value(&word);
-        let word_id = self.insert_single_hash_ref_a(word);
+        let word_id = self.insert_single_word_a(word);
         if let Some(meta_to_add) = meta {
             self.get_or_create_meta_a(word_id)
                 .update_with_resolved(meta_to_add, exists)
@@ -605,7 +586,7 @@ where
         meta: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<usize, (usize, <M as MetadataManager>::UpdateError)> {
         let exists = self.voc_b().contains_value(&word);
-        let word_id = self.insert_single_hash_ref_b(word);
+        let word_id = self.insert_single_word_b(word);
         if let Some(meta_to_add) = meta {
             self.get_or_create_meta_b(word_id)
                 .update_with_resolved(meta_to_add, exists)

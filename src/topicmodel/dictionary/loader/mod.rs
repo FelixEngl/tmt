@@ -598,6 +598,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                     &word,
                     &dir
                 );
+                assert!(meta.has_dictionary(FREE_DICT));
                 meta.add_single_to_languages_default(lang.into());
                 meta.add_single_to_original_entry(FREE_DICT, word);
                 meta.add_all_to_abbreviations(FREE_DICT, abbrevs);
@@ -614,7 +615,6 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                     FREE_DICT,
                     chain!(colloc, contextual)
                 );
-                assert!(meta.has_dictionary(FREE_DICT));
                 word_id
             };
 
@@ -705,7 +705,6 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
             meta.add_all_to_abbreviations(DICT_CC, result.abbrev.iter());
             meta.add_all_to_contextual_informations(DICT_CC, result.contextualisation.iter().map(|v| v.to_string()));
             meta.add_all_to_unclassified(DICT_CC, result.latin_names.iter());
-            assert!(meta.has_dictionary(DICT_CC));
         }
 
         for value in words_a.into_iter() {
@@ -720,7 +719,8 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 &general_pos_tag,
                 &general_domains,
                 &a
-            )
+            );
+            assert!(meta.has_dictionary(DICT_CC));
         }
 
         for value in words_b.into_iter() {
@@ -735,7 +735,8 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
                 &general_pos_tag,
                 &general_domains,
                 &a
-            )
+            );
+            assert!(meta.has_dictionary(DICT_CC));
         }
 
         for (a, b) in id_a.into_iter().cartesian_product(id_b) {
@@ -1113,8 +1114,12 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
     fn process_muse_term(&mut self, (left, right):(String, String), dir: &LanguageDirection) {
-        let (a, _) = self.insert::<A>(MUSE, &left, dir);
-        let (b, _) = self.insert::<B>(MUSE, &right, dir);
+        let (a, meta) = self.insert::<A>(MUSE, &left, dir);
+        assert!(meta.has_dictionary(MUSE));
+        drop(meta);
+        let (b, meta) = self.insert::<B>(MUSE, &right, dir);
+        assert!(meta.has_dictionary(MUSE));
+
         self.insert_translation_by_id(a, b, dir)
     }
 
@@ -1547,12 +1552,12 @@ mod test {
         };
         data.write_to_path(
             WriteMode::binary(true),
-            "./test/dictionary_final3",
+            "./test/dictionary_final4",
         ).unwrap();
 
 
         let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
-            "./test/dictionary_final3.dat.zst"
+            "./test/dictionary_final4.dat.zst"
         ).unwrap();
 
 

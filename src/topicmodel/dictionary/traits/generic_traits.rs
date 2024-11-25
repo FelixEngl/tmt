@@ -233,9 +233,9 @@ where
 
     fn insert_single_ref<L: Language>(&mut self, word: T) -> usize {
         if L::LANG.is_a() {
-            self.insert_single_hash_ref_a(word)
+            self.insert_single_word_a(word)
         } else {
-            self.insert_single_hash_ref_b(word)
+            self.insert_single_word_b(word)
         }
     }
 
@@ -247,16 +247,12 @@ where
         self.insert_single_value::<L>(word.into())
     }
 
-    fn insert_hash_ref<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref_dir(
+    fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+        self.insert_value_dir(
             D::DIRECTION,
             word_a,
             word_b
         )
-    }
-
-    fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
-        self.insert_hash_ref::<D>(word_a, word_b)
     }
 
     fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {

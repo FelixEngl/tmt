@@ -16,7 +16,7 @@ use crate::topicmodel::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut}
 
 
 pub trait MetadataManager: Default + Clone {
-    type FieldName: Debug;
+    type FieldName: Debug + Clone;
     type FieldValue: Debug;
 
     /// A field value that is explicitly bound to a specific field type.
@@ -150,8 +150,6 @@ pub trait MetadataReference<'a, M: MetadataManager>: Clone + Deref<Target: Metad
     fn into_resolved(self) -> <M as MetadataManager>::ResolvedMetadata;
 
     fn collect_all_associated_word_ids(&self) -> Option<Set64<usize>>;
-
-
 }
 
 pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadata> {
@@ -331,6 +329,6 @@ mod test {
             // println!("\n######\n");
         }
 
-        println!("{}", new_d.metadata.unaltered_vocabulary_interner.len());
+        println!("{}", new_d.metadata().unaltered_vocabulary_interner.len());
     }
 }

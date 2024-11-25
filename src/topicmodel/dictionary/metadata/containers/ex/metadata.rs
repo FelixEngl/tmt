@@ -214,8 +214,8 @@ macro_rules! impl_associated_metadata {
                 paste::paste! {
                     /// Get all values of a specific field.
                     pub fn [<all_raw_ $name>]<'a>(&'a self) -> (Option<&'a MetadataContainerValueGeneric<$typ>>, Vec<Option<&'a MetadataContainerValueGeneric<$typ>>>) {
-                         let a = self.general_metadata.get().and_then(|value| value.$name());
-                         let b = self.associated_metadata.iter().map(|value| value.get().and_then(|value| value.$name())).collect();
+                         let a = self.get_general_metadata().and_then(|value| value.$name());
+                         let b = self.associated_metadata().iter().map(|value| value.get().and_then(|value| value.$name())).collect();
                          (a, b)
                     }
                 }
@@ -416,12 +416,12 @@ macro_rules! impl_general_metadata {
                 enum_map::enum_map! {
                     $(
                         MetaField::$enum_var_name => GeneralMetadata::$normal_name(
-                            self.general_metadata.get().and_then(|value| {
+                            self.get_general_metadata().and_then(|value| {
                                 value.$normal_name().map(|value| {
                                     value.counts().into_owned()
                                 })
                             }),
-                            self.associated_metadata.iter().map(|value| {
+                            self.associated_metadata().iter().map(|value| {
                                 value.get().and_then(|value| {
                                     value.$normal_name().map(|value| {
                                         value.counts().into_owned()
@@ -437,12 +437,12 @@ macro_rules! impl_general_metadata {
                 match field {
                     $(
                         MetaField::$enum_var_name => GeneralMetadata::$normal_name(
-                            self.general_metadata.get().and_then(|value| {
+                            self.get_general_metadata().and_then(|value| {
                                 value.$normal_name().map(|value| {
                                     value.counts().into_owned()
                                 })
                             }),
-                            self.associated_metadata.iter().map(|value| {
+                            self.associated_metadata().iter().map(|value| {
                                 value.get().and_then(|value| {
                                     value.$normal_name().map(|value| {
                                         value.counts().into_owned()
@@ -455,21 +455,18 @@ macro_rules! impl_general_metadata {
             }
 
             /// set dict to None for default
-            pub fn single_field_value<S: string_interner::Symbol>(&self, field: MetaField, dict: Option<S>) -> Option<GeneralMetadataEntry> {
+            pub fn single_field_value(&self, field: MetaField, dict: Option<$crate::toolkit::typesafe_interner::DictionaryOriginSymbol>) -> Option<GeneralMetadataEntry> {
                 match field {
                     $(
                         MetaField::$enum_var_name => {
                             if let Some(dict) = dict {
                                 self
-                                .associated_metadata
-                                .get(dict.to_usize())?
-                                .get()?
+                                .get_associated_metadata(dict)?
                                 .$normal_name()
                                 .map(|value| GeneralMetadataEntry::$enum_var_name(value.counts()))
                             } else {
                                 self
-                                .general_metadata
-                                .get()?
+                                .get_general_metadata()?
                                 .$normal_name()
                                 .map(|value| GeneralMetadataEntry::$enum_var_name(value.counts()))
                             }
@@ -1028,14 +1025,16 @@ impl Display for AssociatedMetadataImpl {
 /// The metadata for an entry
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
 pub struct MetadataEx {
-    pub(super) general_metadata: LazyAssociatedMetadata,
-    pub(super) associated_metadata: Vec<LazyAssociatedMetadata>,
+    general_metadata: AssociatedMetadata,
+    associated_dictionaries: Set64<DictionaryOriginSymbol>,
+    associated_metadata: Vec<AssociatedMetadata>,
 }
 
 impl MetadataEx {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            general_metadata: LazyAssociatedMetadata::new(),
+            general_metadata: AssociatedMetadata::new(),
+            associated_dictionaries: Set64::new(),
             associated_metadata: Vec::with_capacity(capacity),
         }
     }
@@ -1043,7 +1042,6 @@ impl MetadataEx {
     /// Returns true if a field is empty.
     pub fn field_is_empty(&self, key: MetaField) -> bool {
         self.general_metadata.get()
-            .and_then(|value| value.get())
             .map_or(true, |value| value.field_is_empty(key))
     }
     
@@ -1061,28 +1059,28 @@ impl MetadataEx {
             | self.associated_metadata.iter_mut().fold(false, |acc, m| m.drop_all_fields() || acc)
     }
 
-    pub fn get_general_metadata(&self) -> Option<&AssociatedMetadata> {
+    pub fn get_general_metadata(&self) -> Option<&AssociatedMetadataImpl> {
         self.general_metadata.get()
     }
 
-    pub fn get_init_general_metadata(&mut self) -> Option<&mut AssociatedMetadata> {
+    pub fn get_init_general_metadata(&mut self) -> Option<&mut AssociatedMetadataImpl> {
         self.general_metadata.get_mut()
     }
 
-    pub fn get_or_init_general_metadata(&self) -> &AssociatedMetadata {
+    pub fn get_or_init_general_metadata(&self) -> &AssociatedMetadataImpl {
         self.general_metadata.get_or_init()
     }
 
-    pub fn get_mut_or_init_general_metadata(&mut self) -> &mut AssociatedMetadata {
+    pub fn get_mut_or_init_general_metadata(&mut self) -> &mut AssociatedMetadataImpl {
         self.general_metadata.get_mut_or_init()
     }
 
-    pub fn get_associated_metadata(&self, origin: DictionaryOriginSymbol) -> Option<&AssociatedMetadata> {
+    pub fn get_associated_metadata(&self, origin: DictionaryOriginSymbol) -> Option<&AssociatedMetadataImpl> {
         use string_interner::Symbol;
         self.associated_metadata.get(origin.to_usize())?.get()
     }
 
-    pub fn get_mut_associated_metadata(&mut self, origin: DictionaryOriginSymbol) -> Option<&mut AssociatedMetadata> {
+    pub fn get_mut_associated_metadata(&mut self, origin: DictionaryOriginSymbol) -> Option<&mut AssociatedMetadataImpl> {
         use string_interner::Symbol;
         self.associated_metadata.get_mut(origin.to_usize())?.get_mut()
     }
@@ -1090,14 +1088,15 @@ impl MetadataEx {
     #[inline(always)]
     fn get_or_create_impl(&mut self, origin: usize) -> &mut AssociatedMetadata {
         if self.associated_metadata.len() <= origin {
-            self.associated_metadata.resize_with(origin + 1, LazyAssociatedMetadata::new);
+            self.associated_metadata.resize_with(origin + 1, AssociatedMetadata::new);
         }
-        unsafe {self.associated_metadata.get_unchecked_mut(origin)}.get_mut_or_init()
+        unsafe {self.associated_metadata.get_unchecked_mut(origin)}
     }
     
     /// Gets or creates the metadata for a dictionary.
     pub fn get_or_create(&mut self, origin: DictionaryOriginSymbol) -> &mut AssociatedMetadata {
         use string_interner::Symbol;
+        self.associated_dictionaries.insert(origin);
         self.get_or_create_impl(origin.to_usize())
     }
 
@@ -1109,14 +1108,19 @@ impl MetadataEx {
         IterMut::new(self)
     }
 
+    pub fn associated_metadata(&self) -> &[AssociatedMetadata] {
+        self.associated_metadata.as_slice()
+    }
+
 
     pub fn update_with(&mut self, other: &MetadataEx, add_only_associated_count: bool) {
+        self.associated_dictionaries.extend(other.associated_dictionaries.iter());
         if let Some(targ) = other.general_metadata.get() {
             self.general_metadata.get_mut_or_init().update_with(targ, add_only_associated_count);
         }
         for (origin, value) in other.associated_metadata.iter().enumerate() {
             if let Some(value) = value.get() {
-                self.get_or_create_impl(origin).update_with(value, add_only_associated_count)
+                self.get_or_create_impl(origin).get_mut_or_init().update_with(value, add_only_associated_count)
             }
         }
     }
@@ -1138,12 +1142,12 @@ impl MetadataEx {
     pub fn topic_vector(&self) ->  Option<TopicVector> {
         let mut topic_vector = TopicVector::new();
         let mut topic_vector_set = false;
-        if let Some(topic) = self.general_metadata.get().and_then(|m| m.get()) {
+        if let Some(topic) = self.general_metadata.get() {
             topic_vector_set = true;
             topic_vector += topic.topic_vector();
         }
         for value in self.associated_metadata.iter() {
-            if let Some(topic) = value.get().and_then(|m| m.get()) {
+            if let Some(topic) = value.get() {
                 topic_vector_set = true;
                 topic_vector += topic.topic_vector();
             }
@@ -1178,18 +1182,16 @@ impl MetadataEx {
     }
 
     pub fn touch_dict(&mut self, dictionary_origin: DictionaryOriginSymbol) {
-        self.get_or_create(dictionary_origin);
+        self.associated_dictionaries.insert(dictionary_origin);
     }
 
-    pub fn get_associated_dictionaries(&self) -> Vec<DictionaryOriginSymbol> {
-        self.associated_metadata.iter().enumerate().filter(|(_, v)| v.get().is_some()).map(|(o, _)| {
-            unsafe{DictionaryOriginSymbol::from_u64(o as u64)}
-        }).collect()
+    pub fn associated_dictionaries(&self) -> &Set64<DictionaryOriginSymbol> {
+        &self.associated_dictionaries
     }
 
     pub fn get_raw_metadata(&self, meta_field: MetaField) -> (Option<&MetadataContainerValue>, Vec<Option<&MetadataContainerValue>>) {
-        let general  =self.general_metadata.get().and_then(|v| v.get()).and_then(|m| m.get(meta_field));
-        let other = self.associated_metadata.iter().map(|v| v.get().and_then(|v| v.get()).and_then(|m| m.get(meta_field))).collect_vec();
+        let general  =self.general_metadata.get().and_then(|m| m.get(meta_field));
+        let other = self.associated_metadata.iter().map(|v| v.get().and_then(|m| m.get(meta_field))).collect_vec();
         (general, other)
     }
 }
@@ -1257,16 +1259,13 @@ impl<'a> Iterator for Iter<'a> {
         }
         if !self.general_metadata {
             self.general_metadata = true;
-            if let Some(meta) = self.src.general_metadata.get() {
-                return Some(MetadataWithOrigin::General(meta))
-            }
+            return Some(MetadataWithOrigin::General(&self.src.general_metadata))
         }
         let idx = self.pos.next()?;
         let targ = self.src.associated_metadata.get(idx)?;
-        let meta = targ.get()?;
         Some(MetadataWithOrigin::Associated(
             DictionaryOriginSymbol::try_from_usize(idx).unwrap(),
-            meta
+            targ
         ))
     }
 }
@@ -1311,100 +1310,6 @@ impl<'a> Iterator for IterMut<'a> {
 }
 
 
-/// A lazy loading structure for associated metadata.
-/// The cell is initialized when the dictionary contains the entry.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Eq)]
-#[repr(transparent)]
-// #[serde(transparent)]
-pub(super) struct LazyAssociatedMetadata {
-    #[serde(with = "crate::toolkit::once_serializer::OnceCellDef")]
-    pub(super) inner: std::cell::OnceCell<AssociatedMetadata>
-}
-
-impl Display for LazyAssociatedMetadata {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(inner) = self.get() {
-            inner.fmt(f)
-        } else {
-            write!(f, "_Unset_")
-        }
-    }
-}
-
-impl Default for LazyAssociatedMetadata {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LazyAssociatedMetadata {
-    pub fn new() -> Self {
-        Self {
-            inner: std::cell::OnceCell::new()
-        }
-    }
-
-    /// returns true when something was dropped.
-    pub fn drop_field(&mut self, field_name: MetaField) -> bool {
-        self.get_mut().is_some_and(|value| value.drop_field(field_name))
-    }
-    
-    /// Returns true if some kind of content was dropped.
-    pub fn drop_all_fields(&mut self) -> bool {
-        self.get_mut().is_some_and(|value| value.drop_all_fields())
-    }
-
-    pub fn into_inner(self) -> std::cell::OnceCell<AssociatedMetadata> {
-        self.inner
-    }
-
-    #[inline(always)]
-    pub fn is_init(&self) -> bool {
-        self.inner.get().is_some()
-    }
-
-    #[inline(always)]
-    pub fn is_not_init(&self) -> bool {
-        self.inner.get().is_none()
-    }
-
-    #[inline(always)]
-    pub fn get_or_init(&self) -> &AssociatedMetadata {
-        self.inner.get_or_init(AssociatedMetadata::default)
-    }
-
-    #[inline(always)]
-    pub fn get_mut_or_init(&mut self) -> &mut AssociatedMetadata {
-        self.inner.get_or_init(AssociatedMetadata::default);
-        unsafe {self.inner.get_mut().unwrap_unchecked()}
-    }
-
-    #[inline(always)]
-    pub fn get(&self) -> Option<&AssociatedMetadata> {
-        self.inner.get()
-    }
-
-    #[inline(always)]
-    pub fn get_mut(&mut self) -> Option<&mut AssociatedMetadata> {
-        self.inner.get_mut()
-    }
-
-    #[inline(always)]
-    pub fn collect_all_known_ids(&self) -> Option<Set64<usize>> {
-        self.get()?.collect_all_known_ids()
-    }
-
-    pub fn topic_vector(&self) ->  Option<TopicVector> {
-        self.get().and_then(|value| value.topic_vector())
-    }
-}
-
-impl PartialEq for LazyAssociatedMetadata {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner.get() == other.inner.get()
-    }
-}
-
 impl Default for MetadataEx {
     fn default() -> Self {
         Self::with_capacity(0)
@@ -1438,6 +1343,13 @@ impl PartialEq for AssociatedMetadata {
 }
 
 impl AssociatedMetadata {
+
+    pub fn new() -> Self {
+        Self {
+            inner: std::cell::OnceCell::new(),
+        }
+    }
+
     #[inline(always)]
     pub(super) fn get_or_init(&self) -> &AssociatedMetadataImpl {
         self.inner.get_or_init(AssociatedMetadataImpl::default)
@@ -1525,9 +1437,9 @@ mod test {
         let mut meta = MetadataEx::default();
         {
            unsafe {
-               add_data(meta.general_metadata.get_mut_or_init().get_mut_or_init());
+               add_data(meta.general_metadata.get_mut_or_init());
                for value in meta.associated_metadata.iter_mut() {
-                   add_data(value.get_mut_or_init().get_mut_or_init());
+                   add_data(value.get_mut_or_init());
                }
            }
         }
