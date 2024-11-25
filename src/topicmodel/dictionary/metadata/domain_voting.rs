@@ -87,7 +87,7 @@ struct DictBridge<'a, T, V> {
 unsafe impl<'a, T, V> Send for DictBridge<'a, T, V>{}
 unsafe impl<'a, T, V> Sync for DictBridge<'a, T, V>{}
 impl<'a, T, V> DictBridge<'a, T, V> where V: SearchableVocabulary<T> + AnonymousVocabulary, T: Eq + Hash {
-    pub fn new<Voc>(dictionary: &'a DictionaryWithMeta<T, V, MetadataManagerEx>, voc: Voc) -> Self
+    pub fn new<Voc>(dictionary: &'a DictionaryWithMeta<T, V, MetadataManagerEx>, voc: &Voc) -> Self
     where
         Voc: SearchableVocabulary<T>
     {
@@ -230,7 +230,7 @@ where
 
 fn vote_for_domain_in_topic<Target, T, V, Voc, P>(
     target: &Target,
-    dictionary: DictBridge<T, V>,
+    dictionary: DictBridge<T, Voc>,
     topic_id: usize,
     topic: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
     topic_context: impl Context + Send + Sync + IterateVariablesContext,
@@ -245,9 +245,9 @@ where V: VotingMethodMarker,
       P: VariableProviderOut,
       T: Hash + Eq + Ord + Clone + Send + Sync,
 {
-    topic.par_iter().enumerate().filter_map(|(original_word_id, probability)| {
-        todo!()
-    });
+    // topic.par_iter().enumerate().filter_map(|(original_word_id, probability)| {
+    //     todo!()
+    // });
     todo!()
 }
 

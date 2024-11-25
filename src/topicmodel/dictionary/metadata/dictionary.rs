@@ -187,10 +187,10 @@ where
     }
 
     /// Keeps every entry where the filter functions return true
-    pub fn create_subset_with_filters<F1, F2>(&self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V, M>
+    pub fn create_subset_with_filters<'a, F1, F2>(&'a self, filter_a: F1, filter_b: F2) -> DictionaryWithMeta<T, V, M>
     where
-        F1: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool,
-        F2: for<'a> Fn(&DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool
+        F1: Fn(&'a DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool,
+        F2: Fn(&'a DictionaryWithMeta<T, V, M>, usize, Option<&M::Reference<'a>>) -> bool
     {
 
         let mut new_dictionary = Self {
@@ -668,8 +668,14 @@ where
         Fb: Fn(&'a T) -> bool
     {
         self.create_subset_with_filters(
-            |slf, a, _| filter_a(slf.voc_a().get_value_by_id(a).unwrap()),
-            |slf, b, _| filter_b(slf.voc_b().get_value_by_id(b).unwrap())
+            |slf, a, _| {
+                let voc = slf.voc_a();
+                filter_a(voc.get_value_by_id(a).unwrap())
+            },
+            |slf, b, _| {
+                let voc = slf.voc_b();
+                filter_b(voc.get_value_by_id(b).unwrap())
+            }
         )
     }
 }
