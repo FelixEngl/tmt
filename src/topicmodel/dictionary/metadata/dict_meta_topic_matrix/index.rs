@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use deranged::RangedUsize;
+use derive_more::From;
 use pyo3::{Bound, FromPyObject, IntoPy, PyAny, PyErr, PyObject, PyResult, Python};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::PyAnyMethods;
@@ -92,7 +93,7 @@ impl DomainModelIndex for RangedUsize<0, DOMAIN_MODEL_ENTRY_MAX_SIZE> {
 
 
 
-#[derive(Copy, Clone, Debug, FromPyObject, Display, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, FromPyObject, Display, PartialEq, Eq, Hash, From)]
 pub enum TopicVectorIndex {
     #[strum(to_string = "{0}")]
     Domain(Domain),

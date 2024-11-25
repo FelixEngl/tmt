@@ -15,13 +15,14 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
 use std::num::NonZeroUsize;
-use evalexpr::{ContextWithMutableVariables, IterateVariablesContext, Value};
-use crate::variable_provider::variable_names::{NUMBER_OF_VOTERS, RANK};
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, IterateVariablesContext, Value};
+use crate::variable_provider::variable_names::{BOOST, NUMBER_OF_VOTERS, RANK};
 pub use crate::voting::buildin::*;
 use crate::voting::display::{DisplayTree, IndentWriter};
 pub use crate::voting::parser::voting_function::VotingFunction;
 pub use crate::voting::errors::VotingExpressionError;
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
+use crate::voting::VotingExpressionError::Eval;
 
 pub(crate) mod parser;
 mod aggregations;
@@ -36,6 +37,42 @@ pub mod py;
 
 /// The result of a voting
 pub type VotingResult<T> = Result<T, VotingExpressionError>;
+
+
+pub trait VotingContext: Context {
+    fn get_vote_value(&self, name: &str) -> VotingResult<&Value> {
+        if name == BOOST {
+            return match self.get_boost() {
+                None => {
+                    Ok(&Value::Empty)
+                }
+                Some(value) => {
+                    Ok(value)
+                }
+            }
+        }
+        if let Some(found) = self.get_value(name) {
+            Ok(found)
+        } else {
+            Err(Eval(EvalexprError::VariableIdentifierNotFound(name.to_string())))
+        }
+    }
+
+    fn get_boost(&self) -> Option<&Value> {
+        match self.get_value(BOOST) {
+            None => {
+                None
+            }
+            Some(Value::String(targ)) => {
+                self.get_value(targ)
+            }
+            Some(value) => Some(value),
+        }
+    }
+}
+
+impl<T: Context> VotingContext for T where T: Context {}
+
 
 /// A voting method context allows to create a variable map to something that can me handled by python.
 pub trait VotingMethodContext : ContextWithMutableVariables {

@@ -917,9 +917,8 @@ mod test  {
         };
 
         println!("Len0 {}", dict.get().len());
-        let (u, v) = dict.get().metadata().domain_count();
-        println!("Vec {}", u);
-        println!("Vec {}", v);
+        let domain_counts = dict.get().metadata().domain_count();
+        println!("Vec {}", domain_counts);
 
         // ca 7 min
 
@@ -936,14 +935,13 @@ mod test  {
         };
 
         println!("Len1 {}", dict.get().len());
-        let (u, v) = dict.get().metadata().domain_count();
-        println!("Vec {}", u);
-        println!("Vec {}", v);
+        let domain_counts = dict.get().metadata().domain_count();
+        println!("Vec {}", domain_counts);
 
         let dict = {
             let dict = dict.get().filter_by_values(
-                |value| value.split_whitespace().take(3).count() < 3,
-                |value| value.split_whitespace().take(3).count() < 3
+                |value| value.split_whitespace().take(3).count() < 3 && value.starts_with(|v| char::is_alphanumeric(v)) && value.ends_with(|v| char::is_alphanumeric(v)),
+                |value| value.split_whitespace().take(3).count() < 3 && value.starts_with(|v| char::is_alphanumeric(v)) && value.ends_with(|v| char::is_alphanumeric(v))
             );
             dict.write_to_path_with_extension(r#"E:\git\tmt\test\dictionary_final4_proc3.dat.zst"#).unwrap();
             dict.generate_html(
@@ -953,9 +951,8 @@ mod test  {
         };
 
         println!("Len2: {}", dict.len());
-        let (u, v) = dict.metadata().domain_count();
-        println!("Vec {}", u);
-        println!("Vec {}", v);
+        let domain_counts = dict.metadata().domain_count();
+        println!("Vec {}", domain_counts);
 
         let dict = {
             let dict = dict.filter_by_values(
@@ -970,8 +967,7 @@ mod test  {
         };
 
         println!("Len4: {}", dict.len());
-        let (u, v) = dict.metadata().domain_count();
-        println!("Vec {}", u);
-        println!("Vec {}", v);
+        let domain_counts = dict.metadata().domain_count();
+        println!("Vec {}", domain_counts);
     }
 }

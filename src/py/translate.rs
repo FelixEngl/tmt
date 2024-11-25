@@ -24,13 +24,80 @@ use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
 use crate::py::voting::{PyVoting, PyVotingRegistry};
 use crate::register_python;
+use crate::topicmodel::dictionary::metadata::domain_voting::{vote_for_domains_with_targets, VoteConfig};
 use crate::translate::{KeepOriginalWord, TranslateConfig};
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
-use crate::voting::py::PyVotingModel;
+use crate::voting::py::{PyExprValue, PyVotingModel};
 use crate::voting::traits::VotingMethodMarker;
+
+/// The config for a translation
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyVoteConfig {
+    /// The epsilon to be used, if it is none it is determined heuristically.
+    pub epsilon: Option<f64>,
+    /// The threshold of the probabilities allowed to be used as voters
+    pub threshold: Option<f64>,
+    /// Limits the number of accepted candidates to N. If not set keep all.
+    pub top_candidate_limit: Option<NonZeroUsize>,
+    /// Declares a field that boosts the score iff present.
+    pub boost_with: Option<Value>
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyVoteConfig {
+    #[new]
+    #[pyo3(signature = (epsilon=None, threshold=None, top_candidate_limit=None, boost_with=None))]
+    pub fn new(epsilon: Option<f64>, threshold: Option<f64>, top_candidate_limit: Option<usize>, boost_with: Option<PyExprValue>) -> Self {
+        Self {
+            epsilon,
+            threshold,
+            top_candidate_limit: top_candidate_limit.and_then(|x| NonZeroUsize::new(x)),
+            boost_with: boost_with.map(|v| v.into())
+        }
+    }
+}
+
+impl PyVoteConfig {
+    fn to_vote_config(self, voting: VotingArg, voting_registry: Option<PyVotingRegistry>) -> PyResult<VoteConfig<Wrapper>> {
+        let voting = match voting {
+            VotingArg::Voting(voting) => {
+                Wrapper::Internal(voting)
+            }
+            VotingArg::Parseable(voting) => {
+                match parse::<nom::error::Error<_>>(ParserInput::new(&voting, voting_registry.unwrap_or_default().registry())) {
+                    Ok((_, value)) => {
+                        Wrapper::Internal(value.into())
+                    }
+                    Err(err) => {
+                        return Err(PyValueError::new_err(err.to_string()))
+                    }
+                }
+            }
+            VotingArg::BuildIn(build_in) => {
+                Wrapper::Internal(build_in.into())
+            }
+            VotingArg::PyCallable(def) => {
+                Wrapper::External(def)
+            }
+        };
+
+        Ok(
+            VoteConfig::new(
+                voting,
+                self.epsilon,
+                self.threshold,
+                self.top_candidate_limit,
+                self.boost_with,
+            )
+        )
+    }
+}
 
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
@@ -65,27 +132,6 @@ impl PyTranslationConfig {
         })
     }
 }
-
-#[derive(Clone, Debug, From)]
-enum Wrapper<'a> {
-    External(PyVotingModel<'a>),
-    Internal(PyVoting)
-}
-
-impl VotingMethod for Wrapper<'_> {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
-        match self {
-            Wrapper::External(value) => {
-                value.execute(global_context, voters)
-            }
-            Wrapper::Internal(value) => {
-                value.execute(global_context, voters)
-            }
-        }
-    }
-}
-
-impl VotingMethodMarker for Wrapper<'_> {}
 
 impl PyTranslationConfig {
     fn to_translation_config(self, voting: VotingArg, voting_registry: Option<PyVotingRegistry>) -> PyResult<TranslateConfig<Wrapper>> {
@@ -123,6 +169,29 @@ impl PyTranslationConfig {
     }
 }
 
+#[derive(Clone, Debug, From)]
+enum Wrapper<'a> {
+    External(PyVotingModel<'a>),
+    Internal(PyVoting)
+}
+
+impl VotingMethod for Wrapper<'_> {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+        match self {
+            Wrapper::External(value) => {
+                value.execute(global_context, voters)
+            }
+            Wrapper::Internal(value) => {
+                value.execute(global_context, voters)
+            }
+        }
+    }
+}
+
+impl VotingMethodMarker for Wrapper<'_> {}
+
+
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
@@ -138,6 +207,31 @@ pub fn translate_topic_model<'a>(
     let cfg =config.to_translation_config(voting, voting_registry)?;
     let read = dictionary.get();
     match translate(topic_model, read.deref(), &cfg, provider) {
+        Ok(result) => {
+            Ok(result)
+        }
+        Err(err) => {
+            Err(PyValueError::new_err(err.to_string()))
+        }
+    }
+}
+
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
+pub fn vote_for_domains<'a>(
+    topic_model: &PyTopicModel,
+    dictionary: &PyDictionary,
+    // VotingArg<'a>
+    voting: VotingArg<'a>,
+    config: PyVoteConfig,
+    provider: Option<&PyVariableProvider>,
+    voting_registry: Option<PyVotingRegistry>
+) -> PyResult<Vec<Vec<f64>>> {
+    let cfg = config.to_vote_config(voting, voting_registry)?;
+    let read = dictionary.get();
+    match vote_for_domains_with_targets(topic_model, read.deref(), &cfg, provider) {
         Ok(result) => {
             Ok(result)
         }

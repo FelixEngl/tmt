@@ -156,7 +156,14 @@ where
                                                                                 let mut subtab = Table::new()
                                                                                     .with_attributes([("class", "table table-bordered")])
                                                                                     .with_header_row(["MetaField", "Origin", "Data"]);
-                                                                                let mut loaded = LoadedMetadataEx::from(cont).as_dict().into_iter().collect_vec();
+                                                                                let solved = LoadedMetadataEx::from(cont);
+                                                                                subtab.add_custom_body_row(
+                                                                                    TableRow::new()
+                                                                                        .with_cell(TableCell::default().with_raw("Dictionaries"))
+                                                                                        .with_cell(TableCell::default().with_raw(""))
+                                                                                        .with_cell(TableCell::default().with_raw(format!("\"{}\"", solved.associated_dictionaries().iter().sorted().into_iter().join("\", \""))))
+                                                                                );
+                                                                                let mut loaded = solved.as_dict().into_iter().collect_vec();
                                                                                 loaded.sort_by_key(|value| value.0);
                                                                                 for (field, SolvedMetadataField(general, dict)) in loaded {
                                                                                     if let Some(general) = general  {

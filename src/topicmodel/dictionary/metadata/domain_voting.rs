@@ -1,23 +1,23 @@
 use std::error::Error;
 use std::hash::Hash;
-use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use evalexpr::{context_map, Context, EmptyContextWithBuiltinFunctions, IterateVariablesContext};
+use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, IterateVariablesContext, Value};
 use itertools::Itertools;
 use rayon::prelude::*;
 use thiserror::Error;
-use crate::toolkit::evalexpr::{CombineableContext, ContextExtender};
-use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryWithMeta, DictionaryWithVocabulary};
-use crate::topicmodel::dictionary::metadata::ex::{DomainCounts, MetadataManagerEx};
+use crate::toolkit::evalexpr::{CombineableContext, ContextExtender, SimpleCombineableContext};
+use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithMeta, DictionaryWithVocabulary};
+use crate::topicmodel::dictionary::metadata::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE;
+use crate::topicmodel::dictionary::metadata::ex::{MetadataManagerEx};
 use crate::topicmodel::dictionary::metadata::MetadataManager;
 use crate::topicmodel::language_hint::LanguageHint;
 use crate::topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
-use crate::translate::{TopicModelLikeMatrix, TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
 use crate::variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProviderError, VariableProviderOut};
 use crate::variable_provider::variable_names::*;
 use crate::voting::traits::VotingMethodMarker;
 pub use crate::translate::*;
+use crate::voting::VotingExpressionError;
 
 /// The config for a translation
 #[derive(Debug)]
@@ -30,12 +30,14 @@ pub struct VoteConfig<V: VotingMethodMarker> {
     pub threshold: Option<f64>,
     /// Limits the number of accepted candidates to N. If not set keep all.
     pub top_candidate_limit: Option<NonZeroUsize>,
+    /// Declares a field that boosts the score iff present.
+    pub boost_with: Option<Value>
 }
 
 impl<V> VoteConfig<V>
 where V: VotingMethodMarker {
-    pub fn new(voting: V, epsilon: Option<f64>, threshold: Option<f64>, top_candidate_limit: Option<NonZeroUsize>) -> Self {
-        Self { epsilon, voting, threshold, top_candidate_limit }
+    pub fn new(voting: V, epsilon: Option<f64>, threshold: Option<f64>, top_candidate_limit: Option<NonZeroUsize>, boost_with: Option<Value>) -> Self {
+        Self { epsilon, voting, threshold, top_candidate_limit, boost_with }
     }
 }
 
@@ -46,7 +48,8 @@ where V: VotingMethodMarker + Clone {
             voting: self.voting.clone(),
             epsilon: self.epsilon,
             threshold: self.threshold,
-            top_candidate_limit: self.top_candidate_limit
+            top_candidate_limit: self.top_candidate_limit,
+            boost_with: self.boost_with.clone()
         }
     }
 }
@@ -66,7 +69,9 @@ pub enum VoteError<'a> {
     #[error(transparent)]
     WithOrigin(#[from] VoteErrorWithOrigin),
     #[error(transparent)]
-    VariableProvider(#[from] VariableProviderError)
+    VariableProvider(#[from] VariableProviderError),
+    #[error(transparent)]
+    VotingExpression(#[from] VotingExpressionError)
 }
 
 #[derive(Debug, Error)]
@@ -106,7 +111,9 @@ impl<'a, T, V> DictBridge<'a, T, V> where V: SearchableVocabulary<T> + Anonymous
             voc_to_dict: voc_to_dict.into(),
         }
     }
+}
 
+impl<'a, T, V> DictBridge<'a, T, V> where V: BasicVocabulary<T> + AnonymousVocabulary {
     pub fn get_meta_for_voc_id(&self, voc_id: usize) -> Option<<MetadataManagerEx as MetadataManager>::Reference<'a>> {
         unsafe{self.voc_to_dict.get_unchecked(voc_id)}.as_ref().and_then(|value| {
             self.dictionary.get_meta_for_a(*value)
@@ -114,12 +121,12 @@ impl<'a, T, V> DictBridge<'a, T, V> where V: SearchableVocabulary<T> + Anonymous
     }
 }
 
-pub fn vote_for_domains<'a, Target, T, V, Voc, P>(
+pub fn vote_for_domains_with_targets<'a, Target, T, V, Voc, P>(
     target: &'a Target,
     dictionary: &'a DictionaryWithMeta<T, Voc, MetadataManagerEx>,
     translate_config: &VoteConfig<V>,
     provider: Option<&P>
-) -> Result<(), VoteError<'a>>
+) -> Result<Vec<Vec<f64>>, VoteError<'a>>
 where
     T: Hash + Eq + Ord + Clone + Send + Sync + 'a,
     V: VotingMethodMarker,
@@ -141,11 +148,6 @@ where
             }
         }
     }
-
-    // let dictionary_new = dictionary.filter_by_values(
-    //     |a| target.vocabulary().contains_value(a),
-    //     |_| true,
-    // );
 
     let bridge = DictBridge::new(
         dictionary,
@@ -173,7 +175,15 @@ where
         EPSILON => epsilon,
         VOCABULARY_SIZE_A => bridge.dictionary.voc_a().len() as i64,
         VOCABULARY_SIZE_B => bridge.dictionary.voc_b().len() as i64,
+        COUNT_OF_VOTERS => target.vocabulary().len() as i64,
     }.unwrap();
+
+    if let Some(ref boost) = translate_config.boost_with {
+        topic_context.set_value(
+            BOOST.to_string(),
+            boost.clone()
+        ).unwrap();
+    }
 
     if let Some(ref provider) = provider {
         provider.provide_global(&mut topic_context)?;
@@ -182,8 +192,15 @@ where
     let topic_context =
         topic_context.to_static_with(EmptyContextWithBuiltinFunctions);
 
-    let (domain_vectors_sum, domain_vectors_appearance) = bridge.dictionary.metadata().domain_count();
+    let domain_counts = bridge.dictionary.metadata().domain_count();
 
+
+    let norm_value = domain_counts.ref_a().sum() as f64;
+    let candidate_ids_context: Vec<_> = (0..DOMAIN_MODEL_ENTRY_MAX_SIZE).into_iter().map(|candidate_id| {
+        context_map! {
+            CANDIDATE_ID => candidate_id as i64
+        }
+    }).collect::<Result<Vec<_>, _>>().unwrap().into();
 
     let result = target
         .matrix()
@@ -199,60 +216,107 @@ where
                 TOPIC_ID => topic_id as i64
             }.unwrap();
             meta.extend_context(&mut topic_context_2);
+
             if let Some(provider) = provider.as_ref() {
                 match provider.provide_for_topic(topic_id, &mut topic_context_2) {
                     Ok(_) => {
-                        Ok(topic_context_2.to_static_with(topic_context.clone()))
+                        Ok(topic_context_2.to_owning_with(&topic_context))
                     }
                     Err(err) => {
                         Err(VoteError::VariableProvider(err))
                     }
                 }
             } else {
-               Ok(topic_context_2.to_static_with(topic_context.clone()))
+               Ok(topic_context_2.to_owning_with(&topic_context))
             }.and_then(|context| {
-                vote_for_domain_in_topic(
-                    target,
-                    bridge.clone(),
-                    topic_id,
-                    topic,
-                    context,
-                    translate_config,
-                    provider.as_ref(),
-                    &domain_vectors_sum,
-                    &domain_vectors_appearance,
-                ).map_err(VoteError::from)
+
+                let mut candidates_to_voters: [_; DOMAIN_MODEL_ENTRY_MAX_SIZE] = std::array::from_fn(|_| Vec::with_capacity(topic.len()));
+                for (original_word_id, _) in topic.iter().enumerate() {
+                    if let Some(value) = bridge.get_meta_for_voc_id(original_word_id) {
+                        let domain_count = value.domain_count();
+                        for (i, value) in domain_count.iter().enumerate() {
+                            candidates_to_voters[i].push((*value) as f64 / norm_value);
+                        }
+                    }
+                }
+                candidates_to_voters.par_iter().enumerate().map(|(candidate_id, voters)| {
+                    vote_for_domain_in_topic(
+                        target,
+                        topic_id,
+                        topic,
+                        voters,
+                        context.combine_with(unsafe{candidate_ids_context.get_unchecked(candidate_id)}),
+                        translate_config,
+                        provider.as_ref(),
+                    ).map_err(VoteError::from)
+                }).collect::<Result<Vec<_>, _>>()
             })
         }).collect::<Result<Vec<_>, _>>()?;
 
-    todo!()
+    Ok(result)
 }
 
-fn vote_for_domain_in_topic<Target, T, V, Voc, P>(
-    target: &Target,
-    dictionary: DictBridge<T, Voc>,
+fn vote_for_domain_in_topic<'a, Target, T, V, Voc, P>(
+    target: &'a Target,
     topic_id: usize,
-    topic: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
+    voters: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
+    candidate_scores: &(impl TopicLike + Send + Sync),
     topic_context: impl Context + Send + Sync + IterateVariablesContext,
     config: &VoteConfig<V>,
     provider: Option<&P>,
-    domain_vec_sum: &DomainCounts,
-    domain_vec_count: &DomainCounts
-) -> Result<(), VoteErrorWithOrigin>
+) -> Result<f64, VoteError<'a>>
 where V: VotingMethodMarker,
-      Voc: SearchableVocabulary<T> ,
+      Voc: SearchableVocabulary<T> + AnonymousVocabulary ,
       Target: TranslatableTopicMatrix<T, Voc>,
       P: VariableProviderOut,
       T: Hash + Eq + Ord + Clone + Send + Sync,
 {
-    // topic.par_iter().enumerate().filter_map(|(original_word_id, probability)| {
-    //     todo!()
-    // });
-    todo!()
-}
+    let mapped = (0..voters.len())
+        .into_iter()
+        .filter_map(|voter_id_a_retrans| {
+            target.get_voter_meta(topic_id, voter_id_a_retrans)
+        });
+    let mapped = if let Some(threshold) = config.threshold {
+        mapped.filter(|value| value.score() >= threshold).collect_vec()
+    } else {
+        mapped.collect_vec()
+    };
 
-fn vote_for_domain_single_word(
 
-) {
-
+    let mut voters = mapped.iter().zip_eq(candidate_scores.iter()).map(|(voter_a, domain_score_norm)|{
+        let mut context_voter_a = context_map! {
+            SCORE_CANDIDATE => voter_a.score(),
+            SCORE_DOMAIN => *domain_score_norm,
+            SCORE => voter_a.score(),
+            VOTER_ID => voter_a.voter_id() as i64,
+            RECIPROCAL_RANK => 1./ voter_a.importance() as f64,
+            REAL_RECIPROCAL_RANK => 1./ voter_a.rank() as f64,
+            RANK => voter_a.rank() as i64,
+            IMPORTANCE => voter_a.importance() as i64,
+        }.unwrap();
+        voter_a.extend_context(&mut context_voter_a);
+        if let Some(provider) = provider {
+            match provider.provide_for_word_a(voter_a.voter_id(), &mut context_voter_a) {
+                Ok(_) => {
+                    match provider.provide_for_word_in_topic_a(topic_id, voter_a.voter_id(), &mut context_voter_a) {
+                        Ok(_) => {
+                            Ok(context_voter_a.to_owning_with(&topic_context))
+                        }
+                        Err(err) => {Err(err)}
+                    }
+                }
+                Err(err) => {
+                    Err(err)
+                }
+            }
+        } else {
+            Ok(context_voter_a.to_owning_with(&topic_context))
+        }
+    }).collect::<Result<Vec<_>, _>>()?;
+    drop(mapped);
+    let mut context = topic_context.as_empty_mutable();
+    Ok(config.voting.execute_to_f64(
+        &mut context,
+        voters.as_mut_slice()
+    )?)
 }

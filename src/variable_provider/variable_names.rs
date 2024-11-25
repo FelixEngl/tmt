@@ -181,6 +181,10 @@ declare_variable_names! {
     doc = "The word id of a candidate."
     CANDIDATE_ID: "candidate_id",
     doc = "The topic id."
-    TOPIC_ID: "topic_id"
+    TOPIC_ID: "topic_id",
+    doc = "The score of the domain for this voter in this topic."
+    SCORE_DOMAIN: "domain_score",
+    doc = "A boost variable that is applied when set. Can be a value or an other field name."
+    BOOST: "boost"
 }
 

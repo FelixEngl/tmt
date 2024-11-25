@@ -948,6 +948,23 @@ impl AssociatedMetadataImpl {
         new
     }
 
+    pub fn domain_count(&self) -> DomainCount {
+        let mut domain = DomainCount::empty();
+        if let Some(domains) = self.inner.get(&MetaField::Domains) {
+            let domains = unsafe{domains.as_ref_unchecked_domains()};
+            for (idx, value) in domains.iter_counts() {
+                *domain.get_mut(idx) += value.get() as u64;
+            }
+        }
+        if let Some(registers) = self.inner.get(&MetaField::Registers) {
+            let registers = unsafe{registers.as_ref_unchecked_registers()};
+            for (idx, value) in registers.iter_counts() {
+                *domain.get_mut(idx) += value.get() as u64;
+            }
+        }
+        domain
+    }
+
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
             || self.inner.values().all(|value| value.is_empty())
@@ -1194,6 +1211,25 @@ impl MetadataEx {
         let other = self.associated_metadata.iter().map(|v| v.get().and_then(|m| m.get(meta_field))).collect_vec();
         (general, other)
     }
+
+    pub fn domain_count(&self) -> DomainCount {
+        let mut domain = DomainCount::empty();
+        for value in self.iter() {
+            if let Some(domains) = value.meta().get().and_then(|v| v.get(MetaField::Domains)) {
+                let domains = unsafe{domains.as_ref_unchecked_domains()};
+                for (idx, value) in domains.iter_counts() {
+                    *domain.get_mut(idx) += value.get() as u64;
+                }
+            }
+            if let Some(registers) = value.meta().get().and_then(|v| v.get(MetaField::Registers)) {
+                let registers = unsafe{registers.as_ref_unchecked_registers()};
+                for (idx, value) in registers.iter_counts() {
+                    *domain.get_mut(idx) += value.get() as u64;
+                }
+            }
+        }
+        domain
+    }
 }
 
 impl Display for MetadataEx {
@@ -1233,6 +1269,9 @@ impl<T> MetadataWithOrigin<T> where T: Copy {
         }
     }
 }
+
+
+
 
 
 /// An iterator for MetadataEx
@@ -1403,6 +1442,10 @@ impl AssociatedMetadata {
 
     pub fn topic_vector(&self) ->  Option<TopicVector> {
         self.get().map(|value| value.topic_vector())
+    }
+
+    pub fn domain_count(&self) -> Option<DomainCount> {
+        self.get().map(|value| value.domain_count())
     }
 }
 

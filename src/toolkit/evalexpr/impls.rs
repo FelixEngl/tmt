@@ -16,7 +16,7 @@
 
 use std::iter::{Chain};
 use std::sync::Arc;
-use evalexpr::{Context, ContextWithMutableFunctions, ContextWithMutableVariables, EvalexprError, EvalexprResult, Function, IterateVariablesContext, Value};
+use evalexpr::{Context, ContextWithMutableFunctions, ContextWithMutableVariables, EvalexprError, EvalexprResult, Function, HashMapContext, IterateVariablesContext, Value};
 use evalexpr::EvalexprError::FunctionIdentifierNotFound;
 
 
@@ -116,16 +116,27 @@ impl<A, B> IterateVariablesContext for StaticContext<A, B> where A: IterateVaria
     }
 }
 
+pub trait SimpleCombineableContext {
+    fn as_empty_mutable<'a>(self: &'a Self) -> OwningContext<'a, HashMapContext, Self>;
+}
+
+impl<A> SimpleCombineableContext for A where A: Context {
+    fn as_empty_mutable<'a>(self: &'a Self) -> OwningContext<'a, HashMapContext, Self> {
+        HashMapContext::new().to_owning_with(self)
+    }
+}
 
 
 pub trait CombineableContext<B> where B: Context {
-    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<Self, B>;
-    fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<Self, B>;
+    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<'a, Self, B>;
+    fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<'a, Self, B>;
     fn to_static_with(self, other: B) -> StaticContext<Self, B>;
+    fn to_owning_with<'a>(self, other: &'a B) -> OwningContext<'a, Self, B> where Self: Sized;
 }
 
+
 impl<A, B> CombineableContext<B> for A where A: Context, B: Context {
-    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<Self, B> {
+    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<'a, Self, B> {
         CombinedContextWrapper::new(self, other)
     }
 
@@ -137,7 +148,102 @@ impl<A, B> CombineableContext<B> for A where A: Context, B: Context {
     fn to_static_with(self, other: B) -> StaticContext<Self, B> {
         StaticContext::new(self, other)
     }
+
+    fn to_owning_with<'a>(self, other: &'a B) -> OwningContext<'a, Self, B> where Self: Sized {
+        OwningContext::new(self, other)
+    }
+
+
 }
+
+
+/// Combines a global and a local context in a meaningful way.
+/// Owns the local context
+#[derive(Debug)]
+pub struct OwningContext<'a, A: Sized, B: ?Sized> {
+    local_context: A,
+    global_context: &'a B
+}
+
+impl<'a, A, B> OwningContext<'a, A, B> {
+    #[inline(always)]
+    pub fn new(local_context: A, global_context: &'a B) -> Self {
+        Self { local_context, global_context }
+    }
+}
+
+impl<'a, A, B> Context for OwningContext<'a, A, B> where A: Context, B: Context {
+    fn get_value(&self, identifier: &str) -> Option<&Value> {
+        match self.local_context.get_value(identifier) {
+            None => {
+                self.global_context.get_value(identifier)
+            }
+            Some(value) => {
+                Some(value)
+            }
+        }
+    }
+
+    fn call_function(&self, identifier: &str, argument: &Value) -> EvalexprResult<Value> {
+        match self.local_context.call_function(identifier, argument) {
+            Ok(value) => {
+                Ok(value)
+            }
+            Err(EvalexprError::FunctionIdentifierNotFound(_)) => {
+                self.global_context.call_function(identifier, argument)
+            }
+            Err(EvalexprError::WrongFunctionArgumentAmount {..}) => {
+                self.global_context.call_function(identifier, argument)
+            }
+            other => other
+        }
+    }
+
+    fn are_builtin_functions_disabled(&self) -> bool {
+        self.local_context.are_builtin_functions_disabled()
+    }
+
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<()> {
+        self.local_context.set_builtin_functions_disabled(disabled)
+    }
+}
+
+impl<'a, A, B> ContextWithMutableVariables for OwningContext<'a, A, B> where A: ContextWithMutableVariables, B: Context  {
+    fn set_value(&mut self, identifier: String, value: Value) -> EvalexprResult<()> {
+        self.local_context.set_value(identifier, value)
+    }
+}
+
+impl<'a, A, B> ContextWithMutableFunctions for OwningContext<'a, A, B> where A: ContextWithMutableFunctions, B: Context  {
+    fn set_function(&mut self, identifier: String, function: Function) -> EvalexprResult<()> {
+        self.local_context.set_function(identifier, function)
+    }
+}
+
+impl<'a, A, B> IterateVariablesContext for OwningContext<'a, A, B> where A: IterateVariablesContext, B: IterateVariablesContext {
+    type VariableIterator<'b> = Chain<
+        <A as IterateVariablesContext>::VariableIterator<'b>,
+        <B as IterateVariablesContext>::VariableIterator<'b>
+    > where Self: 'b;
+    type VariableNameIterator<'b> = Chain<
+        <A as IterateVariablesContext>::VariableNameIterator<'b>,
+        <B as IterateVariablesContext>::VariableNameIterator<'b>
+    > where Self: 'b;
+
+    fn iter_variables(&self) -> Self::VariableIterator<'_> {
+        self.local_context.iter_variables().chain(
+            self.global_context.iter_variables()
+        )
+    }
+
+    fn iter_variable_names(&self) -> Self::VariableNameIterator<'_> {
+        self.local_context.iter_variable_names().chain(
+            self.global_context.iter_variable_names()
+        )
+    }
+}
+
+
 
 
 

@@ -14,12 +14,12 @@
 
 use std::fmt::Write;
 use std::num::NonZeroUsize;
-use evalexpr::{Context, EvalexprError, EvalexprResult, Value};
+use evalexpr::{Context, Value};
 use itertools::Itertools;
 use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
 use crate::variable_provider::variable_names::{EPSILON, NUMBER_OF_VOTERS, RECIPROCAL_RANK, SCORE, SCORE_CANDIDATE};
-use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult, VotingWithLimit};
+use crate::voting::{VotingContext, VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::{Aggregation, AggregationError};
 use crate::voting::aggregations::AggregationKind::{AvgOf, GAvgOf, SumOf};
 use crate::voting::display::{DisplayTree, IndentWriter};
@@ -122,70 +122,46 @@ impl BuildInVoting {
 impl RootVotingMethodMarker for BuildInVoting {}
 impl LimitableVotingMethodMarker for BuildInVoting {}
 impl VotingMethodMarker for BuildInVoting {}
+
 impl VotingMethod for BuildInVoting {
 
     fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
-        fn get_value_or_fail<A: Context>(context: &A, name: &str) -> VotingResult<Value> {
-            if let Some(found) = context.get_value(name) {
-                Ok(found.clone())
-            } else {
-                Err(Eval(EvalexprError::VariableIdentifierNotFound(name.to_string())))
-            }
-        }
-
-        fn collect_simple<B, F>(voters: &[B], f: F) -> VotingResult<Vec<f64>> where B: Context, F: Fn(&B) -> EvalexprResult<Value> {
-            Ok(voters.iter().map(f).map_ok(|value: Value| value.as_number()).collect::<EvalexprResult<EvalexprResult<Vec<_>>>>()??)
+        fn collect_simple<B, F>(voters: &[B], f: F) -> VotingResult<Vec<f64>> where B: Context, F: Fn(&B) -> VotingResult<Value> {
+            voters.iter().map(f).map_ok(|value: Value| value.as_number().map_err(Eval)).flatten_ok().collect::<VotingResult<Vec<_>>>()
         }
 
         match self {
             BuildInVoting::OriginalScore => {
-                get_value_or_fail(global_context, SCORE_CANDIDATE)
+                global_context.get_vote_value(SCORE_CANDIDATE).cloned()
             }
             BuildInVoting::Voters => {
-                get_value_or_fail(global_context, NUMBER_OF_VOTERS)
+                global_context.get_vote_value(NUMBER_OF_VOTERS).cloned()
             }
             BuildInVoting::CombSum => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(found.clone())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(
+                    voters,
+                    |value| value.get_vote_value(SCORE).cloned()
+                )?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::GCombSum => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(found.clone())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
-
+                let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;
                 Ok(GAvgOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumTop => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(found.clone())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;
 
                 Ok(Aggregation::new(SumOf, NonZeroUsize::new(2)).calculate_desc(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumPow2 => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(Value::Float(found.as_number().expect("Expected a number for score in CombSumPow2").powi(2)))
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
-
+                let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).map(|found| Value::Float(found.as_number().expect("Expected a number for score in CombSumPow2").powi(2))))?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombMax => {
                 Ok(
-                    collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                        Ok(found.clone())
-                    } else {
-                        Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                    })?.iter().max_partial()
+                    collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?
+                        .iter()
+                        .max_partial()
                         .map_err(|_| AggregationError::NoMaxFound)?
                         .expect("Expected a number for score in CombMax")
                         .clone()
@@ -193,123 +169,119 @@ impl VotingMethod for BuildInVoting {
                 )
             }
             BuildInVoting::RR => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
-                    Ok(found.clone())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
-                })?;
+                let calculated = collect_simple(voters, |value| value.get_vote_value(RECIPROCAL_RANK).cloned())?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::RRPow2 => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
-                    Ok(found.as_number().expect("Expected a number for rr in RRPow2").powi(2).into())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
-                })?;
+                let calculated = collect_simple(
+                    voters,
+                    |value| value.get_vote_value(RECIPROCAL_RANK).map(|found| found.as_number().expect("Expected a number for rr in RRPow2").powi(2).into())
+                )?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumRR => {
-                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
-                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().expect("Expected a number for score in CombSumRR") * rr.as_number().expect("Expected a number for rr in CombSumRR")))
-                    } else {
-                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
-                    }
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(
+                    voters,
+                    |value| {
+                        value.get_vote_value(SCORE).and_then(|score| {
+                            value.get_vote_value(RECIPROCAL_RANK).and_then(|rr| {
+                                Ok(
+                                    Value::Float(
+                                        score.as_number().expect("Expected a number for score in CombSumRR")
+                                            * rr.as_number().expect("Expected a number for rr in CombSumRR")
+                                    )
+                                )
+                            })
+                        })
+                    })?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumRRPow2 => {
-                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
-                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().expect("Expected a number for the score in CombSumRRPow2") * rr.as_number().expect("Expected a number for rr in CombSumRRPow2").powi(2)))
-                    } else {
-                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
-                    }
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(
+                    voters,
+                    |value| {
+                        value.get_vote_value(SCORE).and_then(|score| {
+                            value.get_vote_value(RECIPROCAL_RANK).and_then(|rr| {
+                                Ok(
+                                    Value::Float(
+                                        score.as_number().expect("Expected a number for score in CombSumRR")
+                                            * rr.as_number().expect("Expected a number for rr in CombSumRR").powi(2)
+                                    )
+                                )
+                            })
+                        })
+                    })?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumPow2RR => {
-                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
-                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().expect("Expected a number for the score in CombSumPow2RR").powi(2) * rr.as_number().expect("Expected a number for rr in CombSumPow2RR")))
-                    } else {
-                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
-                    }
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(
+                    voters,
+                    |value| {
+                        value.get_vote_value(SCORE).and_then(|score| {
+                            value.get_vote_value(RECIPROCAL_RANK).and_then(|rr| {
+                                Ok(
+                                    Value::Float(
+                                        score.as_number().expect("Expected a number for the score in CombSumPow2RR").powi(2)
+                                            * rr.as_number().expect("Expected a number for rr in CombSumPow2RR")
+                                    )
+                                )
+                            })
+                        })
+                    })?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::CombSumPow2RRPow2 => {
-                let calculated = collect_simple(voters, |value| if let Some(score) = value.get_value(SCORE) {
-                    if let Some(rr) = value.get_value(RECIPROCAL_RANK) {
-                        Ok(Value::Float(score.as_number().expect("Expected a number for the score in CombSumPow2RRPow2").powi(2) * rr.as_number().expect("Expected a number for rr in CombSumPow2RRPow2").powi(2)))
-                    } else {
-                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
-                    }
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(
+                    voters,
+                    |value| {
+                        value.get_vote_value(SCORE).and_then(|score| {
+                            value.get_vote_value(RECIPROCAL_RANK).and_then(|rr| {
+                                Ok(
+                                    Value::Float(
+                                        score.as_number().expect("Expected a number for the score in CombSumPow2RR").powi(2)
+                                            * rr.as_number().expect("Expected a number for rr in CombSumPow2RR").powi(2)
+                                    )
+                                )
+                            })
+                        })
+                    })?;
                 Ok(SumOf.aggregate(calculated.into_iter())?.into())
             }
             BuildInVoting::ExpCombMnz => {
-                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                let n_voters = global_context.get_vote_value(NUMBER_OF_VOTERS)?.as_int()?;
                 Ok((BuildInVoting::CombSumPow2.execute(global_context, voters)?.as_number()? + (n_voters as f64)).into())
             }
             BuildInVoting::WCombSum => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(found.clone())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;
                 let trans = SumOf.aggregate(calculated.iter().copied())?;
                 let trans_avg = AvgOf.aggregate(calculated.into_iter())?;
-                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                let n_voters = global_context.get_vote_value(NUMBER_OF_VOTERS)?.as_int()?;
                 Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
             }
             BuildInVoting::WCombSumG => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(found.clone())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;
                 let trans = SumOf.aggregate(calculated.iter().copied())?;
                 let trans_avg = GAvgOf.aggregate(calculated.into_iter())?;
-                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                let n_voters = global_context.get_vote_value(NUMBER_OF_VOTERS)?.as_int()?;
                 Ok(((trans + trans_avg) / (n_voters + 1) as f64).into())
             }
             BuildInVoting::WGCombSum => {
-                let calculated = collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                    Ok(found.clone())
-                } else {
-                    Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                })?;
+                let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;
                 let trans = SumOf.aggregate(calculated.iter().map(|value| value.ln()))?;
                 let trans_avg = AvgOf.aggregate(calculated.into_iter())?;
-                let n_voters = get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_int()?;
+                let n_voters = global_context.get_vote_value(NUMBER_OF_VOTERS)?.as_int()?;
                 Ok(((trans + trans_avg.ln()) / (n_voters + 1) as f64).exp().into())
             }
             BuildInVoting::PCombSum => {
                 if voters.is_empty() {
-                    get_value_or_fail(global_context, EPSILON)
+                    global_context.get_vote_value(EPSILON).cloned()
                 } else {
-                    let trans = SumOf.aggregate(collect_simple(voters, |value| if let Some(found) = value.get_value(SCORE) {
-                        Ok(found.clone())
-                    } else {
-                        Err(EvalexprError::VariableIdentifierNotFound(SCORE.to_string()))
-                    })?.into_iter())?;
-                    let max_rr = voters.iter().map(|value| if let Some(found) = value.get_value(RECIPROCAL_RANK) {
-                        found.as_number()
-                    } else {
-                        Err(EvalexprError::VariableIdentifierNotFound(RECIPROCAL_RANK.to_string()))
-                    }).process_results(|values| {
-                        values.max_partial().expect("Failed to find a maximum!")
-                    })?.expect("Failed to find a maximum!");
-                    Ok(((trans / get_value_or_fail(global_context, NUMBER_OF_VOTERS)?.as_number()?) + max_rr).into())
+                    let trans = SumOf.aggregate(collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?.into_iter())?;
+                    let max_rr = voters.iter()
+                        .map(|value| value.get_vote_value(RECIPROCAL_RANK).map(|v| v.as_number().expect("Expected a number for rr in PCombSum")))
+                        .process_results(|values| values.max_partial().expect("Failed to find a maximum!"))?
+                        .expect("Failed to find a maximum in PCombSum!");
+                    Ok(((trans / global_context.get_vote_value(NUMBER_OF_VOTERS)?.as_number()?) + max_rr).into())
                 }
             }
         }
