@@ -13,7 +13,7 @@
 //limitations under the License.
 
 
-use evalexpr::ContextWithMutableVariables;
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert};
 use strum::{Display, EnumIs};
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -41,5 +41,5 @@ pub trait ContextExtender {
 
     /// Allows to add model specific variables.
     /// Panics when invalid variables are added.
-    fn extend_context(&self, context: &mut impl ContextWithMutableVariables);
+    fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>));
 }

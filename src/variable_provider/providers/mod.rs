@@ -1,4 +1,4 @@
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert, Value};
 use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
 
 use crate::variable_provider::targets::{Topics, Words};
@@ -63,23 +63,23 @@ type VarName = VariableNameSymbol;
 
 /// A configurable variable provider
 #[derive(Debug)]
-pub(super) struct InnerVariableProvider {
+pub(super) struct InnerVariableProvider<NumericTypes: EvalexprNumericTypesConvert> {
     topic_count: usize,
     word_count_a: usize,
     word_count_b: usize,
     shared_interner: SharedInterner,
-    global: OnceLock<GlobalVariableProvider>,
-    per_topic: OnceLock<IdBasedVariableProvider<Topics>>,
-    per_word_a: OnceLock<IdBasedVariableProvider<Words>>,
-    per_word_b: OnceLock<IdBasedVariableProvider<Words>>,
-    per_topic_per_word_a: OnceLock<TopicWiseWordVariableProvider>,
-    per_topic_per_word_b: OnceLock<TopicWiseWordVariableProvider>,
+    global: OnceLock<GlobalVariableProvider<NumericTypes>>,
+    per_topic: OnceLock<IdBasedVariableProvider<Topics, NumericTypes>>,
+    per_word_a: OnceLock<IdBasedVariableProvider<Words, NumericTypes>>,
+    per_word_b: OnceLock<IdBasedVariableProvider<Words, NumericTypes>>,
+    per_topic_per_word_a: OnceLock<TopicWiseWordVariableProvider<NumericTypes>>,
+    per_topic_per_word_b: OnceLock<TopicWiseWordVariableProvider<NumericTypes>>,
 }
 
-unsafe impl Send for InnerVariableProvider {}
-unsafe impl Sync for InnerVariableProvider {}
+unsafe impl<NumericTypes: EvalexprNumericTypesConvert> Send for InnerVariableProvider<NumericTypes> {}
+unsafe impl<NumericTypes: EvalexprNumericTypesConvert> Sync for InnerVariableProvider<NumericTypes> {}
 
-impl InnerVariableProvider {
+impl<NumericTypes: EvalexprNumericTypesConvert> InnerVariableProvider<NumericTypes> {
     pub fn new(topic_count: usize, word_count_a: usize, word_count_b: usize) -> Self {
         Self {
             topic_count,
@@ -98,8 +98,8 @@ impl InnerVariableProvider {
     pub fn add_global(
         &self,
         key: impl AsRef<str>,
-        value: impl Into<Value>,
-    ) -> VariableProviderResult<()> {
+        value: impl Into<Value<NumericTypes>>,
+    ) -> VariableProviderResult<(), NumericTypes> {
         self.global
             .get_or_init(|| GlobalVariableProvider::new(self.shared_interner.clone()))
             .register_variable(key, value)
@@ -109,8 +109,8 @@ impl InnerVariableProvider {
         &self,
         topic_id: usize,
         key: impl AsRef<str>,
-        value: impl Into<Value>,
-    ) -> VariableProviderResult<()> {
+        value: impl Into<Value<NumericTypes>>,
+    ) -> VariableProviderResult<(), NumericTypes> {
         self.per_topic
             .get_or_init(|| IdBasedVariableProvider::new(self.shared_interner.clone(), self.topic_count))
             .register_variable(topic_id, key, value)
@@ -120,8 +120,8 @@ impl InnerVariableProvider {
         &self,
         word_id: usize,
         key: impl AsRef<str>,
-        value: impl Into<Value>,
-    ) -> VariableProviderResult<()> {
+        value: impl Into<Value<NumericTypes>>,
+    ) -> VariableProviderResult<(), NumericTypes> {
         self.per_word_a
             .get_or_init(|| IdBasedVariableProvider::new(self.shared_interner.clone(), self.word_count_a))
             .register_variable(word_id, key, value)
@@ -132,8 +132,8 @@ impl InnerVariableProvider {
         topic_id: usize,
         word_id: usize,
         key: impl AsRef<str>,
-        value: impl Into<Value>,
-    ) -> VariableProviderResult<()> {
+        value: impl Into<Value<NumericTypes>>,
+    ) -> VariableProviderResult<(), NumericTypes> {
         self.per_topic_per_word_a
             .get_or_init(|| TopicWiseWordVariableProvider::new(self.shared_interner.clone(), self.topic_count, self.word_count_a))
             .register_variable(topic_id, word_id, key, value)
@@ -143,8 +143,8 @@ impl InnerVariableProvider {
         &self,
         word_id: usize,
         key: impl AsRef<str>,
-        value: impl Into<Value>,
-    ) -> VariableProviderResult<()> {
+        value: impl Into<Value<NumericTypes>>,
+    ) -> VariableProviderResult<(), NumericTypes> {
         self.per_word_b
             .get_or_init(|| IdBasedVariableProvider::new(self.shared_interner.clone(), self.word_count_b))
             .register_variable(word_id, key, value)
@@ -155,19 +155,19 @@ impl InnerVariableProvider {
         topic_id: usize,
         word_id: usize,
         key: impl AsRef<str>,
-        value: impl Into<Value>,
-    ) -> VariableProviderResult<()> {
+        value: impl Into<Value<NumericTypes>>,
+    ) -> VariableProviderResult<(), NumericTypes> {
         self.per_topic_per_word_b
             .get_or_init(|| TopicWiseWordVariableProvider::new(self.shared_interner.clone(), self.topic_count, self.word_count_b))
             .register_variable(topic_id, word_id, key, value)
     }
 }
 
-impl VariableProviderOut for InnerVariableProvider {
+impl<NumericTypes: EvalexprNumericTypesConvert> VariableProviderOut<NumericTypes> for InnerVariableProvider<NumericTypes> {
     fn provide_global(
         &self,
-        target: &mut impl ContextWithMutableVariables,
-    ) -> VariableProviderResult<()> {
+        target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>),
+    ) -> VariableProviderResult<(), NumericTypes> {
         log::trace!(target: "provider", concat!("Called: ", stringify!(provide_global)));
         if let Some(found) = self.global.get() {
             found.provide_variables(target)
@@ -178,8 +178,8 @@ impl VariableProviderOut for InnerVariableProvider {
     fn provide_for_topic(
         &self,
         topic_id: usize,
-        target: &mut impl ContextWithMutableVariables,
-    ) -> VariableProviderResult<()> {
+        target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>),
+    ) -> VariableProviderResult<(), NumericTypes> {
         log::trace!(target: "provider", concat!("Called: ", stringify!(provide_for_topic)));
         if let Some(found) = self.per_topic.get() {
             found.provide_variables(topic_id, target)
@@ -190,8 +190,8 @@ impl VariableProviderOut for InnerVariableProvider {
     fn provide_for_word_a(
         &self,
         word_id: usize,
-        target: &mut impl ContextWithMutableVariables,
-    ) -> VariableProviderResult<()> {
+        target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>),
+    ) -> VariableProviderResult<(), NumericTypes> {
         log::trace!(target: "provider", concat!("Called: ", stringify!(provide_for_word_a)));
         if let Some(found) = self.per_word_a.get() {
             found.provide_variables(word_id, target)
@@ -203,8 +203,8 @@ impl VariableProviderOut for InnerVariableProvider {
     fn provide_for_word_b(
         &self,
         word_id: usize,
-        target: &mut impl ContextWithMutableVariables,
-    ) -> VariableProviderResult<()> {
+        target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>),
+    ) -> VariableProviderResult<(), NumericTypes> {
         log::trace!(target: "provider", concat!("Called: ", stringify!(provide_for_word_b)));
         if let Some(found) = self.per_word_b.get() {
             found.provide_variables(word_id, target)
@@ -217,8 +217,8 @@ impl VariableProviderOut for InnerVariableProvider {
         &self,
         topic_id: usize,
         word_id: usize,
-        target: &mut impl ContextWithMutableVariables,
-    ) -> VariableProviderResult<()> {
+        target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>),
+    ) -> VariableProviderResult<(), NumericTypes> {
         log::trace!(target: "provider", concat!("Called: ", stringify!(provide_for_word_in_topic_a)));
         if let Some(found) = self.per_topic_per_word_a.get() {
             found.provide_variables(topic_id, word_id, target)
@@ -231,8 +231,8 @@ impl VariableProviderOut for InnerVariableProvider {
         &self,
         topic_id: usize,
         word_id: usize,
-        target: &mut impl ContextWithMutableVariables,
-    ) -> VariableProviderResult<()> {
+        target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>),
+    ) -> VariableProviderResult<(), NumericTypes> {
         log::trace!(target: "provider", concat!("Called: ", stringify!(provide_for_word_in_topic_b)));
         if let Some(found) = self.per_topic_per_word_b.get() {
             found.provide_variables(topic_id, word_id, target)

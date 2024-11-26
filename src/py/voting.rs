@@ -13,7 +13,7 @@
 //limitations under the License.
 
 use std::sync::Arc;
-use evalexpr::{Value};
+use evalexpr::{EvalexprNumericTypesConvert, Value};
 use nom::error::Error;
 use nom::Finish;
 use pyo3::{pyclass,  pymethods, PyResult};
@@ -154,7 +154,11 @@ impl PyVoting {
 }
 
 impl VotingMethod for PyVoting {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
+    {
         self.0.execute(global_context, voters)
     }
 }

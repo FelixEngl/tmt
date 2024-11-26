@@ -13,7 +13,7 @@
 //limitations under the License.
 
 use std::sync::Mutex;
-use evalexpr::{Value};
+use evalexpr::{EvalexprNumericTypesConvert, Value};
 use crate::variable_provider::variable_names::{CANDIDATE_ID, SCORE, SCORE_CANDIDATE, TOPIC_ID, VOTER_ID};
 use crate::voting::{VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult};
 use crate::voting::traits::RootVotingMethodMarker;
@@ -36,11 +36,19 @@ impl<V> Spy<V> where V: VotingMethodMarker {
 }
 
 impl<V> VotingMethod for Spy<V> where V: VotingMethodMarker {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A: VotingMethodContext<NumericTypes>,
+        B: VotingMethodContext<NumericTypes>
+    {
         Ok(self.execute_with_voters(global_context, voters)?.0)
     }
 
-    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute_with_voters<'a, A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value<NumericTypes>, &'a [B]), NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
+    {
         let (result, voters) = self.inner.execute_with_voters(global_context, voters)?;
 
         let entry = (

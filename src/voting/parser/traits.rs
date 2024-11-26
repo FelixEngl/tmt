@@ -12,11 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert, Value};
 use crate::voting::display::DisplayTree;
 use crate::voting::VotingResult;
 
 /// Marks a struct as voting executable. An executable does only know a single context that can be modified.
 pub(crate) trait VotingExecutable: DisplayTree {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>;
+    fn execute<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VotingResult<Value<NumericTypes>, NumericTypes>;
 }

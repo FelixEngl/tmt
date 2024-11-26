@@ -14,7 +14,7 @@
 
 use std::fmt::Write;
 use std::num::NonZeroUsize;
-use evalexpr::{Value};
+use evalexpr::{EvalexprNumericTypesConvert, Value};
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult, VotingWithLimit};
 use crate::voting::display::{DisplayTree, IndentWriter};
 
@@ -38,7 +38,11 @@ impl<T> IntoVotingWithLimit for T where T: Sized + LimitableVotingMethodMarker {
 
 
 impl<T> VotingMethod for Box<T> where T: VotingMethodMarker {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
+    {
         self.as_ref().execute(global_context, voters)
     }
 }

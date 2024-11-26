@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
-use evalexpr::ContextWithMutableVariables;
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert};
 use crate::toolkit::evalexpr::{ContextExtender, ExtensionLevel};
 use crate::topicmodel::vocabulary::BasicVocabulary;
 use crate::translate::{TopicMeta, TranslatableTopicMatrix, VoterInfoProvider, VoterMeta};
@@ -70,7 +70,7 @@ impl StandardVoterMeta {
 impl ContextExtender for StandardVoterMeta {
     const EXTENSION_LEVEL: ExtensionLevel = ExtensionLevel::Voter;
 
-    fn extend_context(&self, _: &mut impl ContextWithMutableVariables) {}
+    fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, _: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) {}
 }
 
 impl VoterMeta for StandardVoterMeta {
@@ -108,7 +108,7 @@ pub struct StandardTopicMeta {
 impl ContextExtender for StandardTopicMeta {
     const EXTENSION_LEVEL: ExtensionLevel = ExtensionLevel::Topic;
 
-    fn extend_context(&self, _: &mut impl ContextWithMutableVariables) {}
+    fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, _: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) {}
 }
 
 impl TopicMeta for StandardTopicMeta {

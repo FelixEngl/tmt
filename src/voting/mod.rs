@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
 use std::num::NonZeroUsize;
-use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, IterateVariablesContext, Value};
+use evalexpr::{Context, ContextWithMutableVariables, ConvertibleWithEvalexprNumericTypes, EvalexprError, EvalexprNumericTypesConvert, IterateVariablesContext, Value};
 use crate::variable_provider::variable_names::{BOOST, NUMBER_OF_VOTERS, RANK};
 pub use crate::voting::buildin::*;
 use crate::voting::display::{DisplayTree, IndentWriter};
@@ -34,13 +34,14 @@ pub mod errors;
 pub mod spy;
 pub mod traits;
 pub mod py;
+mod constants;
 
 /// The result of a voting
-pub type VotingResult<T> = Result<T, VotingExpressionError>;
+pub type VotingResult<T, NumericTypes> = Result<T, VotingExpressionError<NumericTypes>>;
 
 
-pub trait VotingContext: Context {
-    fn get_vote_value(&self, name: &str) -> VotingResult<&Value> {
+pub trait VotingContext<NumericTypes: EvalexprNumericTypesConvert>: Context<NumericTypes=NumericTypes> {
+    fn get_vote_value(&self, name: &str) -> VotingResult<&Value<NumericTypes>, NumericTypes> {
         if name == BOOST {
             return match self.get_boost() {
                 None => {
@@ -58,7 +59,7 @@ pub trait VotingContext: Context {
         }
     }
 
-    fn get_boost(&self) -> Option<&Value> {
+    fn get_boost(&self) -> Option<&Value<NumericTypes>> {
         match self.get_value(BOOST) {
             None => {
                 None
@@ -71,15 +72,18 @@ pub trait VotingContext: Context {
     }
 }
 
-impl<T: Context> VotingContext for T where T: Context {}
+impl<T, NumericTypes: EvalexprNumericTypesConvert> VotingContext<NumericTypes> for T where T: Context<NumericTypes=NumericTypes> {}
 
 
 /// A voting method context allows to create a variable map to something that can me handled by python.
-pub trait VotingMethodContext : ContextWithMutableVariables {
-    fn variable_map(&self) -> HashMap<String, Value>;
+pub trait VotingMethodContext<NumericTypes: EvalexprNumericTypesConvert> : ContextWithMutableVariables + Context<NumericTypes=NumericTypes> {
+    fn variable_map(&self) -> HashMap<String, Value<NumericTypes>>;
 }
-impl<T> VotingMethodContext for T where T: ContextWithMutableVariables + IterateVariablesContext {
-    fn variable_map(&self) -> HashMap<String, Value> {
+impl<T, NumericTypes: EvalexprNumericTypesConvert> VotingMethodContext<NumericTypes> for T
+where
+    T: ContextWithMutableVariables + IterateVariablesContext + Context<NumericTypes=NumericTypes>,
+{
+    fn variable_map(&self) -> HashMap<String, Value<NumericTypes>> {
         self.iter_variables().collect()
     }
 }
@@ -87,18 +91,18 @@ impl<T> VotingMethodContext for T where T: ContextWithMutableVariables + Iterate
 /// Marks a struct as voting method.
 pub trait VotingMethod {
     #[inline]
-    fn execute_to_f64<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<f64>
+    fn execute_to_f64<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<f64, NumericTypes>
     where
-        A : VotingMethodContext,
-        B : VotingMethodContext
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
     {
-        Ok(self.execute(global_context, voters)?.as_number()?)
+        Ok(NumericTypes::float_to_num(self.execute(global_context, voters)?.as_number()?).unwrap())
     }
 
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
     where
-        A : VotingMethodContext,
-        B : VotingMethodContext;
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>;
 
     // #[inline]
     // fn execute_to_f64_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(f64, &'a [B])>
@@ -110,10 +114,10 @@ pub trait VotingMethod {
     //     Ok((result.as_number()?, voters))
     // }
 
-    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])>
+    fn execute_with_voters<'a, A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value<NumericTypes>, &'a [B]), NumericTypes>
     where
-        A : VotingMethodContext,
-        B : VotingMethodContext {
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes> {
         Ok((self.execute(global_context, voters)?, voters))
     }
 }
@@ -149,17 +153,25 @@ impl<T> RootVotingMethodMarker for VotingWithLimit<T> where T: VotingMethodMarke
 impl<T> VotingMethodMarker for VotingWithLimit<T> where T: VotingMethodMarker {}
 impl<T> VotingMethod for VotingWithLimit<T> where T: VotingMethodMarker {
 
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A: VotingMethodContext<NumericTypes>,
+        B: VotingMethodContext<NumericTypes>
+    {
         let voters = self.slice_voters(voters, |value| value.get_value(RANK).unwrap().as_int().expect("Rank has to be an int!"));
         assert!(voters.len() <= self.limit.get());
-        global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;
+        global_context.set_value(NUMBER_OF_VOTERS.to_string(), voters.len().into_with().unwrap())?;
         self.expr.execute(global_context, voters)
     }
 
-    fn execute_with_voters<'a, A, B>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value, &'a [B])> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute_with_voters<'a, A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &'a mut [B]) -> VotingResult<(Value<NumericTypes>, &'a [B]), NumericTypes>
+    where
+        A: VotingMethodContext<NumericTypes>,
+        B: VotingMethodContext<NumericTypes>
+    {
         let voters = self.slice_voters(voters, |value| value.get_value(RANK).unwrap().as_int().expect("Rank has to be an int!"));
         assert!(voters.len() <= self.limit.get());
-        global_context.set_value(NUMBER_OF_VOTERS.to_string(), (voters.len() as i64).into())?;
+        global_context.set_value(NUMBER_OF_VOTERS.to_string(), voters.len().into_with().unwrap())?;
         self.expr.execute_with_voters(global_context, voters)
     }
 }

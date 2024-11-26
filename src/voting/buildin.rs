@@ -14,7 +14,7 @@
 
 use std::fmt::Write;
 use std::num::NonZeroUsize;
-use evalexpr::{Context, Value};
+use evalexpr::{Context, DefaultNumericTypes, EvalexprNumericTypesConvert, Value};
 use itertools::Itertools;
 use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 use crate::toolkit::partial_ord_iterator::PartialOrderIterator;
@@ -40,7 +40,10 @@ impl LimitableVotingMethodMarker for EmptyVotingMethod {}
 impl VotingMethodMarker for EmptyVotingMethod {}
 
 impl VotingMethod for EmptyVotingMethod {
-    fn execute<A, B>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, _: &mut A, _: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes> {
         Err(NoValue)
     }
 }
@@ -104,7 +107,7 @@ impl BuildInVoting {
     //noinspection DuplicatedCode
     pub fn __call__(&self, mut global_context: PyContextWithMutableVariables, mut voters: Vec<PyContextWithMutableVariables>) -> PyResult<(PyExprValue, Vec<PyContextWithMutableVariables>)>{
         let used_voters= voters.as_mut_slice();
-        match self.execute(&mut global_context, used_voters) {
+        match self.execute::<_, _, DefaultNumericTypes>(&mut global_context, used_voters) {
             Ok(value) => {
                 Ok((value.into(), used_voters.iter().cloned().collect()))
             }
@@ -125,9 +128,13 @@ impl VotingMethodMarker for BuildInVoting {}
 
 impl VotingMethod for BuildInVoting {
 
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
-        fn collect_simple<B, F>(voters: &[B], f: F) -> VotingResult<Vec<f64>> where B: Context, F: Fn(&B) -> VotingResult<Value> {
-            voters.iter().map(f).map_ok(|value: Value| value.as_number().map_err(Eval)).flatten_ok().collect::<VotingResult<Vec<_>>>()
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
+    {
+        fn collect_simple<B, F, NumericTypes: EvalexprNumericTypesConvert>(voters: &[B], f: F) -> VotingResult<Vec<f64>, NumericTypes> where B: Context, F: Fn(&B) -> VotingResult<Value<NumericTypes>, NumericTypes> {
+            voters.iter().map(f).map_ok(|value: Value| value.as_number().map_err(Eval)).flatten_ok().collect::<VotingResult<Vec<_>, _>>()
         }
 
         match self {
@@ -142,42 +149,43 @@ impl VotingMethod for BuildInVoting {
                     voters,
                     |value| value.get_vote_value(SCORE).cloned()
                 )?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                Ok(Value::Float(NumericTypes::num_to_float(SumOf.aggregate(calculated.into_iter())?).unwrap()))
             }
             BuildInVoting::GCombSum => {
                 let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;
-                Ok(GAvgOf.aggregate(calculated.into_iter())?.into())
+                Ok(Value::Float(NumericTypes::num_to_float(GAvgOf.aggregate(calculated.into_iter())?).unwrap()))
             }
             BuildInVoting::CombSumTop => {
                 let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;
-
-                Ok(Aggregation::new(SumOf, NonZeroUsize::new(2)).calculate_desc(calculated.into_iter())?.into())
+                let result = Aggregation::new(SumOf, NonZeroUsize::new(2)).calculate_desc(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::CombSumPow2 => {
                 let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).map(|found| Value::Float(found.as_number().expect("Expected a number for score in CombSumPow2").powi(2))))?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                let result = SumOf.aggregate(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::CombMax => {
-                Ok(
-                    collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?
-                        .iter()
-                        .max_partial()
-                        .map_err(|_| AggregationError::NoMaxFound)?
-                        .expect("Expected a number for score in CombMax")
-                        .clone()
-                        .into()
-                )
+                let result = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?
+                    .iter()
+                    .max_partial()
+                    .map_err(|_| AggregationError::NoMaxFound)?
+                    .expect("Expected a number for score in CombMax")
+                    .clone();
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::RR => {
                 let calculated = collect_simple(voters, |value| value.get_vote_value(RECIPROCAL_RANK).cloned())?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                let result = SumOf.aggregate(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::RRPow2 => {
                 let calculated = collect_simple(
                     voters,
                     |value| value.get_vote_value(RECIPROCAL_RANK).map(|found| found.as_number().expect("Expected a number for rr in RRPow2").powi(2).into())
                 )?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                let result = SumOf.aggregate(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::CombSumRR => {
                 let calculated = collect_simple(
@@ -194,7 +202,8 @@ impl VotingMethod for BuildInVoting {
                             })
                         })
                     })?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                let result = SumOf.aggregate(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::CombSumRRPow2 => {
                 let calculated = collect_simple(
@@ -211,7 +220,8 @@ impl VotingMethod for BuildInVoting {
                             })
                         })
                     })?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                let result = SumOf.aggregate(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::CombSumPow2RR => {
                 let calculated = collect_simple(
@@ -228,7 +238,8 @@ impl VotingMethod for BuildInVoting {
                             })
                         })
                     })?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                let result = SumOf.aggregate(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::CombSumPow2RRPow2 => {
                 let calculated = collect_simple(
@@ -245,11 +256,14 @@ impl VotingMethod for BuildInVoting {
                             })
                         })
                     })?;
-                Ok(SumOf.aggregate(calculated.into_iter())?.into())
+                let result = SumOf.aggregate(calculated.into_iter())?;
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::ExpCombMnz => {
                 let n_voters = global_context.get_vote_value(NUMBER_OF_VOTERS)?.as_int()?;
-                Ok((BuildInVoting::CombSumPow2.execute(global_context, voters)?.as_number()? + (n_voters as f64)).into())
+                let result = NumericTypes::float_to_num::<f64>(BuildInVoting::CombSumPow2.execute(global_context, voters)?).unwrap();
+                let result = (result + (n_voters as f64));
+                Ok(Value::Float(NumericTypes::num_to_float(result).unwrap()))
             }
             BuildInVoting::WCombSum => {
                 let calculated = collect_simple(voters, |value| value.get_vote_value(SCORE).cloned())?;

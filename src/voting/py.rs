@@ -13,7 +13,8 @@
 //limitations under the License.
 
 use std::collections::{HashMap};
-use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, FloatType, IntType, Value};
+use evalexpr::{Context, ContextWithMutableVariables, DefaultNumericTypes, EvalexprError, EvalexprNumericTypes, EvalexprNumericTypesConvert, EvalexprResult, Value};
+use evalexpr::error::EvalexprResultValue;
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, PyAny, pyclass, pymethods, PyResult, IntoPy, PyObject, Python};
 use pyo3::exceptions::{PyKeyError, PyValueError};
@@ -59,7 +60,11 @@ unsafe impl Sync for PyVotingModel<'_> {}
 impl RootVotingMethodMarker for PyVotingModel<'_> {}
 impl VotingMethodMarker for PyVotingModel<'_> {}
 impl<'a> VotingMethod for PyVotingModel<'a> {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A: VotingMethodContext<NumericTypes>,
+        B: VotingMethodContext<NumericTypes>
+    {
         unsafe {
             let global_context = PyContextWithMutableVariables::new(global_context);
             let voters = voters.iter_mut().map(|value| PyContextWithMutableVariables::new(value)).collect_vec();
@@ -70,15 +75,72 @@ impl<'a> VotingMethod for PyVotingModel<'a> {
     }
 }
 
+struct Adapter<'a, NumericTypes: EvalexprNumericTypesConvert + Sized> {
+    wrapped: &'a mut dyn VotingMethodContext<NumericTypes>,
+    cache: HashMap<String, Value>
+}
+
+impl<'a, NumericTypes: EvalexprNumericTypesConvert + Sized> ContextWithMutableVariables for Adapter<'a, NumericTypes> {
+    fn set_value(&mut self, identifier: String, value: Value<DefaultNumericTypes>) -> EvalexprResult<(), DefaultNumericTypes> {
+        self.wrapped.set_value(identifier, Value::<NumericTypes>::from_general(&value))
+    }
+}
+
+impl<'a, NumericTypes: EvalexprNumericTypesConvert + Sized> Context for Adapter<'a, NumericTypes> {
+    type NumericTypes = DefaultNumericTypes;
+
+    fn get_value(&self, identifier: &str) -> Option<&Value<DefaultNumericTypes>> {
+        todo!()
+    }
+
+    fn call_function(&self, identifier: &str, argument: &Value<Self::NumericTypes>) -> EvalexprResultValue<Self::NumericTypes> {
+        todo!()
+    }
+
+    fn are_builtin_functions_disabled(&self) -> bool {
+        todo!()
+    }
+
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), Self::NumericTypes> {
+        todo!()
+    }
+}
+
+impl<NumericTypes: EvalexprNumericTypesConvert + Sized> Context<NumericTypes=DefaultNumericTypes> for Adapter<'_, NumericTypes> {
+    type NumericTypes = ();
+
+    fn get_value(&self, identifier: &str) -> Option<&Value<Self::NumericTypes>> {
+        todo!()
+    }
+
+    fn call_function(&self, identifier: &str, argument: &Value<Self::NumericTypes>) -> EvalexprResultValue<Self::NumericTypes> {
+        todo!()
+    }
+
+    fn are_builtin_functions_disabled(&self) -> bool {
+        todo!()
+    }
+
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), Self::NumericTypes> {
+        todo!()
+    }
+}
+
+impl<NumericTypes: EvalexprNumericTypesConvert + Sized> VotingMethodContext<DefaultNumericTypes> for Adapter<'_, NumericTypes> {
+    fn variable_map(&self) -> HashMap<String, Value<DefaultNumericTypes>> {
+        todo!()
+    }
+}
+
 /// The value that can be returned by the [PyVotingModel]
 #[derive(Clone, Debug)]
 pub enum PyExprValue {
     /// A string value.
     String(String),
     /// A float value.
-    Float(FloatType),
+    Float(f64),
     /// An integer value.
-    Int(IntType),
+    Int(i64),
     /// A boolean value.
     Boolean(bool),
     /// A tuple value.
@@ -116,10 +178,10 @@ impl<'a> FromPyObject<'a> for PyExprValue {
             if let Ok(value) = ob.extract::<String>() {
                 return Ok(PyExprValue::String(value))
             }
-            if let Ok(value) = ob.extract::<IntType>() {
+            if let Ok(value) = ob.extract::<i64>() {
                 return Ok(PyExprValue::Int(value))
             }
-            if let Ok(value) = ob.extract::<FloatType>() {
+            if let Ok(value) = ob.extract::<f64>() {
                 return Ok(PyExprValue::Float(value))
             }
             if let Ok(value) = ob.extract::<bool>() {
@@ -192,7 +254,8 @@ impl Into<Value> for PyExprValue {
 #[pyclass]
 #[derive(Copy, Clone, Debug)]
 pub struct PyContextWithMutableVariables {
-    inner: *mut dyn VotingMethodContext
+    inner: *mut dyn VotingMethodContext<DefaultNumericTypes>,
+
 }
 
 unsafe impl Send for PyContextWithMutableVariables {}
@@ -238,9 +301,10 @@ impl PyContextWithMutableVariables {
 
 
 impl PyContextWithMutableVariables {
-    unsafe fn new<'a>(value: &'a mut dyn VotingMethodContext) -> Self {
+    unsafe fn new<'a>(value: &'a mut dyn VotingMethodContext<DefaultNumericTypes>) -> Self {
         // Transmute does not change the real lifeline!
-        let value: &'static mut dyn VotingMethodContext = std::mem::transmute::<&'a mut dyn VotingMethodContext, &'static mut dyn VotingMethodContext>(value);
+        let value: &'static mut dyn VotingMethodContext<DefaultNumericTypes>
+            = std::mem::transmute::<&'a mut dyn VotingMethodContext<DefaultNumericTypes>, &'static mut dyn VotingMethodContext<DefaultNumericTypes>>(value);
         Self {
             inner: value
         }
@@ -248,6 +312,8 @@ impl PyContextWithMutableVariables {
 }
 
 impl Context for PyContextWithMutableVariables {
+    type NumericTypes = DefaultNumericTypes;
+
     delegate::delegate! {
         to unsafe{&*self.inner} {
             fn get_value(&self, identifier: &str) -> Option<&Value>;
@@ -271,7 +337,7 @@ impl ContextWithMutableVariables for PyContextWithMutableVariables {
     }
 }
 
-impl VotingMethodContext for PyContextWithMutableVariables {
+impl VotingMethodContext<DefaultNumericTypes> for PyContextWithMutableVariables {
     fn variable_map(&self) -> HashMap<String, Value> {
         unsafe{&*self.inner}.variable_map()
     }

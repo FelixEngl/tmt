@@ -34,7 +34,8 @@ statrs = "0.17"
 string-interner = { version = "0.17", features = ["serde", "std"] }
 # https://crates.io/crates/internment
 #https://github.com/ISibboI/evalexpr
-evalexpr = "11"
+#evalexpr = "11"
+evalexpr = {git = "https://github.com/FelixEngl/evalexpr.git", features = ["num"]}
 nom = "7"
 num = "0.4"
 num_enum = "0.7"

@@ -1,4 +1,4 @@
-use evalexpr::EvalexprError;
+use evalexpr::{EvalexprError, EvalexprNumericTypes};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -8,7 +8,7 @@ pub struct AsVariableProviderError(pub String);
 
 
 #[derive(Debug, Clone, Error)]
-pub enum VariableProviderError {
+pub enum VariableProviderError<NumericTypes: EvalexprNumericTypes> {
     #[error("{topic_id} is not in 0..{topic_count}")]
     TopicNotFound {
         topic_id: usize,
@@ -20,5 +20,5 @@ pub enum VariableProviderError {
         word_count: usize
     },
     #[error(transparent)]
-    EvalExpressionError(#[from] EvalexprError)
+    EvalExpressionError(#[from] EvalexprError<NumericTypes>)
 }

@@ -2,7 +2,7 @@ use std::error::Error;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, IterateVariablesContext, Value};
+use evalexpr::{context_map, Context, ContextWithMutableVariables, ConvertibleWithEvalexprNumericTypes, EmptyContextWithBuiltinFunctions, EvalexprNumericTypes, EvalexprNumericTypesConvert, HashMapContext, IterateVariablesContext, Value};
 use itertools::Itertools;
 use rayon::prelude::*;
 use thiserror::Error;
@@ -57,7 +57,7 @@ where V: VotingMethodMarker + Clone {
 
 
 #[derive(Debug, Error)]
-pub enum VoteError<'a> {
+pub enum VoteError<'a, NumericTypes: EvalexprNumericTypes> {
     #[error("The dictionary has a translation direction from {lang_a} to {lang_b}, but the topic is in {lang_b}!")]
     IncompatibleLanguages {
         lang_a: &'a LanguageHint,
@@ -69,9 +69,9 @@ pub enum VoteError<'a> {
     #[error(transparent)]
     WithOrigin(#[from] VoteErrorWithOrigin),
     #[error(transparent)]
-    VariableProvider(#[from] VariableProviderError),
+    VariableProvider(#[from] VariableProviderError<NumericTypes>),
     #[error(transparent)]
-    VotingExpression(#[from] VotingExpressionError)
+    VotingExpression(#[from] VotingExpressionError<NumericTypes>)
 }
 
 #[derive(Debug, Error)]
@@ -121,18 +121,19 @@ impl<'a, T, V> DictBridge<'a, T, V> where V: BasicVocabulary<T> + AnonymousVocab
     }
 }
 
-pub fn vote_for_domains_with_targets<'a, Target, T, V, Voc, P>(
+pub fn vote_for_domains_with_targets<'a, NumericTypes, Target, T, V, Voc, P>(
     target: &'a Target,
     dictionary: &'a DictionaryWithMeta<T, Voc, MetadataManagerEx>,
     translate_config: &VoteConfig<V>,
     provider: Option<&P>
-) -> Result<Vec<Vec<f64>>, VoteError<'a>>
+) -> Result<Vec<Vec<f64>>, VoteError<'a, NumericTypes>>
 where
     T: Hash + Eq + Ord + Clone + Send + Sync + 'a,
     V: VotingMethodMarker,
     Voc: AnonymousVocabulary + VocabularyMut<T> + SearchableVocabulary<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a,
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
-    P: AsVariableProvider<T>
+    P: AsVariableProvider<T>,
+    NumericTypes: EvalexprNumericTypesConvert
 {
     if let Some(lang_model) = target.vocabulary().language() {
         if let (Some(lang_a), lang_b) = dictionary.language_direction_a_to_b() {
@@ -171,17 +172,17 @@ where
         ) - f64::EPSILON
     };
 
-    let mut topic_context = context_map! {
-        EPSILON => epsilon,
-        VOCABULARY_SIZE_A => bridge.dictionary.voc_a().len() as i64,
-        VOCABULARY_SIZE_B => bridge.dictionary.voc_b().len() as i64,
-        COUNT_OF_VOTERS => target.vocabulary().len() as i64,
+    let mut topic_context: HashMapContext<NumericTypes> = context_map! {
+        EPSILON => conv epsilon,
+        VOCABULARY_SIZE_A => conv bridge.dictionary.voc_a().len(),
+        VOCABULARY_SIZE_B => conv bridge.dictionary.voc_b().len(),
+        COUNT_OF_VOTERS => conv target.vocabulary().len(),
     }.unwrap();
 
     if let Some(ref boost) = translate_config.boost_with {
         topic_context.set_value(
             BOOST.to_string(),
-            boost.clone()
+            boost.clone().clone().into_with().unwrap()
         ).unwrap();
     }
 
@@ -190,7 +191,7 @@ where
     }
 
     let topic_context =
-        topic_context.to_static_with(EmptyContextWithBuiltinFunctions);
+        topic_context.to_static_with(EmptyContextWithBuiltinFunctions::default());
 
     let domain_counts = bridge.dictionary.metadata().domain_count();
 
@@ -198,7 +199,7 @@ where
     let norm_value = domain_counts.ref_a().sum() as f64;
     let candidate_ids_context: Vec<_> = (0..DOMAIN_MODEL_ENTRY_MAX_SIZE).into_iter().map(|candidate_id| {
         context_map! {
-            CANDIDATE_ID => candidate_id as i64
+            CANDIDATE_ID => conv candidate_id
         }
     }).collect::<Result<Vec<_>, _>>().unwrap().into();
 
@@ -209,11 +210,11 @@ where
         .enumerate()
         .map(|(topic_id, (topic, meta))| {
             let mut topic_context_2 = context_map! {
-                TOPIC_MAX_PROBABILITY => meta.max_score(),
-                TOPIC_MIN_PROBABILITY => meta.min_score(),
-                TOPIC_AVG_PROBABILITY => meta.avg_score(),
-                TOPIC_SUM_PROBABILITY => meta.sum_score(),
-                TOPIC_ID => topic_id as i64
+                TOPIC_MAX_PROBABILITY => conv meta.max_score(),
+                TOPIC_MIN_PROBABILITY => conv meta.min_score(),
+                TOPIC_AVG_PROBABILITY => conv meta.avg_score(),
+                TOPIC_SUM_PROBABILITY => conv meta.sum_score(),
+                TOPIC_ID => conv topic_id
             }.unwrap();
             meta.extend_context(&mut topic_context_2);
 
@@ -256,20 +257,21 @@ where
     Ok(result)
 }
 
-fn vote_for_domain_in_topic<'a, Target, T, V, Voc, P>(
+fn vote_for_domain_in_topic<'a, Target, T, V, Voc, P, NumericTypes>(
     target: &'a Target,
     topic_id: usize,
     voters: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
     candidate_scores: &(impl TopicLike + Send + Sync),
-    topic_context: impl Context + Send + Sync + IterateVariablesContext,
+    topic_context: impl Context<NumericTypes=NumericTypes> + Send + Sync + IterateVariablesContext,
     config: &VoteConfig<V>,
     provider: Option<&P>,
-) -> Result<f64, VoteError<'a>>
+) -> Result<f64, VoteError<'a, NumericTypes>>
 where V: VotingMethodMarker,
       Voc: SearchableVocabulary<T> + AnonymousVocabulary ,
       Target: TranslatableTopicMatrix<T, Voc>,
-      P: VariableProviderOut,
+      P: VariableProviderOut<NumericTypes>,
       T: Hash + Eq + Ord + Clone + Send + Sync,
+      NumericTypes: EvalexprNumericTypesConvert
 {
     let mapped = (0..voters.len())
         .into_iter()
@@ -285,14 +287,14 @@ where V: VotingMethodMarker,
 
     let mut voters = mapped.iter().zip_eq(candidate_scores.iter()).map(|(voter_a, domain_score_norm)|{
         let mut context_voter_a = context_map! {
-            SCORE_CANDIDATE => voter_a.score(),
-            SCORE_DOMAIN => *domain_score_norm,
-            SCORE => voter_a.score(),
-            VOTER_ID => voter_a.voter_id() as i64,
-            RECIPROCAL_RANK => 1./ voter_a.importance() as f64,
-            REAL_RECIPROCAL_RANK => 1./ voter_a.rank() as f64,
-            RANK => voter_a.rank() as i64,
-            IMPORTANCE => voter_a.importance() as i64,
+            SCORE_CANDIDATE => conv voter_a.score(),
+            SCORE_DOMAIN => conv  *domain_score_norm,
+            SCORE => conv  voter_a.score(),
+            VOTER_ID => conv  voter_a.voter_id(),
+            RECIPROCAL_RANK => conv 1./ voter_a.importance() as f64,
+            REAL_RECIPROCAL_RANK => conv 1./ voter_a.rank() as f64,
+            RANK => conv voter_a.rank(),
+            IMPORTANCE => conv voter_a.importance(),
         }.unwrap();
         voter_a.extend_context(&mut context_voter_a);
         if let Some(provider) = provider {

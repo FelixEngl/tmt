@@ -855,9 +855,11 @@ dependencies = [
 
 [[package]]
 name = "evalexpr"
-version = "11.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63b41cb9dd076076058a4523f009c900c582279536d0b2e45a29aa930e083cc5"
+version = "12.0.1"
+source = "git+https://github.com/FelixEngl/evalexpr.git#61fe67c9726a27fe185a2641185fbb2c6fb1e88f"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "fid-rs"

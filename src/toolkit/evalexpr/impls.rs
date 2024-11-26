@@ -15,42 +15,51 @@
 #![allow(dead_code)]
 
 use std::iter::{Chain};
+use std::marker::PhantomData;
 use std::sync::Arc;
-use evalexpr::{Context, ContextWithMutableFunctions, ContextWithMutableVariables, EvalexprError, EvalexprResult, Function, HashMapContext, IterateVariablesContext, Value};
+use evalexpr::{Context, ContextWithMutableFunctions, ContextWithMutableVariables, DefaultNumericTypes, EvalexprError, EvalexprNumericTypes, EvalexprResult, Function, HashMapContext, IterateVariablesContext, Value};
 use evalexpr::EvalexprError::FunctionIdentifierNotFound;
 
 
 #[derive(Debug)]
-pub struct StaticContext<A: ?Sized, B: ?Sized> {
+pub struct StaticContext<A: ?Sized, B: ?Sized, NumericTypes: EvalexprNumericTypes = DefaultNumericTypes> {
     current: Arc<A>,
-    next: Arc<B>
+    next: Arc<B>,
+    _phantom: PhantomData<NumericTypes>,
 }
 
-unsafe impl<A, B> Sync for StaticContext<A, B>{}
-unsafe impl<A, B> Send for StaticContext<A, B>{}
+unsafe impl<A, B, NumericTypes> Sync for StaticContext<A, B, NumericTypes> where NumericTypes: EvalexprNumericTypes {}
+unsafe impl<A, B, NumericTypes> Send for StaticContext<A, B, NumericTypes> where NumericTypes: EvalexprNumericTypes {}
 
-impl<A, B> Clone for StaticContext<A, B> {
+impl<A, B, NumericTypes: EvalexprNumericTypes> Clone for StaticContext<A, B, NumericTypes> {
     fn clone(&self) -> Self {
         Self {
             current: self.current.clone(),
-            next: self.next.clone()
+            next: self.next.clone(),
+            _phantom: PhantomData,
         }
     }
 }
 
 
-impl<A, B> StaticContext<A, B> where A: Context, B: Context {
+impl<A, B, NumericTypes: EvalexprNumericTypes> StaticContext<A, B, NumericTypes> where A: Context<NumericTypes=NumericTypes>, B: Context<NumericTypes=NumericTypes> {
     pub fn new(current: A, next: B) -> Self {
-        Self { current: Arc::new(current), next: Arc::new(next) }
+        Self { current: Arc::new(current), next: Arc::new(next), _phantom: PhantomData }
     }
 
-    pub fn create_expanded<C: Context>(&self, other: C) -> StaticContext<C, StaticContext<A, B>> {
-        StaticContext::<C, StaticContext<A, B>>::new(other, self.clone())
+    pub fn create_expanded<C: Context<NumericTypes=NumericTypes>>(&self, other: C) -> StaticContext<C, StaticContext<A, B, NumericTypes>, NumericTypes> {
+        StaticContext::<C, StaticContext<A, B, NumericTypes>, NumericTypes>::new(other, self.clone())
     }
 }
 
-impl<A, B> Context for StaticContext<A, B> where A: Context, B: Context {
-    fn get_value(&self, identifier: &str) -> Option<&Value> {
+impl<A, B, NumericTypes: EvalexprNumericTypes> Context for StaticContext<A, B, NumericTypes>
+where
+    A: Context<NumericTypes=NumericTypes>,
+    B: Context<NumericTypes=NumericTypes>
+{
+    type NumericTypes = NumericTypes;
+
+    fn get_value(&self, identifier: &str) -> Option<&Value<NumericTypes>> {
         match self.current.get_value(identifier) {
             None => {
                 self.next.get_value(identifier)
@@ -61,7 +70,7 @@ impl<A, B> Context for StaticContext<A, B> where A: Context, B: Context {
         }
     }
 
-    fn call_function(&self, identifier: &str, argument: &Value) -> EvalexprResult<Value> {
+    fn call_function(&self, identifier: &str, argument: &Value<NumericTypes>) -> EvalexprResult<Value<NumericTypes>, NumericTypes> {
         match self.current.call_function(identifier, argument) {
             Ok(value) => {
                 Ok(value)
@@ -80,7 +89,7 @@ impl<A, B> Context for StaticContext<A, B> where A: Context, B: Context {
         self.current.are_builtin_functions_disabled()
     }
 
-    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<()> {
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), NumericTypes> {
         let are_disabled = self.are_builtin_functions_disabled();
         if disabled == are_disabled {
             Ok(())
@@ -94,7 +103,11 @@ impl<A, B> Context for StaticContext<A, B> where A: Context, B: Context {
     }
 }
 
-impl<A, B> IterateVariablesContext for StaticContext<A, B> where A: IterateVariablesContext, B: IterateVariablesContext {
+impl<A, B, NumericTypes: EvalexprNumericTypes> IterateVariablesContext for StaticContext<A, B, NumericTypes> 
+where 
+    A: IterateVariablesContext + Context<NumericTypes=NumericTypes>, 
+    B: IterateVariablesContext + Context<NumericTypes=NumericTypes>
+{
     type VariableIterator<'b> = Chain<
         <A as IterateVariablesContext>::VariableIterator<'b>,
         <B as IterateVariablesContext>::VariableIterator<'b>
@@ -116,64 +129,77 @@ impl<A, B> IterateVariablesContext for StaticContext<A, B> where A: IterateVaria
     }
 }
 
-pub trait SimpleCombineableContext {
-    fn as_empty_mutable<'a>(self: &'a Self) -> OwningContext<'a, HashMapContext, Self>;
+pub trait SimpleCombineableContext<NumericTypes: EvalexprNumericTypes> {
+    fn as_empty_mutable<'a>(self: &'a Self) -> OwningContext<'a, HashMapContext<NumericTypes>, Self, NumericTypes>;
 }
 
-impl<A> SimpleCombineableContext for A where A: Context {
-    fn as_empty_mutable<'a>(self: &'a Self) -> OwningContext<'a, HashMapContext, Self> {
-        HashMapContext::new().to_owning_with(self)
+impl<A, NumericTypes: EvalexprNumericTypes> SimpleCombineableContext<NumericTypes> for A where A: Context<NumericTypes=NumericTypes> {
+    fn as_empty_mutable<'a>(self: &'a Self) -> OwningContext<'a, HashMapContext<NumericTypes>, Self, NumericTypes> {
+        HashMapContext::<NumericTypes>::new().to_owning_with(self)
     }
 }
 
 
-pub trait CombineableContext<B> where B: Context {
-    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<'a, Self, B>;
-    fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<'a, Self, B>;
-    fn to_static_with(self, other: B) -> StaticContext<Self, B>;
-    fn to_owning_with<'a>(self, other: &'a B) -> OwningContext<'a, Self, B> where Self: Sized;
+pub trait CombineableContext<B, NumericTypes: EvalexprNumericTypes> 
+where 
+    Self: Context<NumericTypes=NumericTypes>,
+    B: Context<NumericTypes=NumericTypes> 
+{
+    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<'a, Self, B, NumericTypes>;
+    fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<'a, Self, B, NumericTypes>;
+    fn to_static_with(self, other: B) -> StaticContext<Self, B, NumericTypes>;
+    fn to_owning_with<'a>(self, other: &'a B) -> OwningContext<'a, Self, B, NumericTypes> where Self: Sized;
 }
 
 
-impl<A, B> CombineableContext<B> for A where A: Context, B: Context {
-    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<'a, Self, B> {
+impl<A, B, NumericTypes: EvalexprNumericTypes> CombineableContext<B, NumericTypes> for A
+where 
+    A: Context<NumericTypes=NumericTypes>,
+    B: Context<NumericTypes=NumericTypes>
+{
+    fn combine_with<'a>(self: &'a Self, other: &'a B) -> CombinedContextWrapper<'a, Self, B, NumericTypes> {
         CombinedContextWrapper::new(self, other)
     }
 
     #[inline(always)]
-    fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<'a, Self, B> {
+    fn combine_with_mut<'a>(self: &'a mut Self, other: &'a B) -> CombinedContextWrapperMut<'a, Self, B, NumericTypes> {
         CombinedContextWrapperMut::new(self, other)
     }
 
-    fn to_static_with(self, other: B) -> StaticContext<Self, B> {
+    fn to_static_with(self, other: B) -> StaticContext<Self, B, NumericTypes> {
         StaticContext::new(self, other)
     }
 
-    fn to_owning_with<'a>(self, other: &'a B) -> OwningContext<'a, Self, B> where Self: Sized {
+    fn to_owning_with<'a>(self, other: &'a B) -> OwningContext<'a, Self, B, NumericTypes> where Self: Sized {
         OwningContext::new(self, other)
     }
-
-
 }
 
 
 /// Combines a global and a local context in a meaningful way.
 /// Owns the local context
 #[derive(Debug)]
-pub struct OwningContext<'a, A: Sized, B: ?Sized> {
+pub struct OwningContext<'a, A: Sized, B: ?Sized, NumericTypes: EvalexprNumericTypes = DefaultNumericTypes> {
     local_context: A,
-    global_context: &'a B
+    global_context: &'a B,
+    _phantom: PhantomData<NumericTypes>,
 }
 
-impl<'a, A, B> OwningContext<'a, A, B> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> OwningContext<'a, A, B, NumericTypes> {
     #[inline(always)]
     pub fn new(local_context: A, global_context: &'a B) -> Self {
-        Self { local_context, global_context }
+        Self { local_context, global_context, _phantom: PhantomData }
     }
 }
 
-impl<'a, A, B> Context for OwningContext<'a, A, B> where A: Context, B: Context {
-    fn get_value(&self, identifier: &str) -> Option<&Value> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> Context for OwningContext<'a, A, B, NumericTypes> 
+where
+    A: Context<NumericTypes=NumericTypes>, 
+    B: Context<NumericTypes=NumericTypes> 
+{
+    type NumericTypes = NumericTypes;
+
+    fn get_value(&self, identifier: &str) -> Option<&Value<NumericTypes>> {
         match self.local_context.get_value(identifier) {
             None => {
                 self.global_context.get_value(identifier)
@@ -184,7 +210,7 @@ impl<'a, A, B> Context for OwningContext<'a, A, B> where A: Context, B: Context 
         }
     }
 
-    fn call_function(&self, identifier: &str, argument: &Value) -> EvalexprResult<Value> {
+    fn call_function(&self, identifier: &str, argument: &Value<NumericTypes>) -> EvalexprResult<Value<NumericTypes>, NumericTypes> {
         match self.local_context.call_function(identifier, argument) {
             Ok(value) => {
                 Ok(value)
@@ -203,24 +229,36 @@ impl<'a, A, B> Context for OwningContext<'a, A, B> where A: Context, B: Context 
         self.local_context.are_builtin_functions_disabled()
     }
 
-    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<()> {
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), NumericTypes> {
         self.local_context.set_builtin_functions_disabled(disabled)
     }
 }
 
-impl<'a, A, B> ContextWithMutableVariables for OwningContext<'a, A, B> where A: ContextWithMutableVariables, B: Context  {
-    fn set_value(&mut self, identifier: String, value: Value) -> EvalexprResult<()> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> ContextWithMutableVariables for OwningContext<'a, A, B, NumericTypes>
+where 
+    A: ContextWithMutableVariables + Context<NumericTypes=NumericTypes>, 
+    B: Context<NumericTypes=NumericTypes>
+{
+    fn set_value(&mut self, identifier: String, value: Value<NumericTypes>) -> EvalexprResult<(), NumericTypes> {
         self.local_context.set_value(identifier, value)
     }
 }
 
-impl<'a, A, B> ContextWithMutableFunctions for OwningContext<'a, A, B> where A: ContextWithMutableFunctions, B: Context  {
-    fn set_function(&mut self, identifier: String, function: Function) -> EvalexprResult<()> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> ContextWithMutableFunctions for OwningContext<'a, A, B, NumericTypes> 
+where 
+    A: ContextWithMutableFunctions + Context<NumericTypes=NumericTypes>, 
+    B: Context<NumericTypes=NumericTypes>
+{
+    fn set_function(&mut self, identifier: String, function: Function<NumericTypes>) -> EvalexprResult<(), NumericTypes> {
         self.local_context.set_function(identifier, function)
     }
 }
 
-impl<'a, A, B> IterateVariablesContext for OwningContext<'a, A, B> where A: IterateVariablesContext, B: IterateVariablesContext {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> IterateVariablesContext for OwningContext<'a, A, B, NumericTypes> 
+where 
+    A: Context<NumericTypes=NumericTypes> + IterateVariablesContext, 
+    B: Context<NumericTypes=NumericTypes> + IterateVariablesContext
+{
     type VariableIterator<'b> = Chain<
         <A as IterateVariablesContext>::VariableIterator<'b>,
         <B as IterateVariablesContext>::VariableIterator<'b>
@@ -251,20 +289,27 @@ impl<'a, A, B> IterateVariablesContext for OwningContext<'a, A, B> where A: Iter
 /// Combines a global and a local context in a meaningful way.
 /// Borrows the local context in a mutable way
 #[derive(Debug)]
-pub struct CombinedContextWrapperMut<'a, A: ?Sized, B: ?Sized> {
+pub struct CombinedContextWrapperMut<'a, A: ?Sized, B: ?Sized, NumericTypes: EvalexprNumericTypes = DefaultNumericTypes> {
     local_context: &'a mut A,
-    global_context: &'a B
+    global_context: &'a B,
+    _phantom: PhantomData<NumericTypes>,
 }
 
-impl<'a, A, B> CombinedContextWrapperMut<'a, A, B> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> CombinedContextWrapperMut<'a, A, B, NumericTypes> {
     #[inline(always)]
     pub fn new(local_context: &'a mut A, global_context: &'a B) -> Self {
-        Self { local_context, global_context }
+        Self { local_context, global_context, _phantom: PhantomData }
     }
 }
 
-impl<'a, A, B> Context for CombinedContextWrapperMut<'a, A, B> where A: Context, B: Context {
-    fn get_value(&self, identifier: &str) -> Option<&Value> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> Context for CombinedContextWrapperMut<'a, A, B, NumericTypes> 
+where 
+    A: Context<NumericTypes=NumericTypes>,
+    B: Context<NumericTypes=NumericTypes> 
+{
+    type NumericTypes = NumericTypes;
+
+    fn get_value(&self, identifier: &str) -> Option<&Value<NumericTypes>> {
         match self.local_context.get_value(identifier) {
             None => {
                 self.global_context.get_value(identifier)
@@ -275,7 +320,7 @@ impl<'a, A, B> Context for CombinedContextWrapperMut<'a, A, B> where A: Context,
         }
     }
 
-    fn call_function(&self, identifier: &str, argument: &Value) -> EvalexprResult<Value> {
+    fn call_function(&self, identifier: &str, argument: &Value<NumericTypes>) -> EvalexprResult<Value<NumericTypes>, NumericTypes> {
         match self.local_context.call_function(identifier, argument) {
             Ok(value) => {
                 Ok(value)
@@ -294,24 +339,36 @@ impl<'a, A, B> Context for CombinedContextWrapperMut<'a, A, B> where A: Context,
         self.local_context.are_builtin_functions_disabled()
     }
 
-    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<()> {
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), NumericTypes> {
         self.local_context.set_builtin_functions_disabled(disabled)
     }
 }
 
-impl<'a, A, B> ContextWithMutableVariables for CombinedContextWrapperMut<'a, A, B> where A: ContextWithMutableVariables, B: Context  {
-    fn set_value(&mut self, identifier: String, value: Value) -> EvalexprResult<()> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> ContextWithMutableVariables for CombinedContextWrapperMut<'a, A, B, NumericTypes> 
+where
+    A: ContextWithMutableVariables + Context<NumericTypes=NumericTypes>, 
+    B: Context<NumericTypes=NumericTypes> 
+{
+    fn set_value(&mut self, identifier: String, value: Value<NumericTypes>) -> EvalexprResult<(), NumericTypes> {
         self.local_context.set_value(identifier, value)
     }
 }
 
-impl<'a, A, B> ContextWithMutableFunctions for CombinedContextWrapperMut<'a, A, B> where A: ContextWithMutableFunctions, B: Context  {
-    fn set_function(&mut self, identifier: String, function: Function) -> EvalexprResult<()> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> ContextWithMutableFunctions for CombinedContextWrapperMut<'a, A, B, NumericTypes> 
+where 
+    A: ContextWithMutableFunctions + Context<NumericTypes=NumericTypes>,
+    B: Context<NumericTypes=NumericTypes> 
+{
+    fn set_function(&mut self, identifier: String, function: Function<NumericTypes>) -> EvalexprResult<(), NumericTypes> {
         self.local_context.set_function(identifier, function)
     }
 }
 
-impl<'a, A, B> IterateVariablesContext for CombinedContextWrapperMut<'a, A, B> where A: IterateVariablesContext, B: IterateVariablesContext {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> IterateVariablesContext for CombinedContextWrapperMut<'a, A, B, NumericTypes>
+where 
+    A: Context<NumericTypes=NumericTypes> + IterateVariablesContext, 
+    B: Context<NumericTypes=NumericTypes> + IterateVariablesContext 
+{
     type VariableIterator<'b> = Chain<
         <A as IterateVariablesContext>::VariableIterator<'b>,
         <B as IterateVariablesContext>::VariableIterator<'b>
@@ -338,20 +395,27 @@ impl<'a, A, B> IterateVariablesContext for CombinedContextWrapperMut<'a, A, B> w
 
 /// Conbines a global and a local context in a meaningful way.
 #[derive(Debug, Clone)]
-pub struct CombinedContextWrapper<'a, A: ?Sized, B: ?Sized> {
+pub struct CombinedContextWrapper<'a, A: ?Sized, B: ?Sized, NumericTypes: EvalexprNumericTypes = DefaultNumericTypes> {
     local_context: &'a A,
-    global_context: &'a B
+    global_context: &'a B,
+    _phantom: PhantomData<NumericTypes>,
 }
 
-impl<'a, A, B> CombinedContextWrapper<'a, A, B> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> CombinedContextWrapper<'a, A, B, NumericTypes> {
     #[inline(always)]
     pub fn new(local_context: &'a A, global_context: &'a B) -> Self {
-        Self { local_context, global_context }
+        Self { local_context, global_context, _phantom: PhantomData }
     }
 }
 
-impl<'a, A, B> Context for CombinedContextWrapper<'a, A, B> where A: Context, B: Context {
-    fn get_value(&self, identifier: &str) -> Option<&Value> {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> Context for CombinedContextWrapper<'a, A, B, NumericTypes>
+where 
+    A: Context<NumericTypes=NumericTypes>,
+    B: Context<NumericTypes=NumericTypes> 
+{
+    type NumericTypes = NumericTypes;
+
+    fn get_value(&self, identifier: &str) -> Option<&Value<NumericTypes>> {
         match self.local_context.get_value(identifier) {
             None => {
                 self.global_context.get_value(identifier)
@@ -362,7 +426,7 @@ impl<'a, A, B> Context for CombinedContextWrapper<'a, A, B> where A: Context, B:
         }
     }
 
-    fn call_function(&self, identifier: &str, argument: &Value) -> EvalexprResult<Value> {
+    fn call_function(&self, identifier: &str, argument: &Value<NumericTypes>) -> EvalexprResult<Value<NumericTypes>, NumericTypes> {
         match self.local_context.call_function(identifier, argument) {
             Ok(value) => {
                 Ok(value)
@@ -381,7 +445,7 @@ impl<'a, A, B> Context for CombinedContextWrapper<'a, A, B> where A: Context, B:
         self.local_context.are_builtin_functions_disabled()
     }
 
-    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<()> {
+    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), NumericTypes> {
         let builtin_functions_disabled = self.local_context.are_builtin_functions_disabled();
         if disabled == builtin_functions_disabled {
             Ok(())
@@ -395,7 +459,11 @@ impl<'a, A, B> Context for CombinedContextWrapper<'a, A, B> where A: Context, B:
     }
 }
 
-impl<'a, A, B> IterateVariablesContext for CombinedContextWrapper<'a, A, B> where A: IterateVariablesContext, B: IterateVariablesContext {
+impl<'a, A, B, NumericTypes: EvalexprNumericTypes> IterateVariablesContext for CombinedContextWrapper<'a, A, B, NumericTypes> 
+where 
+    A: IterateVariablesContext + Context<NumericTypes=NumericTypes>, 
+    B: IterateVariablesContext + Context<NumericTypes=NumericTypes>
+{
     type VariableIterator<'b> = Chain<
         <A as IterateVariablesContext>::VariableIterator<'b>,
         <B as IterateVariablesContext>::VariableIterator<'b>

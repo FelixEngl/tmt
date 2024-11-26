@@ -13,7 +13,7 @@
 //limitations under the License.
 
 use std::sync::Arc;
-use evalexpr::{Value};
+use evalexpr::{EvalexprNumericTypesConvert, Value};
 use nom::branch::alt;
 use nom::combinator::{map, map_res};
 use nom::IResult;
@@ -69,7 +69,11 @@ pub enum InterpretedVoting {
 impl VotingMethodMarker for InterpretedVoting {}
 
 impl VotingMethod for InterpretedVoting {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
+    {
         match self {
             InterpretedVoting::BuildIn(value) => {
                 value.execute(global_context, voters)

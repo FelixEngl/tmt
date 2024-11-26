@@ -15,9 +15,9 @@
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::{Deref, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 use std::sync::Arc;
-use evalexpr::{ContextWithMutableVariables, EvalexprError, EvalexprResult, Node, TupleType, Value};
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprNumericTypesConvert, EvalexprResult, Node, TupleType, Value};
 use itertools::{FoldWhile, Itertools, Position};
-use crate::toolkit::evalexpr::CombineableContext;
+use crate::toolkit::evalexpr::{CombineableContext};
 use crate::voting::{BuildInVoting, VotingExpressionError, VotingMethod, VotingMethodContext, VotingMethodMarker, VotingResult, VotingWithLimit};
 use crate::voting::aggregations::Aggregation;
 use crate::voting::display::{DisplayTree, IndentWriter};
@@ -79,10 +79,10 @@ impl LimitableVotingMethodMarker for VotingFunction {}
 impl VotingMethodMarker for VotingFunction {}
 
 impl VotingMethod for VotingFunction {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
-        where
-            A : VotingMethodContext,
-            B : VotingMethodContext
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
     {
         match self {
             VotingFunction::Single(value, _) => {
@@ -161,10 +161,10 @@ pub enum VotingOperation {
 }
 
 impl VotingMethod for VotingOperation {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value>
-        where
-            A : VotingMethodContext,
-            B : VotingMethodContext
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes>
     {
         match self {
             VotingOperation::IterScope {
@@ -242,7 +242,10 @@ pub enum VotingExecution {
 impl VotingMethodMarker for VotingExecution {}
 
 impl VotingMethod for VotingExecution {
-    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
+    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    where
+        A : VotingMethodContext<NumericTypes>,
+        B : VotingMethodContext<NumericTypes> {
         match self {
             VotingExecution::BuildIn(value) => {
                 value.execute(global_context, voters)
@@ -298,7 +301,7 @@ impl VotingExecutableList {
 }
 
 impl VotingExecutable for VotingExecutableList {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value> {
+    fn execute<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VotingResult<Value<NumericTypes>, NumericTypes> {
         match self {
             VotingExecutableList::Single(value) => {
                 value.execute(context)
@@ -371,7 +374,7 @@ impl InnerIfElse {
 }
 
 impl VotingExecutable for InnerIfElse {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value> {
+    fn execute<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VotingResult<Value<NumericTypes>, NumericTypes> {
         if self.cond.execute(context)?.as_boolean()? {
             self.if_block.execute(context)
         } else {
@@ -416,7 +419,7 @@ impl VotingExpressionOrStatement {
 }
 
 impl VotingExecutable for VotingExpressionOrStatement {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>
+    fn execute<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VotingResult<Value<NumericTypes>, NumericTypes>
     {
         match self {
             VotingExpressionOrStatement::Expression{expr} => {
@@ -477,7 +480,7 @@ pub enum VotingStatement {
 }
 
 impl VotingExecutable for VotingStatement {
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>
+    fn execute<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VotingResult<Value<NumericTypes>, NumericTypes>
     {
         match self {
             VotingStatement::If { cond, if_block } => {
@@ -538,7 +541,7 @@ impl VotingExpression {
 
 impl VotingExecutable for VotingExpression {
     #[inline(always)]
-    fn execute(&self, context: &mut impl ContextWithMutableVariables) -> VotingResult<Value>
+    fn execute<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VotingResult<Value<NumericTypes>, NumericTypes>
     {
 
         match self {

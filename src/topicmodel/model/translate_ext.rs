@@ -6,7 +6,7 @@ use crate::topicmodel::vocabulary::{BasicVocabulary, SearchableVocabulary};
 use crate::translate::{TranslatableTopicMatrix};
 use crate::translate::{TopicMeta, TranslatableTopicMatrixWithCreate, VoterMeta, VoterInfoProvider};
 use crate::topicmodel::model::meta::TopicMeta as TopicModelTopicMeta;
-use evalexpr::ContextWithMutableVariables;
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert};
 use std::sync::Arc;
 use crate::toolkit::evalexpr::{ContextExtender, ExtensionLevel};
 
@@ -78,7 +78,7 @@ where
 impl ContextExtender for TopicModelTopicMeta {
     const EXTENSION_LEVEL: ExtensionLevel = ExtensionLevel::Topic;
 
-    fn extend_context(&self, _: &mut impl ContextWithMutableVariables) {}
+    fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, _: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) {}
 }
 
 impl TopicMeta for TopicModelTopicMeta {
@@ -111,7 +111,7 @@ impl TopicMeta for TopicModelTopicMeta {
 impl<T> ContextExtender for T where T: Deref<Target=WordMeta> {
     const EXTENSION_LEVEL: ExtensionLevel = ExtensionLevel::Voter;
 
-    fn extend_context(&self, _: &mut impl ContextWithMutableVariables) {}
+    fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, _: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) {}
 }
 
 impl<T> VoterMeta for T where T: Deref<Target=WordMeta> {

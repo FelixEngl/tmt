@@ -1,18 +1,18 @@
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert, Value};
 use crate::variable_provider::providers::{SharedInterner, VarName};
 use crate::variable_provider::targets::Target;
 use crate::variable_provider::VariableProviderResult;
 
 #[derive(Debug, Clone)]
-pub struct IdBasedVariableProvider<T: Target> {
+pub struct IdBasedVariableProvider<T: Target, NumericTypes: EvalexprNumericTypesConvert> {
     provider: SharedInterner,
-    variables: Arc<RwLock<Vec<Vec<(VarName, Value)>>>>,
+    variables: Arc<RwLock<Vec<Vec<(VarName, Value<NumericTypes>)>>>>,
     _target_type: PhantomData<T>
 }
 
-impl<T> IdBasedVariableProvider<T> where T: Target {
+impl<T, NumericTypes: EvalexprNumericTypesConvert> IdBasedVariableProvider<T, NumericTypes> where T: Target {
     pub fn new(provider: SharedInterner, id_count: usize) -> Self {
         let mut per_topic = Vec::with_capacity(id_count);
         for _ in 0..per_topic.capacity() {
@@ -25,7 +25,7 @@ impl<T> IdBasedVariableProvider<T> where T: Target {
         }
     }
 
-    pub fn register_variable(&self, id: usize, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()> {
+    pub fn register_variable(&self, id: usize, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes> {
         let mut variable_lock = self.variables.write().unwrap();
         if let Some(data) = variable_lock.get_mut(id) {
             data.push((self.provider.intern_fast(key), value.into()));
@@ -35,7 +35,7 @@ impl<T> IdBasedVariableProvider<T> where T: Target {
         }
     }
 
-    pub fn provide_variables(&self, id: usize, target: &mut impl ContextWithMutableVariables) -> VariableProviderResult<()> {
+    pub fn provide_variables(&self, id: usize, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes> {
         let variables = self.variables.read().unwrap();
         if let Some(for_id) = variables.get(id) {
             let resolver = self.provider.resolver();
