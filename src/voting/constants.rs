@@ -1,3 +1,3 @@
 use evalexpr::{DefaultNumericTypes};
 
-pub type NumericTypes = DefaultNumericTypes;
+pub type TMTNumericTypes = DefaultNumericTypes;

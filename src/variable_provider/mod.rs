@@ -23,18 +23,19 @@ pub use traits::*;
 
 
 use crate::variable_provider::providers::InnerVariableProvider;
-use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert, Value};
+use evalexpr::{ContextWithMutableVariables, Value};
 use std::sync::Arc;
+use crate::voting::constants::TMTNumericTypes;
 
-pub type VariableProviderResult<T, NumericTypes> = Result<T, VariableProviderError<NumericTypes>>;
+pub type VariableProviderResult<T> = Result<T, VariableProviderError>;
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
-pub struct VariableProvider<NumericTypes: EvalexprNumericTypesConvert> {
-    inner: Arc<InnerVariableProvider<NumericTypes>>
+pub struct VariableProvider {
+    inner: Arc<InnerVariableProvider>
 }
 
-impl<NumericTypes: EvalexprNumericTypesConvert> VariableProvider<NumericTypes> {
+impl VariableProvider {
     pub fn new(topic_count: usize, word_count_a: usize, word_count_b: usize) -> Self {
         Self {
             inner: Arc::new(InnerVariableProvider::new(topic_count, word_count_a, word_count_b))
@@ -43,25 +44,25 @@ impl<NumericTypes: EvalexprNumericTypesConvert> VariableProvider<NumericTypes> {
 
     delegate::delegate! {
         to self.inner {
-            pub fn add_global(&self, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes>;
-            pub fn add_for_topic(&self, topic_id: usize, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes>;
-            pub fn add_for_word_a(&self, word_id: usize, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes>;
-            pub fn add_for_word_b(&self, word_id: usize, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes>;
-            pub fn add_for_word_in_topic_a(&self, topic_id: usize, word_id: usize, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes>;
-            pub fn add_for_word_in_topic_b(&self, topic_id: usize, word_id: usize, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes>;
+            pub fn add_global(&self, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()>;
+            pub fn add_for_topic(&self, topic_id: usize, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()>;
+            pub fn add_for_word_a(&self, word_id: usize, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()>;
+            pub fn add_for_word_b(&self, word_id: usize, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()>;
+            pub fn add_for_word_in_topic_a(&self, topic_id: usize, word_id: usize, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()>;
+            pub fn add_for_word_in_topic_b(&self, topic_id: usize, word_id: usize, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()>;
         }
     }
 }
 
-impl<NumericTypes: EvalexprNumericTypesConvert> VariableProviderOut<NumericTypes> for VariableProvider<NumericTypes> {
+impl VariableProviderOut for VariableProvider {
     delegate::delegate! {
         to self.inner {
-            fn provide_global(&self, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes>;
-            fn provide_for_topic(&self, topic_id: usize, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes>;
-            fn provide_for_word_a(&self, word_id: usize, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes>;
-            fn provide_for_word_b(&self, word_id: usize, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes>;
-            fn provide_for_word_in_topic_a(&self, topic_id: usize, word_id: usize, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes>;
-            fn provide_for_word_in_topic_b(&self, topic_id: usize, word_id: usize, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes>;
+            fn provide_global(&self, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()>;
+            fn provide_for_topic(&self, topic_id: usize, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()>;
+            fn provide_for_word_a(&self, word_id: usize, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()>;
+            fn provide_for_word_b(&self, word_id: usize, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()>;
+            fn provide_for_word_in_topic_a(&self, topic_id: usize, word_id: usize, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()>;
+            fn provide_for_word_in_topic_b(&self, topic_id: usize, word_id: usize, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()>;
         }
     }
 }

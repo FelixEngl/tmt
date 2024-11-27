@@ -13,8 +13,7 @@
 //limitations under the License.
 
 use std::collections::{HashMap};
-use evalexpr::{Context, ContextWithMutableVariables, DefaultNumericTypes, EvalexprError, EvalexprNumericTypes, EvalexprNumericTypesConvert, EvalexprResult, Value};
-use evalexpr::error::EvalexprResultValue;
+use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResult, Value};
 use itertools::Itertools;
 use pyo3::{Bound, FromPyObject, PyAny, pyclass, pymethods, PyResult, IntoPy, PyObject, Python};
 use pyo3::exceptions::{PyKeyError, PyValueError};
@@ -23,6 +22,7 @@ use pyo3::types::PyFunction;
 use crate::{impl_py_stub, impl_py_type_def, register_python};
 use crate::voting::traits::{RootVotingMethodMarker, VotingMethodMarker};
 use crate::voting::{VotingExpressionError, VotingMethod, VotingMethodContext, VotingResult};
+use crate::voting::constants::TMTNumericTypes;
 
 /// A voting model based on a python method.
 #[derive(Clone, Debug)]
@@ -60,11 +60,7 @@ unsafe impl Sync for PyVotingModel<'_> {}
 impl RootVotingMethodMarker for PyVotingModel<'_> {}
 impl VotingMethodMarker for PyVotingModel<'_> {}
 impl<'a> VotingMethod for PyVotingModel<'a> {
-    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
-    where
-        A: VotingMethodContext<NumericTypes>,
-        B: VotingMethodContext<NumericTypes>
-    {
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value> where A: VotingMethodContext, B: VotingMethodContext {
         unsafe {
             let global_context = PyContextWithMutableVariables::new(global_context);
             let voters = voters.iter_mut().map(|value| PyContextWithMutableVariables::new(value)).collect_vec();
@@ -72,63 +68,6 @@ impl<'a> VotingMethod for PyVotingModel<'a> {
             let py_expr_value: PyExprValue = result.extract().map_err(VotingExpressionError::PythonError)?;
             Ok(py_expr_value.into())
         }
-    }
-}
-
-struct Adapter<'a, NumericTypes: EvalexprNumericTypesConvert + Sized> {
-    wrapped: &'a mut dyn VotingMethodContext<NumericTypes>,
-    cache: HashMap<String, Value>
-}
-
-impl<'a, NumericTypes: EvalexprNumericTypesConvert + Sized> ContextWithMutableVariables for Adapter<'a, NumericTypes> {
-    fn set_value(&mut self, identifier: String, value: Value<DefaultNumericTypes>) -> EvalexprResult<(), DefaultNumericTypes> {
-        self.wrapped.set_value(identifier, Value::<NumericTypes>::from_general(&value))
-    }
-}
-
-impl<'a, NumericTypes: EvalexprNumericTypesConvert + Sized> Context for Adapter<'a, NumericTypes> {
-    type NumericTypes = DefaultNumericTypes;
-
-    fn get_value(&self, identifier: &str) -> Option<&Value<DefaultNumericTypes>> {
-        todo!()
-    }
-
-    fn call_function(&self, identifier: &str, argument: &Value<Self::NumericTypes>) -> EvalexprResultValue<Self::NumericTypes> {
-        todo!()
-    }
-
-    fn are_builtin_functions_disabled(&self) -> bool {
-        todo!()
-    }
-
-    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), Self::NumericTypes> {
-        todo!()
-    }
-}
-
-impl<NumericTypes: EvalexprNumericTypesConvert + Sized> Context<NumericTypes=DefaultNumericTypes> for Adapter<'_, NumericTypes> {
-    type NumericTypes = ();
-
-    fn get_value(&self, identifier: &str) -> Option<&Value<Self::NumericTypes>> {
-        todo!()
-    }
-
-    fn call_function(&self, identifier: &str, argument: &Value<Self::NumericTypes>) -> EvalexprResultValue<Self::NumericTypes> {
-        todo!()
-    }
-
-    fn are_builtin_functions_disabled(&self) -> bool {
-        todo!()
-    }
-
-    fn set_builtin_functions_disabled(&mut self, disabled: bool) -> EvalexprResult<(), Self::NumericTypes> {
-        todo!()
-    }
-}
-
-impl<NumericTypes: EvalexprNumericTypesConvert + Sized> VotingMethodContext<DefaultNumericTypes> for Adapter<'_, NumericTypes> {
-    fn variable_map(&self) -> HashMap<String, Value<DefaultNumericTypes>> {
-        todo!()
     }
 }
 
@@ -254,8 +193,7 @@ impl Into<Value> for PyExprValue {
 #[pyclass]
 #[derive(Copy, Clone, Debug)]
 pub struct PyContextWithMutableVariables {
-    inner: *mut dyn VotingMethodContext<DefaultNumericTypes>,
-
+    inner: *mut dyn VotingMethodContext
 }
 
 unsafe impl Send for PyContextWithMutableVariables {}
@@ -301,10 +239,9 @@ impl PyContextWithMutableVariables {
 
 
 impl PyContextWithMutableVariables {
-    unsafe fn new<'a>(value: &'a mut dyn VotingMethodContext<DefaultNumericTypes>) -> Self {
+    unsafe fn new<'a>(value: &'a mut dyn VotingMethodContext ) -> Self {
         // Transmute does not change the real lifeline!
-        let value: &'static mut dyn VotingMethodContext<DefaultNumericTypes>
-            = std::mem::transmute::<&'a mut dyn VotingMethodContext<DefaultNumericTypes>, &'static mut dyn VotingMethodContext<DefaultNumericTypes>>(value);
+        let value: &'static mut dyn VotingMethodContext = std::mem::transmute::<&'a mut dyn VotingMethodContext, &'static mut dyn VotingMethodContext>(value);
         Self {
             inner: value
         }
@@ -312,8 +249,7 @@ impl PyContextWithMutableVariables {
 }
 
 impl Context for PyContextWithMutableVariables {
-    type NumericTypes = DefaultNumericTypes;
-
+    type NumericTypes = TMTNumericTypes;
     delegate::delegate! {
         to unsafe{&*self.inner} {
             fn get_value(&self, identifier: &str) -> Option<&Value>;
@@ -337,7 +273,7 @@ impl ContextWithMutableVariables for PyContextWithMutableVariables {
     }
 }
 
-impl VotingMethodContext<DefaultNumericTypes> for PyContextWithMutableVariables {
+impl VotingMethodContext for PyContextWithMutableVariables {
     fn variable_map(&self) -> HashMap<String, Value> {
         unsafe{&*self.inner}.variable_map()
     }

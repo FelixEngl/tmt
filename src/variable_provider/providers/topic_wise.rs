@@ -1,16 +1,17 @@
 use std::sync::{Arc, RwLock};
-use evalexpr::{Context, ContextWithMutableVariables, EvalexprNumericTypesConvert, Value};
+use evalexpr::{ContextWithMutableVariables, Value};
 use crate::variable_provider::errors::VariableProviderError;
 use crate::variable_provider::providers::{SharedInterner, VarName};
 use crate::variable_provider::VariableProviderResult;
+use crate::voting::constants::TMTNumericTypes;
 
 #[derive(Debug, Clone)]
-pub struct TopicWiseWordVariableProvider<NumericTypes: EvalexprNumericTypesConvert> {
+pub struct TopicWiseWordVariableProvider {
     provider: SharedInterner,
-    variables: Arc<RwLock<Vec<Vec<Vec<(VarName, Value<NumericTypes>)>>>>>
+    variables: Arc<RwLock<Vec<Vec<Vec<(VarName, Value<TMTNumericTypes>)>>>>>
 }
 
-impl<NumericTypes: EvalexprNumericTypesConvert> TopicWiseWordVariableProvider<NumericTypes> {
+impl TopicWiseWordVariableProvider {
     pub fn new(provider: SharedInterner, topic_count: usize, word_count: usize) -> Self {
         let mut values = Vec::with_capacity(topic_count);
         for _ in 0..values.capacity() {
@@ -26,7 +27,7 @@ impl<NumericTypes: EvalexprNumericTypesConvert> TopicWiseWordVariableProvider<Nu
         }
     }
 
-    pub fn register_variable(&self, topic_id: usize, word_id: usize, key: impl AsRef<str>, value: impl Into<Value<NumericTypes>>) -> VariableProviderResult<(), NumericTypes> {
+    pub fn register_variable(&self, topic_id: usize, word_id: usize, key: impl AsRef<str>, value: impl Into<Value>) -> VariableProviderResult<()> {
         let mut variable_lock = self.variables.write().unwrap();
         if let Some(by_word) = variable_lock.get_mut(topic_id) {
             if let Some(data) = by_word.get_mut(word_id) {
@@ -46,7 +47,7 @@ impl<NumericTypes: EvalexprNumericTypesConvert> TopicWiseWordVariableProvider<Nu
         }
     }
 
-    pub fn provide_variables(&self, topic_id: usize, word_id: usize, target: &mut (impl ContextWithMutableVariables + Context<NumericTypes=NumericTypes>)) -> VariableProviderResult<(), NumericTypes> {
+    pub fn provide_variables(&self, topic_id: usize, word_id: usize, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()> {
         let variable_lock = self.variables.read().unwrap();
         if let Some(by_word) = variable_lock.get(topic_id) {
             if let Some(data) = by_word.get(word_id) {

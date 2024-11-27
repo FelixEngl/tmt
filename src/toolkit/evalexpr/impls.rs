@@ -129,7 +129,7 @@ where
     }
 }
 
-pub trait SimpleCombineableContext<NumericTypes: EvalexprNumericTypes> {
+pub trait SimpleCombineableContext<NumericTypes: EvalexprNumericTypes = DefaultNumericTypes> {
     fn as_empty_mutable<'a>(self: &'a Self) -> OwningContext<'a, HashMapContext<NumericTypes>, Self, NumericTypes>;
 }
 
@@ -140,7 +140,7 @@ impl<A, NumericTypes: EvalexprNumericTypes> SimpleCombineableContext<NumericType
 }
 
 
-pub trait CombineableContext<B, NumericTypes: EvalexprNumericTypes> 
+pub trait CombineableContext<B, NumericTypes: EvalexprNumericTypes = DefaultNumericTypes>
 where 
     Self: Context<NumericTypes=NumericTypes>,
     B: Context<NumericTypes=NumericTypes> 

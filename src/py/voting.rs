@@ -13,7 +13,7 @@
 //limitations under the License.
 
 use std::sync::Arc;
-use evalexpr::{EvalexprNumericTypesConvert, Value};
+use evalexpr::{Value};
 use nom::error::Error;
 use nom::Finish;
 use pyo3::{pyclass,  pymethods, PyResult};
@@ -23,6 +23,7 @@ use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse, InterpretedVoting};
 use crate::voting::registry::VotingRegistry;
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
+use crate::voting::constants::TMTNumericTypes;
 use crate::voting::py::{PyContextWithMutableVariables, PyExprValue};
 use crate::voting::traits::VotingMethodMarker;
 
@@ -154,10 +155,10 @@ impl PyVoting {
 }
 
 impl VotingMethod for PyVoting {
-    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<TMTNumericTypes>>
     where
-        A : VotingMethodContext<NumericTypes>,
-        B : VotingMethodContext<NumericTypes>
+        A : VotingMethodContext,
+        B : VotingMethodContext
     {
         self.0.execute(global_context, voters)
     }

@@ -15,7 +15,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use arcstr::ArcStr;
-use evalexpr::{ConvertibleWithEvalexprNumericTypes, EvalexprNumericTypesConvert, Value};
+use evalexpr::{Value};
 use pyo3::{pyclass, PyErr, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use crate::variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider, VariableProviderError};
@@ -26,8 +26,8 @@ use crate::topicmodel::vocabulary::{SearchableVocabulary};
 use crate::translate::TranslatableTopicMatrix;
 use crate::voting::py::PyExprValue;
 
-impl<NumericTypes: EvalexprNumericTypesConvert> From<VariableProviderError<NumericTypes>> for PyErr {
-    fn from(value: VariableProviderError<NumericTypes>) -> Self {
+impl From<VariableProviderError> for PyErr {
+    fn from(value: VariableProviderError) -> Self {
         PyValueError::new_err(value.to_string())
     }
 }
@@ -144,13 +144,12 @@ impl PyVariableProvider {
 }
 
 impl AsVariableProvider<ArcStr> for PyVariableProvider {
-    fn as_variable_provider_for<'a, NumericTypes, Target, D, Voc>(
+    fn as_variable_provider_for<'a, Target, D, Voc>(
         &self,
         target: &'a Target,
         dictionary: &'a D
-    ) -> Result<VariableProvider<NumericTypes>, AsVariableProviderError>
+    ) -> Result<VariableProvider, AsVariableProviderError>
     where
-        NumericTypes: EvalexprNumericTypesConvert,
         Voc: SearchableVocabulary<ArcStr>,
         D: BasicDictionaryWithVocabulary<Voc>,
         Target: TranslatableTopicMatrix<ArcStr, Voc>
@@ -163,24 +162,24 @@ impl AsVariableProvider<ArcStr> for PyVariableProvider {
 
         unsafe {
             for (k, v) in self.global.iter() {
-                variable_provider.add_global(self.key_interner.resolve_unchecked(*k), v.clone().into_with().unwrap()).unwrap()
+                variable_provider.add_global(self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
             }
             for (topic_id, values) in self.per_topic.iter() {
                 for (k, v) in values.iter() {
-                    variable_provider.add_for_topic(*topic_id, self.key_interner.resolve_unchecked(*k), v.clone().into_with().unwrap()).unwrap()
+                    variable_provider.add_for_topic(*topic_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
                 }
             }
             for (word, values) in self.per_word_a.iter() {
                 let word_id = dictionary.voc_a().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
                 for (k, v) in values.iter() {
-                    variable_provider.add_for_word_a(word_id, self.key_interner.resolve_unchecked(*k), v.clone().into_with().unwrap()).unwrap()
+                    variable_provider.add_for_word_a(word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
                 }
             }
 
             for (word, values) in self.per_word_b.iter() {
                 let word_id = dictionary.voc_b().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
                 for (k, v) in values.iter() {
-                    variable_provider.add_for_word_b(word_id, self.key_interner.resolve_unchecked(*k), v.clone().into_with().unwrap()).unwrap()
+                    variable_provider.add_for_word_b(word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
                 }
             }
 
@@ -188,7 +187,7 @@ impl AsVariableProvider<ArcStr> for PyVariableProvider {
                 for (word, values) in words {
                     let word_id = dictionary.voc_a().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
                     for (k, v) in values.iter() {
-                        variable_provider.add_for_word_in_topic_a(*topic_id, word_id, self.key_interner.resolve_unchecked(*k), v.clone().into_with().unwrap()).unwrap()
+                        variable_provider.add_for_word_in_topic_a(*topic_id, word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
                     }
                 }
             }
@@ -197,7 +196,7 @@ impl AsVariableProvider<ArcStr> for PyVariableProvider {
                 for (word, values) in words {
                     let word_id = dictionary.voc_b().get_id(self.word_interner.resolve_unchecked(*word)).ok_or_else(|| format!("The word {word} is unknown!")).map_err(AsVariableProviderError)?;
                     for (k, v) in values.iter() {
-                        variable_provider.add_for_word_in_topic_b(*topic_id, word_id, self.key_interner.resolve_unchecked(*k), v.clone().into_with().unwrap()).unwrap()
+                        variable_provider.add_for_word_in_topic_b(*topic_id, word_id, self.key_interner.resolve_unchecked(*k), v.clone()).unwrap()
                     }
                 }
             }

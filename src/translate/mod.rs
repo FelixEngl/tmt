@@ -22,8 +22,9 @@ pub mod topic_model_specific;
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::hash::Hash;
-use evalexpr::{context_map, Context, ContextWithMutableVariables, ConvertibleWithEvalexprNumericTypes, EmptyContextWithBuiltinFunctions, EvalexprNumericTypesConvert, EvalexprNumericTypesFloatConvert, EvalexprNumericTypesIntConvert, HashMapContext, IterateVariablesContext};
+use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext, Value};
 use itertools::Itertools;
 use rayon::prelude::*;
 pub use traits::*;
@@ -40,6 +41,7 @@ use crate::translate::phantoms::DummyAsVariableProvider;
 use crate::translate::TranslateError::IncompatibleLanguages;
 use crate::variable_provider::variable_names::*;
 use crate::variable_provider::{AsVariableProvider, VariableProvider, VariableProviderOut};
+use crate::voting::constants::TMTNumericTypes;
 use crate::voting::traits::VotingMethodMarker;
 use crate::voting::VotingMethod;
 
@@ -87,20 +89,17 @@ impl Ord for Candidate {
 }
 
 #[allow(dead_code)]
-pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V, NumericTypes: EvalexprNumericTypesConvert>(
+pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V>(
     target: &'a Target,
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
-) -> Result<Target, TranslateError<'a, NumericTypes>>
+) -> Result<Target, TranslateError<'a>>
 where
-    T: Hash + Eq + Ord + Clone + Sync + Send + 'a,
+    T: Hash + Eq + Ord + Clone + Sync + Send + 'a + Debug,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a + Debug,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync + Debug,
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
-    NumericTypes: EvalexprNumericTypesConvert,
-    <NumericTypes as EvalexprNumericTypesFloatConvert>::FloatConvert: From<f64>,
-    <NumericTypes as EvalexprNumericTypesIntConvert>::IntConvert: From<i64> + From<i32>
 {
     translate_topic_model(
         target,
@@ -111,21 +110,18 @@ where
 }
 
 
-pub(crate) fn translate_topic_model<'a, NumericTypes, Target, D, T, Voc, V, P>(
+pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     target: &'a Target,
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
     provider: Option<&P>
-) -> Result<Target, TranslateError<'a, NumericTypes>> where
-    T: Hash + Eq + Ord + Clone + Send + Sync + 'a,
+) -> Result<Target, TranslateError<'a>> where
+    T: Hash + Eq + Ord + Clone + Send + Sync + 'a + Debug,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a + Debug,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync + Debug,
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
-    P: AsVariableProvider<T>,
-    NumericTypes: EvalexprNumericTypesConvert,
-    <NumericTypes as EvalexprNumericTypesFloatConvert>::FloatConvert: From<f64>,
-    <NumericTypes as EvalexprNumericTypesIntConvert>::IntConvert: From<i64> + From<i32>
+    P: AsVariableProvider<T>
 {
 
     if let Some(lang_model) = target.vocabulary().language() {
@@ -148,6 +144,11 @@ pub(crate) fn translate_topic_model<'a, NumericTypes, Target, D, T, Voc, V, P>(
         target.vocabulary()
     );
 
+    debug_assert!(dictionary.voc_a().len() > 0);
+
+    println!("{:?}", dictionary);
+
+
     // TODO: make clean for rust.
     let provider = if let Some(provider) = provider {
         Some(provider.as_variable_provider_for(target, &dictionary))
@@ -166,10 +167,10 @@ pub(crate) fn translate_topic_model<'a, NumericTypes, Target, D, T, Voc, V, P>(
         ) - f64::EPSILON
     };
 
-    let mut topic_context: HashMapContext<NumericTypes> = context_map! {
-        EPSILON => float epsilon,
-        VOCABULARY_SIZE_A => int dictionary.voc_a().len() as i64,
-        VOCABULARY_SIZE_B => int dictionary.voc_b().len() as i64,
+    let mut topic_context: HashMapContext<TMTNumericTypes> = context_map! {
+        EPSILON => as float epsilon,
+        VOCABULARY_SIZE_A => as int dictionary.voc_a().len(),
+        VOCABULARY_SIZE_B => as int dictionary.voc_b().len(),
     }.unwrap();
 
     if let Some(ref provider) = provider {
@@ -184,8 +185,8 @@ pub(crate) fn translate_topic_model<'a, NumericTypes, Target, D, T, Voc, V, P>(
     // topic to word id to probable translation candidates.
     let result = target
         .matrix()
-        .par_iter()
-        .zip_eq(target.matrix_meta().par_iter())
+        .iter()
+        .zip_eq(target.matrix_meta().iter())
         .enumerate()
         .map(|(topic_id, (topic, meta))| {
             let mut topic_context_2 = context_map! {
@@ -228,7 +229,7 @@ pub(crate) fn translate_topic_model<'a, NumericTypes, Target, D, T, Voc, V, P>(
                     topic,
                     topic_context_2,
                     &translate_config,
-                    None::<&VariableProvider<NumericTypes>>
+                    None::<&VariableProvider>
                 ).map_err(TranslateError::WithOrigin)
             }
 
@@ -284,6 +285,8 @@ pub(crate) fn translate_topic_model<'a, NumericTypes, Target, D, T, Voc, V, P>(
         topic.into_iter().sorted_unstable_by_key(|value| value.0).map(|(_, b)| b).collect_vec()
     }).collect::<Vec<_>>();
 
+    println!("HERE 2");
+
     Ok(Target::create_new_from(
         inner_topic_model,
         voc_b,
@@ -294,25 +297,24 @@ pub(crate) fn translate_topic_model<'a, NumericTypes, Target, D, T, Voc, V, P>(
 
 
 
-fn translate_topic<Target, T, V, Voc, P, NumericTypes>(
+fn translate_topic<Target, T, V, Voc, P, C>(
     target: &Target,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
     topic: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
-    topic_context: impl Context<NumericTypes=NumericTypes> + Send + Sync + IterateVariablesContext,
+    topic_context: C,
     config: &TranslateConfig<V>,
     provider: Option<&P>
-) -> Result<Vec<Candidate>, TranslateErrorWithOrigin<NumericTypes>>
-where V: VotingMethodMarker,
-      Voc: BasicVocabulary<T> ,
-      Target: TranslatableTopicMatrix<T, Voc>,
-      P: VariableProviderOut<NumericTypes>,
-      NumericTypes: EvalexprNumericTypesConvert,
-      <NumericTypes as EvalexprNumericTypesFloatConvert>::FloatConvert: From<f64>,
-      <NumericTypes as EvalexprNumericTypesIntConvert>::IntConvert: From<i64> + From<i32>
+) -> Result<Vec<Candidate>, TranslateErrorWithOrigin>
+where
+    V: VotingMethodMarker,
+    Voc: BasicVocabulary<T> ,
+    Target: TranslatableTopicMatrix<T, Voc>,
+    P: VariableProviderOut,
+    C: Context<NumericTypes=TMTNumericTypes> + Send + Sync + IterateVariablesContext
 {
     topic
-        .par_iter()
+        .iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
             if let Some(provider) = provider {
@@ -366,27 +368,28 @@ where V: VotingMethodMarker,
 
 
 #[inline(always)]
-fn translate_single_candidate<Target, T, V, Voc, P, NumericTypes>(
+fn translate_single_candidate<Target, T, V, Voc, P, C>(
     target: &Target,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
-    topic_context: &(impl Context<NumericTypes=NumericTypes> + Send + Sync + IterateVariablesContext),
+    topic_context: &C,
     config: &TranslateConfig<V>,
     original_voter_id: usize,
     probability: f64,
     provider: Option<&P>
-) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin<NumericTypes>>>
-where V: VotingMethodMarker,
-      Voc: BasicVocabulary<T> ,
-      Target: TranslatableTopicMatrix<T, Voc>,
-      P: VariableProviderOut<NumericTypes>,
-      NumericTypes: EvalexprNumericTypesConvert,
-      <NumericTypes as EvalexprNumericTypesFloatConvert>::FloatConvert: From<f64>,
-      <NumericTypes as EvalexprNumericTypesIntConvert>::IntConvert: From<i64> + From<i32>
+) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>>
+where
+    V: VotingMethodMarker,
+    Voc: BasicVocabulary<T> ,
+    Target: TranslatableTopicMatrix<T, Voc>,
+    P: VariableProviderOut,
+    C: Context<NumericTypes=TMTNumericTypes> + Send + Sync + IterateVariablesContext
 {
     let candidates =
         if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_voter_id) {
-            Some(candidates.par_iter().cloned().filter_map( |candidate|
+            debug_assert!(!candidates.is_empty(), "The candidates are empty!");
+            Some(candidates.iter().cloned().filter_map( |candidate| {
+                debug_assert!(dictionary.translate_id_to_ids::<BToA>(candidate).is_some_and(|value| !value.is_empty()), "A candidate was not translateable!");
                 match dictionary.translate_id_to_ids::<BToA>(candidate) {
                     None  => None,
                     Some(voters) if voters.is_empty() => None,
@@ -405,11 +408,11 @@ where V: VotingMethodMarker,
 
 
                         let mut context = context_map! {
-                            COUNT_OF_VOTERS => int mapped.len() as i64,
+                            COUNT_OF_VOTERS => as int mapped.len(),
                             HAS_TRANSLATION => true,
                             IS_ORIGIN_WORD => false,
-                            SCORE_CANDIDATE => float probability,
-                            CANDIDATE_ID => int candidate as i64
+                            SCORE_CANDIDATE => as float probability,
+                            CANDIDATE_ID => as int candidate
                         }.unwrap();
 
                         let mut context = context.combine_with_mut(topic_context);
@@ -417,7 +420,7 @@ where V: VotingMethodMarker,
                         let voters = mapped
                             .iter()
                             .map(|voter_a| {
-                                let mut context_voter_a: HashMapContext<NumericTypes> = context_map! {
+                                let mut context_voter_a = context_map! {
                                     RECIPROCAL_RANK => float 1./ voter_a.importance() as f64,
                                     REAL_RECIPROCAL_RANK => float 1./ voter_a.rank() as f64,
                                     RANK => int voter_a.rank() as i64,
@@ -451,7 +454,7 @@ where V: VotingMethodMarker,
                                 Ok(mut voters) => {
                                     context.set_value(
                                         NUMBER_OF_VOTERS.to_string(),
-                                        voters.len().into_with().expect("Should never fail!")
+                                        Value::from_as_int(voters.len())
                                     ).expect("This should not fail!");
                                     match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
                                         Ok(result) => {
@@ -474,29 +477,33 @@ where V: VotingMethodMarker,
                         )
                     }
                 }
-            ).collect::<Result<Vec<Candidate>, TranslateErrorWithOrigin<_>>>())
+            }).collect::<Result<Vec<Candidate>, TranslateErrorWithOrigin>>())
         } else {
             // Unknown
             None
         };
 
 
-    fn vote_for_origin<'a, NumericTypes: EvalexprNumericTypesConvert>(
+    fn vote_for_origin<'a, C, V>(
         target: &'a impl VoterInfoProvider,
-        topic_context: &(impl Context<NumericTypes=NumericTypes> + Send + Sync + IterateVariablesContext),
+        topic_context: &C,
         has_translation: bool,
         topic_id: usize,
         voter_id: usize,
         probability: f64,
-        voting: &(impl VotingMethod + Sync + Send)
-    ) -> Result<Candidate, TranslateErrorWithOrigin<NumericTypes>> {
+        voting: &V
+    ) -> Result<Candidate, TranslateErrorWithOrigin>
+    where
+        C: Context<NumericTypes=TMTNumericTypes> + Send + Sync + IterateVariablesContext,
+        V: VotingMethod + Sync + Send
+    {
         let mut context = context_map! {
-            COUNT_OF_VOTERS => conv 1,
+            COUNT_OF_VOTERS => as int 1,
             HAS_TRANSLATION => has_translation,
             IS_ORIGIN_WORD => true,
-            SCORE_CANDIDATE => conv probability,
-            CANDIDATE_ID => conv voter_id,
-            NUMBER_OF_VOTERS => conv 1
+            SCORE_CANDIDATE => as float probability,
+            CANDIDATE_ID => as int voter_id,
+            NUMBER_OF_VOTERS => as int 1
         }.unwrap();
 
         let mut context = context.combine_with_mut(topic_context);
@@ -505,14 +512,14 @@ where V: VotingMethodMarker,
 
         assert_eq!(original_meta.voter_id(), voter_id, "The voter ids differ!");
 
-        let mut voters: Vec<HashMapContext<NumericTypes>> = vec![
+        let mut voters = vec![
             context_map! {
-                RECIPROCAL_RANK => conv 1./ original_meta.importance() as f64,
-                REAL_RECIPROCAL_RANK => conv 1./ original_meta.rank() as f64,
-                SCORE => conv original_meta.score(),
-                RANK => conv original_meta.rank(),
-                IMPORTANCE => conv original_meta.importance(),
-                VOTER_ID => conv voter_id,
+                RECIPROCAL_RANK => as float 1./ original_meta.importance() as f64,
+                REAL_RECIPROCAL_RANK => as float 1./ original_meta.rank() as f64,
+                SCORE => as float original_meta.score(),
+                RANK => as int original_meta.rank(),
+                IMPORTANCE => as int original_meta.importance(),
+                VOTER_ID => as int voter_id,
             }.and_then(|mut value| {
                 original_meta.extend_context(&mut value);
                 Ok(value)
@@ -717,6 +724,8 @@ pub(crate) mod test {
             ]
         );
 
+        println!("HERE");
+
         let config = TranslateConfig {
             threshold: None,
             voting: BuildInVoting::PCombSum.spy(),
@@ -725,14 +734,14 @@ pub(crate) mod test {
             top_candidate_limit: Some(NonZeroUsize::new(3).unwrap())
         };
 
-        // let model_b = translate_topic_model_without_provider(
-        //     &model_a,
-        //     &dict,
-        //     &config,
-        // ).unwrap();
-        //
-        // model_a.show_10().unwrap();
-        // println!("----");
-        // model_b.show_10().unwrap();
+        let model_b = translate_topic_model_without_provider(
+            &model_a,
+            &dict,
+            &config,
+        ).unwrap();
+
+        model_a.show_10().unwrap();
+        println!("----");
+        model_b.show_10().unwrap();
     }
 }

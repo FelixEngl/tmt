@@ -16,6 +16,7 @@ use std::fmt::Write;
 use std::num::NonZeroUsize;
 use evalexpr::{EvalexprNumericTypesConvert, Value};
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult, VotingWithLimit};
+use crate::voting::constants::TMTNumericTypes;
 use crate::voting::display::{DisplayTree, IndentWriter};
 
 pub trait RootVotingMethodMarker: VotingMethodMarker {}
@@ -25,7 +26,7 @@ pub trait LimitableVotingMethodMarker: VotingMethodMarker {}
 pub trait VotingMethodMarker: VotingMethod + Sync + Send {}
 
 /// Allows to limit the voting to the top n elements
-pub trait IntoVotingWithLimit: LimitableVotingMethodMarker {
+pub trait IntoVotingWithLimit<NumericTypes: EvalexprNumericTypesConvert = TMTNumericTypes>: LimitableVotingMethodMarker {
     #[allow(dead_code)]
     fn with_limit(self, limit: NonZeroUsize) -> VotingWithLimit<Self>;
 }
@@ -38,11 +39,10 @@ impl<T> IntoVotingWithLimit for T where T: Sized + LimitableVotingMethodMarker {
 
 
 impl<T> VotingMethod for Box<T> where T: VotingMethodMarker {
-    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<TMTNumericTypes>>
     where
-        A : VotingMethodContext<NumericTypes>,
-        B : VotingMethodContext<NumericTypes>
-    {
+        A: VotingMethodContext,
+        B: VotingMethodContext {
         self.as_ref().execute(global_context, voters)
     }
 }

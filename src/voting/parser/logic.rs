@@ -630,7 +630,7 @@ pub(crate) fn voting<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInpu
 
 #[cfg(test)]
 mod test {
-    use evalexpr::{ContextWithMutableVariables, ConvertibleWithEvalexprNumericTypes, DefaultNumericTypes, HashMapContext};
+    use evalexpr::{ContextWithMutableVariables, HashMapContext, Value};
     use nom::{Finish};
     use nom::error::VerboseError;
     use crate::variable_provider::variable_names::{NUMBER_OF_VOTERS, SCORE};
@@ -704,11 +704,11 @@ mod test {
 
     #[test]
     fn versuch(){
-        let mut conbtext = HashMapContext::<DefaultNumericTypes>::new();
-        conbtext.set_value("a".to_string(), 3.into_with().unwrap()).unwrap();
-        conbtext.set_value("b".to_string(), 2.into_with().unwrap()).unwrap();
-        conbtext.set_value("c".to_string(), 1.into_with().unwrap()).unwrap();
-        conbtext.set_value("d".to_string(), 4.into_with().unwrap()).unwrap();
+        let mut conbtext = HashMapContext::new();
+        conbtext.set_value("a".to_string(), Value::from_as_int(3)).unwrap();
+        conbtext.set_value("b".to_string(), Value::from_as_int(2)).unwrap();
+        conbtext.set_value("c".to_string(), Value::from_as_int(1)).unwrap();
+        conbtext.set_value("d".to_string(), Value::from_as_int(4)).unwrap();
 
         let result= voting_function::<VerboseError<_>>(TEST.into()).finish();
         match &result {
@@ -728,7 +728,7 @@ mod test {
         ];
 
         for (i, z) in x.iter_mut().enumerate() {
-            z.set_value("pp".to_string(), i.into_with().unwrap()).unwrap()
+            z.set_value("pp".to_string(), Value::from_as_int(i)).unwrap()
         }
 
         println!("{:?}", result.unwrap().1.execute(&mut conbtext, &mut x));
@@ -739,11 +739,11 @@ mod test {
     #[test]
     fn versuch2(){
         let mut conbtext = HashMapContext::new();
-        conbtext.set_value("a".to_string(), 3.into()).unwrap();
-        conbtext.set_value("b".to_string(), 2.into()).unwrap();
-        conbtext.set_value("c".to_string(), 1.into()).unwrap();
-        conbtext.set_value("d".to_string(), 4.into()).unwrap();
-        conbtext.set_value(NUMBER_OF_VOTERS.to_string(), 4.into()).unwrap();
+        conbtext.set_value("a".to_string(), Value::from_as_int(3)).unwrap();
+        conbtext.set_value("b".to_string(), Value::from_as_int(2)).unwrap();
+        conbtext.set_value("c".to_string(), Value::from_as_int(1)).unwrap();
+        conbtext.set_value("d".to_string(), Value::from_as_int(4)).unwrap();
+        conbtext.set_value(NUMBER_OF_VOTERS.to_string(), Value::from_as_int(4)).unwrap();
 
         let result= voting::<VerboseError<_>>(TEST2.into()).finish();
         match &result {
@@ -763,8 +763,8 @@ mod test {
         ];
 
         for (i, z) in x.iter_mut().enumerate() {
-            z.set_value("pp".to_string(), (i as i64).into()).unwrap();
-            z.set_value(SCORE.to_string(), (0.3 * i as f64).into_with().unwrap()).unwrap();
+            z.set_value("pp".to_string(), Value::from_as_int(i)).unwrap();
+            z.set_value(SCORE.to_string(), Value::from_as_float(0.3 * i as f64)).unwrap();
         }
 
         println!("{:?}", result.unwrap().1.1.execute(&mut conbtext, &mut x));

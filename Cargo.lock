@@ -856,7 +856,7 @@ dependencies = [
 [[package]]
 name = "evalexpr"
 version = "12.0.1"
-source = "git+https://github.com/FelixEngl/evalexpr.git#61fe67c9726a27fe185a2641185fbb2c6fb1e88f"
+source = "git+https://github.com/FelixEngl/evalexpr.git#df9b43d03827965603a35e6215eb9f3927de9c94"
 dependencies = [
  "num-traits",
 ]

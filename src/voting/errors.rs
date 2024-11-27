@@ -12,17 +12,18 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use evalexpr::{EvalexprError, EvalexprNumericTypes};
+use evalexpr::EvalexprError;
 use pyo3::PyErr;
 use thiserror::Error;
 use crate::voting::aggregations::AggregationError;
+use crate::voting::constants::TMTNumericTypes;
 use crate::voting::parser::voting_function::IndexOrRange;
 
 /// Errors when parsing a voting.
 #[derive(Debug, Error)]
-pub enum VotingExpressionError<NumericTypes: EvalexprNumericTypes> {
+pub enum VotingExpressionError {
     #[error(transparent)]
-    Eval(#[from] EvalexprError<NumericTypes>),
+    Eval(#[from] EvalexprError<TMTNumericTypes>),
     #[error(transparent)]
     Agg(#[from] AggregationError),
     #[error("The tuple {0} with length {2} does not have a value at {1}!")]

@@ -15,7 +15,7 @@
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use derive_more::From;
-use evalexpr::{DefaultNumericTypes, EvalexprNumericTypesConvert, Value};
+use evalexpr::{Value};
 use pyo3::{pyclass, pyfunction, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use crate::py::dictionary::PyDictionary;
@@ -30,6 +30,7 @@ use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
 use crate::voting::{VotingMethod, VotingMethodContext, VotingResult};
+use crate::voting::constants::TMTNumericTypes;
 use crate::voting::py::{PyExprValue, PyVotingModel};
 use crate::voting::traits::VotingMethodMarker;
 
@@ -176,10 +177,10 @@ enum Wrapper<'a> {
 }
 
 impl VotingMethod for Wrapper<'_> {
-    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<TMTNumericTypes>>
     where
-        A : VotingMethodContext<NumericTypes>,
-        B : VotingMethodContext<NumericTypes>
+        A : VotingMethodContext,
+        B : VotingMethodContext
     {
         match self {
             Wrapper::External(value) => {
@@ -210,7 +211,7 @@ pub fn translate_topic_model<'a>(
 ) -> PyResult<PyTopicModel> {
     let cfg =config.to_translation_config(voting, voting_registry)?;
     let read = dictionary.get();
-    match translate::<DefaultNumericTypes, _, _, _, _, _, _>(topic_model, read.deref(), &cfg, provider) {
+    match translate(topic_model, read.deref(), &cfg, provider) {
         Ok(result) => {
             Ok(result)
         }
@@ -235,7 +236,7 @@ pub fn vote_for_domains<'a>(
 ) -> PyResult<Vec<Vec<f64>>> {
     let cfg = config.to_vote_config(voting, voting_registry)?;
     let read = dictionary.get();
-    match vote_for_domains_with_targets::<DefaultNumericTypes, _, _, _, _, _, _>(topic_model, read.deref(), &cfg, provider) {
+    match vote_for_domains_with_targets(topic_model, read.deref(), &cfg, provider) {
         Ok(result) => {
             Ok(result)
         }

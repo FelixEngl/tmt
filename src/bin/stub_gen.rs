@@ -3,18 +3,31 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Seek};
 use std::path::PathBuf;
+#[cfg(feature = "gen_python_api")]
 use pyo3_stub_gen::{Result, StubInfo};
+#[cfg(feature = "gen_python_api")]
 use pyo3_stub_gen::generate::{Import, Module};
+#[cfg(feature = "gen_python_api")]
 use ldatranslate::toolkit::pystub::*;
 
+#[cfg(not(feature = "gen_python_api"))]
+fn main() {
+
+}
+
+#[cfg(feature = "gen_python_api")]
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "trace")).init();
+    #[cfg(feature = "gen_python_api")]
     let mut stub = ldatranslate::stub_info()?;
+    #[cfg(feature = "gen_python_api")]
     stub.generate()?;
+    #[cfg(feature = "gen_python_api")]
     generate_typedefs(&mut stub)?;
     Ok(())
 }
 
+#[cfg(feature = "gen_python_api")]
 fn generate_typedefs(stub: &mut StubInfo) -> Result<()>{
     let python_root = stub
         .pyproject

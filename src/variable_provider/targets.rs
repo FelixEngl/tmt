@@ -1,11 +1,10 @@
-use evalexpr::EvalexprNumericTypesConvert;
 use crate::variable_provider::VariableProviderError;
 
 trait Sealed{}
 
 #[allow(private_bounds)]
 pub trait Target: Sealed {
-    fn make_error<NumericTypes: EvalexprNumericTypesConvert>(id: usize, id_max: usize) -> VariableProviderError<NumericTypes>;
+    fn make_error(id: usize, id_max: usize) -> VariableProviderError;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -14,7 +13,7 @@ pub struct Topics;
 impl Sealed for Topics {}
 
 impl Target for Topics {
-    fn make_error<NumericTypes: EvalexprNumericTypesConvert>(id: usize, id_max: usize) -> VariableProviderError<NumericTypes> {
+    fn make_error(id: usize, id_max: usize) -> VariableProviderError {
         VariableProviderError::TopicNotFound {
             topic_id: id,
             topic_count: id_max
@@ -28,7 +27,7 @@ pub struct Words;
 impl Sealed for Words {}
 
 impl Target for Words {
-    fn make_error<NumericTypes: EvalexprNumericTypesConvert>(id: usize, id_max: usize) -> VariableProviderError<NumericTypes> {
+    fn make_error(id: usize, id_max: usize) -> VariableProviderError {
         VariableProviderError::WordNotFound {
             word_id: id,
             word_count: id_max

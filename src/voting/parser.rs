@@ -13,12 +13,13 @@
 //limitations under the License.
 
 use std::sync::Arc;
-use evalexpr::{EvalexprNumericTypesConvert, Value};
+use evalexpr::{Value};
 use nom::branch::alt;
 use nom::combinator::{map, map_res};
 use nom::IResult;
 use strum::EnumIs;
 use crate::voting::{BuildInVoting, VotingFunction, VotingMethod, VotingMethodContext, VotingResult, VotingWithLimit};
+use crate::voting::constants::TMTNumericTypes;
 use crate::voting::parser::input::ParserInput;
 use crate::voting::parser::logic::{build_in_voting, ErrorType, global_voting_function, parse_limited, variable_name, voting};
 use crate::voting::parser::logic::VotingParseError::{NoRegistryProvided, NoVotingInRegistryFound};
@@ -69,11 +70,10 @@ pub enum InterpretedVoting {
 impl VotingMethodMarker for InterpretedVoting {}
 
 impl VotingMethod for InterpretedVoting {
-    fn execute<A, B, NumericTypes: EvalexprNumericTypesConvert>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<NumericTypes>, NumericTypes>
+    fn execute<A, B>(&self, global_context: &mut A, voters: &mut [B]) -> VotingResult<Value<TMTNumericTypes>>
     where
-        A : VotingMethodContext<NumericTypes>,
-        B : VotingMethodContext<NumericTypes>
-    {
+        A : VotingMethodContext,
+        B : VotingMethodContext {
         match self {
             InterpretedVoting::BuildIn(value) => {
                 value.execute(global_context, voters)
