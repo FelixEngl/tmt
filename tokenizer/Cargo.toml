@@ -1,0 +1,11 @@
+[package]
+name = "ldatranslate-tokenizer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+charabia.workspace = true
+fst.workspace = true
+rust-stemmers.workspace = true
+trie-rs.workspace = true
+unicode-segmentation.workspace = true

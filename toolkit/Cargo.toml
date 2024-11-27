@@ -1,0 +1,23 @@
+[package]
+name = "ldatranslate-toolkit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aho-corasick.workspace = true
+crc32fast.workspace = true
+sealed.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+itertools.workspace = true
+inventory.workspace = true
+either.workspace = true
+enum-map.workspace = true
+evalexpr = {workspace = true, features = ["num"]}
+strum.workspace = true
+pyo3.workspace = true
+string-interner = {workspace = true, features = ["serde", "std"] }
+pyo3-stub-gen = {workspace = true, optional = true}
+
+[features]
+gen_python_api = ["dep:pyo3-stub-gen"]

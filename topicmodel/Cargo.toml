@@ -1,0 +1,57 @@
+[package]
+name = "ldatranslate-topicmodel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ldatranslate-toolkit.workspace = true
+ldatranslate-tokenizer.workspace = true
+ldatranslate-voting.workspace = true
+itertools.workspace = true
+statrs.workspace = true
+rayon.workspace = true
+pyo3-stub-gen = {workspace = true, optional = true}
+pyo3.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+trie-rs = {workspace = true, features = ["serde", "rayon"]}
+arcstr = {workspace = true, features = ["serde"] }
+approx.workspace = true
+delegate.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+flate2.workspace = true
+rand.workspace = true
+rand_distr.workspace = true
+sealed.workspace = true
+camino.workspace = true
+byte-unit.workspace = true
+either.workspace = true
+log.workspace = true
+derive_more.workspace = true
+aho-corasick.workspace = true
+strsim.workspace = true
+evalexpr.workspace = true
+build_html.workspace = true
+deranged.workspace = true
+tinyset.workspace = true
+pretty.workspace = true
+paste.workspace = true
+lockfree-object-pool.workspace = true
+zstd.workspace = true
+nom.workspace = true
+quick-xml.workspace = true
+derive_builder.workspace = true
+num_enum.workspace = true
+regex.workspace = true
+tar.workspace = true
+indexmap.workspace = true
+convert_case.workspace = true
+zip.workspace = true
+
+[features]
+gen_python_api = ["dep:pyo3-stub-gen"]
+
+[build-dependencies]
+xml2code = {path = "xml2code"}

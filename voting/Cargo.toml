@@ -1,0 +1,23 @@
+[package]
+name = "ldatranslate-voting"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ldatranslate-tokenizer.workspace = true
+sealed.workspace = true
+thiserror.workspace = true
+serde = {workspace = true, features = ["derive", "rc"] }
+itertools.workspace = true
+ldatranslate-toolkit.workspace = true
+inventory.workspace = true
+pyo3.workspace = true
+evalexpr = {workspace = true, features = ["num"]}
+nom.workspace = true
+strum.workspace = true
+num.workspace = true
+pyo3-stub-gen = {workspace = true, optional = true}
+delegate.workspace = true
+
+[features]
+gen_python_api = ["dep:pyo3-stub-gen"]

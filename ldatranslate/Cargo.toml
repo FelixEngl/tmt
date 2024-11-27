@@ -1,0 +1,49 @@
+[package]
+name = "ldatranslate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ldatranslate-toolkit.workspace = true
+ldatranslate-voting.workspace = true
+ldatranslate-tokenizer.workspace = true
+ldatranslate-topicmodel.workspace = true
+pyo3-stub-gen = {workspace = true, optional = true}
+pyo3.workspace = true
+arcstr.workspace = true
+itertools.workspace = true
+serde.workspace = true
+camino.workspace = true
+either.workspace = true
+strum.workspace = true
+derive_more.workspace = true
+thiserror.workspace = true
+aho-corasick.workspace = true
+charabia.workspace = true
+file-format.workspace = true
+fst.workspace = true
+rayon.workspace = true
+rust-stemmers.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+delegate.workspace = true
+bincode.workspace = true
+evalexpr.workspace = true
+nom.workspace = true
+string-interner.workspace = true
+log.workspace = true
+env_logger.workspace = true
+inventory.workspace = true
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "ldatranslate"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+gen_python_api = ["dep:pyo3-stub-gen"]
+
+[[bin]]
+name = "stub_gen"
+doc = false

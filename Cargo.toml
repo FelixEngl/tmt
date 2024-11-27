@@ -1,15 +1,13 @@
-[package]
-name = "ldatranslate"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = ["ldatranslate", "toolkit", "topicmodel", "voting", "tokenizer"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[lib]
-name = "ldatranslate"
-crate-type = ["cdylib", "rlib"]
+[workspace.dependencies]
+ldatranslate-toolkit = {path = "toolkit"}
+ldatranslate-voting = {path = "voting"}
+ldatranslate-topicmodel = {path = "topicmodel"}
+ldatranslate-tokenizer = {path = "tokenizer"}
 
-
-[dependencies]
 # Python binding
 pyo3 = { version = "0.22", features = ["default", "serde", "hashbrown", "either", "auto-initialize"] }
 itertools = "0.13"
@@ -90,17 +88,8 @@ stable_deref_trait = "1.2.0"
 crossbeam-channel = "0.5"
 # Plugin System
 inventory = { version = "0.3" }
-pyo3-stub-gen = { version = "0.6.0", optional = true }
+pyo3-stub-gen = { version = "0.6.0" }
 build_html = "2.5.0"
 bitvec = { version = "1", features = ["serde"] }
 arcstr = { version = "1.2.0", features = ["serde"] }
 
-[build-dependencies]
-xml2code = {path = "xml2code"}
-
-[features]
-gen_python_api = ["dep:pyo3-stub-gen"]
-
-[[bin]]
-name = "stub_gen"
-doc = false

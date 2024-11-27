@@ -5,3 +5,5 @@ dictionaries
 /test_html
 /xml2code/target/
 /test/
+*.dat.zst
+*.whl

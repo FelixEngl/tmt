@@ -1,0 +1,42 @@
+#[cfg(test)]
+mod test {
+    use crate::create_topic_model_specific_dictionary;
+    use crate::dictionary::{BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable};
+    use crate::vocabulary::{BasicVocabulary, SearchableVocabulary, Vocabulary};
+
+    #[test]
+    fn can_transfer(){
+
+        let (voc_a, _, dict) = crate::translate::test::create_test_data();
+
+        for (a, b) in voc_a.iter().zip(dict.voc_a().iter()) {
+            assert_eq!(a.clone(), b.clone())
+        }
+
+        let voc = voc_a.filter_by_value(
+            |a| {
+                a.eq("plane") || a.eq("aircraft")
+            }
+        );
+        println!("{dict}\n------\n");
+        let dict = dict.filter_by_values(
+            |_| true,
+            |b| !b.eq("Ebene")
+        );
+
+        let d: Dictionary<_, Vocabulary<_>> = create_topic_model_specific_dictionary(
+            &dict,
+            &voc
+        );
+
+        println!("{voc}\n------\n");
+        println!("{dict}\n------\n");
+        println!("{d}");
+
+        for (a, b) in voc.iter().zip(d.voc_a().iter()) {
+            assert_eq!(a.clone(), b.clone())
+        }
+
+        // println!("{}", dict);
+    }
+}
