@@ -15,7 +15,6 @@
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
-
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeSeq, SerializeStruct};

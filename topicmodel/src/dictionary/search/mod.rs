@@ -31,9 +31,14 @@ impl<'py> From<MatchWordMethod<'py>> for SearchInput<'py> {
     }
 }
 
-impl<'py, S> From<S> for SearchInput<'py> where S: Into<String> {
-    fn from(value: S) -> Self {
-        Self::String(value.into())
+impl<'py> From<String> for SearchInput<'py>  {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+impl<'py> From<&str> for SearchInput<'py>  {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_string())
     }
 }
 

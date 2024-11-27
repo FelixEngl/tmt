@@ -836,13 +836,13 @@ register_python! {
 mod test  {
     use std::collections::HashSet;
     use strum::IntoEnumIterator;
+    use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryFilterable, DictionaryWithVocabulary};
+    use ldatranslate_topicmodel::dictionary::direction::DirectionKind;
+    use ldatranslate_topicmodel::dictionary::io::WriteableDictionary;
+    use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
+    use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
     use crate::py::dictionary::PyDictionary;
     use crate::py::tokenizer::PyAlignedArticleProcessor;
-    use crate::topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryFilterable, DictionaryWithVocabulary};
-    use crate::topicmodel::dictionary::direction::DirectionKind;
-    use crate::topicmodel::dictionary::io::WriteableDictionary;
-    use crate::topicmodel::dictionary::metadata::ex::MetaField;
-    use crate::topicmodel::dictionary::metadata::MetadataManager;
 
     #[test]
     fn see(){
@@ -898,14 +898,6 @@ mod test  {
                     }
                 }
             }
-
-            assert!(dict.get().metadata().unaltered_vocabulary_interner.is_empty());
-            assert!(dict.get().metadata().inflected_interner.is_empty());
-            assert!(dict.get().metadata().original_entry_interner.is_empty());
-            assert!(dict.get().metadata().abbreviations_interner.is_empty());
-            assert!(dict.get().metadata().contextual_informations_interner.is_empty());
-            assert!(dict.get().metadata().ids_interner.is_empty());
-            assert!(dict.get().metadata().unclassified_interner.is_empty());
 
             dict.get().write_to_path_with_extension(r#"E:\git\tmt\test\dictionary_final4_proc1.dat.zst"#).unwrap();
 

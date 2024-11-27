@@ -106,7 +106,7 @@ macro_rules! create_cached_getter {
                         };
 
                         use string_interner::Symbol;
-                        let x = $crate::crate::interners::DictionaryOriginSymbol::try_from_usize(k).unwrap();
+                        let x = $crate::interners::DictionaryOriginSymbol::try_from_usize(k).unwrap();
                         let x = unsafe {
                             self.manager_ref.dictionary_interner.resolve_unchecked(x)
                         };
@@ -134,7 +134,7 @@ macro_rules! create_cached_getter {
                     let (def, dat) = self.raw.[<all_raw_ $ident>]();
 
                     let dat = dat.into_iter().enumerate().map(|(k, v)|{
-                        let x = $crate::crate::interners::DictionaryOriginSymbol::try_from_usize(k).unwrap();
+                        let x = $crate::interners::DictionaryOriginSymbol::try_from_usize(k).unwrap();
                         let x = unsafe {
                             self.manager_ref.dictionary_interner.resolve_unchecked(x)
                         };
@@ -183,7 +183,7 @@ macro_rules! create_cached_getter {
                         };
 
                         use string_interner::Symbol;
-                        let x = $crate::crate::interners::DictionaryOriginSymbol::try_from_usize(k).unwrap();
+                        let x = $crate::interners::DictionaryOriginSymbol::try_from_usize(k).unwrap();
                         let x = unsafe {
                             self.manager_ref.dictionary_interner.resolve_unchecked(x)
                         };

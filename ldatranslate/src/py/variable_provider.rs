@@ -16,16 +16,16 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use arcstr::ArcStr;
 use evalexpr::{Value};
-use pyo3::{pyclass, PyErr, pymethods, PyResult};
-use pyo3::exceptions::PyValueError;
-use crate::variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider};
+use pyo3::{pyclass, pymethods, PyResult};
+use crate::variable_provider::{AsVariableProvider, AsVariableProviderError};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::interners::*;
 use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithVocabulary};
+use ldatranslate_topicmodel::translate::TranslatableTopicMatrix;
 use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary};
-use crate::translate::TranslatableTopicMatrix;
+use ldatranslate_voting::interners::{VariableNameStringInterner, VariableNameSymbol};
 use ldatranslate_voting::py::PyExprValue;
-use ldatranslate_voting::variable_provider::VariableProviderError;
+use ldatranslate_voting::variable_provider::{VariableProvider};
 
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]

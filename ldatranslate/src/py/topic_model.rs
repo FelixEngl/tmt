@@ -13,7 +13,6 @@
 //limitations under the License.
 
 use std::borrow::Borrow;
-use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
@@ -26,7 +25,6 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ldatranslate_topicmodel::model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
-use ldatranslate_topicmodel::model;
 use crate::py::helpers::{LanguageHintValue};
 use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::{PyVocabulary};
@@ -34,11 +32,13 @@ use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
 use ldatranslate_toolkit::{register_python};
 use crate::py::aliases::{UnderlyingPyTopicModel, UnderlyingPyVocabulary, UnderlyingPyWord};
 use ldatranslate_toolkit::special_python_values::{SingleOrVec};
-use ldatranslate_topicmodel::enums::{ReadError, TopicModelVersion, WriteError};
+use ldatranslate_topicmodel::enums::{TopicModelVersion};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
 use ldatranslate_topicmodel::model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, FullTopicModel, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use ldatranslate_topicmodel::model::meta::*;
 use ldatranslate_topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
+use ldatranslate_translate::VoterInfoProvider;
+use crate::py::dictionary::DefaultDict;
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -395,6 +395,16 @@ impl Display for PyTopicModel {
 impl From<UnderlyingPyTopicModel> for PyTopicModel {
     fn from(inner: UnderlyingPyTopicModel) -> Self {
         Self { inner }
+    }
+}
+
+impl VoterInfoProvider for PyTopicModel {
+    type VoterMeta = <UnderlyingPyTopicModel as VoterInfoProvider>::VoterMeta;
+
+    delegate::delegate! {
+        to self.inner {
+            fn get_voter_meta<'a>(&'a self, column: usize, voter_id: usize) -> Option<&'a Self::VoterMeta>;
+        }
     }
 }
 

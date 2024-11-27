@@ -90,7 +90,7 @@ macro_rules! declare_variable_names {
     ($variable_name: ident: $name: literal, $($tt:tt)*) => {
         declare_variable_names_internal!($variable_name: $name, $($tt)+);
 
-        pub(crate) fn reserved_variable_name<'a, 'b, E: $crate::voting::parser::logic::ErrorType<$crate::voting::parser::input::ParserInput<'a, 'b>>>(input: $crate::voting::parser::input::ParserInput<'a, 'b>) -> nom::IResult<$crate::voting::parser::input::ParserInput<'a, 'b>, $crate::voting::parser::input::ParserInput<'a, 'b>,  E> {
+        pub(crate) fn reserved_variable_name<'a, 'b, E: $crate::parser::logic::ErrorType<$crate::parser::input::ParserInput<'a, 'b>>>(input: $crate::parser::input::ParserInput<'a, 'b>) -> nom::IResult<$crate::parser::input::ParserInput<'a, 'b>, $crate::parser::input::ParserInput<'a, 'b>,  E> {
             nom::sequence::preceded(
                 nom::character::complete::multispace0,
                 declare_alts!($variable_name: $name, $($tt)+)
@@ -104,19 +104,22 @@ macro_rules! declare_variable_names {
         //     Ok(())
         // }
 
-        crate::register_python! {
-            custom(m) {
-                let submodule = PyModule::new_bound(m.py(), "variable_names")?;
-                declare_py_module!(submodule, $variable_name: $name, $($tt)+);
-                m.add_submodule(&submodule)?;
+        const _: () = {
+            use ldatranslate_toolkit;
+            ldatranslate_toolkit::register_python! {
+                custom(m) {
+                    let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+                    declare_py_module!(submodule, $variable_name: $name, $($tt)+);
+                    m.add_submodule(&submodule)?;
+                }
             }
-        }
+        };
     };
 
     (doc = $doc: literal $variable_name: ident: $name: literal, $($tt:tt)*) => {
         declare_variable_names_internal!(doc = $doc $variable_name: $name, $($tt)+);
 
-        pub(crate) fn reserved_variable_name<'a, 'b, E: $crate::voting::parser::logic::ErrorType<$crate::voting::parser::input::ParserInput<'a, 'b>>>(input: $crate::voting::parser::input::ParserInput<'a, 'b>) -> nom::IResult<$crate::voting::parser::input::ParserInput<'a, 'b>, $crate::voting::parser::input::ParserInput<'a, 'b>,  E> {
+        pub(crate) fn reserved_variable_name<'a, 'b, E: $crate::parser::logic::ErrorType<$crate::parser::input::ParserInput<'a, 'b>>>(input: $crate::parser::input::ParserInput<'a, 'b>) -> nom::IResult<$crate::parser::input::ParserInput<'a, 'b>, $crate::parser::input::ParserInput<'a, 'b>,  E> {
             nom::sequence::preceded(
                 nom::character::complete::multispace0,
                 declare_alts!($variable_name: $name, $($tt)+)
@@ -129,14 +132,16 @@ macro_rules! declare_variable_names {
         //     m.add_submodule(&submodule)?;
         //     Ok(())
         // }
-
-        crate::register_python! {
-            custom(m) {
-                let submodule = PyModule::new_bound(m.py(), "variable_names")?;
-                declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
-                m.add_submodule(&submodule)?;
+        const _:() = {
+            use ldatranslate_toolkit;
+            ldatranslate_toolkit::register_python! {
+                custom(m) {
+                    let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+                    declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
+                    m.add_submodule(&submodule)?;
+                }
             }
-        }
+        };
     };
 }
 

@@ -207,15 +207,15 @@ impl Region {
 }
 
 
-impl TryFrom<crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute> for Region {
+impl TryFrom<crate::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute> for Region {
     type Error = ();
 
-    fn try_from(value: crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute) -> Result<Self, Self::Error> {
+    fn try_from(value: crate::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute) -> Result<Self, Self::Error> {
         match value {
-            crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute::EnGb => {
+            crate::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute::EnGb => {
                 Ok(Region::BritishEnglish)
             }
-            crate::topicmodel::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute::EnUs => {
+            crate::dictionary::loader::helper::gen_ms_terms_reader::LangAttribute::EnUs => {
                 Ok(Region::AmericanEnglish)
             }
             _ => Err(())

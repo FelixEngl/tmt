@@ -27,7 +27,7 @@ use crate::dictionary::loader::wiktionary_reader::{convert_entry_to_entries, Ent
 
 mod ding;
 mod dictcc;
-pub(in crate::topicmodel::dictionary::loader) mod helper;
+pub(in crate::dictionary::loader) mod helper;
 pub mod word_infos;
 mod file_parser;
 mod eurovoc;
@@ -647,7 +647,7 @@ impl<P> UnifiedTranslationHelper<P> where P: Preprocessor {
     }
 
     fn process_dictcc<V: AsRef<str> + Clone + Display>(&mut self, dictcc::Entry(lang_a_cont, lang_b_cont, word_types, categories): dictcc::Entry<V>, dir: &LanguageDirection) {
-        use crate::topicmodel::dictionary::loader::dictcc::{SpecialInfo, WordTypeInfo};
+        use crate::dictionary::loader::dictcc::{SpecialInfo, WordTypeInfo};
 
         let mut general_register = Vec::new();
         let mut general_pos = Vec::new();
@@ -1411,13 +1411,14 @@ pub enum LineReaderError<T: Debug> {
 #[cfg(test)]
 mod test {
     use arcstr::ArcStr;
-    use crate::topicmodel::dictionary::word_infos::LanguageDirection;
-    use crate::topicmodel::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
+    use crate::dictionary::word_infos::LanguageDirection;
+    use crate::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
-    use crate::topicmodel::dictionary::DictionaryKind::*;
-    use crate::topicmodel::dictionary::io::{ReadableDictionary, WriteMode, WriteableDictionary};
-    use crate::topicmodel::dictionary::metadata::ex::MetadataManagerEx;
-    use crate::topicmodel::vocabulary::Vocabulary;
+    use crate::dictionary::LoadInstruction;
+    use crate::dictionary::DictionaryKind::*;
+    use crate::dictionary::io::{ReadableDictionary, WriteMode, WriteableDictionary};
+    use crate::dictionary::metadata::ex::MetadataManagerEx;
+    use crate::vocabulary::Vocabulary;
 
     static TARGETS: std::sync::LazyLock<Vec<LoadInstruction<&str>>> = std::sync::LazyLock::new(||vec![
         LoadInstruction {

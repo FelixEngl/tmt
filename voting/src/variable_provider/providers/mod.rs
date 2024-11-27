@@ -5,10 +5,10 @@ use crate::variable_provider::targets::{Topics, Words};
 use global::*;
 use id_based::*;
 use topic_wise::*;
-use crate::toolkit::typesafe_interner::{VariableNameStringInterner, VariableNameSymbol};
 use crate::variable_provider::traits::VariableProviderOut;
 use crate::variable_provider::VariableProviderResult;
-use crate::voting::constants::TMTNumericTypes;
+use crate::interners::{VariableNameStringInterner, VariableNameSymbol};
+use crate::TMTNumericTypes;
 
 mod global;
 mod id_based;

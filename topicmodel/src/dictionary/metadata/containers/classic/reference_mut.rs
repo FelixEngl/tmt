@@ -1,10 +1,9 @@
 use std::ops::{Deref, DerefMut};
 use itertools::Itertools;
-use ldatranslate_toolkit::typesafe_interner::DictionaryOriginSymbol;
+use crate::interners::DictionaryOriginSymbol;
 use crate::dictionary::metadata::containers::classic::metadata::ClassicMetadata;
 use crate::dictionary::metadata::containers::classic::ClassicMetadataManager;
 use crate::dictionary::metadata::{MetadataManager, MetadataMutReference};
-use crate::interners::DictionaryOriginSymbol;
 use crate::vocabulary::{SearchableVocabulary, VocabularyMut};
 
 pub struct ClassicMetadataMutRef<'a> {

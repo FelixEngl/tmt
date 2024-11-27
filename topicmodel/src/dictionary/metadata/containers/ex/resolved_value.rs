@@ -5,7 +5,6 @@ use pyo3::{FromPyObject, IntoPy, PyObject, Python};
 use serde::{Deserialize, Serialize};
 use string_interner::Symbol;
 use thiserror::Error;
-use crate::{impl_py_stub};
 use crate::dictionary::word_infos::*;
 use strum::Display;
 
@@ -155,6 +154,8 @@ impl_try_into_as_unpack! {
 
 
 pub(crate) use impl_try_from_as_unpack;
+use ldatranslate_toolkit::{impl_py_stub, impl_py_type_def_special};
+
 
 impl ResolvedValue {
     pub fn resolve_with_interner<B: string_interner::backend::Backend<Symbol=S>, S: Symbol, H: BuildHasher>(&self, interner: &mut string_interner::StringInterner<B, H>) -> Result<(S, u32), WrongResolvedValueError<ResolvedValue>> {
@@ -220,7 +221,7 @@ impl IntoPy<PyObject> for ResolvedValue {
     }
 }
 
-crate::impl_py_type_def_special!(
+impl_py_type_def_special!(
     ResolvedValueType; {
         output: {
             builder()

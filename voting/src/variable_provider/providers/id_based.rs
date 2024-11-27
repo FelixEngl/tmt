@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
 use evalexpr::{ContextWithMutableVariables, Value};
+use crate::TMTNumericTypes;
 use crate::variable_provider::providers::{SharedInterner, VarName};
 use crate::variable_provider::targets::Target;
 use crate::variable_provider::VariableProviderResult;
-use crate::voting::constants::TMTNumericTypes;
 
 #[derive(Debug, Clone)]
 pub struct IdBasedVariableProvider<T: Target> {

@@ -43,7 +43,8 @@ macro_rules! div {
 }
 
 use div;
-use crate::toolkit::crc32;
+
+use ldatranslate_toolkit::crc32;
 
 impl<T, V> DictionaryWithMeta<T, V, MetadataManagerEx>
 where

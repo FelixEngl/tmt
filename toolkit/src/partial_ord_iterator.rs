@@ -153,7 +153,7 @@ impl<I, T> PartialOrderIterator for I
 
 #[cfg(test)]
 mod test {
-    use crate::toolkit::partial_ord_iterator::{PartialOrderIterator};
+    use crate::partial_ord_iterator::{PartialOrderIterator};
 
     #[test]
     pub fn can_work_with_integers() {

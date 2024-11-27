@@ -21,12 +21,12 @@ use crate::interners::*;
 
 use tinyset::Set64;
 use crate::dictionary::word_infos::*;
-use ldatranslate_crate::interners::*;
 use crate::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, TopicVectorIndex, DOMAIN_MODEL_ENTRY_MAX_SIZE};
 use std::ops::{Deref, DerefMut};
 use pretty::*;
 use pyo3::{pyclass, pymethods};
 use ldatranslate_toolkit::register_python;
+use crate::dictionary::metadata::MetadataManager;
 
 register_python! {
     struct LoadedMetadataEx;
@@ -450,8 +450,8 @@ impl MetadataManagerEx {
             |value| value.fill(0)
         ));
 
-        let a = sum_up_meta(pool.clone(), &self.meta_a);
-        let b = sum_up_meta(pool.clone(), &self.meta_b);
+        let a = sum_up_meta(pool.clone(), &self.meta_a());
+        let b = sum_up_meta(pool.clone(), &self.meta_b());
         DomainCounts::new(a, b)
     }
 }

@@ -29,7 +29,7 @@ use crate::translate::{KeepOriginalWord, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
-use ldatranslate_voting::py::{VotingMethod, VotingMethodContext, VotingResult};
+use ldatranslate_voting::{VotingMethod, VotingMethodContext, VotingResult};
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyExprValue, PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;

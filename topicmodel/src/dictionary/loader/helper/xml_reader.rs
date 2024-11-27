@@ -1,7 +1,7 @@
 use std::io::{BufReader, Read};
 use quick_xml::events::Event;
 use thiserror::Error;
-use crate::topicmodel::dictionary::loader::helper::HasLineInfo;
+use crate::dictionary::loader::helper::HasLineInfo;
 
 pub struct XmlReaderBase<R> {
     reader: quick_xml::reader::Reader<BufReader<R>>,

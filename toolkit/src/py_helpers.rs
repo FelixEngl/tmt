@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use pyo3::{Bound, FromPyObject, PyAny, PyResult};
 use pyo3::prelude::PyAnyMethods;
-use pyo3::types::{PyFunction};
+use pyo3::types::PyFunction;
 
 #[cfg(feature = "gen_python_api")]
 use pyo3_stub_gen::TypeInfo;
@@ -51,33 +51,33 @@ macro_rules! define_py_method {
     (
         $name: ident ($pname0:ident: $ty0: ty $(,$pname: ident: $ty: ty)* $(,)?) -> $ret: ty
     ) => {
-        paste::paste!(
-            pub type [<$name Method>]<'py> = $crate::toolkit::py_helpers::PythonFunctionWrapper<'py, $name<'py>>;
+        $crate::exports::paste::paste!(
+            pub type [<$name Method>]<'py> = $crate::py_helpers::PythonFunctionWrapper<'py, $name<'py>>;
         );
 
         #[derive(Clone, Debug)]
         #[repr(transparent)]
         pub struct $name<'py> {
-            inner: pyo3::Bound<'py, pyo3::types::PyFunction>
+            inner: $crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction>
         }
 
         impl<'py> $name<'py> {
-            pub fn call(&self, $pname0: $ty0 $(,$pname: $ty)*) -> pyo3::PyResult<$ret> {
-                use pyo3::types::PyAnyMethods;
+            pub fn call(&self, $pname0: $ty0 $(,$pname: $ty)*) -> $crate::exports::pyo3::PyResult<$ret> {
+                use $crate::exports::pyo3::types::PyAnyMethods;
                 self.inner.call1(($pname0, $($pname, )*)).and_then(|value| value.extract::<$ret>())
             }
 
-            pub fn as_py_function(&self) -> &pyo3::Bound<'py, pyo3::types::PyFunction> {
+            pub fn as_py_function(&self) -> &$crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction> {
                 &self.inner
             }
 
-            pub fn into_inner(self) -> pyo3::Bound<'py, pyo3::types::PyFunction> {
+            pub fn into_inner(self) -> $crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction> {
                 self.inner
             }
         }
 
-        impl<'py> $crate::toolkit::py_helpers::PyMethodCaller<'py> for $name<'py> {
-            fn wrap_function(method: pyo3::Bound<'py, pyo3::types::PyFunction>) -> Self where Self: Sized {
+        impl<'py> $crate::py_helpers::PyMethodCaller<'py> for $name<'py> {
+            fn wrap_function(method: $crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction>) -> Self where Self: Sized {
                 Self {
                     inner: method
                 }
@@ -91,7 +91,7 @@ macro_rules! define_py_method {
                         <$ty0 as pyo3_stub_gen::PyStubType>::type_input()
                         $(, <$ty as pyo3_stub_gen::PyStubType>::type_input())*
                     ];
-                    use itertools::Itertools;
+                    use $crate::exports::itertools::Itertools;
                     let output = <$ret as pyo3_stub_gen::PyStubType>::type_output();
                     let name = format!(
                         "typing.Callable[[{}], {}]",
@@ -111,32 +111,32 @@ macro_rules! define_py_method {
     (
         $name: ident() -> $ret: ty
     ) => {
-        paste::paste!(
-            pub type [<$name Method>]<'py> = $crate::toolkit::py_helpers::PythonFunctionWrapper<'py, $name<'py>>;
+        $crate::exports::$crate::exports::paste::paste!(
+            pub type [<$name Method>]<'py> = $crate::py_helpers::PythonFunctionWrapper<'py, $name<'py>>;
         );
 
         #[derive(Clone, Debug)]
         #[repr(transparent)]
         pub struct $name<'py>{
-            inner: pyo3::Bound<'py, pyo3::types::PyFunction>
+            inner: $crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction>
         };
 
         impl<'py> $name<'py> {
-            pub fn call(&self) -> pyo3::PyResult<$ret> {
+            pub fn call(&self) -> $crate::exports::pyo3::PyResult<$ret> {
                 self.inner.call0().and_then(|value| value.extract::<$ret>())
             }
 
-            pub fn as_py_function(&self) -> &pyo3::Bound<'py, pyo3::types::PyFunction> {
+            pub fn as_py_function(&self) -> &$crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction> {
                 &self.inner
             }
 
-            pub fn into_inner(self) -> pyo3::Bound<'py, pyo3::types::PyFunction> {
+            pub fn into_inner(self) -> $crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction> {
                 self.inner
             }
         }
 
-        impl<'py> $crate::toolkit::py_helpers::PyMethodCaller<'py> for $name<'py> {
-            fn wrap_function(method: pyo3::Bound<'py, pyo3::types::PyFunction>) -> Self where Self: Sized {
+        impl<'py> $crate::py_helpers::PyMethodCaller<'py> for $name<'py> {
+            fn wrap_function(method: $crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::types::PyFunction>) -> Self where Self: Sized {
                 Self {
                     inner: method
                 }
@@ -212,13 +212,13 @@ macro_rules! define_py_literal {
             }
         }
 
-        impl<'py> pyo3::FromPyObject<'py> for $name {
-            fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
-                use pyo3::types::PyAnyMethods;
-                use itertools::Itertools;
+        impl<'py> $crate::exports::pyo3::FromPyObject<'py> for $name {
+            fn extract_bound(ob: &$crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::PyAny>) -> $crate::exports::pyo3::PyResult<Self> {
+                use $crate::exports::pyo3::types::PyAnyMethods;
+                use $crate::exports::itertools::Itertools;
                 let inner: String = ob.extract::<String>()?;
                 if !$name::is_valid_string(&inner) {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!("The value \"{}\" is not in [\"{}\"]", inner, Self::VARIANTS.into_iter().join("\", \""))))
+                    return Err($crate::exports::pyo3::exceptions::PyValueError::new_err(format!("The value \"{}\" is not in [\"{}\"]", inner, Self::VARIANTS.into_iter().join("\", \""))))
                 }
                 Ok(Self{inner})
             }
@@ -248,7 +248,7 @@ macro_rules! define_py_literal {
         $crate::impl_py_stub!(
             $name {
                 output: {
-                    use itertools::Itertools;
+                    use $crate::exports::itertools::Itertools;
                     builder()
                     .add_name(format!("typing.Literal[\"{}\"]", Self::VARIANTS.into_iter().join("\", \"")))
                     .add_import("typing")
@@ -262,9 +262,9 @@ macro_rules! define_py_literal {
         $crate::define_py_literal!($vis $name [$l0 $(, $l)*]);
 
         impl TryInto<$ty> for $name {
-            type Error = $crate::toolkit::from_str_ex::ParseErrorEx<<$ty as std::str::FromStr>::Err>;
+            type Error = $crate::from_str_ex::ParseErrorEx<<$ty as std::str::FromStr>::Err>;
             fn try_into(self) -> Result<$ty, Self::Error> {
-                use $crate::toolkit::from_str_ex::ParseEx;
+                use $crate::from_str_ex::ParseEx;
                 self.inner.parse_ex()
             }
         }
@@ -297,22 +297,22 @@ macro_rules! type_def_wrapper {
             }
         }
 
-        impl<'py> pyo3::FromPyObject<'py> for $name {
-            fn extract_bound(pob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
-                use pyo3::prelude::PyAnyMethods;
+        impl<'py> $crate::exports::pyo3::FromPyObject<'py> for $name {
+            fn extract_bound(pob: &$crate::exports::pyo3::Bound<'py, $crate::exports::pyo3::PyAny>) -> $crate::exports::pyo3::PyResult<Self> {
+                use $crate::exports::pyo3::prelude::PyAnyMethods;
                 Ok(Self(pob.extract()?))
             }
         }
 
         const _: () = {
-            paste::paste! {
+            $crate::exports::paste::paste! {
                 $crate::impl_py_type_def! {
                     [<$name Type>]; : $ty
                 }
             }
 
 
-            paste::paste! {
+            $crate::exports::paste::paste! {
 
                 $crate::impl_py_stub! {
                     $name {
@@ -332,8 +332,8 @@ macro_rules! type_def_wrapper {
 
         $crate::type_def_wrapper!($v $name <$ty>);
 
-        impl pyo3::IntoPy<pyo3::PyObject> for $name {
-            fn into_py(self, py: pyo3::Python<'_>) -> pyo3::PyObject {
+        impl $crate::exports::pyo3::IntoPy<$crate::exports::pyo3::PyObject> for $name {
+            fn into_py(self, py: $crate::exports::pyo3::Python<'_>) -> $crate::exports::pyo3::PyObject {
                 self.0.into_py(py)
             }
         }

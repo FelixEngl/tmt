@@ -7,6 +7,7 @@ edition = "2021"
 ldatranslate-toolkit.workspace = true
 ldatranslate-tokenizer.workspace = true
 ldatranslate-voting.workspace = true
+ldatranslate-translate.workspace = true
 itertools.workspace = true
 statrs.workspace = true
 rayon.workspace = true
@@ -49,6 +50,12 @@ tar.workspace = true
 indexmap.workspace = true
 convert_case.workspace = true
 zip.workspace = true
+html-escape.workspace = true
+string-interner = {workspace = true, features = ["serde", "std"] }
+pathdiff.workspace = true
+enum-map.workspace = true
+const-str.workspace = true
+float-cmp.workspace = true
 
 [features]
 gen_python_api = ["dep:pyo3-stub-gen"]

@@ -5,12 +5,13 @@ use std::io;
 use std::io::{ErrorKind, Write};
 use std::ops::Range;
 use std::sync::Arc;
+use ldatranslate_translate::VoterInfoProvider;
 use crate::model::{DocumentId, DocumentLength, DocumentTo, Probability, TopicId, TopicTo, WordFrequency, WordId, WordTo};
 use crate::model::meta::{TopicMeta, WordMeta, WordMetaWithWord};
 use crate::vocabulary::BasicVocabulary;
 
 /// A basic topic model fulfilling the bare minimum of a topic model.
-pub trait BasicTopicModel: Send + Sync {
+pub trait BasicTopicModel: Send + Sync + VoterInfoProvider {
     /// The number of topics in this model
     fn topic_count(&self) -> usize;
 
@@ -74,6 +75,8 @@ pub trait BasicTopicModel: Send + Sync {
     /// Get the `n` best [WordMeta] for all topics by their position.
     fn get_n_best_for_topics(&self, n: usize) -> Option<TopicTo<&[Arc<WordMeta>]>>;
 }
+
+
 
 /// A topicmodel with document stats
 pub trait TopicModelWithDocumentStats {

@@ -18,6 +18,9 @@ strum.workspace = true
 pyo3.workspace = true
 string-interner = {workspace = true, features = ["serde", "std"] }
 pyo3-stub-gen = {workspace = true, optional = true}
+paste.workspace = true
+log.workspace = true
+tinyset.workspace = true
 
 [features]
 gen_python_api = ["dep:pyo3-stub-gen"]

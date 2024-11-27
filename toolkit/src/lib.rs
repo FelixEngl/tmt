@@ -32,6 +32,21 @@ pub mod rw_ext;
 
 pub use crc32_for_reader::crc32;
 
+#[doc(hidden)]
+pub mod exports {
+    pub use string_interner;
+    pub use paste;
+    pub use pyo3;
+    pub use itertools;
+    pub use inventory;
+    pub use tinyset;
+    pub use serde;
+    pub use log;
+    #[cfg(feature = "gen_python_api")]
+    pub use pyo3_stub_gen;
+}
+
+
 #[cfg(not(feature = "gen_python_api"))]
 #[macro_export]
 macro_rules! impl_py_stub {

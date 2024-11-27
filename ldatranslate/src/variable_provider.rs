@@ -2,8 +2,8 @@ use std::hash::Hash;
 use thiserror::Error;
 use ldatranslate_voting::variable_provider::{VariableProvider};
 use ldatranslate_topicmodel::dictionary::BasicDictionaryWithVocabulary;
+use ldatranslate_topicmodel::translate::TranslatableTopicMatrix;
 use ldatranslate_topicmodel::vocabulary::SearchableVocabulary;
-use crate::translate::TranslatableTopicMatrix;
 
 pub trait AsVariableProvider<T> {
     fn as_variable_provider_for<'a, Target, D, Voc>(

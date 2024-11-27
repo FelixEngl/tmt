@@ -39,6 +39,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use ldatranslate_toolkit::normal_number::IsNormalNumber;
+use ldatranslate_translate::VoterInfoProvider;
 use crate::model::meta::TopicMeta;
 
 pub type TopicTo<T> = Vec<T>;
@@ -449,6 +450,14 @@ impl<T, V> BasicTopicModel for TopicModel<T, V> where V: BasicVocabulary<T> {
 
     fn get_n_best_for_topics(&self, n: usize) -> Option<Vec<&[Arc<WordMeta>]>> {
         self.topic_ids().map(|topic_id| self.get_n_best_for_topic(topic_id, n)).collect()
+    }
+}
+
+impl<T, V> VoterInfoProvider for TopicModel<T, V> where V: BasicVocabulary<T> {
+    type VoterMeta = Arc<WordMeta>;
+
+    fn get_voter_meta<'a>(&'a self, column: usize, row: usize) -> Option<&'a Self::VoterMeta> {
+        self.get_word_meta(column, row)
     }
 }
 

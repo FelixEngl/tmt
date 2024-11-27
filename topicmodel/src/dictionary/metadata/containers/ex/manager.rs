@@ -5,7 +5,7 @@ macro_rules! create_struct {
         pub struct MetadataManagerEx {
             meta_a: Vec<$crate::dictionary::metadata::containers::ex::MetadataEx>,
             meta_b: Vec<$crate::dictionary::metadata::containers::ex::MetadataEx>,
-            pub(crate) dictionary_interner: $crate::crate::interners::DictionaryOriginStringInterner,
+            pub(crate) dictionary_interner: $crate::interners::DictionaryOriginStringInterner,
             $(pub(crate) $name: $ty,
             )*
         }

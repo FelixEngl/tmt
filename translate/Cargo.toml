@@ -1,0 +1,10 @@
+[package]
+name = "ldatranslate-translate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+evalexpr.workspace = true
+strum.workspace = true
+rayon.workspace = true
+delegate.workspace = true

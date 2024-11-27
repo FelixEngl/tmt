@@ -1,12 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["ldatranslate", "toolkit", "topicmodel", "voting", "tokenizer"]
+members = ["ldatranslate", "toolkit", "topicmodel", "voting", "tokenizer", "translate"]
 
 [workspace.dependencies]
 ldatranslate-toolkit = {path = "toolkit"}
 ldatranslate-voting = {path = "voting"}
 ldatranslate-topicmodel = {path = "topicmodel"}
 ldatranslate-tokenizer = {path = "tokenizer"}
+ldatranslate-translate = {path = "translate"}
 
 # Python binding
 pyo3 = { version = "0.22", features = ["default", "serde", "hashbrown", "either", "auto-initialize"] }

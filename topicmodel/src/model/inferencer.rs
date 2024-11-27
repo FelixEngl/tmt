@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::slice::Iter;
 use itertools::{multiunzip, multizip, Itertools};
 use rand::prelude::Distribution;
-use rand::thread_rng;
+use rand::rng;
 use ldatranslate_toolkit::special_python_values::SingleOrVec;
 use crate::math::{dirichlet_expectation_1d, dirichlet_expectation_2d, dot, transpose};
 use crate::model::{TopicModelWithVocabulary, WordId};
@@ -164,7 +164,7 @@ impl<'a, T, V, Model> TopicModelInferencer<'a, T, V, Model> where
 
         let gamma = rand_distr::Gamma::new(100., 1./100.)
             .unwrap()
-            .sample_iter(&mut thread_rng())
+            .sample_iter(&mut rng())
             .take(self.topic_model.k() * chunk.len())
             .chunks(self.topic_model.k())
             .into_iter()

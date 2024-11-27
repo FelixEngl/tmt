@@ -23,7 +23,6 @@ pub mod translate;
 pub mod py;
 pub mod aligned_data;
 pub mod variable_provider;
-pub mod extenders;
 pub mod domain_voting;
 
 /// A Python module implemented in Rust. The name of this function must match
@@ -35,7 +34,7 @@ pub fn ldatranslate(m: &Bound<'_, PyModule>) -> PyResult<()> {
         .target(Target::Stdout)
         .filter_level(LevelFilter::Info)
         .init();
-    for x in inventory::iter::<toolkit::register_python::PythonRegistration> {
+    for x in inventory::iter::<ldatranslate_toolkit::register_python::PythonRegistration> {
         (&x.register)(m)?;
     }
 

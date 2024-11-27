@@ -113,11 +113,11 @@ macro_rules! impl_py_stub {
         $(input: $b2: block)?
     }) => {
         const _: () = {
-            use pyo3_stub_gen::*;
-            use $crate::toolkit::pystub::*;
+            use $crate::exports::pyo3_stub_gen::*;
+            use $crate::pystub::*;
 
 
-            impl pyo3_stub_gen::PyStubType for $ty {
+            impl $crate::exports::pyo3_stub_gen::PyStubType for $ty {
                 fn type_output() -> TypeInfo {
                     #[allow(unused)]
                     #[inline(always)]
@@ -154,9 +154,9 @@ macro_rules! impl_py_stub {
         }
     ) => {
         const _: () = {
-            use pyo3_stub_gen::TypeInfo;
-            use $crate::toolkit::pystub::*;
-            impl pyo3_stub_gen::PyStubType for $ty {
+            use $crate::exports::pyo3_stub_gen::TypeInfo;
+            use $crate::pystub::*;
+            impl $crate::exports::pyo3_stub_gen::PyStubType for $ty {
                 fn type_output() -> TypeInfo {
                     TypeInfoBuilder::new()
                     .add_names($l1)
@@ -372,11 +372,11 @@ macro_rules! impl_py_type_def {
 
         $crate::impl_py_stub!($name $($tt)+);
 
-        pyo3_stub_gen::inventory::submit! {
-            $crate::toolkit::pystub::PyTypeInfo {
+        $crate::exports::pyo3_stub_gen::inventory::submit! {
+            $crate::pystub::PyTypeInfo {
                 name: stringify!($name),
                 module: None,
-                r#type: <$name as pyo3_stub_gen::PyStubType>::type_output
+                r#type: <$name as $crate::exports::pyo3_stub_gen::PyStubType>::type_output
             }
         }
     };
@@ -386,11 +386,11 @@ macro_rules! impl_py_type_def {
 
         $crate::impl_py_stub!($name $($tt)+);
 
-        pyo3_stub_gen::inventory::submit! {
-            $crate::toolkit::pystub::PyTypeInfo {
+        $crate::exports::pyo3_stub_gen::inventory::submit! {
+            $crate::pystub::PyTypeInfo {
                 name: stringify!($name),
                 module: Some($module),
-                r#type: <$name as pyo3_stub_gen::PyStubType>::type_output
+                r#type: <$name as $crate::exports::pyo3_stub_gen::PyStubType>::type_output
             }
         }
     };
@@ -403,22 +403,22 @@ macro_rules! impl_py_type_def_special {
 
         const _: () = {
 
-            paste::paste! {
+            $crate::exports::paste::paste! {
                 $crate::impl_py_type_def!([<$name Out>]; $($tt)+);
                 $crate::impl_py_type_def!([<$name In>]; $($tt)+);
             }
 
-            impl pyo3_stub_gen::PyStubType for $name {
-                fn type_input() -> pyo3_stub_gen::TypeInfo {
-                    paste::paste! {
-                        let mut t_ind = <[<$name In>] as pyo3_stub_gen::PyStubType>::type_input();
+            impl $crate::exports::pyo3_stub_gen::PyStubType for $name {
+                fn type_input() -> $crate::exports::pyo3_stub_gen::TypeInfo {
+                    $crate::exports::paste::paste! {
+                        let mut t_ind = <[<$name In>] as $crate::exports::pyo3_stub_gen::PyStubType>::type_input();
                         t_ind.name = format!("{}In", stringify!($name));
                         t_ind
                     }
                 }
-                fn type_output() -> pyo3_stub_gen::TypeInfo {
-                    paste::paste! {
-                        let mut t_ind = <[<$name Out>] as pyo3_stub_gen::PyStubType>::type_output();
+                fn type_output() -> $crate::exports::pyo3_stub_gen::TypeInfo {
+                    $crate::exports::paste::paste! {
+                        let mut t_ind = <[<$name Out>] as $crate::exports::pyo3_stub_gen::PyStubType>::type_output();
                         t_ind.name = format!("{}Out", stringify!($name));
                         t_ind
                     }
@@ -428,11 +428,11 @@ macro_rules! impl_py_type_def_special {
 
 
 
-        pyo3_stub_gen::inventory::submit! {
-            $crate::toolkit::pystub::PyTypeInfo {
+        $crate::exports::pyo3_stub_gen::inventory::submit! {
+            $crate::pystub::PyTypeInfo {
                 name: stringify!($name),
                 module: None,
-                r#type: <$name as pyo3_stub_gen::PyStubType>::type_output
+                r#type: <$name as $crate::exports::pyo3_stub_gen::PyStubType>::type_output
             }
         }
     };
@@ -441,17 +441,17 @@ macro_rules! impl_py_type_def_special {
         $v struct $name;
 
         const _: () = {
-            use pyo3_stub_gen::TypeInfo;
-            use $crate::toolkit::pystub::*;
+            use $crate::exports::pyo3_stub_gen::TypeInfo;
+            use $crate::pystub::*;
 
-            paste::paste! {
+            $crate::exports::paste::paste! {
                 $crate::impl_py_type_def!([<$name Out>] in $module; $($tt)+);
                 $crate::impl_py_type_def!([<$name In>] in $module; $($tt)+);
             }
 
             impl PyStubType for $name {
                 fn type_input() -> TypeInfo {
-                    paste::paste! {
+                    $crate::exports::paste::paste! {
                         let mut t_ind = <[<$name In>] as PyStubType>::type_output();
                         t_ind.name = format!("{}.{}In", $module, stringify!($name));
                         t_ind.import.insert($module.into());
@@ -459,7 +459,7 @@ macro_rules! impl_py_type_def_special {
                     }
                 }
                 fn type_output() -> TypeInfo {
-                    paste::paste! {
+                    $crate::exports::paste::paste! {
                         let mut t_ind = <[<$name Out>] as PyStubType>::type_output();
                         t_ind.name = format!("{}.{}Out", $module, stringify!($name));
                         t_ind.import.insert($module.into());
@@ -468,14 +468,6 @@ macro_rules! impl_py_type_def_special {
                 }
             }
         };
-
-        // pyo3_stub_gen::inventory::submit! {
-        //     $crate::toolkit::pystub::PyTypeInfo {
-        //         name: stringify!($name),
-        //         module: Some($module),
-        //         r#type: <$name as pyo3_stub_gen::PyStubType>::type_output
-        //     }
-        // }
     };
 }
 

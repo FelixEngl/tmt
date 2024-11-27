@@ -18,6 +18,8 @@ strum.workspace = true
 num.workspace = true
 pyo3-stub-gen = {workspace = true, optional = true}
 delegate.workspace = true
+log.workspace = true
+
 
 [features]
 gen_python_api = ["dep:pyo3-stub-gen"]

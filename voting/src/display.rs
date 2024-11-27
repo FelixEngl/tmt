@@ -19,8 +19,8 @@ macro_rules! impl_display_for_displaytree {
         $(
             impl Display for $target {
                 fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                    let mut code_formatter = $crate::voting::display::IndentWriter::new(f);
-                    $crate::voting::display::DisplayTree::fmt(self, &mut code_formatter)
+                    let mut code_formatter = $crate::display::IndentWriter::new(f);
+                    $crate::display::DisplayTree::fmt(self, &mut code_formatter)
                 }
             }
         )+

@@ -36,7 +36,7 @@ pub struct DictLangIter<'a, T, D: ?Sized, V> {
 }
 
 impl<'a, T, D: ?Sized, V> DictLangIter<'a, T, D, V> where V: BasicVocabulary<T> + 'a, D: DictionaryWithVocabulary<T, V> {
-    pub(in crate::topicmodel::dictionary) fn new<L: Language>(dict: &'a D) -> Self {
+    pub(in crate::dictionary) fn new<L: Language>(dict: &'a D) -> Self {
         Self {
             iter: if L::LANG.is_a() {
                 dict.voc_a().iter().enumerate()
@@ -85,7 +85,7 @@ impl<'a> DictIterImpl<'a> {
         self.direction
     }
 
-    pub(in crate::topicmodel::dictionary) fn new(
+    pub(in crate::dictionary) fn new(
         dict: &'a (impl BasicDictionary + ?Sized),
         direction: DirectionKind
     ) -> Self {
@@ -174,7 +174,7 @@ pub struct DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, 
 }
 
 impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T>, T: Clone {
-    pub(in crate::topicmodel::dictionary) fn new(inner: impl Into<OwnedOrArcRw<D>>) -> Self {
+    pub(in crate::dictionary) fn new(inner: impl Into<OwnedOrArcRw<D>>) -> Self {
         let mut new = Self {
             pos: 0,
             index: 0,

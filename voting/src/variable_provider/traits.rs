@@ -1,11 +1,6 @@
-use crate::topicmodel::dictionary::BasicDictionaryWithVocabulary;
-use crate::topicmodel::vocabulary::SearchableVocabulary;
-use crate::translate::TranslatableTopicMatrix;
-use crate::variable_provider::AsVariableProviderError;
-use crate::variable_provider::{VariableProvider, VariableProviderResult};
+use crate::variable_provider::{VariableProviderResult};
 use evalexpr::ContextWithMutableVariables;
-use std::hash::Hash;
-use crate::voting::constants::TMTNumericTypes;
+use crate::TMTNumericTypes;
 
 pub trait VariableProviderOut: Sync + Send {
     fn provide_global(&self, target: &mut impl ContextWithMutableVariables<NumericTypes=TMTNumericTypes>) -> VariableProviderResult<()>;

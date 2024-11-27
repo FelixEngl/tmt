@@ -455,7 +455,7 @@ macro_rules! impl_general_metadata {
             }
 
             /// set dict to None for default
-            pub fn single_field_value(&self, field: MetaField, dict: Option<$crate::crate::interners::DictionaryOriginSymbol>) -> Option<GeneralMetadataEntry> {
+            pub fn single_field_value(&self, field: MetaField, dict: Option<$crate::interners::DictionaryOriginSymbol>) -> Option<GeneralMetadataEntry> {
                 match field {
                     $(
                         MetaField::$enum_var_name => {
@@ -502,6 +502,7 @@ use itertools::{Itertools, Position};
 use strum::{EnumIs};
 use thiserror::Error;
 use tinyset::Fits64;
+use ldatranslate_toolkit::exports::string_interner::Symbol;
 use crate::dictionary::metadata::dict_meta_topic_matrix::TopicVector;
 use super::*;
 
@@ -1093,12 +1094,10 @@ impl MetadataEx {
     }
 
     pub fn get_associated_metadata(&self, origin: DictionaryOriginSymbol) -> Option<&AssociatedMetadataImpl> {
-        use string_interner::Symbol;
         self.associated_metadata.get(origin.to_usize())?.get()
     }
 
     pub fn get_mut_associated_metadata(&mut self, origin: DictionaryOriginSymbol) -> Option<&mut AssociatedMetadataImpl> {
-        use string_interner::Symbol;
         self.associated_metadata.get_mut(origin.to_usize())?.get_mut()
     }
 
@@ -1112,7 +1111,6 @@ impl MetadataEx {
     
     /// Gets or creates the metadata for a dictionary.
     pub fn get_or_create(&mut self, origin: DictionaryOriginSymbol) -> &mut AssociatedMetadata {
-        use string_interner::Symbol;
         self.associated_dictionaries.insert(origin);
         self.get_or_create_impl(origin.to_usize())
     }
@@ -1247,7 +1245,7 @@ impl crate::dictionary::metadata::Metadata for MetadataEx{}
 
 /// Static extensions for MetadataWithOrigin
 impl<T> MetadataWithOrigin<T> where T: Copy {
-    pub fn origin(&self) -> Option<crate::crate::interners::DictionaryOriginSymbol> {
+    pub fn origin(&self) -> Option<DictionaryOriginSymbol> {
         match self {
             MetadataWithOrigin::General(_) => {
                 None
@@ -1291,8 +1289,6 @@ impl<'a> Iterator for Iter<'a> {
     type Item = MetadataWithOrigin<&'a AssociatedMetadata>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use string_interner::Symbol;
-
         if self.general_metadata && self.pos.is_empty() {
             return None
         }
@@ -1328,7 +1324,6 @@ impl<'a> Iterator for IterMut<'a> {
     type Item = MetadataWithOrigin<&'a mut AssociatedMetadata>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use string_interner::Symbol;
         if self.general_metadata && self.pos.is_empty() {
             return None
         }

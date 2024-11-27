@@ -1,9 +1,10 @@
 use ldatranslate_topicmodel::dictionary::BasicDictionaryWithVocabulary;
 use ldatranslate_topicmodel::vocabulary::SearchableVocabulary;
 use crate::translate::TranslatableTopicMatrix;
-use crate::variable_provider::{AsVariableProvider, AsVariableProviderError, VariableProvider};
+use crate::variable_provider::{AsVariableProvider, AsVariableProviderError};
 use std::hash::Hash;
 use std::marker::PhantomData;
+use ldatranslate_voting::variable_provider::VariableProvider;
 
 pub(super) struct DummyAsVariableProvider<T> {
     _phantom: PhantomData<T>

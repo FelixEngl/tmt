@@ -8,6 +8,7 @@ ldatranslate-toolkit.workspace = true
 ldatranslate-voting.workspace = true
 ldatranslate-tokenizer.workspace = true
 ldatranslate-topicmodel.workspace = true
+ldatranslate-translate.workspace = true
 pyo3-stub-gen = {workspace = true, optional = true}
 pyo3.workspace = true
 arcstr.workspace = true
@@ -34,6 +35,7 @@ string-interner.workspace = true
 log.workspace = true
 env_logger.workspace = true
 inventory.workspace = true
+sealed.workspace = true
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

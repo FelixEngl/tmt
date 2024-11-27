@@ -12,13 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-mod traits;
 mod config;
 mod errors;
 mod language;
 mod phantoms;
 pub mod topic_model_specific;
-mod topic_model_ext;
 
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
@@ -28,7 +26,6 @@ use std::hash::Hash;
 use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext, Value};
 use itertools::Itertools;
 use rayon::prelude::*;
-pub use traits::*;
 use language::*;
 pub use errors::*;
 pub use config::*;
@@ -37,7 +34,9 @@ use ldatranslate_topicmodel::create_topic_model_specific_dictionary;
 use ldatranslate_topicmodel::dictionary::*;
 use ldatranslate_topicmodel::dictionary::direction::{AToB, BToA, B};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
+use ldatranslate_topicmodel::translate::{TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
 use ldatranslate_topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
+use ldatranslate_translate::{ContextExtender, TopicLike, TopicMeta, TopicMetas, TopicModelLikeMatrix, VoterInfoProvider, VoterMeta};
 use crate::translate::phantoms::DummyAsVariableProvider;
 use crate::translate::TranslateError::IncompatibleLanguages;
 use ldatranslate_voting::variable_provider::variable_names::*;
@@ -45,7 +44,6 @@ use ldatranslate_voting::variable_provider::{VariableProvider, VariableProviderO
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::traits::VotingMethodMarker;
 use ldatranslate_voting::VotingMethod;
-use crate::extenders::ContextExtender;
 use crate::variable_provider::AsVariableProvider;
 
 #[derive(Debug, Clone)]
@@ -187,8 +185,8 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     // topic to word id to probable translation candidates.
     let result = target
         .matrix()
-        .iter()
-        .zip_eq(target.matrix_meta().iter())
+        .par_iter()
+        .zip_eq(target.matrix_meta().par_iter())
         .enumerate()
         .map(|(topic_id, (topic, meta))| {
             let mut topic_context_2 = context_map! {
@@ -316,7 +314,7 @@ where
     C: Context<NumericTypes=TMTNumericTypes> + Send + Sync + IterateVariablesContext
 {
     topic
-        .iter()
+        .par_iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
             if let Some(provider) = provider {
@@ -390,7 +388,7 @@ where
     let candidates =
         if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_voter_id) {
             debug_assert!(!candidates.is_empty(), "The candidates are empty!");
-            Some(candidates.iter().cloned().filter_map( |candidate| {
+            Some(candidates.par_iter().cloned().filter_map( |candidate| {
                 debug_assert!(dictionary.translate_id_to_ids::<BToA>(candidate).is_some_and(|value| !value.is_empty()), "A candidate was not translateable!");
                 match dictionary.translate_id_to_ids::<BToA>(candidate) {
                     None  => None,

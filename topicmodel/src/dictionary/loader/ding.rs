@@ -14,7 +14,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::path::Path;
-use crate::topicmodel::dictionary::word_infos::{GrammaticalGender, GrammaticalNumber, PartOfSpeech, PartOfSpeechTag};
+use crate::dictionary::word_infos::{GrammaticalGender, GrammaticalNumber, PartOfSpeech, PartOfSpeechTag};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum WordInfo<T> {
@@ -1184,9 +1184,9 @@ pub mod entry_processing {
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::loader::ding::entry_processing::process_translation_entry;
-    use crate::topicmodel::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
-    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
+    use crate::dictionary::loader::ding::entry_processing::process_translation_entry;
+    use crate::dictionary::loader::ding::{parse_line, parse_word_alternative, read_dictionary};
+    use crate::dictionary::loader::helper::test::execute_test_read_for;
     use nom::error::VerboseError;
     use nom::Finish;
 

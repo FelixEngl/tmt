@@ -12,14 +12,15 @@ use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DOMAI
 use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx};
 use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::language_hint::LanguageHint;
+use ldatranslate_topicmodel::translate::{TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
+use ldatranslate_translate::{ContextExtender, TopicLike, TopicMeta, TopicModelLikeMatrix, VoterMeta};
 use ldatranslate_voting::variable_provider::{VariableProviderError, VariableProviderOut};
 use ldatranslate_voting::variable_provider::variable_names::*;
 use ldatranslate_voting::traits::VotingMethodMarker;
 pub use crate::translate::*;
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::VotingExpressionError;
-use crate::extenders::ContextExtender;
 use crate::variable_provider::{AsVariableProvider, AsVariableProviderError};
 
 /// The config for a translation
@@ -204,6 +205,9 @@ where
             CANDIDATE_ID => conv candidate_id
         }
     }).collect::<Result<Vec<_>, _>>().unwrap().into();
+
+    use ldatranslate_translate::TopicMetas;
+
 
     let result = target
         .matrix()

@@ -507,7 +507,7 @@ fn voting_operation<'a, 'b, E: ErrorType<ParserInput<'a,'b>>>(input: ParserInput
                                     ),
                                     preceded(
                                         multispace0,
-                                        crate::voting::aggregations::parse::parse_aggregation
+                                        crate::aggregations::parse::parse_aggregation
                                     )
                                 ))
                             ),
