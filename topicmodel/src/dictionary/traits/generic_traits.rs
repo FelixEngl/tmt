@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use std::hash::Hash;
 use crate::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryMut, DictionaryWithVocabulary, FromVoc, MutableDictionaryWithMeta};
-use crate::dictionary::direction::{Direction, DirectionKind, DirectionTuple, Language, Translation};
+use crate::dictionary::direction::{Direction, DirectionMarker, DirectedElement, Language, Translation};
 use crate::dictionary::iterators::DictLangIter;
 use crate::dictionary::metadata::MetadataManager;
 use crate::language_hint::LanguageHint;
@@ -219,13 +219,13 @@ where
 
     unsafe fn insert_raw_values<D: Direction>(&mut self, word_id_a: usize, word_id_b: usize) {
         match D::DIRECTION {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 self.insert_raw_values_a_to_b(word_id_a, word_id_b)
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 self.insert_raw_values_b_to_a(word_id_a, word_id_b)
             }
-            DirectionKind::Invariant => {
+            DirectionMarker::Invariant => {
                 self.insert_raw_values_invariant(word_id_a, word_id_b)
             }
         }
@@ -247,7 +247,7 @@ where
         self.insert_single_value::<L>(word.into())
     }
 
-    fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_value<D: Direction>(&mut self, word_a: T, word_b: T) -> DirectedElement<usize, usize> {
         self.insert_value_dir(
             D::DIRECTION,
             word_a,
@@ -255,7 +255,7 @@ where
         )
     }
 
-    fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
+    fn insert<D: Direction>(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectedElement<usize, usize> {
         self.insert_value::<D>(word_a.into(), word_b.into())
     }
 

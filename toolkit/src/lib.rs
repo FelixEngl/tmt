@@ -29,7 +29,6 @@ pub mod py_helpers;
 mod crc32_for_reader;
 pub mod sync_ext;
 pub mod rw_ext;
-
 pub use crc32_for_reader::crc32;
 
 #[doc(hidden)]

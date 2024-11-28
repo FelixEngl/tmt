@@ -190,7 +190,7 @@ pub fn read_single_from_archive(path: impl AsRef<Path>, name: impl Into<String>)
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
-    use crate::topicmodel::dictionary::loader::muse::{read_from_archive, MuseError};
+    use crate::dictionary::loader::muse::{read_from_archive, MuseError};
 
     #[test]
     pub fn test(){

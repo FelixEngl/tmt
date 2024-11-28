@@ -1,5 +1,5 @@
 use std::cmp::{min};
-use crate::dictionary::direction::LanguageKind;
+use crate::dictionary::direction::LanguageMarker;
 use crate::vocabulary::BasicVocabulary;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -13,7 +13,7 @@ use trie_rs::map::TrieBuilder;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrieSearcher {
     is_exact: bool,
-    target_voc: LanguageKind,
+    target_voc: LanguageMarker,
     voc_len: usize,
     prefix_length: Option<usize>,
     search: trie_rs::map::Trie<u8, Entry>,
@@ -23,7 +23,7 @@ impl TrieSearcher {
     /// If no prefix is set the whole vocabulary is indexed.
     pub fn new<V, T>(
         voc: &V,
-        language: LanguageKind,
+        language: LanguageMarker,
         prefix_length: Option<usize>,
     ) -> Result<Self, EmptyEntryBuilderError>
     where
@@ -137,7 +137,7 @@ impl TrieSearcher {
         self.is_exact
     }
     
-    pub fn target_voc(&self) -> LanguageKind {
+    pub fn target_voc(&self) -> LanguageMarker {
         self.target_voc
     }
     

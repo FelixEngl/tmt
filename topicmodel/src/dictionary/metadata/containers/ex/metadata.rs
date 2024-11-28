@@ -503,7 +503,7 @@ use strum::{EnumIs};
 use thiserror::Error;
 use tinyset::Fits64;
 use ldatranslate_toolkit::exports::string_interner::Symbol;
-use crate::dictionary::metadata::dict_meta_topic_matrix::TopicVector;
+use crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector;
 use super::*;
 
 
@@ -932,8 +932,8 @@ pub struct AssociatedMetadataImpl {
 
 impl AssociatedMetadataImpl {
 
-    pub fn topic_vector(&self) ->  TopicVector {
-        let mut new = TopicVector::new();
+    pub fn topic_vector(&self) ->  DictMetaVector {
+        let mut new = DictMetaVector::new();
         if let Some(domains) = self.inner.get(&MetaField::Domains) {
             let domains = unsafe{domains.as_ref_unchecked_domains()};
             for (idx, value) in domains.iter_counts() {
@@ -1154,8 +1154,8 @@ impl MetadataEx {
         }
     }
 
-    pub fn topic_vector(&self) ->  Option<TopicVector> {
-        let mut topic_vector = TopicVector::new();
+    pub fn topic_vector(&self) ->  Option<DictMetaVector> {
+        let mut topic_vector = DictMetaVector::new();
         let mut topic_vector_set = false;
         if let Some(topic) = self.general_metadata.get() {
             topic_vector_set = true;
@@ -1170,8 +1170,8 @@ impl MetadataEx {
         topic_vector_set.then_some(topic_vector)
     }
 
-    pub fn topic_exists_vector(&self) -> [bool; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
-        let mut result = [false; DOMAIN_MODEL_ENTRY_MAX_SIZE];
+    pub fn topic_exists_vector(&self) -> [bool; META_DICT_ARRAY_LENTH] {
+        let mut result = [false; META_DICT_ARRAY_LENTH];
 
         if let Some(v) = self.general_metadata.get() {
             let r = v.registers();
@@ -1435,7 +1435,7 @@ impl AssociatedMetadata {
         })
     }
 
-    pub fn topic_vector(&self) ->  Option<TopicVector> {
+    pub fn topic_vector(&self) ->  Option<DictMetaVector> {
         self.get().map(|value| value.topic_vector())
     }
 
@@ -1457,7 +1457,7 @@ mod test {
     #[repr(transparent)]
     #[serde(transparent)]
     pub struct Data {
-        #[serde(with = "ldatranslate_toolkitonce_serializer::OnceCellDef")]
+        #[serde(with = "ldatranslate_toolkit::once_serializer::OnceCellDef")]
         pub(super) inner: std::cell::OnceCell<Set64<PartOfSpeech>>
     }
 

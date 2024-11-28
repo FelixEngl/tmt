@@ -35,12 +35,13 @@ use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::OnceLock;
+use arcstr::ArcStr;
 use itertools::{Itertools, Position};
 use serde::{Deserialize, Serialize};
 use crate::language_hint::LanguageHint;
-use crate::dictionary::direction::{AToB, BToA, DirectionKind, DirectionTuple, Invariant, Language, A, B};
+use crate::dictionary::direction::{AToB, BToA, DirectionMarker, DirectedElement, Invariant, Language, A, B};
 use crate::dictionary::search::{DictionarySearcher, SearchIndex};
-use crate::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
+use crate::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, Vocabulary, VocabularyMut};
 
 #[macro_export]
 macro_rules! dict_insert {
@@ -89,7 +90,7 @@ macro_rules! dict {
 
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Dictionary<T, V> {
+pub struct Dictionary<T = ArcStr, V = Vocabulary<T>> {
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
     pub(crate) voc_a: V,
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
@@ -247,22 +248,22 @@ impl<T, V> MergingDictionary<T, V> for Dictionary<T, V> where T: Eq + Hash + Clo
     {
         let other = other.into();
 
-        for DirectionTuple{a, b, direction} in other.iter() {
+        for DirectedElement {a, b, direction} in other.iter() {
             unsafe {
                 match direction {
-                    DirectionKind::AToB => {
+                    DirectionMarker::AToB => {
                         self.insert_value::<AToB>(
                             other.voc_a().get_value_unchecked(a).clone(),
                             other.voc_b().get_value_unchecked(b).clone(),
                         );
                     }
-                    DirectionKind::BToA => {
+                    DirectionMarker::BToA => {
                         self.insert_value::<BToA>(
                             other.voc_a().get_value_unchecked(a).clone(),
                             other.voc_b().get_value_unchecked(b).clone(),
                         );
                     }
-                    DirectionKind::Invariant => {
+                    DirectionMarker::Invariant => {
                         self.insert_value::<Invariant>(
                             other.voc_a().get_value_unchecked(a).clone(),
                             other.voc_b().get_value_unchecked(b).clone(),
@@ -372,23 +373,23 @@ where
         Fb: Fn(&'a T) -> Result<Option<T>, E>
     {
         let mut new_dict = Dictionary::default();
-        for DirectionTuple{a, b, direction} in self.iter() {
+        for DirectedElement {a, b, direction} in self.iter() {
             if let Some(a) = f_a(self.convert_id_a_to_word(a).unwrap())? {
                 if let Some(b) = f_b(self.convert_id_b_to_word(b).unwrap())? {
                     match direction {
-                        DirectionKind::AToB => {
+                        DirectionMarker::AToB => {
                             new_dict.insert_value::<AToB>(
                                 a,
                                 b
                             );
                         }
-                        DirectionKind::BToA => {
+                        DirectionMarker::BToA => {
                             new_dict.insert_value::<BToA>(
                                 a,
                                 b
                             );
                         }
-                        DirectionKind::Invariant => {
+                        DirectionMarker::Invariant => {
                             new_dict.insert_value::<Invariant>(
                                 a,
                                 b
@@ -406,9 +407,9 @@ where
     fn filter_by_ids<Fa: Fn(usize) -> bool, Fb: Fn(usize) -> bool>(&self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized {
         let mut new_dict = Dictionary::default();
 
-        for DirectionTuple{a, b, direction} in self.iter() {
+        for DirectedElement {a, b, direction} in self.iter() {
             match direction {
-                DirectionKind::AToB => {
+                DirectionMarker::AToB => {
                     if filter_a(a) {
                         new_dict.insert_value::<AToB>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
@@ -416,7 +417,7 @@ where
                         );
                     }
                 }
-                DirectionKind::BToA => {
+                DirectionMarker::BToA => {
                     if filter_b(b) {
                         new_dict.insert_value::<BToA>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
@@ -424,7 +425,7 @@ where
                         );
                     }
                 }
-                DirectionKind::Invariant => {
+                DirectionMarker::Invariant => {
                     if filter_a(a) && filter_b(b) {
                         new_dict.insert_value::<Invariant>(
                             self.convert_id_a_to_word(a).unwrap().clone(),
@@ -450,11 +451,11 @@ where
 
     fn filter_by_values<'a, Fa: Fn(&'a T) -> bool, Fb: Fn(&'a T) -> bool>(&'a self, filter_a: Fa, filter_b: Fb) -> Self where Self: Sized, T: 'a {
         let mut new_dict = Dictionary::default();
-        for DirectionTuple{a, b, direction} in self.iter() {
+        for DirectedElement {a, b, direction} in self.iter() {
             let a = self.convert_id_a_to_word(a).unwrap();
             let b = self.convert_id_b_to_word(b).unwrap();
             match direction {
-                DirectionKind::AToB => {
+                DirectionMarker::AToB => {
                     if filter_a(a) {
                         new_dict.insert_value::<AToB>(
                             a.clone(),
@@ -462,7 +463,7 @@ where
                         );
                     }
                 }
-                DirectionKind::BToA => {
+                DirectionMarker::BToA => {
                     if filter_b(b) {
                         new_dict.insert_value::<BToA>(
                             a.clone(),
@@ -470,7 +471,7 @@ where
                         );
                     }
                 }
-                DirectionKind::Invariant => {
+                DirectionMarker::Invariant => {
                     let filter_a = filter_a(a);
                     let filter_b = filter_b(b);
                     if filter_a && filter_b {
@@ -557,7 +558,7 @@ where
 mod test {
     use arcstr::ArcStr;
     use crate::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMetaGen, DictionaryMutGen, DictionaryWithMeta, DictionaryWithVocabulary, FromVoc};
-    use crate::dictionary::direction::{DirectionTuple, Invariant, A, B};
+    use crate::dictionary::direction::{DirectedElement, Invariant, A, B};
     use crate::dictionary::metadata::classic::ClassicMetadataManager;
     use crate::dictionary::metadata::classic::python::SolvedMetadata;
     use crate::vocabulary::{SearchableVocabulary, Vocabulary};
@@ -619,21 +620,21 @@ mod test {
             dict.insert_value::<Invariant>(voc_a.get_value("airplane").unwrap().clone(), voc_b.get_value("Motorflugzeug").unwrap().clone(),);
             dict.insert_value::<Invariant>(voc_a.get_value("flyer").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
             dict.insert_value::<Invariant>(voc_a.get_value("airman").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("airfoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectedElement { a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("airfoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictE");
             drop(meta_a);
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictC");
             dict.insert_value::<Invariant>(voc_a.get_value("wing").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("deck").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectedElement { a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("deck").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("hydrofoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectedElement { a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("hydrofoil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictC");
@@ -641,7 +642,7 @@ mod test {
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictC");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("foil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectedElement { a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("foil").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             meta_a.push_associated_dictionary("DictB");
@@ -649,7 +650,7 @@ mod test {
             let mut meta_b = dict.get_or_create_meta_for::<B>(b);
             meta_b.push_associated_dictionary("DictA");
             meta_b.push_associated_dictionary("DictB");
-            let DirectionTuple{ a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("bearing surface").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
+            let DirectedElement { a, b, direction:_ } = dict.insert_value::<Invariant>(voc_a.get_value("bearing surface").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
             let mut meta_a = dict.get_or_create_meta_for::<A>(a);
             meta_a.push_associated_dictionary("DictA");
             drop(meta_a);

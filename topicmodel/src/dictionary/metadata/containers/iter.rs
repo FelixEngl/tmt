@@ -1,4 +1,4 @@
-use crate::dictionary::direction::{DirectionKind, DirectionTuple};
+use crate::dictionary::direction::{DirectionMarker, DirectedElement};
 use crate::dictionary::iterators::DictIter;
 use crate::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryWithVocabulary};
 use std::marker::PhantomData;
@@ -16,7 +16,7 @@ where
     V: AnonymousVocabulary
 {
     dictionary_with_meta: &'a D,
-    direction: DirectionKind,
+    direction: DirectionMarker,
     range: Range<usize>,
     _phantom: PhantomData<fn(M, V) -> ()>
 }
@@ -27,12 +27,12 @@ where
     M: MetadataManager,
     V: AnonymousVocabulary
 {
-    pub fn new(dictionary_with_meta: &'a D, direction: DirectionKind) -> Self {
+    pub fn new(dictionary_with_meta: &'a D, direction: DirectionMarker) -> Self {
         let range = match direction {
-            DirectionKind::AToB | DirectionKind::Invariant => {
+            DirectionMarker::AToB | DirectionMarker::Invariant => {
                 0..dictionary_with_meta.metadata().meta_a().len()
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 0..dictionary_with_meta.metadata().meta_b().len()
             }
         };
@@ -54,18 +54,18 @@ where
     type Item = (usize, Option<<M as MetadataManager>::Reference<'a>>);
     fn next(&mut self) -> Option<Self::Item> {
         match self.direction {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 let word_id = self.range.next()?;
                 return Some((word_id, self.dictionary_with_meta.get_meta_for_a(word_id)));
             }
-            DirectionKind::Invariant => {
+            DirectionMarker::Invariant => {
                 if let Some(word_id) = self.range.next() {
                     return Some((word_id, self.dictionary_with_meta.get_meta_for_a(word_id)));
                 }
-                self.direction = DirectionKind::BToA;
+                self.direction = DirectionMarker::BToA;
                 self.range = 0..self.dictionary_with_meta.metadata().meta_b().len();
             }
-            DirectionKind::BToA => {}
+            DirectionMarker::BToA => {}
         }
         let id = self.range.next()?;
         Some((id, self.dictionary_with_meta.get_meta_for_b(id)))
@@ -81,7 +81,7 @@ where
     V: AnonymousVocabularyMut + AnonymousVocabulary
 {
     dictionary_with_meta: &'a mut D,
-    direction: DirectionKind,
+    direction: DirectionMarker,
     range: Range<usize>,
     _phantom: PhantomData<fn(M, V) -> ()>
 }
@@ -92,12 +92,12 @@ where
     M: MetadataManager,
     V: AnonymousVocabularyMut + AnonymousVocabulary
 {
-    pub fn new(dictionary_with_meta: &'a mut D, direction: DirectionKind) -> Self {
+    pub fn new(dictionary_with_meta: &'a mut D, direction: DirectionMarker) -> Self {
         let range = match direction {
-            DirectionKind::AToB | DirectionKind::Invariant => {
+            DirectionMarker::AToB | DirectionMarker::Invariant => {
                 0..dictionary_with_meta.metadata().meta_a().len()
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 0..dictionary_with_meta.metadata().meta_b().len()
             }
         };
@@ -119,18 +119,18 @@ where
     type Item = (usize, Option<<M as MetadataManager>::MutReference<'a>>);
     fn next(&mut self) -> Option<Self::Item> {
         match self.direction {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 let word_id = self.range.next()?;
                 return Some((word_id, unsafe{std::mem::transmute(self.dictionary_with_meta.get_mut_meta_a(word_id))}));
             }
-            DirectionKind::Invariant => {
+            DirectionMarker::Invariant => {
                 if let Some(word_id) = self.range.next() {
                     return Some((word_id, unsafe{std::mem::transmute(self.dictionary_with_meta.get_mut_meta_a(word_id))}));
                 }
-                self.direction = DirectionKind::BToA;
+                self.direction = DirectionMarker::BToA;
                 self.range = 0..self.dictionary_with_meta.metadata().meta_b().len();
             }
-            DirectionKind::BToA => {}
+            DirectionMarker::BToA => {}
         }
         let id = self.range.next()?;
         Some((id, unsafe{std::mem::transmute(self.dictionary_with_meta.get_mut_meta_b(id))}))
@@ -140,7 +140,7 @@ where
 
 pub struct MetaIterOwned<D, T, V, M> {
     inner: OwnedOrArcRw<D>,
-    direction: DirectionKind,
+    direction: DirectionMarker,
     range: Range<usize>,
     _phantom: PhantomData<fn(M, V) -> T>
 }
@@ -151,13 +151,13 @@ where
     M: MetadataManager,
     V: BasicVocabulary<T> + AnonymousVocabulary,
 {
-    pub fn new(inner: impl Into<OwnedOrArcRw<D>>, direction: DirectionKind) -> Self {
+    pub fn new(inner: impl Into<OwnedOrArcRw<D>>, direction: DirectionMarker) -> Self {
         let inner = inner.into();
         let range = match direction {
-            DirectionKind::AToB | DirectionKind::Invariant => {
+            DirectionMarker::AToB | DirectionMarker::Invariant => {
                 0..inner.get().metadata().meta_a().len()
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 0..inner.get().metadata().meta_b().len()
             }
         };
@@ -182,20 +182,20 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let dict = self.inner.get();
         match self.direction {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 let word_id = self.range.next()?;
                 let word = dict.convert_id_a_to_word(word_id).expect("This should never fail!");
                 return Some((word_id, word.clone(), dict.get_meta_for_a(word_id).map(|v| v.into_resolved())));
             }
-            DirectionKind::Invariant => {
+            DirectionMarker::Invariant => {
                 if let Some(word_id) = self.range.next() {
                     let word = dict.convert_id_a_to_word(word_id).expect("This should never fail!");
                     return Some((word_id, word.clone(), dict.get_meta_for_a(word_id).map(|v| v.into_resolved())));
                 }
-                self.direction = DirectionKind::BToA;
+                self.direction = DirectionMarker::BToA;
                 self.range = 0..dict.metadata().meta_b().len();
             }
-            DirectionKind::BToA => {}
+            DirectionMarker::BToA => {}
         }
         let word_id = self.range.next()?;
         let word = dict.convert_id_b_to_word(word_id).expect("This should never fail!");
@@ -220,7 +220,7 @@ where
     M: MetadataManager,
     V: AnonymousVocabulary
 {
-    pub fn new(dictionary_with_meta: &'a D, dir: DirectionKind) -> Self {
+    pub fn new(dictionary_with_meta: &'a D, dir: DirectionMarker) -> Self {
         Self {
             iter: dictionary_with_meta.iter_dir(dir),
             dictionary_with_meta,
@@ -229,7 +229,7 @@ where
     }
 
     #[inline(always)]
-    pub fn direction(&self) -> DirectionKind {
+    pub fn direction(&self) -> DirectionMarker {
         self.iter.direction()
     }
 }
@@ -240,14 +240,14 @@ where
     M: MetadataManager + 'a,
     V: AnonymousVocabulary + 'a
 {
-    type Item = DirectionTuple<(usize, Option<M::Reference<'a>>), (usize, Option<M::Reference<'a>>)>;
+    type Item = DirectedElement<(usize, Option<M::Reference<'a>>), (usize, Option<M::Reference<'a>>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let DirectionTuple{a, b, direction} = self.iter.next()?;
+        let DirectedElement {a, b, direction} = self.iter.next()?;
         Some(
             match direction {
-                DirectionKind::AToB => {
-                    DirectionTuple::a_to_b(
+                DirectionMarker::AToB => {
+                    DirectedElement::a_to_b(
                         (
                             a,
                             self.dictionary_with_meta.metadata().get_meta_ref_a(
@@ -264,8 +264,8 @@ where
                         )
                     )
                 }
-                DirectionKind::BToA => {
-                    DirectionTuple::b_to_a(
+                DirectionMarker::BToA => {
+                    DirectedElement::b_to_a(
                         (
                             a,
                             self.dictionary_with_meta.metadata().get_meta_ref_a(
@@ -282,8 +282,8 @@ where
                         )
                     )
                 }
-                DirectionKind::Invariant => {
-                    DirectionTuple::invariant(
+                DirectionMarker::Invariant => {
+                    DirectedElement::invariant(
                         (
                             a,
                             self.dictionary_with_meta.metadata().get_meta_ref_a(

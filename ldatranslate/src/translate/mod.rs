@@ -16,9 +16,10 @@ mod config;
 mod errors;
 mod language;
 mod phantoms;
-pub mod topic_model_specific;
+mod candidate;
+mod dict_meta;
+// pub mod topic_model_specific;
 
-use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -30,11 +31,10 @@ use language::*;
 pub use errors::*;
 pub use config::*;
 use ldatranslate_toolkit::evalexpr::{CombineableContext};
-use ldatranslate_topicmodel::create_topic_model_specific_dictionary;
 use ldatranslate_topicmodel::dictionary::*;
-use ldatranslate_topicmodel::dictionary::direction::{AToB, BToA, B};
+use ldatranslate_topicmodel::dictionary::direction::{AToB, BToA, DirectionMarker, B};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
-use ldatranslate_topicmodel::translate::{TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
+use ldatranslate_topicmodel::translate::{create_topic_vocabulary_specific_dictionary, TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
 use ldatranslate_topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
 use ldatranslate_translate::{ContextExtender, TopicLike, TopicMeta, TopicMetas, TopicModelLikeMatrix, VoterInfoProvider, VoterMeta};
 use crate::translate::phantoms::DummyAsVariableProvider;
@@ -44,49 +44,9 @@ use ldatranslate_voting::variable_provider::{VariableProvider, VariableProviderO
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::traits::VotingMethodMarker;
 use ldatranslate_voting::VotingMethod;
+use crate::translate::candidate::Candidate;
 use crate::variable_provider::AsVariableProvider;
 
-#[derive(Debug, Clone)]
-struct Candidate {
-    candidate_word_id: LanguageOrigin<usize>,
-    relative_score: f64,
-    _origin_word_id: usize
-}
-
-
-impl Candidate {
-    pub fn new(
-        candidate_word_id: LanguageOrigin<usize>,
-        relative_score: f64,
-        _origin_word_id: usize,
-    ) -> Self {
-        Self {
-            candidate_word_id,
-            relative_score,
-            _origin_word_id
-        }
-    }
-}
-
-impl PartialEq<Self> for Candidate {
-    fn eq(&self, other: &Self) -> bool {
-        self.relative_score == other.relative_score
-    }
-}
-
-impl PartialOrd for Candidate {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        f64::partial_cmp(&other.relative_score, &self.relative_score)
-    }
-}
-
-impl Eq for Candidate {}
-
-impl Ord for Candidate {
-    fn cmp(&self, other: &Self) -> Ordering {
-        f64::total_cmp(&other.relative_score, &self.relative_score)
-    }
-}
 
 #[allow(dead_code)]
 pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V>(
@@ -110,7 +70,7 @@ where
 }
 
 
-pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
+pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     target: &'a Target,
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
@@ -139,15 +99,26 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }
     }
 
-    let dictionary: D = create_topic_model_specific_dictionary::<D, D, T, Voc, Voc>(
+    if dictionary.map_a_to_b().is_empty() {
+        return Err(TranslateError::DictionaryEmpty(DirectionMarker::AToB));
+    }
+
+    if dictionary.map_b_to_a().is_empty() {
+        return Err(TranslateError::DictionaryEmpty(DirectionMarker::BToA));
+    }
+
+    let dictionary: D = create_topic_vocabulary_specific_dictionary(
         dictionary,
         target.vocabulary()
     );
 
-    debug_assert!(dictionary.voc_a().len() > 0);
+    if dictionary.map_a_to_b().is_empty() {
+        return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
+    }
 
-    println!("{:?}", dictionary);
-
+    if dictionary.map_b_to_a().is_empty() {
+        return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::BToA))
+    }
 
     // TODO: make clean for rust.
     let provider = if let Some(provider) = provider {
@@ -197,7 +168,6 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                 TOPIC_ID => int topic_id as i64
             }.unwrap();
             meta.extend_context(&mut topic_context_2);
-
             if let Some(provider) = provider.as_ref() {
                 match provider.provide_for_topic(topic_id, &mut topic_context_2) {
                     Ok(_) => {
@@ -221,7 +191,6 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
             } else {
                 let topic_context_2 = topic_context_2
                     .to_static_with(topic_context.clone());
-
                 translate_topic(
                     target,
                     &dictionary,
@@ -232,8 +201,6 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                     None::<&VariableProvider>
                 ).map_err(TranslateError::WithOrigin)
             }
-
-
         }).collect::<Result<Vec<_>, _>>()?;
 
 
@@ -284,8 +251,6 @@ pub(crate) fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         assert!(voc_b.ids().all(|it| topic.contains_key(&it)));
         topic.into_iter().sorted_unstable_by_key(|value| value.0).map(|(_, b)| b).collect_vec()
     }).collect::<Vec<_>>();
-
-    println!("HERE 2");
 
     Ok(Target::create_new_from(
         inner_topic_model,
@@ -387,9 +352,7 @@ where
 {
     let candidates =
         if let Some(candidates) = dictionary.translate_id_to_ids::<AToB>(original_voter_id) {
-            debug_assert!(!candidates.is_empty(), "The candidates are empty!");
             Some(candidates.par_iter().cloned().filter_map( |candidate| {
-                debug_assert!(dictionary.translate_id_to_ids::<BToA>(candidate).is_some_and(|value| !value.is_empty()), "A candidate was not translateable!");
                 match dictionary.translate_id_to_ids::<BToA>(candidate) {
                     None  => None,
                     Some(voters) if voters.is_empty() => None,
@@ -637,8 +600,6 @@ pub(crate) mod test {
     use ldatranslate_voting::BuildInVoting;
     use std::num::NonZeroUsize;
     use Extend;
-    use ldatranslate_topicmodel::dictionary::{Dictionary, DictionaryMutGen};
-    use ldatranslate_topicmodel::dictionary::direction::Invariant;
 
     pub fn create_test_data() -> (Vocabulary<String>, Vocabulary<String>, Dictionary<String, Vocabulary<String>>){
         let mut voc_a = Vocabulary::<String>::default();
@@ -725,8 +686,6 @@ pub(crate) mod test {
                 300
             ]
         );
-
-        println!("HERE");
 
         let config = TranslateConfig {
             threshold: None,

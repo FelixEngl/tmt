@@ -790,10 +790,10 @@ pub fn process_word_entry<S: AsRef<str> + Clone + Display>(
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::loader::dictcc;
-    use crate::topicmodel::dictionary::loader::dictcc::{parse_line, parse_word_type, process_word_entry, read_dictionary, Entry, SpecialInfo, WordPatternElement, WordTypeInfo};
-    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
-    use crate::topicmodel::dictionary::word_infos::{Domain, Register};
+    use crate::dictionary::loader::dictcc;
+    use crate::dictionary::loader::dictcc::{parse_line, parse_word_type, process_word_entry, read_dictionary, Entry, SpecialInfo, WordPatternElement, WordTypeInfo};
+    use crate::dictionary::loader::helper::test::execute_test_read_for;
+    use crate::dictionary::word_infos::{Domain, Register};
     use itertools::Itertools;
     use nom::bytes::complete::is_not;
     use nom::IResult;

@@ -1,7 +1,7 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr};
+use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr, VariantArray};
 use tinyset::Fits64;
 use ldatranslate_toolkit::register_python;
 use crate::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, NotAIndexFor};
@@ -14,7 +14,7 @@ register_python! {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[derive(Display, EnumString, IntoStaticStr, EnumCount, EnumIter)]
+#[derive(Display, EnumString, IntoStaticStr, EnumCount, EnumIter, VariantArray)]
 #[derive(TryFromPrimitive, IntoPrimitive, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum Domain {

@@ -57,6 +57,9 @@ enum-map.workspace = true
 const-str.workspace = true
 float-cmp.workspace = true
 
+[dev-dependencies]
+env_logger.workspace = true
+
 [features]
 gen_python_api = ["dep:pyo3-stub-gen"]
 

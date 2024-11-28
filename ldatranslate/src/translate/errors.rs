@@ -1,5 +1,6 @@
 use std::error::Error;
 use thiserror::Error;
+use ldatranslate_topicmodel::dictionary::direction::DirectionMarker;
 use ldatranslate_voting::variable_provider::VariableProviderError;
 use ldatranslate_voting::{VotingExpressionError, VotingResult};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
@@ -21,7 +22,11 @@ pub enum TranslateError<'a> {
         lang_model: &'a LanguageHint,
     },
     #[error(transparent)]
-    AsVariableProviderFailed(#[from] AsVariableProviderError)
+    AsVariableProviderFailed(#[from] AsVariableProviderError),
+    #[error("The dictionary is empty in the direction: {0}")]
+    DictionaryEmpty(DirectionMarker),
+    #[error("The optimized dictionary is empty in the direction: {0}")]
+    OptimizedDictionaryEmpty(DirectionMarker)
 }
 
 #[derive(Debug, Error)]

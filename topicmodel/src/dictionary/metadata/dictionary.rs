@@ -6,7 +6,7 @@ use arcstr::ArcStr;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use crate::dictionary::{BasicDictionary, BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, Dictionary, DictionaryFilterable, DictionaryMut, DictionaryWithSearch, DictionaryWithVocabulary, FromVoc, MergingDictionary};
-use crate::dictionary::direction::{DirectionTuple, Language, LanguageKind, A, B};
+use crate::dictionary::direction::{DirectedElement, Language, LanguageMarker, A, B};
 use crate::dictionary::iterators::DictionaryWithMetaIterator;
 use crate::dictionary::metadata::{MetadataManager, MetadataContainerWithDict, MetadataContainerWithDictMut, MetadataMutReference, MetadataReference, MetadataManagerGen};
 use crate::language_hint::LanguageHint;
@@ -14,7 +14,7 @@ use crate::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut, BasicVocabu
 use crate::dictionary::metadata::classic::{
     ClassicMetadataManager,
 };
-use crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaTopicModel;
+use crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaModel;
 use crate::dictionary::metadata::ex::{MetadataEx, MetadataManagerEx, MetadataWithOrigin};
 use crate::dictionary::metadata::update::WordIdUpdate;
 use crate::dictionary::search::{DictionarySearcher, SearchIndex};
@@ -23,7 +23,7 @@ pub type DictWithMeta<T> = DictionaryWithMeta<T, Vocabulary<T>, MetadataManagerE
 pub type EfficientDictWithMetaDefault = DictWithMeta<ArcStr>;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DictionaryWithMeta<T, V, C> {
+pub struct DictionaryWithMeta<T = ArcStr, V = Vocabulary<T>, C = MetadataManagerEx> {
     #[serde(bound(serialize = "V: Serialize, T: Serialize", deserialize = "V: Deserialize<'de>, T: Deserialize<'de> + Hash + Eq"))]
     inner: Dictionary<T, V>,
     #[serde(bound(serialize = "C: Serialize", deserialize = "C: Deserialize<'de>"))]
@@ -81,7 +81,7 @@ impl<T> CreateTopicMatrixMode<T> where T: PartialEq {
 }
 
 impl<T, V> DictionaryWithMeta<T, V, MetadataManagerEx> where V: BasicVocabulary<T> {
-    pub fn create_topic_matrix<'a, L: Language, S: AsRef<str>>(&'a self, mode: &CreateTopicMatrixMode<S>) -> DictMetaTopicModel {
+    pub fn create_topic_matrix<'a, L: Language, S: AsRef<str>>(&'a self, mode: &CreateTopicMatrixMode<S>) -> DictMetaModel {
 
         let mode = match mode {
             CreateTopicMatrixMode::All => CreateTopicMatrixMode::All,
@@ -102,14 +102,14 @@ impl<T, V> DictionaryWithMeta<T, V, MetadataManagerEx> where V: BasicVocabulary<
             }
         };
 
-        let mut matrix: DictMetaTopicModel;
+        let mut matrix: DictMetaModel;
         let iter: std::slice::Iter<'a, MetadataEx>;
 
         if L::LANG.is_a() {
-            matrix = DictMetaTopicModel::with_capacity(self.voc_a().len());
+            matrix = DictMetaModel::with_capacity(self.voc_a().len());
             iter = self.metadata.meta_a().iter();
         } else {
-            matrix = DictMetaTopicModel::with_capacity(self.voc_b().len());
+            matrix = DictMetaModel::with_capacity(self.voc_b().len());
             iter = self.metadata.meta_b().iter();
         }
 
@@ -173,10 +173,10 @@ where
     ) -> M::MutReference<'b> {
         let mut meta = self.metadata.get_or_create_meta::<L>(
             match L::LANG {
-                LanguageKind::A => {
+                LanguageMarker::A => {
                     &mut self.inner.voc_a
                 }
-                LanguageKind::B => {
+                LanguageMarker::B => {
                     &mut self.inner.voc_b
                 }
             },
@@ -212,7 +212,7 @@ where
         let mut meta_a_added = vec![false; self.voc_a().len()];
         let mut meta_b_added = vec![false; self.voc_b().len()];
 
-        for DirectionTuple{
+        for DirectedElement {
             a: (original_word_id_a, original_meta_a),
             b: (original_word_id_b, original_meta_b),
             direction
@@ -223,7 +223,7 @@ where
                     let word_b = self.voc_b().get_value_by_id(original_word_id_b).unwrap();
                     let word_a_processed_is_known = new_dictionary.voc_a().contains_value(word_a);
                     let word_b_processed_is_known = new_dictionary.voc_b().contains_value(word_b);
-                    let DirectionTuple{
+                    let DirectedElement {
                         a: id_a_processed,
                         b: id_b_processed,
                         direction: _
@@ -529,7 +529,7 @@ where
         let mut meta_a_added = vec![false; self.voc_a().len()];
         let mut meta_b_added = vec![false; self.voc_b().len()];
 
-        for DirectionTuple{
+        for DirectedElement {
             a: (original_word_id_a, original_meta_a),
             b: (original_word_id_b, original_meta_b),
             direction
@@ -561,7 +561,7 @@ where
             let word_a_processed_is_known = new_dictionary.voc_a().contains_value(&word_a_processed);
             let word_b_processed_is_known = new_dictionary.voc_b().contains_value(&word_b_processed);
 
-            let DirectionTuple{
+            let DirectedElement {
                 a: id_a_processed,
                 b: id_b_processed,
                 direction: _
@@ -712,7 +712,7 @@ where
     V: BasicVocabulary<T> + AnonymousVocabulary,
     M: MetadataManager
 {
-    type Item = DirectionTuple<
+    type Item = DirectedElement<
         (usize, T, Option<M::ResolvedMetadata>),
         (usize, T, Option<M::ResolvedMetadata>)
     >;
@@ -740,14 +740,14 @@ where
             other.voc_b().len()
         );
 
-        for DirectionTuple {
+        for DirectedElement {
             a: (word_id_a, meta_a),
             b: (word_id_b, meta_b),
             direction
         } in other.iter_with_meta() {
             let word_a = other.voc_a().get_value_by_id(word_id_a).unwrap();
             let word_b = other.voc_b().get_value_by_id(word_id_b).unwrap();
-            let DirectionTuple{
+            let DirectedElement {
                 a: word_a,
                 b: word_b,
                 direction: _

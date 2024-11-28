@@ -23,7 +23,7 @@ use strum::EnumIs;
 use ldatranslate_toolkit::sync_ext::OwnedOrArcRw;
 use ldatranslate_toolkit::tupler::{SupportsTupling, TupleFirst, TupleLast};
 use crate::dictionary::{BasicDictionary, BasicDictionaryWithMeta, Dictionary, DictionaryWithVocabulary};
-use crate::dictionary::direction::{DirectionKind, DirectionTuple, Language, LanguageKind};
+use crate::dictionary::direction::{DirectionMarker, DirectedElement, Language, LanguageMarker};
 use crate::dictionary::metadata::{MetadataManager, MetadataReference};
 use crate::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 
@@ -31,7 +31,7 @@ use crate::vocabulary::{AnonymousVocabulary, BasicVocabulary};
 pub struct DictLangIter<'a, T, D: ?Sized, V> {
     iter: Enumerate<Iter<'a, T>>,
     dict: &'a D,
-    direction: LanguageKind,
+    direction: LanguageMarker,
     _phantom: PhantomData<V>
 }
 
@@ -74,23 +74,23 @@ pub struct DictIterImpl<'a> {
     used: HashSet<(usize, usize)>,
     iter_a_b: ABIter<'a>,
     iter_b_a: BAIter<'a>,
-    direction: DirectionKind
+    direction: DirectionMarker
 }
 
-type ABIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleFirst<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>>;
-type BAIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectionTuple<usize, usize>>>;
+type ABIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleFirst<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectedElement<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleFirst<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectedElement<usize, usize>>>;
+type BAIter<'a> = FlatMap<Enumerate<Iter<'a, Vec<usize>>>, Map<TupleLast<Cloned<Iter<'a, usize>>, usize>, fn((usize, usize)) -> DirectedElement<usize, usize>>, fn((usize, &Vec<usize>)) -> Map<TupleLast<Cloned<Iter<usize>>, usize>, fn((usize, usize)) -> DirectedElement<usize, usize>>>;
 impl<'a> DictIterImpl<'a> {
 
-    pub fn direction(&self) -> DirectionKind {
+    pub fn direction(&self) -> DirectionMarker {
         self.direction
     }
 
     pub(in crate::dictionary) fn new(
         dict: &'a (impl BasicDictionary + ?Sized),
-        direction: DirectionKind
+        direction: DirectionMarker
     ) -> Self {
-        let a_to_b: ABIter = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a).map(|(a, b) | DirectionTuple::a_to_b(a, b)));
-        let b_to_a: BAIter = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b).map(|(a, b) | DirectionTuple::b_to_a(a, b)));
+        let a_to_b: ABIter = dict.map_a_to_b().iter().enumerate().flat_map(|(a, value)| value.iter().cloned().tuple_first(a).map(|(a, b) | DirectedElement::a_to_b(a, b)));
+        let b_to_a: BAIter = dict.map_b_to_a().iter().enumerate().flat_map(|(b, value)| value.iter().cloned().tuple_last(b).map(|(a, b) | DirectedElement::b_to_a(a, b)));
         // let iter: Chain<ABIter, BAIter> = a_to_b.chain(b_to_a);
         Self {
             a_to_b: dict.map_a_to_b(),
@@ -102,22 +102,22 @@ impl<'a> DictIterImpl<'a> {
         }
     }
 
-    fn next_impl(&mut self) -> Option<DirectionTuple<usize, usize>> {
+    fn next_impl(&mut self) -> Option<DirectedElement<usize, usize>> {
         match self.direction {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 self.iter_a_b.next()
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 self.iter_b_a.next()
             }
-            DirectionKind::Invariant => {
+            DirectionMarker::Invariant => {
                 self.iter_a_b.next().or_else(|| self.iter_b_a.next())
             }
         }
     }
 }
 impl<'a> Iterator for DictIterImpl<'a> {
-    type Item = DirectionTuple<usize, usize>;
+    type Item = DirectedElement<usize, usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut tuple = self.next_impl()?;
@@ -125,14 +125,14 @@ impl<'a> Iterator for DictIterImpl<'a> {
             tuple = self.next_impl()?;
         }
         match &tuple.direction {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 if self.b_to_a[tuple.b].contains(&tuple.a) {
-                    tuple.direction = DirectionKind::Invariant
+                    tuple.direction = DirectionMarker::Invariant
                 }
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 if self.a_to_b[tuple.a].contains(&tuple.b) {
-                    tuple.direction = DirectionKind::Invariant
+                    tuple.direction = DirectionMarker::Invariant
                 }
             }
             _ => unreachable!()
@@ -229,7 +229,7 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
     }
 
     /// This one should only be called when `self.state` is not finished!
-    fn get_current(&self) -> Option<DirectionTuple<(usize, T), (usize, T)>> {
+    fn get_current(&self) -> Option<DirectedElement<(usize, T), (usize, T)>> {
         let read = self.inner.get();
         match self.state {
             DictionaryIteratorPointerState::NextAB => {
@@ -237,9 +237,9 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
                 let a_value = (self.pos, read.convert_id_a_to_word(self.pos).unwrap().clone());
                 let b_value = (b, read.convert_id_b_to_word(b).unwrap().clone());
                 Some(if read.map_b_to_a()[b].contains(&self.pos) {
-                    DirectionTuple::invariant(a_value, b_value)
+                    DirectedElement::invariant(a_value, b_value)
                 } else {
-                    DirectionTuple::a_to_b(a_value, b_value)
+                    DirectedElement::a_to_b(a_value, b_value)
                 })
             }
             DictionaryIteratorPointerState::NextBA => {
@@ -247,9 +247,9 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
                 let a_value = (a, read.convert_id_a_to_word(a).unwrap().clone());
                 let b_value = (self.pos, read.convert_id_b_to_word(self.pos).unwrap().clone());
                 Some(if read.map_a_to_b()[a].contains(&self.pos) {
-                    DirectionTuple::invariant(a_value, b_value)
+                    DirectedElement::invariant(a_value, b_value)
                 } else {
-                    DirectionTuple::b_to_a(a_value, b_value)
+                    DirectedElement::b_to_a(a_value, b_value)
                 })
             }
             DictionaryIteratorPointerState::Finished => unreachable!()
@@ -258,7 +258,7 @@ impl<T, V, D> DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<
 }
 
 impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWithVocabulary<T, V>, V: BasicVocabulary<T>, T: Clone {
-    type Item = DirectionTuple<(usize, T), (usize, T)>;
+    type Item = DirectedElement<(usize, T), (usize, T)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -287,7 +287,7 @@ impl<T, V, D> Iterator for DictionaryIteratorImpl<T, V, D> where D: DictionaryWi
 pub type DictionaryIterator<T, V> = Unique<DictionaryIteratorImpl<T, V, Dictionary<T, V>>>;
 
 impl<T, V> IntoIterator for Dictionary<T, V> where V: BasicVocabulary<T>, T: Eq + Hash + Clone {
-    type Item = DirectionTuple<(usize, T), (usize, T)>;
+    type Item = DirectedElement<(usize, T), (usize, T)>;
     type IntoIter = DictionaryIterator<T, V>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -329,7 +329,7 @@ where
     M: MetadataManager,
     T: Clone
 {
-    type Item = DirectionTuple<
+    type Item = DirectedElement<
         (usize, T, Option<M::ResolvedMetadata>),
         (usize, T, Option<M::ResolvedMetadata>)
     >;

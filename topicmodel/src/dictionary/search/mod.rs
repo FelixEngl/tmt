@@ -1,4 +1,4 @@
-use crate::dictionary::direction::LanguageKind;
+use crate::dictionary::direction::LanguageMarker;
 use derive_more::From;
 use pyo3::{pyclass, FromPyObject};
 use strum::{Display, EnumIs};
@@ -48,7 +48,7 @@ impl<'py, S> FromIterator<S> for SearchInput<'py> where S: Into<String> {
     }
 }
 
-define_py_method!(MatchWord(language_hint: LanguageKind, word: &str) -> bool);
+define_py_method!(MatchWord(language_hint: LanguageMarker, word: &str) -> bool);
 
 /// The modes supported by the search.
 /// - ExactMatch (aliases: "e", "exact")
@@ -181,107 +181,110 @@ define_py_literal!(
 mod test {
     use crate::dictionary::search::index::SearchIndex;
     use crate::dictionary::search::searcher::DictionarySearcher;
+    use crate::dictionary::{Dictionary, DictionaryWithMeta, MutableDictionaryWithMeta};
+    use arcstr::ArcStr;
     use crate::dictionary::io::ReadableDictionary;
+    use crate::dictionary::search::SearchType::Autocomplete;
 
     #[test]
     fn can_exec(){
-        // let mut dict = StringDictWithMetaDefault::default();
-        // dict.push_invariant("hallo", "hello").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
-        // dict.push_invariant("Hallo", "hello").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
-        // dict.push_invariant("Welt", "world").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
-        // dict.push_invariant("Felix Engl", "Felix Engl").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
-        // dict.push_invariant("autowaschen", "to do car washing").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
-        // dict.push_invariant("Hallo Welt", "hello world").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
-        //
-        // dict.push_invariant("Herz", "heart").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
-        //
-        // dict.push_invariant("Gürtel", "belt").use_consuming(
-        //     |mut value| {
-        //         value.add_dictionary("test1");
-        //     },
-        //     |mut value| {
-        //         value.add_dictionary("test2");
-        //     }
-        // );
+        let mut dict = DictionaryWithMeta::<ArcStr>::default();
+        dict.push_invariant("hallo", "hello").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
+        dict.push_invariant("Hallo", "hello").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
+        dict.push_invariant("Welt", "world").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
+        dict.push_invariant("Felix Engl", "Felix Engl").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
+        dict.push_invariant("autowaschen", "to do car washing").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
+        dict.push_invariant("Hallo Welt", "hello world").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
+
+        dict.push_invariant("Herz", "heart").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
+
+        dict.push_invariant("Gürtel", "belt").use_consuming(
+            |mut value| {
+                value.add_dictionary("test1");
+            },
+            |mut value| {
+                value.add_dictionary("test2");
+            }
+        );
 
 
-        // let dict = DefaultDict::from_path_with_extension(r#"E:\git\tmt\test\dictionary3.dat.zst"#).unwrap();
-        //
-        //
-        // let index = SearchIndex::new();
-        //
-        // let searcher = DictionarySearcher::new(&dict, &index);
-        //
-        // searcher.force_init();
+        let dict = Dictionary::<ArcStr>::from_path_with_extension(r#"E:\git\tmt\test\dictionary3.dat.zst"#).unwrap();
 
-        // let result = searcher.search(
-        //     "Dog",
-        //     None,
-        //     None,
-        //     None,
-        //     false
-        // ).expect("This should not fail!");
-        //
-        // println!("{result:?}");
-        //
-        // // searcher.init_prefix_dict_searcher(None);
-        //
-        // let result = searcher.search(
-        //     "Gür",
-        //     Some(Autocomplete),
-        //     None,
-        //     None,
-        //     false
-        // ).expect("This should not fail!");
-        // println!("{result:?}");
+
+        let index = SearchIndex::new();
+
+        let searcher = DictionarySearcher::new(&dict, &index);
+
+        searcher.force_init();
+
+        let result = searcher.search(
+            "Dog",
+            None,
+            None,
+            None,
+            false
+        ).expect("This should not fail!");
+
+        println!("{result:?}");
+
+        // searcher.init_prefix_dict_searcher(None);
+
+        let result = searcher.search(
+            "Gür",
+            Some(Autocomplete),
+            None,
+            None,
+            false
+        ).expect("This should not fail!");
+        println!("{result:?}");
     }
 }

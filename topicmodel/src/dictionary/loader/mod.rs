@@ -1414,7 +1414,6 @@ mod test {
     use crate::dictionary::word_infos::LanguageDirection;
     use crate::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
-    use crate::dictionary::LoadInstruction;
     use crate::dictionary::DictionaryKind::*;
     use crate::dictionary::io::{ReadableDictionary, WriteMode, WriteableDictionary};
     use crate::dictionary::metadata::ex::MetadataManagerEx;

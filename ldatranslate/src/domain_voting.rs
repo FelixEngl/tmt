@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use thiserror::Error;
 use ldatranslate_toolkit::evalexpr::{CombineableContext, SimpleCombineableContext};
 use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithMeta, DictionaryWithVocabulary};
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::META_DICT_ARRAY_LENTH;
 use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx};
 use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::language_hint::LanguageHint;
@@ -184,7 +184,7 @@ where
 
     if let Some(ref boost) = translate_config.boost_with {
         topic_context.set_value(
-            BOOST.to_string(),
+            BOOST_SCORE.to_string(),
             boost.clone().clone().into_with().unwrap()
         ).unwrap();
     }
@@ -200,7 +200,7 @@ where
 
 
     let norm_value = domain_counts.ref_a().sum() as f64;
-    let candidate_ids_context: Vec<_> = (0..DOMAIN_MODEL_ENTRY_MAX_SIZE).into_iter().map(|candidate_id| {
+    let candidate_ids_context: Vec<_> = (0..META_DICT_ARRAY_LENTH).into_iter().map(|candidate_id| {
         context_map! {
             CANDIDATE_ID => conv candidate_id
         }
@@ -237,7 +237,7 @@ where
                Ok(topic_context_2.to_owning_with(&topic_context))
             }.and_then(|context| {
 
-                let mut candidates_to_voters: [_; DOMAIN_MODEL_ENTRY_MAX_SIZE] = std::array::from_fn(|_| Vec::with_capacity(topic.len()));
+                let mut candidates_to_voters: [_; META_DICT_ARRAY_LENTH] = std::array::from_fn(|_| Vec::with_capacity(topic.len()));
                 for (original_word_id, _) in topic.iter().enumerate() {
                     if let Some(value) = bridge.get_meta_for_voc_id(original_word_id) {
                         let domain_count = value.domain_count();

@@ -45,14 +45,14 @@ pub type EfficientStringVocabulary = Vocabulary<ArcStr>;
 #[macro_export]
 macro_rules! voc {
     () => {
-        $crate::topicmodel::vocabulary::Vocabulary::default()
+        $crate::vocabulary::Vocabulary::default()
     };
     (for $lang: tt;) => {
-        $crate::topicmodel::vocabulary::Vocabulary:new_forr($lang)
+        $crate::vocabulary::Vocabulary::empty_from($lang)
     };
     (for $lang: tt: $($value: tt),+ $(,)?) => {
         {
-            let mut __voc = $crate::topicmodel::vocabulary::Vocabulary:new_forr($lang);
+            let mut __voc = $crate::vocabulary::Vocabulary::empty_from($lang);
             $(
                 $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value.into());
             )+
@@ -61,9 +61,9 @@ macro_rules! voc {
     };
     ($($value: tt),+ $(,)?) => {
         {
-            let mut __voc = $crate::topicmodel::vocabulary::Vocabulary::default();
+            let mut __voc = $crate::vocabulary::Vocabulary::default();
             $(
-                $crate::topicmodel::vocabulary::VocabularyMut::add_value(&mut __voc, $value.into());
+                $crate::vocabulary::VocabularyMut::add_value(&mut __voc, $value.into());
             )+
             __voc
         }
@@ -73,7 +73,7 @@ macro_rules! voc {
 
 /// A vocabulary mapping between an usize id and a specific object (word)
 #[derive(Clone, Debug)]
-pub struct Vocabulary<T> {
+pub struct Vocabulary<T = ArcStr> {
     language: Option<LanguageHint>,
     id2entry: Vec<T>,
     entry2id: HashMap<T, usize>,
@@ -91,8 +91,8 @@ impl <T> Vocabulary<T> {
     }
 
     /// Create a new vocabulary with the default sizes
-    pub fn empty_from(language: impl Into<LanguageHint>) -> Self {
-        Self::empty(Some(language.into()))
+    pub fn empty_for(language: LanguageHint) -> Self {
+        Self::empty(Some(language))
     }
 
     /// Create a new empty vocabulary.
@@ -201,7 +201,7 @@ impl<T> AsRef<[T]> for Vocabulary<T> {
 
 impl<T> From<LanguageHint> for Vocabulary<T> {
     fn from(value: LanguageHint) -> Self {
-        Self::empty_from(value)
+        Self::empty_for(value)
     }
 }
 
@@ -564,11 +564,16 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::vocabulary::{EfficientStringVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
+    use log::LevelFilter;
+    use crate::vocabulary::{EfficientStringVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 
     #[test]
     fn can_insert_and_retrieve() {
-        let mut voc = EfficientStringVocabulary::empty_from("MyLang");
+        env_logger::builder()
+            .filter_level(LevelFilter::Trace)
+            .init();
+
+        let mut voc = EfficientStringVocabulary::empty_for("MyLang".into());
         voc.add("Hello World".to_string());
         voc.add("Wasimodo".to_string());
 

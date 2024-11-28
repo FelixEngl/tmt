@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, IntoStaticStr};
 use tinyset::Fits64;
 use ldatranslate_toolkit::{impl_py_stub, register_python};
-use crate::dictionary::direction::{Language as DirLang, LanguageKind};
+use crate::dictionary::direction::{Language as DirLang, LanguageMarker};
 use crate::dictionary::loader::helper::gen_freedict_tei_reader::{LangAttribute as FreeDictLangAttribute};
 use crate::dictionary::loader::helper::gen_iate_tbx_reader::{LangAttribute as IateLangAttribute};
 use crate::dictionary::loader::helper::gen_ms_terms_reader::{LangAttribute as MsTermsAttribute};
@@ -154,10 +154,10 @@ impl LanguageDirection {
     }
 
     #[doc(hidden)]
-    fn __getitem__(&self, language_kind: LanguageKind) -> Language {
+    fn __getitem__(&self, language_kind: LanguageMarker) -> Language {
         match language_kind {
-            LanguageKind::A => self.inner[0],
-            LanguageKind::B => self.inner[1]
+            LanguageMarker::A => self.inner[0],
+            LanguageMarker::B => self.inner[1]
         }
     }
 

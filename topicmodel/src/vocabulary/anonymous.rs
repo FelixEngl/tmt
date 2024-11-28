@@ -57,7 +57,7 @@ pub mod phantom {
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
-    use crate::topicmodel::vocabulary::{AnonymousVocabularyMut, AnonymousVocabularyRef, Vocabulary, VocabularyMut};
+    use crate::vocabulary::{AnonymousVocabularyMut, AnonymousVocabularyRef, Vocabulary, VocabularyMut};
 
     #[test]
     fn can_call(){

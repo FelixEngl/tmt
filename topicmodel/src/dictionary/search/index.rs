@@ -4,7 +4,7 @@ use crate::dictionary::DictionaryWithVocabulary;
 use crate::dictionary::search::impls::trie::TrieSearcher;
 use crate::vocabulary::BasicVocabulary;
 use ldatranslate_toolkit::once_serializer::OnceLockDef;
-use crate::dictionary::direction::LanguageKind;
+use crate::dictionary::direction::LanguageMarker;
 
 
 pub type ShareableTrieSearcher = Arc<RwLock<TrieSearcher>>;
@@ -29,7 +29,7 @@ impl SearchIndex {
         }
     }
 
-    fn get_or_init_trie_searcher_for<'a, V, T>(&self, targ: &'a OnceLock<Arc<RwLock<TrieSearcher>>>, voc: &V, language: LanguageKind) -> ShareableTrieSearcherRef<'a>
+    fn get_or_init_trie_searcher_for<'a, V, T>(&self, targ: &'a OnceLock<Arc<RwLock<TrieSearcher>>>, voc: &V, language: LanguageMarker) -> ShareableTrieSearcherRef<'a>
     where
         V: BasicVocabulary<T>,
         T: AsRef<str> + Send + Sync,
@@ -74,7 +74,7 @@ impl SearchIndex {
         self.get_or_init_trie_searcher_for(
             &self.searcher_a,
             dict.voc_a(),
-            LanguageKind::A
+            LanguageMarker::A
         )
     }
 
@@ -87,21 +87,21 @@ impl SearchIndex {
         self.get_or_init_trie_searcher_for(
             &self.searcher_b,
             dict.voc_b(),
-            LanguageKind::B
+            LanguageMarker::B
         )
     }
     
-    pub fn get_or_init_trie_searcher<D, V, T>(&self, dict: &D, language: LanguageKind) -> ShareableTrieSearcherRef
+    pub fn get_or_init_trie_searcher<D, V, T>(&self, dict: &D, language: LanguageMarker) -> ShareableTrieSearcherRef
     where
         D: DictionaryWithVocabulary<T, V> + ?Sized,
         V: BasicVocabulary<T>,
         T: AsRef<str> + Send + Sync,
     {
         match language {
-            LanguageKind::A => {
+            LanguageMarker::A => {
                 self.get_or_init_trie_searcher_a(dict)
             }
-            LanguageKind::B => {
+            LanguageMarker::B => {
                 self.get_or_init_trie_searcher_b(dict)
             }
         }
@@ -136,13 +136,13 @@ impl SearchIndex {
         self.get_trie_searcher_for(&self.searcher_b)
     }
 
-    pub fn get_trie_searcher(&self, language: LanguageKind) -> Option<ShareableTrieSearcherRef>
+    pub fn get_trie_searcher(&self, language: LanguageMarker) -> Option<ShareableTrieSearcherRef>
     {
         match language {
-            LanguageKind::A => {
+            LanguageMarker::A => {
                 self.get_trie_searcher_a()
             }
-            LanguageKind::B => {
+            LanguageMarker::B => {
                 self.get_trie_searcher_b()
             }
         }

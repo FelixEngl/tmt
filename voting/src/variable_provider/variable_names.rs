@@ -189,7 +189,7 @@ declare_variable_names! {
     TOPIC_ID: "topic_id",
     doc = "The score of the domain for this voter in this topic."
     SCORE_DOMAIN: "domain_score",
-    doc = "A boost variable that is applied when set. Can be a value or an other field name."
-    BOOST: "boost"
+    doc = "A boost variable that is used to boost the raw store in 'score'"
+    BOOST_SCORE: "boost_score"
 }
 

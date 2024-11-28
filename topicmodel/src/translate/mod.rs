@@ -1,164 +1,164 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 mod standard;
+mod traits;
+
+pub use traits::*;
+
 
 use std::hash::Hash;
-use evalexpr::{ContextWithMutableVariables, EvalexprNumericTypesConvert};
-use ldatranslate_translate::{ContextExtender, ExtensionLevelKind, TopicMeta, TopicMetas, TopicModelLikeMatrix, VoterInfoProvider, VoterMeta};
-use crate::model::{FullTopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
-use crate::vocabulary::{BasicVocabulary, SearchableVocabulary};
-use crate::model::meta::{TopicMeta as TopicModelTopicMeta, WordMeta};
+use rayon::prelude::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
+use crate::dictionary::{DictionaryMut, DictionaryMutGen, DictionaryWithVocabulary, FromVoc};
+use crate::dictionary::direction::*;
+use crate::vocabulary::{MappableVocabulary, SearchableVocabulary, VocabularyMut};
 
-/// A matrix that associates voters to topics.
-///
-///
-/// In regard to a topic model:
-/// - The [TranslatableTopicMatrix] is the whole topic model.
-///   - The topic-to-word-probability matrix is the [TopicModelLikeMatrix]
-///
-pub trait TranslatableTopicMatrix<T, Voc>: VoterInfoProvider
+pub fn create_topic_vocabulary_specific_dictionary<T, Voc, D1, V1, D2, V2>(
+    dictionary: &D1,
+    vocabulary: &Voc
+) -> D2
 where
-    Voc: BasicVocabulary<T>
+    T: Eq + Hash + Clone + Send + Sync,
+    Voc: MappableVocabulary<T> + Clone,
+    V1: SearchableVocabulary<T>,
+    D1: DictionaryWithVocabulary<T, V1>,
+    V2: VocabularyMut<T>,
+    D2: DictionaryMut<T, V2> + FromVoc<T, V2>
 {
-    type TopicToVoterMatrix: TopicModelLikeMatrix;
+    fn insert_into<L: Language, T: Eq + Hash + Clone, V: VocabularyMut<T>>(dict: &mut impl DictionaryMut<T, V>, translations: &Vec<(T, Option<Vec<&T>>)>) {
+        for (t, other) in translations.iter() {
+            if let Some(other) = other {
+                for o in other {
+                    if L::LANG.is_a() {
+                        dict.insert_value::<L>(t.clone(), (*o).clone());
+                    } else {
+                        dict.insert_value::<L>((*o).clone(), t.clone());
+                    }
+                }
+            }
+        }
+    }
 
-    type TopicMetas: TopicMetas;
+    let mut new_dict: D2 = D2::from_voc_lang_a(
+        vocabulary.clone().map(|value| value.clone()),
+        dictionary.language_b().cloned()
+    );
 
-    fn len(&self) -> usize;
+    let translations = new_dict.voc_a().as_ref().par_iter()
+        .map(|value| (value.clone(), dictionary.translate_word_a_to_words_b(value)))
+        .collect::<Vec<_>>();
 
-    /// The vocabulary associated to this translatable matrix.
-    fn vocabulary(&self) -> &Voc;
+    insert_into::<A, _, _>(&mut new_dict, &translations);
 
-    /// The raw matrix. It is usually something like Vec<Vec<f64>>
-    fn matrix(&self) -> &Self::TopicToVoterMatrix;
+    let retranslations = new_dict.voc_b().as_ref().par_iter()
+        .map(|value| (value.clone(), dictionary.translate_word_b_to_words_a(value)))
+        .collect::<Vec<_>>();
 
-    /// The matrix meta. It is usually something like Vec<Vec<VoterMeta>>
-    fn matrix_meta(&self) -> &Self::TopicMetas;
+    insert_into::<B, _, _>(&mut new_dict, &retranslations);
+
+    new_dict
 }
 
 
-/// A topic matrix that is able to be reconstructed by some primitive data and a self reference to the original.
-pub trait TranslatableTopicMatrixWithCreate<T, Voc>: TranslatableTopicMatrix<T, Voc> where Voc: BasicVocabulary<T> {
-    fn create_new_from(
-        topic_to_voter_probability_matrix: Vec<Vec<f64>>,
-        associated_vocabulary: Voc,
-        used_vocabulary_frequencies: Vec<u64>,
-        original: &Self
-    ) -> Self where Self: Sized;
-}
+#[cfg(test)]
+mod test {
+    use log::LevelFilter::Trace;
+    use crate::dictionary::{Dictionary, DictionaryMutGen};
+    use crate::dictionary::direction::Invariant;
+    use crate::translate::create_topic_vocabulary_specific_dictionary;
+    use crate::voc;
+    use crate::vocabulary::{SearchableVocabulary, Vocabulary};
 
-impl<Model, T, Voc> TranslatableTopicMatrix<T, Voc> for Model
-where
-    Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-    Voc: BasicVocabulary<T>
-{
-    type TopicToVoterMatrix = Vec<Vec<f64>>;
-    type TopicMetas = Vec<TopicModelTopicMeta>;
+    fn create_test_data() -> (Vocabulary<String>, Vocabulary<String>, Dictionary<String, Vocabulary<String>>){
+        let voc_a: Vocabulary<String> = voc![
+            "plane",
+            "aircraft",
+            "airplane",
+            "flyer",
+            "airman",
+            "airfoil",
+            "wing",
+            "deck",
+            "hydrofoil",
+            "foil",
+            "bearing surface"
+        ];
+        let voc_b: Vocabulary<String> = voc![
+            "Flugzeug",
+            "Flieger",
+            "Tragfläche",
+            "Ebene",
+            "Planum",
+            "Platane",
+            "Maschine",
+            "Bremsberg",
+            "Berg",
+            "Fläche",
+            "Luftfahrzeug",
+            "Fluggerät",
+            "Flugsystem",
+            "Motorflugzeug",
+        ];
 
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.k()
+        let mut dict = Dictionary::default();
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Flugzeug").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Flieger").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Tragfläche").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Ebene").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Planum").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Platane").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Maschine").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Bremsberg").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Berg").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Fläche").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("plane").unwrap(), voc_b.get_value("Flieger").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("aircraft").unwrap(), voc_b.get_value("Flugzeug").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("aircraft").unwrap(), voc_b.get_value("Flieger").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("aircraft").unwrap(), voc_b.get_value("Luftfahrzeug").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("aircraft").unwrap(), voc_b.get_value("Fluggerät").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("aircraft").unwrap(), voc_b.get_value("Flugsystem").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("airplane").unwrap(), voc_b.get_value("Flugzeug").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("airplane").unwrap(), voc_b.get_value("Flieger").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("airplane").unwrap(), voc_b.get_value("Motorflugzeug").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("flyer").unwrap(), voc_b.get_value("Flieger").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("airman").unwrap(), voc_b.get_value("Flieger").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("airfoil").unwrap(), voc_b.get_value("Tragfläche").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("wing").unwrap(), voc_b.get_value("Tragfläche").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("deck").unwrap(), voc_b.get_value("Tragfläche").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("hydrofoil").unwrap(), voc_b.get_value("Tragfläche").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("foil").unwrap(), voc_b.get_value("Tragfläche").unwrap());
+        dict.insert::<Invariant>(voc_a.get_value("bearing surface").unwrap(), voc_b.get_value("Tragfläche").unwrap());
+
+        (voc_a, voc_b, dict)
     }
 
-    #[inline(always)]
-    fn vocabulary(&self) -> &Voc {
-        self.vocabulary()
-    }
+    #[test]
+    fn does_propery_generate_the_data(){
+        env_logger::builder().is_test(true).filter_level(Trace).init();
 
-    #[inline(always)]
-    fn matrix(&self) -> &Self::TopicToVoterMatrix {
-        self.topics()
-    }
+        let voc: Vocabulary<String> = voc![
+            "plane",
+            "flyer",
+            "wing"
+        ];
+        let (_, _, dict) = create_test_data();
+        log::info!("{}", dict);
 
-    #[inline(always)]
-    fn matrix_meta(&self) -> &Self::TopicMetas {
-        self.topic_metas()
-    }
-}
-
-
-impl<Model, T, Voc> TranslatableTopicMatrixWithCreate<T, Voc> for Model
-where
-    Model: FullTopicModel<T, Voc> + TranslatableTopicMatrix<T, Voc> + TopicModelWithDocumentStats,
-    T: Hash + Eq + Ord,
-    Voc: SearchableVocabulary<T>
-{
-    fn create_new_from(
-        topic_to_voter_probability_matrix: Vec<Vec<f64>>,
-        associated_vocabulary: Voc,
-        used_vocabulary_frequencies: Vec<u64>,
-        old_model: &Self
-    ) -> Self
-    where
-        Self: Sized
-    {
-        let mut new = Model::new(
-            topic_to_voter_probability_matrix,
-            associated_vocabulary,
-            used_vocabulary_frequencies,
-            old_model.doc_topic_distributions().clone(),
-            old_model.document_lengths().clone()
+        let _: Dictionary<_> = create_topic_vocabulary_specific_dictionary(
+            &dict,
+            &voc
         );
-        new.normalize_in_place();
-        new
-    }
-}
-
-impl ContextExtender for TopicModelTopicMeta {
-    const EXTENSION_LEVEL: ExtensionLevelKind = ExtensionLevelKind::Topic;
-
-    fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, _: &mut impl ContextWithMutableVariables<NumericTypes=NumericTypes>) {}
-}
-
-impl TopicMeta for TopicModelTopicMeta {
-    #[inline(always)]
-    fn topic_id(&self) -> usize {
-        self.stats.topic_id
-    }
-
-    #[inline(always)]
-    fn max_score(&self) -> f64 {
-        self.stats.max_value
-    }
-
-    #[inline(always)]
-    fn min_score(&self) -> f64 {
-        self.stats.min_value
-    }
-
-    #[inline(always)]
-    fn avg_score(&self) -> f64 {
-        self.stats.average_value
-    }
-
-    #[inline(always)]
-    fn sum_score(&self) -> f64 {
-        self.stats.sum_value
-    }
-}
-
-impl ContextExtender for WordMeta {
-    const EXTENSION_LEVEL: ExtensionLevelKind = ExtensionLevelKind::Voter;
-
-    fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, _: &mut impl ContextWithMutableVariables<NumericTypes=NumericTypes>) {}
-}
-
-impl VoterMeta for WordMeta {
-    #[inline(always)]
-    fn voter_id(&self) -> usize {
-        self.word_id
-    }
-
-    #[inline(always)]
-    fn score(&self) -> f64 {
-        self.probability
-    }
-
-    #[inline(always)]
-    fn rank(&self) -> usize {
-        self.position + 1
-    }
-
-    #[inline(always)]
-    fn importance(&self) -> usize {
-        self.importance + 1
     }
 }

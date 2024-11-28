@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use ldatranslate_toolkit::rw_ext::RWLockUnwrapped;
-use crate::dictionary::direction::LanguageKind;
+use crate::dictionary::direction::LanguageMarker;
 use crate::dictionary::search::impls::scanning::{
     ScanAlgorithm, ScanSearcher, ScanSearcherInitError, ScanSearcherOptions,
     ScanSearcherOptionsInitError,
@@ -107,7 +107,7 @@ where
     fn execute_on_target<F>(
         &self,
         input: SearchInput,
-        target_language: Option<LanguageKind>,
+        target_language: Option<LanguageMarker>,
         search_function: F,
     ) -> Result<
         (
@@ -197,7 +197,7 @@ where
                     _ => unreachable!(),
                 }
             }
-            Some(LanguageKind::A) => {
+            Some(LanguageMarker::A) => {
                 let search = self.get_trie_searcher_a();
                 let search_a = search.read_unwrapped();
                 match input {
@@ -243,7 +243,7 @@ where
                     _ => unreachable!(),
                 }
             }
-            Some(LanguageKind::B) => {
+            Some(LanguageMarker::B) => {
                 let search = self.get_trie_searcher_b();
                 let search_b = search.read_unwrapped();
                 match input {
@@ -297,7 +297,7 @@ where
         &self,
         input: impl Into<SearchInput<'py>>,
         search_type: Option<SearchType>,
-        target_language: Option<LanguageKind>,
+        target_language: Option<LanguageMarker>,
         threshold: Option<Either<usize, f64>>,
         ignores_ascii_case: bool,
     ) -> Result<SearchResult, SearchError> {
@@ -350,7 +350,7 @@ where
         }
 
         fn pack_primitive_search_result<T: AsRef<str>>(
-            value: Vec<(LanguageKind, usize, T)>,
+            value: Vec<(LanguageMarker, usize, T)>,
         ) -> SearchResult {
             let (a, b) = value
                 .into_iter()

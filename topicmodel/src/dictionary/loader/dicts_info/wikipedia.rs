@@ -122,7 +122,7 @@ pub fn read_dictionary(file: impl AsRef<Path>) -> io::Result<FunctionBasedLineWi
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::dictionary::loader::helper::test::execute_test_read_for;
+    use crate::dictionary::loader::helper::test::execute_test_read_for;
     use super::read_dictionary;
 
     #[test]

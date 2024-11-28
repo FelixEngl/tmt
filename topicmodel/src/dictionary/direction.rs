@@ -25,7 +25,7 @@ use ldatranslate_toolkit::register_python;
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Debug, Copy, Clone, EnumIs, Eq, PartialEq, Hash, Ord, PartialOrd, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
-pub enum LanguageKind {
+pub enum LanguageMarker {
     A,
     B
 }
@@ -35,18 +35,18 @@ pub enum LanguageKind {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, EnumString, Display, IntoStaticStr)]
-pub enum DirectionKind {
+pub enum DirectionMarker {
     AToB,
     BToA,
     Invariant
 }
 
-impl DirectionKind {
+impl DirectionMarker {
     #[must_use]
     #[inline]
     pub const fn is_a_to_b(&self) -> bool {
         match self {
-            &DirectionKind::AToB | &DirectionKind::Invariant => true,
+            &DirectionMarker::AToB | &DirectionMarker::Invariant => true,
             _ => false
         }
     }
@@ -55,7 +55,7 @@ impl DirectionKind {
     #[inline]
     pub const fn is_b_to_a(&self) -> bool {
         match self {
-            &DirectionKind::BToA | &DirectionKind::Invariant => true,
+            &DirectionMarker::BToA | &DirectionMarker::Invariant => true,
             _ => false
         }
     }
@@ -64,7 +64,7 @@ impl DirectionKind {
     #[inline]
     pub const fn is_invariant(&self) -> bool {
         match self {
-            &DirectionKind::Invariant => true,
+            &DirectionMarker::Invariant => true,
             _ => false
         }
     }
@@ -72,15 +72,15 @@ impl DirectionKind {
 
 /// A tuple defining two values and a direction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct  DirectionTuple<Ta, Tb> {
+pub struct DirectedElement<Ta, Tb> {
     pub a: Ta,
     pub b: Tb,
-    pub direction: DirectionKind
+    pub direction: DirectionMarker
 }
 
-impl<Ta, Tb> DirectionTuple<Ta, Tb> {
+impl<Ta, Tb> DirectedElement<Ta, Tb> {
 
-    pub const fn new(a: Ta, b: Tb, direction: DirectionKind) -> Self {
+    pub const fn new(a: Ta, b: Tb, direction: DirectionMarker) -> Self {
         Self {
             a,
             b,
@@ -97,20 +97,20 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
     }
 
     pub const fn a_to_b(a: Ta, b: Tb) -> Self {
-        Self::new(a, b, DirectionKind::AToB)
+        Self::new(a, b, DirectionMarker::AToB)
     }
 
     pub const fn b_to_a(a: Ta, b: Tb) -> Self {
-        Self::new(a, b, DirectionKind::BToA)
+        Self::new(a, b, DirectionMarker::BToA)
     }
 
     pub const fn invariant(a: Ta, b: Tb) -> Self {
-        Self::new(a, b, DirectionKind::Invariant)
+        Self::new(a, b, DirectionMarker::Invariant)
     }
 
     /// Mapps the direction tuple values to new values.
-    pub fn map<Ra, Rb, F1: FnOnce(Ta) -> Ra, F2: FnOnce(Tb) -> Rb>(self, map_a: F1, map_b: F2) -> DirectionTuple<Ra, Rb> {
-        DirectionTuple {
+    pub fn map<Ra, Rb, F1: FnOnce(Ta) -> Ra, F2: FnOnce(Tb) -> Rb>(self, map_a: F1, map_b: F2) -> DirectedElement<Ra, Rb> {
+        DirectedElement {
             a: map_a(self.a),
             b: map_b(self.b),
             direction: self.direction
@@ -118,19 +118,19 @@ impl<Ta, Tb> DirectionTuple<Ta, Tb> {
     }
 
     /// Converts to a real tuple
-    pub fn to_tuple(self) -> (Ta, Tb, DirectionKind) {
+    pub fn to_tuple(self) -> (Ta, Tb, DirectionMarker) {
         (self.a, self.b, self.direction)
     }
 }
-impl<Ta, Tb> DirectionTuple<Ta, Tb> where Ta: Clone, Tb: Clone {
+impl<Ta, Tb> DirectedElement<Ta, Tb> where Ta: Clone, Tb: Clone {
     pub fn value_tuple(&self) -> (Ta, Tb) {
         (self.a.clone(), self.b.clone())
     }
 }
 
-impl<T> DirectionTuple<T, T>  {
-    pub fn map_both<R, F: Fn(T) -> R>(self, mapping: F) -> DirectionTuple<R, R> {
-        DirectionTuple {
+impl<T> DirectedElement<T, T>  {
+    pub fn map_both<R, F: Fn(T) -> R>(self, mapping: F) -> DirectedElement<R, R> {
+        DirectedElement {
             a: mapping(self.a),
             b: mapping(self.b),
             direction: self.direction
@@ -138,7 +138,7 @@ impl<T> DirectionTuple<T, T>  {
     }
 }
 
-impl<Ta: Display, Tb: Display> Display for  DirectionTuple<Ta, Tb>  {
+impl<Ta: Display, Tb: Display> Display for  DirectedElement<Ta, Tb>  {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{{{}, {}}}", self.direction, self.a, self.b)
     }
@@ -149,7 +149,7 @@ impl<Ta: Display, Tb: Display> Display for  DirectionTuple<Ta, Tb>  {
 #[sealed]
 pub trait Direction {
     type INVERSE: Direction;
-    const DIRECTION: DirectionKind;
+    const DIRECTION: DirectionMarker;
 }
 
 ///
@@ -161,7 +161,7 @@ pub trait Translation: Direction {}
 #[sealed]
 pub trait Language: Translation + Direction {
     type OPPOSITE: Language;
-    const LANG: LanguageKind;
+    const LANG: LanguageMarker;
 }
 
 /// Language A
@@ -170,7 +170,7 @@ pub struct A;
 #[sealed]
 impl Language for A {
     type OPPOSITE = B;
-    const LANG: LanguageKind = LanguageKind::A;
+    const LANG: LanguageMarker = LanguageMarker::A;
 }
 
 /// A to B
@@ -179,7 +179,7 @@ pub type AToB = A;
 #[sealed]
 impl Direction for AToB {
     type INVERSE = BToA;
-    const DIRECTION: DirectionKind = DirectionKind::AToB;
+    const DIRECTION: DirectionMarker = DirectionMarker::AToB;
 }
 
 #[sealed]
@@ -190,7 +190,7 @@ pub struct B;
 #[sealed]
 impl Language for B {
     type OPPOSITE = A;
-    const LANG: LanguageKind = LanguageKind::B;
+    const LANG: LanguageMarker = LanguageMarker::B;
 }
 
 /// B to A
@@ -198,7 +198,7 @@ pub type BToA = B;
 #[sealed]
 impl Direction for BToA {
     type INVERSE = AToB;
-    const DIRECTION: DirectionKind = DirectionKind::BToA;
+    const DIRECTION: DirectionMarker = DirectionMarker::BToA;
 }
 #[sealed]
 impl Translation for BToA {}
@@ -209,11 +209,11 @@ pub struct Invariant;
 #[sealed]
 impl Direction for Invariant {
     type INVERSE = Invariant;
-    const DIRECTION: DirectionKind = DirectionKind::Invariant;
+    const DIRECTION: DirectionMarker = DirectionMarker::Invariant;
 }
 
 
 register_python! {
-    enum DirectionKind;
-    enum LanguageKind;
+    enum DirectionMarker;
+    enum LanguageMarker;
 }

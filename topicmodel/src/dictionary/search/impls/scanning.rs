@@ -1,4 +1,4 @@
-use crate::dictionary::direction::LanguageKind;
+use crate::dictionary::direction::LanguageMarker;
 use crate::dictionary::search::{MatchWordMethod, SearchInput, SearchType};
 use crate::dictionary::DictionaryWithVocabulary;
 use crate::vocabulary::SearchableVocabulary;
@@ -67,7 +67,7 @@ impl TryFrom<SearchType> for ScanAlgorithm {
 pub struct ScanSearcher<'py> {
     input: ParsedExpression<'py>,
     kind: ScanAlgorithm,
-    language: Option<LanguageKind>,
+    language: Option<LanguageMarker>,
     threshold: Threshold,
     ignores_ascii_case: bool,
 }
@@ -130,7 +130,7 @@ impl<'py> ScanSearcher<'py> {
         })
     }
 
-    pub fn search<D, T, V>(&self, dictionary: &D) -> Vec<(LanguageKind, usize, T)>
+    pub fn search<D, T, V>(&self, dictionary: &D) -> Vec<(LanguageMarker, usize, T)>
     where
         D: DictionaryWithVocabulary<T, V> + ?Sized,
         T: Borrow<str> + Hash + Eq + AsRef<str> + Clone,
@@ -322,50 +322,50 @@ impl<'py> ScanSearcher<'py> {
         &self,
         dictionary: &D,
         matcher: F,
-    ) -> Vec<(LanguageKind, usize, T)>
+    ) -> Vec<(LanguageMarker, usize, T)>
     where
         D: DictionaryWithVocabulary<T, V> + ?Sized,
         T: Borrow<str> + Hash + Eq + AsRef<str> + Clone,
         V: SearchableVocabulary<T>,
-        F: Fn(LanguageKind, &str) -> bool,
+        F: Fn(LanguageMarker, &str) -> bool,
     {
         match self.language {
             None => chain!(
                 dictionary.voc_a().iter().enumerate().filter_map(|value| {
-                    if matcher(LanguageKind::A, value.1.as_ref()) {
-                        Some((LanguageKind::A, value.0, value.1.clone()))
+                    if matcher(LanguageMarker::A, value.1.as_ref()) {
+                        Some((LanguageMarker::A, value.0, value.1.clone()))
                     } else {
                         None
                     }
                 }),
                 dictionary.voc_b().iter().enumerate().filter_map(|value| {
-                    if matcher(LanguageKind::B, value.1.as_ref()) {
-                        Some((LanguageKind::B, value.0, value.1.clone()))
+                    if matcher(LanguageMarker::B, value.1.as_ref()) {
+                        Some((LanguageMarker::B, value.0, value.1.clone()))
                     } else {
                         None
                     }
                 })
             )
             .collect_vec(),
-            Some(LanguageKind::A) => dictionary
+            Some(LanguageMarker::A) => dictionary
                 .voc_a()
                 .iter()
                 .enumerate()
                 .filter_map(|value| {
-                    if matcher(LanguageKind::A, value.1.as_ref()) {
-                        Some((LanguageKind::A, value.0, value.1.clone()))
+                    if matcher(LanguageMarker::A, value.1.as_ref()) {
+                        Some((LanguageMarker::A, value.0, value.1.clone()))
                     } else {
                         None
                     }
                 })
                 .collect_vec(),
-            Some(LanguageKind::B) => dictionary
+            Some(LanguageMarker::B) => dictionary
                 .voc_b()
                 .iter()
                 .enumerate()
                 .filter_map(|value| {
-                    if matcher(LanguageKind::B, value.1.as_ref()) {
-                        Some((LanguageKind::B, value.0, value.1.clone()))
+                    if matcher(LanguageMarker::B, value.1.as_ref()) {
+                        Some((LanguageMarker::B, value.0, value.1.clone()))
                     } else {
                         None
                     }
@@ -378,7 +378,7 @@ impl<'py> ScanSearcher<'py> {
         &self,
         dictionary: &D,
         matcher: &StrEq,
-    ) -> Vec<(LanguageKind, usize, T)>
+    ) -> Vec<(LanguageMarker, usize, T)>
     where
         D: DictionaryWithVocabulary<T, V> + ?Sized,
         T: Hash + Eq + Borrow<str> + Clone,
@@ -386,33 +386,33 @@ impl<'py> ScanSearcher<'py> {
     {
         fn search_configured<D, T, V>(
             dict: &D,
-            lang: LanguageKind,
+            lang: LanguageMarker,
             value: &str,
             ignore_ascii: bool,
-            output: &mut Vec<(LanguageKind, usize, T)>,
+            output: &mut Vec<(LanguageMarker, usize, T)>,
         ) where
             D: DictionaryWithVocabulary<T, V> + ?Sized,
             T: Hash + Eq + Borrow<str> + Clone,
             V: SearchableVocabulary<T>,
         {
             match lang {
-                LanguageKind::A => {
+                LanguageMarker::A => {
                     if let Some((a, b)) = dict.voc_a().get_entry_by_value(value) {
-                        output.push((LanguageKind::A, *b, a.clone()))
+                        output.push((LanguageMarker::A, *b, a.clone()))
                     }
                     if ignore_ascii {
                         if let Some((a, b)) = dict.voc_a().get_entry_by_value(&value.to_lowercase()) {
-                            output.push((LanguageKind::A, *b, a.clone()))
+                            output.push((LanguageMarker::A, *b, a.clone()))
                         }
                     }
                 }
-                LanguageKind::B => {
+                LanguageMarker::B => {
                     if let Some((a, b)) = dict.voc_b().get_entry_by_value(value) {
-                        output.push((LanguageKind::B, *b, a.clone()))
+                        output.push((LanguageMarker::B, *b, a.clone()))
                     }
                     if ignore_ascii {
                         if let Some((a, b)) = dict.voc_b().get_entry_by_value(&value.to_lowercase()) {
-                            output.push((LanguageKind::B, *b, a.clone()))
+                            output.push((LanguageMarker::B, *b, a.clone()))
                         }
                     }
                 }
@@ -426,14 +426,14 @@ impl<'py> ScanSearcher<'py> {
 
                     search_configured(
                         dictionary,
-                        LanguageKind::A,
+                        LanguageMarker::A,
                         &value,
                         self.ignores_ascii_case,
                         &mut result,
                     );
                     search_configured(
                         dictionary,
-                        LanguageKind::B,
+                        LanguageMarker::B,
                         &value,
                         self.ignores_ascii_case,
                         &mut result,
@@ -458,14 +458,14 @@ impl<'py> ScanSearcher<'py> {
                     for s in values {
                         search_configured(
                             dictionary,
-                            LanguageKind::A,
+                            LanguageMarker::A,
                             &s,
                             self.ignores_ascii_case,
                             &mut result,
                         );
                         search_configured(
                             dictionary,
-                            LanguageKind::B,
+                            LanguageMarker::B,
                             &s,
                             self.ignores_ascii_case,
                             &mut result,
@@ -495,14 +495,14 @@ impl<'py> ScanSearcher<'py> {
 #[derive(Clone, Copy)]
 pub struct ScanSearcherOptions {
     kind: ScanAlgorithm,
-    language: Option<LanguageKind>,
+    language: Option<LanguageMarker>,
     ignores_ascii_case: bool,
     threshold: Threshold,
 }
 impl ScanSearcherOptions {
     pub fn new(
         kind: ScanAlgorithm,
-        language: Option<LanguageKind>,
+        language: Option<LanguageMarker>,
         threshold: Option<Either<usize, f64>>,
         ignores_ascii_case: bool,
     ) -> Result<Self, ScanSearcherOptionsInitError> {
@@ -778,10 +778,10 @@ mod test {
         ScanAlgorithm, ScanSearcher, ScanSearcherInitError, ScanSearcherOptions,
         ScanSearcherOptionsInitError,
     };
-    use crate::topicmodel::dictionary::direction::LanguageKind;
-    use crate::topicmodel::dictionary::direction::LanguageKind::{A, B};
-    use crate::topicmodel::dictionary::search::impls::scanning::ScanSearcherOptionsInitError::ThresholdMissing;
-    use crate::topicmodel::dictionary::{MutableDictionaryWithMeta, EfficientDictWithMetaDefault};
+    use crate::dictionary::direction::LanguageMarker;
+    use crate::dictionary::direction::LanguageMarker::{A, B};
+    use crate::dictionary::search::impls::scanning::ScanSearcherOptionsInitError::ThresholdMissing;
+    use crate::dictionary::{MutableDictionaryWithMeta, EfficientDictWithMetaDefault};
     use either::Either;
 
     macro_rules! impl_test {
@@ -876,10 +876,10 @@ mod test {
         //     println!("{x:?}")
         // }
 
-        fn cr<I: IntoIterator<Item = (LanguageKind, usize, T)>, T: ToString>(
+        fn cr<I: IntoIterator<Item = (LanguageMarker, usize, T)>, T: ToString>(
             i: I,
         ) -> Result<
-            Result<Vec<(LanguageKind, usize, ArcStr)>, ScanSearcherInitError>,
+            Result<Vec<(LanguageMarker, usize, ArcStr)>, ScanSearcherInitError>,
             ScanSearcherOptionsInitError,
         > {
             Ok(Ok(Vec::from_iter(
@@ -1639,11 +1639,11 @@ mod test {
         ] {
             let inp_str = format!("{inp:?}");
             let expected: Result<
-                Result<Vec<(LanguageKind, usize, ArcStr)>, ScanSearcherInitError>,
+                Result<Vec<(LanguageMarker, usize, ArcStr)>, ScanSearcherInitError>,
                 ScanSearcherOptionsInitError,
             > = expected;
             let result: Result<
-                Result<Vec<(LanguageKind, usize, ArcStr)>, ScanSearcherInitError>,
+                Result<Vec<(LanguageMarker, usize, ArcStr)>, ScanSearcherInitError>,
                 ScanSearcherOptionsInitError,
             > = impl_test!(
                 kind: kind,

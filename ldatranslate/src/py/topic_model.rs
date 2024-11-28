@@ -38,7 +38,7 @@ use ldatranslate_topicmodel::model::{BasicTopicModel, BasicTopicModelWithVocabul
 use ldatranslate_topicmodel::model::meta::*;
 use ldatranslate_topicmodel::vocabulary::{BasicVocabulary, Vocabulary, VocabularyMut};
 use ldatranslate_translate::VoterInfoProvider;
-use crate::py::dictionary::DefaultDict;
+
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -197,7 +197,7 @@ impl PyTopicModel {
                 voc
             }
             SingleOrVec::Vec(word_lists) => {
-                let mut voc = Vocabulary::empty_from(language_hint);
+                let mut voc = Vocabulary::empty_for(language_hint.into());
                 let word_lists = word_lists.into_iter().map(|values| {
                     values.into_iter().map(|value| {
                         voc.add::<UnderlyingPyWord>(value.into())

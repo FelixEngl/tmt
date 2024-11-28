@@ -617,8 +617,6 @@ pub mod test {
     use crate::vocabulary::{EfficientStringVocabulary, Vocabulary, VocabularyMut};
     use itertools::{assert_equal, Itertools};
     use bincode;
-    use crate::enums::TopicModelVersion;
-    use crate::model::{TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
 
     pub fn create_test_data() -> TopicModel<ArcStr, Vocabulary<ArcStr>> {
         let mut voc: EfficientStringVocabulary = Vocabulary::default();

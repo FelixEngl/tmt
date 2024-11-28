@@ -358,18 +358,3 @@ where
         outp.write_all(html.as_bytes())
     }
 }
-
-#[cfg(test)]
-mod test {
-    use crate::py::dictionary::{DefaultDict};
-    use crate::topicmodel::dictionary::io::ReadableDictionary;
-
-    #[test]
-    fn can_generate_html(){
-        let data = DefaultDict::from_path_with_extension("dictionary2.dat.zst").unwrap();
-        data.generate_html(
-            "E:/tmp/dict_view2",
-            true
-        ).unwrap()
-    }
-}

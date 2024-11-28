@@ -1,9 +1,23 @@
+//Copyright 2024 Felix Engl
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use evalexpr::{ContextWithMutableVariables, EvalexprNumericTypesConvert};
-use ldatranslate_translate::{ContextExtender, ExtensionLevelKind};
+use ldatranslate_translate::{ContextExtender, ExtensionLevelKind, TopicMeta, VoterInfoProvider, VoterMeta};
+use crate::translate::TranslatableTopicMatrix;
 use crate::vocabulary::BasicVocabulary;
-use crate::translate::{TopicMeta, TranslatableTopicMatrix, VoterInfoProvider, VoterMeta};
 
 pub type StandardTopicModelLikeMatrix = Vec<Vec<f64>>;
 
@@ -62,6 +76,7 @@ pub struct StandardVoterMeta {
 }
 
 impl StandardVoterMeta {
+    #[allow(dead_code)]
     pub fn new(voter_id: usize, score: f64, rank: NonZeroUsize, importance: NonZeroUsize) -> Self {
         Self { voter_id, score, rank, importance }
     }

@@ -36,6 +36,8 @@ log.workspace = true
 env_logger.workspace = true
 inventory.workspace = true
 sealed.workspace = true
+ndarray.workspace = true
+ndarray-stats.workspace = true
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

@@ -10,7 +10,7 @@ pub use iter::*;
 
 use std::ops::{Deref, DerefMut};
 use tinyset::Set64;
-use crate::dictionary::direction::{Language, LanguageKind};
+use crate::dictionary::direction::{Language, LanguageMarker};
 use crate::dictionary::metadata::update::WordIdUpdate;
 use crate::vocabulary::{AnonymousVocabulary, AnonymousVocabularyMut};
 
@@ -43,7 +43,7 @@ pub trait MetadataManager: Default + Clone {
     fn get_meta_b(&self, word_id: usize) -> Option<&Self::Metadata> {
         self.meta_b().get(word_id)
     }
-    fn get_meta_for(&self, lang: LanguageKind, word_id: usize) -> Option<&Self::Metadata> {
+    fn get_meta_for(&self, lang: LanguageMarker, word_id: usize) -> Option<&Self::Metadata> {
         if lang.is_a() {
             self.get_meta_a(word_id)
         } else {
@@ -53,29 +53,29 @@ pub trait MetadataManager: Default + Clone {
 
 
     fn get_meta_mut_a<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>> {
-        self.get_meta_mut_for(LanguageKind::A, vocabulary, word_id)
+        self.get_meta_mut_for(LanguageMarker::A, vocabulary, word_id)
     }
     fn get_meta_mut_b<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>>{
-        self.get_meta_mut_for(LanguageKind::B, vocabulary, word_id)
+        self.get_meta_mut_for(LanguageMarker::B, vocabulary, word_id)
     }
-    fn get_meta_mut_for<'a>(&'a mut self, lang: LanguageKind, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>>;
+    fn get_meta_mut_for<'a>(&'a mut self, lang: LanguageMarker, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Option<Self::MutReference<'a>>;
 
     fn get_or_create_meta_a<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
-        self.get_or_create_meta_for(LanguageKind::A, vocabulary, word_id)
+        self.get_or_create_meta_for(LanguageMarker::A, vocabulary, word_id)
     }
     fn get_or_create_meta_b<'a>(&'a mut self, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a> {
-        self.get_or_create_meta_for(LanguageKind::B, vocabulary, word_id)
+        self.get_or_create_meta_for(LanguageMarker::B, vocabulary, word_id)
     }
-    fn get_or_create_meta_for<'a>(&'a mut self, lang: LanguageKind, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a>;
+    fn get_or_create_meta_for<'a>(&'a mut self, lang: LanguageMarker, vocabulary: &'a mut dyn AnonymousVocabularyMut, word_id: usize) -> Self::MutReference<'a>;
 
 
     fn get_meta_ref_a<'a>(&'a self, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>> {
-        self.get_meta_ref_for(LanguageKind::A, vocabulary, word_id)
+        self.get_meta_ref_for(LanguageMarker::A, vocabulary, word_id)
     }
     fn get_meta_ref_b<'a>(&'a self, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>> {
-        self.get_meta_ref_for(LanguageKind::B, vocabulary, word_id)
+        self.get_meta_ref_for(LanguageMarker::B, vocabulary, word_id)
     }
-    fn get_meta_ref_for<'a>(&'a self, lang: LanguageKind, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>>;
+    fn get_meta_ref_for<'a>(&'a self, lang: LanguageMarker, vocabulary: &'a dyn AnonymousVocabulary, word_id: usize) -> Option<Self::Reference<'a>>;
 
     fn copy_keep_vocabulary(&self) -> Self;
 
@@ -174,7 +174,7 @@ pub trait MetadataMutReference<'a, M: MetadataManager>: DerefMut<Target: Metadat
 mod test {
     use arcstr::ArcStr;
     use crate::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryFilterable, DictionaryMut, EfficientDictWithMetaDefault};
-    use crate::dictionary::direction::{DirectionTuple};
+    use crate::dictionary::direction::{DirectedElement};
     use crate::dictionary::metadata::ex::{MetaField, MetadataCollectionBuilder};
     use crate::dictionary::metadata::{MetadataManager, MetadataMutReference};
     use crate::dictionary::word_infos::*;
@@ -185,7 +185,7 @@ mod test {
     #[test]
     fn can_initialize(){
         let mut d: EfficientDictWithMetaDefault = Default::default();
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a11", "b1");
+        let DirectedElement {a, b , direction:_}= d.insert_invariant("a11", "b1");
         {
             d.get_or_create_meta_a(a).insert_value(
                 MetaField::Genders,
@@ -199,7 +199,7 @@ mod test {
                 Domain::Stocks
             ).expect("This should work");
         }
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a12", "b2");
+        let DirectedElement {a, b , direction:_}= d.insert_invariant("a12", "b2");
         {
             d.get_or_create_meta_a(a).insert_value(
                 MetaField::Genders,
@@ -213,7 +213,7 @@ mod test {
                 Domain::Pharm
             ).expect("This should work");
         }
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a13", "b3");
+        let DirectedElement {a, b , direction:_}= d.insert_invariant("a13", "b3");
         {
             d.get_or_create_meta_a(a).insert_value(
                 MetaField::Genders,
@@ -227,7 +227,7 @@ mod test {
                 Domain::Watches
             ).expect("This should work");
         }
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a24", "b4");
+        let DirectedElement {a, b , direction:_}= d.insert_invariant("a24", "b4");
         {
             d.get_or_create_meta_b(b).insert_value(
                 MetaField::Domains,
@@ -251,7 +251,7 @@ mod test {
             x.build().unwrap().write_into(&mut y);
         }
 
-        let DirectionTuple{a, b , direction:_}= d.insert_invariant("a25", "b5");
+        let DirectedElement {a, b , direction:_}= d.insert_invariant("a25", "b5");
         {
             d.get_or_create_meta_b(b).insert_value(
                 MetaField::Domains,

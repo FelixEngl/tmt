@@ -122,7 +122,7 @@ register_python! {
 
 #[cfg(test)]
 mod test {
-    use crate::topicmodel::language_hint::LanguageHint;
+    use crate::language_hint::LanguageHint;
 
     #[test]
     fn can_init(){

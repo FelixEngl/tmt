@@ -14,9 +14,10 @@
 
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
+use std::fs::read_to_string;
 use std::num::NonZeroUsize;
 use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprNumericTypesConvert, IterateVariablesContext, Value};
-use crate::variable_provider::variable_names::{BOOST, NUMBER_OF_VOTERS, RANK};
+use crate::variable_provider::variable_names::{BOOST_SCORE, NUMBER_OF_VOTERS, RANK};
 pub use crate::buildin::*;
 pub use crate::constants::TMTNumericTypes;
 use crate::display::{DisplayTree, IndentWriter};
@@ -45,8 +46,8 @@ pub type VotingResult<T> = Result<T, VotingExpressionError>;
 
 pub trait VotingContext<NumericTypes: EvalexprNumericTypesConvert = TMTNumericTypes>: Context<NumericTypes=NumericTypes> {
     fn get_vote_value(&self, name: &str) -> VotingResult<&Value<NumericTypes>> {
-        if name == BOOST {
-            return match self.get_boost() {
+        if name == BOOST_SCORE {
+            return match self.get_boost(BOOST_SCORE) {
                 None => {
                     Ok(&Value::Empty)
                 }
@@ -62,15 +63,24 @@ pub trait VotingContext<NumericTypes: EvalexprNumericTypesConvert = TMTNumericTy
         }
     }
 
-    fn get_boost(&self) -> Option<&Value<NumericTypes>> {
-        match self.get_value(BOOST) {
-            None => {
-                None
-            }
-            Some(Value::String(targ)) => {
-                self.get_value(targ)
-            }
-            Some(value) => Some(value),
+    /// Resolves a boost variable with a given ``name``
+    fn get_boost(&self, name: &str) -> Option<&Value<NumericTypes>> {
+        let mut target_value = self.get_value(name)?;
+
+        loop {
+            target_value = match target_value {
+                old @ Value::String(targ) => {
+                    match self.get_value(targ) {
+                        None => {
+                            return Some(old)
+                        }
+                        Some(value) => {
+                            value
+                        }
+                    }
+                }
+                value => return Some(value),
+            };
         }
     }
 }

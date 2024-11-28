@@ -17,12 +17,12 @@ type ResolvedValueTypeIn = tuple[DictionaryLanguage, int] | tuple[Domain, int] |
 type ResolvedValueTypeOut = tuple[DictionaryLanguage, int] | tuple[Domain, int] | tuple[Register, int] | tuple[GrammaticalGender, int] | tuple[PartOfSpeech, int] | tuple[Region, int] | tuple[GrammaticalNumber, int] | tuple[PartOfSpeechTag, int] | tuple[str, int] | tuple[int, int]
 
 
-class DictMetaTopicModel:
+class DictMetaModel:
     def __new__(cls,capacity = ...): ...
     def __str__(self) -> str:
         ...
 
-    def to_list(self) -> list[TopicVector]:
+    def to_list(self) -> list[DictMetaVector]:
         ...
 
 
@@ -141,9 +141,9 @@ class LoadedMetadataEx:
     unclassified_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
     synonyms_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
     def __new__(cls,values:dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]] | dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]] | dict[MetaField, tuple[typing.Optional[ResolvedValueTypeOut | list[ResolvedValueTypeOut]], typing.Optional[dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]] | tuple[typing.Optional[dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]], typing.Optional[dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]],additional_dictionaries: None | list[str] = None): ...
-    def domain_vector(self) -> TopicVector:
+    def domain_vector(self) -> DictMetaVector:
         r"""
-        Returns a domain vector. The returned TopicVector consists of the counts of the
+        Returns a domain vector. The returned DictMetaVector consists of the counts of the
         single topics [Domain] and [Register].
         """
         ...
@@ -301,7 +301,7 @@ class LoadedMetadataEx:
         """
         ...
 
-    def topic_vector(self) -> TopicVector:
+    def topic_vector(self) -> DictMetaVector:
         ...
 
     def associated_dictionaries(self) -> set[str]:
@@ -866,14 +866,14 @@ class PyDictionary:
         """
         ...
 
-    def topic_vector_a(self, word:str) -> typing.Optional[TopicVector]:
+    def topic_vector_a(self, word:str) -> typing.Optional[DictMetaVector]:
         r"""
         Returns the topic vetor vor a specific word. Can be None if the word does not exist or
         no metadata is set.
         """
         ...
 
-    def topic_vector_b(self, word:str) -> typing.Optional[TopicVector]:
+    def topic_vector_b(self, word:str) -> typing.Optional[DictMetaVector]:
         r"""
         Returns the topic vetor vor a specific word. Can be None if the word does not exist or
         no metadata is set.
@@ -1450,13 +1450,13 @@ class TokenCountFilter:
         ...
 
 
-class TopicVector:
+class DictMetaVector:
     r"""
     The topic vector is basically a map between [`Domain`] and [`Register`] and some score.
     Usually the score is only the count, but it can be anything.
     """
     def __new__(cls,): ...
-    def __add__(self, other:TopicVector | tuple[Domain, float] | tuple[Register, float]) -> TopicVector:
+    def __add__(self, other:DictMetaVector | tuple[Domain, float] | tuple[Register, float]) -> DictMetaVector:
         ...
 
     def __getitem__(self, index:Domain | Register | int) -> float:

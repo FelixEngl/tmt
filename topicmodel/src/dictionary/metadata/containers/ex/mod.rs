@@ -21,7 +21,7 @@ use crate::interners::*;
 
 use tinyset::Set64;
 use crate::dictionary::word_infos::*;
-use crate::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, TopicVectorIndex, DOMAIN_MODEL_ENTRY_MAX_SIZE};
+use crate::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, DictMetaTagIndex, META_DICT_ARRAY_LENTH};
 use std::ops::{Deref, DerefMut};
 use pretty::*;
 use pyo3::{pyclass, pymethods};
@@ -189,35 +189,35 @@ register_python!(struct DomainCount;);
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct DomainCount {
-    counts: [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]
+    counts: [u64; META_DICT_ARRAY_LENTH]
 }
 
 impl DomainCount {
-    pub const fn new(counts: [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]) -> Self {
+    pub const fn new(counts: [u64; META_DICT_ARRAY_LENTH]) -> Self {
         Self {counts}
     }
 
     pub const fn empty() -> Self {
         Self {
-            counts: [0; DOMAIN_MODEL_ENTRY_MAX_SIZE]
+            counts: [0; META_DICT_ARRAY_LENTH]
         }
     }
 
-    pub fn into_inner(self) -> [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
+    pub fn into_inner(self) -> [u64; META_DICT_ARRAY_LENTH] {
         self.counts
     }
 
-    pub fn get(&self, index: impl Into<TopicVectorIndex>) -> u64 {
+    pub fn get(&self, index: impl Into<DictMetaTagIndex>) -> u64 {
         self.counts[index.into().as_index()]
     }
 
-    pub fn get_mut(&mut self, index: impl Into<TopicVectorIndex>) -> &mut u64 {
+    pub fn get_mut(&mut self, index: impl Into<DictMetaTagIndex>) -> &mut u64 {
         &mut self.counts[index.into().as_index()]
     }
 }
 
 impl Deref for DomainCount {
-    type Target = [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE];
+    type Target = [u64; META_DICT_ARRAY_LENTH];
     fn deref(&self) -> &Self::Target {
         &self.counts
     }
@@ -233,23 +233,23 @@ impl DerefMut for DomainCount {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl DomainCount {
-    fn full(&self) -> HashMap<TopicVectorIndex, u64> {
+    fn full(&self) -> HashMap<DictMetaTagIndex, u64> {
         self.counts.iter().enumerate().map(|(i, value)| {
-            (TopicVectorIndex::from_index(i).unwrap(), *value)
+            (DictMetaTagIndex::from_index(i).unwrap(), *value)
         }).collect()
     }
 
-    fn exists(&self) -> HashSet<TopicVectorIndex> {
+    fn exists(&self) -> HashSet<DictMetaTagIndex> {
         self.counts.iter().enumerate().filter_map(|(i, value)| {
-            (*value > 0).then(|| TopicVectorIndex::from_index(i).unwrap())
+            (*value > 0).then(|| DictMetaTagIndex::from_index(i).unwrap())
         }).collect()
     }
 
     fn __len__(&self) -> usize {
-        DOMAIN_MODEL_ENTRY_MAX_SIZE
+        META_DICT_ARRAY_LENTH
     }
 
-    fn __getitem__(&self, index: TopicVectorIndex) -> u64 {
+    fn __getitem__(&self, index: DictMetaTagIndex) -> u64 {
         let idx = index.as_index();
         self.counts[idx]
     }
@@ -273,7 +273,7 @@ where
     fn pretty(self, alloc: &'a D) -> DocBuilder<'a, D, A> {
         alloc.intersperse(
             self.counts.iter().enumerate().map(|(id, ct)| {
-                alloc.text(format!("{}: {}", TopicVectorIndex::from_index(id).unwrap(), ct))
+                alloc.text(format!("{}: {}", DictMetaTagIndex::from_index(id).unwrap(), ct))
             }),
             alloc.text(",").append(alloc.hardline())
         )
@@ -307,10 +307,10 @@ impl DomainCounts {
     }
 
     fn __len__(&self) -> usize {
-        DOMAIN_MODEL_ENTRY_MAX_SIZE
+        META_DICT_ARRAY_LENTH
     }
 
-    fn __getitem__(&self, index: TopicVectorIndex) -> (u64, u64) {
+    fn __getitem__(&self, index: DictMetaTagIndex) -> (u64, u64) {
         let idx = index.as_index();
         (self.counts_a.counts[idx], self.counts_b.counts[idx])
     }
@@ -326,7 +326,7 @@ impl DomainCounts {
 }
 
 impl DomainCounts {
-    pub fn new(counts_a: [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE], counts_b: [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]) -> Self {
+    pub fn new(counts_a: [u64; META_DICT_ARRAY_LENTH], counts_b: [u64; META_DICT_ARRAY_LENTH]) -> Self {
         Self { counts_a: DomainCount::new(counts_a), counts_b: DomainCount::new(counts_b) }
     }
 
@@ -398,7 +398,7 @@ impl MetadataManagerEx {
         use itertools::Itertools;
         use lockfree_object_pool::LinearObjectPool;
         use rayon::prelude::*;
-        use super::super::dict_meta_topic_matrix::DOMAIN_MODEL_ENTRY_MAX_SIZE;
+        use super::super::dict_meta_topic_matrix::META_DICT_ARRAY_LENTH;
 
         #[repr(transparent)]
         struct Wrap<'a>(&'a MetadataEx);
@@ -412,7 +412,7 @@ impl MetadataManagerEx {
         unsafe impl Sync for Wrap<'_> {}
 
 
-        fn sum_up_meta(pool: Arc<LinearObjectPool<[u64; DOMAIN_MODEL_ENTRY_MAX_SIZE]>>, meta: &[MetadataEx]) -> [u64; DOMAIN_MODEL_ENTRY_MAX_SIZE] {
+        fn sum_up_meta(pool: Arc<LinearObjectPool<[u64; META_DICT_ARRAY_LENTH]>>, meta: &[MetadataEx]) -> [u64; META_DICT_ARRAY_LENTH] {
             let result = meta.iter().map(|v| Wrap(v)).collect_vec().into_par_iter().map(|value| {
                 let mut ct_full = pool.pull_owned();
                 for value in value.iter() {
@@ -446,7 +446,7 @@ impl MetadataManagerEx {
         }
 
         let pool = Arc::new(LinearObjectPool::new(
-            || [0u64; DOMAIN_MODEL_ENTRY_MAX_SIZE],
+            || [0u64; META_DICT_ARRAY_LENTH],
             |value| value.fill(0)
         ));
 

@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use deranged::RangedUsize;
 use derive_more::From;
+use either::Either;
 use pyo3::{Bound, FromPyObject, IntoPy, PyAny, PyErr, PyObject, PyResult, Python};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::PyAnyMethods;
@@ -9,7 +10,7 @@ use thiserror::Error;
 use ldatranslate_toolkit::impl_py_stub;
 use crate::dictionary::word_infos::{Domain, Register};
 
-pub const DOMAIN_MODEL_ENTRY_MAX_SIZE: usize = Domain::COUNT + Register::COUNT;
+pub const META_DICT_ARRAY_LENTH: usize = Domain::COUNT + Register::COUNT;
 
 #[derive(Error, Debug, Copy, Clone)]
 #[error("The value {1} is not an index for {0}!")]
@@ -27,23 +28,46 @@ where
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
-pub struct GeneralDomainModelIndex(pub RangedUsize<0, DOMAIN_MODEL_ENTRY_MAX_SIZE>);
+pub struct GeneralDictMetaTagIndex(pub RangedUsize<0, META_DICT_ARRAY_LENTH>);
 
-impl Display for GeneralDomainModelIndex {
+impl GeneralDictMetaTagIndex {
+    pub const fn new(value: usize) -> Option<Self> {
+        match RangedUsize::new(value) {
+            Some(value) => Some(GeneralDictMetaTagIndex(value)),
+            None => None,
+        }
+    }
+
+    pub const unsafe fn new_unchecked(value: usize) -> Self {
+        GeneralDictMetaTagIndex(RangedUsize::new_unchecked(value))
+    }
+
+    fn to_typed(self) -> Either<Domain, Register> {
+        match Domain::from_index(self.0.get()) {
+            Ok(value) => Either::Left(value),
+            _ => match Register::from_index(self.0.get()) {
+                Ok(value) => Either::Right(value),
+                _ => unreachable!()
+            }
+        }
+    }
+}
+
+impl Display for GeneralDictMetaTagIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.0, f)
     }
 }
 
-impl From<RangedUsize<0, DOMAIN_MODEL_ENTRY_MAX_SIZE>> for GeneralDomainModelIndex {
-    fn from(value: RangedUsize<0, DOMAIN_MODEL_ENTRY_MAX_SIZE>) -> Self {
+impl From<RangedUsize<0, META_DICT_ARRAY_LENTH>> for GeneralDictMetaTagIndex {
+    fn from(value: RangedUsize<0, META_DICT_ARRAY_LENTH>) -> Self {
         Self(value)
     }
 }
 
 
 #[derive(Debug, Error)]
-#[error("The value {0} is not in the range of 0..{targ}", targ = DOMAIN_MODEL_ENTRY_MAX_SIZE)]
+#[error("The value {0} is not in the range of 0..{targ}", targ = META_DICT_ARRAY_LENTH)]
 pub struct NotInRangeError(usize);
 
 impl From<NotInRangeError> for PyErr {
@@ -52,14 +76,14 @@ impl From<NotInRangeError> for PyErr {
     }
 }
 
-impl<'py> FromPyObject<'py> for GeneralDomainModelIndex {
+impl<'py> FromPyObject<'py> for GeneralDictMetaTagIndex {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let value: usize = ob.extract()?;
         Ok(value.try_into()?)
     }
 }
 
-impl TryFrom<usize> for GeneralDomainModelIndex {
+impl TryFrom<usize> for GeneralDictMetaTagIndex {
     type Error = NotInRangeError;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
@@ -69,18 +93,18 @@ impl TryFrom<usize> for GeneralDomainModelIndex {
     }
 }
 
-impl DomainModelIndex for GeneralDomainModelIndex {
+impl DomainModelIndex for GeneralDictMetaTagIndex {
     #[inline(always)]
     fn as_index(self) -> usize {
         RangedUsize::get(self.0)
     }
 
     fn from_index(index: usize) -> Result<Self, NotAIndexFor> {
-        Ok(GeneralDomainModelIndex(RangedUsize::from_index(index)?))
+        Ok(GeneralDictMetaTagIndex(RangedUsize::from_index(index)?))
     }
 }
 
-impl DomainModelIndex for RangedUsize<0, DOMAIN_MODEL_ENTRY_MAX_SIZE> {
+impl DomainModelIndex for RangedUsize<0, META_DICT_ARRAY_LENTH> {
     #[inline(always)]
     fn as_index(self) -> usize {
         RangedUsize::get(self)
@@ -94,31 +118,70 @@ impl DomainModelIndex for RangedUsize<0, DOMAIN_MODEL_ENTRY_MAX_SIZE> {
 
 
 #[derive(Copy, Clone, Debug, FromPyObject, Display, PartialEq, Eq, Hash, From)]
-pub enum TopicVectorIndex {
+pub enum DictMetaTagIndex {
     #[strum(to_string = "{0}")]
     Domain(Domain),
     #[strum(to_string = "{0}")]
     Register(Register),
     #[strum(to_string = "{0}")]
-    Index(GeneralDomainModelIndex),
+    Index(GeneralDictMetaTagIndex),
 }
 
-impl IntoPy<PyObject> for TopicVectorIndex {
-    fn into_py(self, py: Python) -> PyObject {
+impl DictMetaTagIndex {
+    pub const fn new_by_domain(domain: Domain) -> Self {
+        Self::Domain(domain)
+    }
+
+    pub const fn new_by_register(register: Register) -> Self {
+        Self::Register(register)
+    }
+
+    pub const fn new(value: usize) -> Option<Self> {
+        match GeneralDictMetaTagIndex::new(value) {
+            None => {
+                None
+            }
+            Some(value) => {
+                Some(Self::Index(value))
+            }
+        }
+    }
+
+    pub const unsafe fn new_unchecked(value: usize) -> Self {
+        Self::Index(GeneralDictMetaTagIndex::new_unchecked(value))
+    }
+
+    pub fn to_typed(self) -> Either<Domain, Register> {
         match self {
-            TopicVectorIndex::Domain(value) => {value.into_py(py)},
-            TopicVectorIndex::Register(value) => {value.into_py(py)},
-            TopicVectorIndex::Index(value) => {value.0.get().into_py(py)},
+            DictMetaTagIndex::Domain(value) => {
+                Either::Left(value)
+            }
+            DictMetaTagIndex::Register(value) => {
+                Either::Right(value)
+            }
+            DictMetaTagIndex::Index(value) => {
+                value.to_typed()
+            }
         }
     }
 }
 
-impl DomainModelIndex for TopicVectorIndex {
+impl IntoPy<PyObject> for DictMetaTagIndex {
+    fn into_py(self, py: Python) -> PyObject {
+        match self {
+            DictMetaTagIndex::Domain(value) => {value.into_py(py)},
+            DictMetaTagIndex::Register(value) => {value.into_py(py)},
+            DictMetaTagIndex::Index(value) => {value.0.get().into_py(py)},
+        }
+    }
+}
+
+impl DomainModelIndex for DictMetaTagIndex {
     fn as_index(self) -> usize {
         match self {
-            TopicVectorIndex::Domain(value) => value.as_index(),
-            TopicVectorIndex::Register(value) => value.as_index(),
-            TopicVectorIndex::Index(value) => value.as_index(),
+            DictMetaTagIndex::Domain(value) => value.as_index(),
+            DictMetaTagIndex::Register(value) => value.as_index(),
+            DictMetaTagIndex::Index(value) => value.as_index(),
         }
     }
 
@@ -137,10 +200,12 @@ impl DomainModelIndex for TopicVectorIndex {
             _ => {}
         }
 
-        GeneralDomainModelIndex::from_index(index).map(Self::Index)
+        GeneralDictMetaTagIndex::from_index(index).map(Self::Index)
     }
 }
 
 impl_py_stub! {
-    TopicVectorIndex: Domain, Register, usize;
+    DictMetaTagIndex: Domain, Register, usize;
 }
+
+

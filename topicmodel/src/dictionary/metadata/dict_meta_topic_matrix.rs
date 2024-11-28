@@ -16,8 +16,8 @@ use strum::EnumCount;
 use thiserror::Error;
 
 register_python!(
-    struct DictMetaTopicModel;
-    struct TopicVector;
+    struct DictMetaModel;
+    struct DictMetaVector;
 );
 
 pub struct DomainVotingModel {
@@ -33,13 +33,13 @@ pub enum DomainModelErrors {
 #[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct DictMetaTopicModel {
-    matrix: Vec<TopicVector>,
+pub struct DictMetaModel {
+    matrix: Vec<DictMetaVector>,
 }
 
 #[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl DictMetaTopicModel {
+impl DictMetaModel {
     #[new]
     #[pyo3(signature = (capacity=None), text_signature = "capacity: None | int = None")]
     pub fn new_py(capacity: Option<usize>) -> Self {
@@ -54,12 +54,12 @@ impl DictMetaTopicModel {
         self.to_string()
     }
 
-    pub fn to_list(&self) -> Vec<TopicVector> {
+    pub fn to_list(&self) -> Vec<DictMetaVector> {
         self.matrix.iter().copied().collect()
     }
 }
 
-impl DictMetaTopicModel {
+impl DictMetaModel {
     pub fn new() -> Self {
         Self { matrix: Vec::new() }
     }
@@ -70,8 +70,8 @@ impl DictMetaTopicModel {
         }
     }
 
-    pub fn create_next(&mut self) -> &mut TopicVector {
-        self.matrix.push(TopicVector::new());
+    pub fn create_next(&mut self) -> &mut DictMetaVector {
+        self.matrix.push(DictMetaVector::new());
         self.matrix.last_mut().unwrap()
     }
 
@@ -84,20 +84,20 @@ impl DictMetaTopicModel {
         *(self.resize_if_necessary(word).get_mut(index)) += value
     }
 
-    fn resize_if_necessary(&mut self, word: usize) -> &mut TopicVector {
+    fn resize_if_necessary(&mut self, word: usize) -> &mut DictMetaVector {
         if self.matrix.capacity() <= word {
             self.matrix.reserve(word - self.matrix.len() + 1);
-            self.matrix.fill(TopicVector::ZERO)
+            self.matrix.fill(DictMetaVector::ZERO)
         }
         unsafe { self.matrix.get_unchecked_mut(word) }
     }
 
-    pub fn add_in_place<E: Into<TopicVector>>(&mut self, word: usize, entry: E) {
+    pub fn add_in_place<E: Into<DictMetaVector>>(&mut self, word: usize, entry: E) {
         let entry = entry.into();
         self.resize_if_necessary(word).add_assign(entry)
     }
 
-    pub fn try_add_in_place<E: TryInto<TopicVector>>(
+    pub fn try_add_in_place<E: TryInto<DictMetaVector>>(
         &mut self,
         word: usize,
         entry: E,
@@ -112,26 +112,26 @@ impl DictMetaTopicModel {
             pub fn reserve(&mut self, additional: usize);
             pub fn reserve_exact(&mut self, additional: usize);
             pub fn truncate(&mut self, len: usize);
-            pub fn drain<R>(&mut self, range: R) -> Drain<'_, TopicVector> where R: RangeBounds<usize>;
+            pub fn drain<R>(&mut self, range: R) -> Drain<'_, DictMetaVector> where R: RangeBounds<usize>;
         }
     }
 }
 
-impl Deref for DictMetaTopicModel {
-    type Target = [TopicVector];
+impl Deref for DictMetaModel {
+    type Target = [DictMetaVector];
 
     fn deref(&self) -> &Self::Target {
         &self.matrix
     }
 }
 
-impl DerefMut for DictMetaTopicModel {
+impl DerefMut for DictMetaModel {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.matrix
     }
 }
 
-impl Display for DictMetaTopicModel {
+impl Display for DictMetaModel {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "[\n")?;
         for x in self.matrix.iter() {
@@ -145,13 +145,13 @@ type Value = f64;
 
 #[derive(Debug, Copy, Clone, FromPyObject)]
 pub enum ValidAdd {
-    Entry(TopicVector),
+    Entry(DictMetaVector),
     Domain(Domain, Value),
     Register(Register, Value),
 }
 
 impl_py_stub!(
-    ValidAdd: TopicVector, (Domain, Value), (Register, Value)
+    ValidAdd: DictMetaVector, (Domain, Value), (Register, Value)
 );
 
 
@@ -162,27 +162,27 @@ impl_py_stub!(
 #[pyclass(eq, frozen)]
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
-pub struct TopicVector {
+pub struct DictMetaVector {
     inner: [Value; Domain::COUNT + Register::COUNT],
 }
 
-impl Eq for TopicVector {}
+impl Eq for DictMetaVector {}
 
-impl PartialEq for TopicVector {
+impl PartialEq for DictMetaVector {
     fn eq(&self, other: &Self) -> bool {
         self.iter().zip_eq(other.iter()).all(|(a, b)| a.eq(b))
     }
 }
 
-impl TopicVector {
-    pub const ZERO: TopicVector = TopicVector {
+impl DictMetaVector {
+    pub const ZERO: DictMetaVector = DictMetaVector {
         inner: [0.0; Domain::COUNT + Register::COUNT],
     };
 }
 
 #[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl TopicVector {
+impl DictMetaVector {
     #[new]
     pub const fn new() -> Self {
         Self::ZERO
@@ -207,7 +207,7 @@ impl TopicVector {
     /// Allows to get the value for a specific topic vector.
     /// Fails with an IndexError iff the index is outside of ht len of this vector.
     ///
-    fn __getitem__(&self, index: TopicVectorIndex) -> Value {
+    fn __getitem__(&self, index: DictMetaTagIndex) -> Value {
         self.get(index)
     }
 
@@ -216,7 +216,7 @@ impl TopicVector {
     }
 
     fn __len__(&self) -> usize {
-        DOMAIN_MODEL_ENTRY_MAX_SIZE
+        META_DICT_ARRAY_LENTH
     }
 
     fn to_list(&self) -> Vec<Value> {
@@ -224,7 +224,7 @@ impl TopicVector {
     }
 }
 
-impl TopicVector {
+impl DictMetaVector {
     pub fn from_meta(meta: &LoadedMetadataEx) -> Self {
         let mut new = Self::new();
         {
@@ -295,13 +295,13 @@ impl TopicVector {
     }
 }
 
-impl From<[Value; Domain::COUNT + Register::COUNT]> for TopicVector {
+impl From<[Value; Domain::COUNT + Register::COUNT]> for DictMetaVector {
     fn from(inner: [Value; Domain::COUNT + Register::COUNT]) -> Self {
         Self { inner }
     }
 }
 
-impl From<&[Value; Domain::COUNT + Register::COUNT]> for TopicVector {
+impl From<&[Value; Domain::COUNT + Register::COUNT]> for DictMetaVector {
     fn from(value: &[Value; Domain::COUNT + Register::COUNT]) -> Self {
         Self {
             inner: value.clone(),
@@ -309,7 +309,7 @@ impl From<&[Value; Domain::COUNT + Register::COUNT]> for TopicVector {
     }
 }
 
-impl From<ValidAdd> for TopicVector {
+impl From<ValidAdd> for DictMetaVector {
     fn from(value: ValidAdd) -> Self {
         match value {
             ValidAdd::Entry(value) => value,
@@ -332,7 +332,7 @@ impl From<ValidAdd> for TopicVector {
 pub struct WrongLenError(usize);
 
 impl WrongLenError {
-    pub const EXPECTED_SIZE: usize = DOMAIN_MODEL_ENTRY_MAX_SIZE;
+    pub const EXPECTED_SIZE: usize = META_DICT_ARRAY_LENTH;
 }
 
 // impl<T> TryFrom<T> for Entry where T: AsRef<[Value]> {
@@ -349,159 +349,159 @@ impl WrongLenError {
 //     }
 // }
 
-impl Add for TopicVector {
-    type Output = TopicVector;
+impl Add for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn add(mut self, rhs: Self) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] += rhs[value];
         }
         self
     }
 }
 
-impl Add<Value> for TopicVector {
-    type Output = TopicVector;
+impl Add<Value> for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn add(mut self, rhs: Value) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] -= rhs;
         }
         self
     }
 }
 
-impl AddAssign for TopicVector {
+impl AddAssign for DictMetaVector {
     fn add_assign(&mut self, rhs: Self) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] += rhs[value];
         }
     }
 }
 
-impl AddAssign<Value> for TopicVector {
+impl AddAssign<Value> for DictMetaVector {
     fn add_assign(&mut self, rhs: Value) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] += rhs;
         }
     }
 }
 
-impl Sub for TopicVector {
-    type Output = TopicVector;
+impl Sub for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn sub(mut self, rhs: Self) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] -= rhs[value];
         }
         self
     }
 }
 
-impl Sub<Value> for TopicVector {
-    type Output = TopicVector;
+impl Sub<Value> for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn sub(mut self, rhs: Value) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] -= rhs;
         }
         self
     }
 }
 
-impl SubAssign for TopicVector {
+impl SubAssign for DictMetaVector {
     fn sub_assign(&mut self, rhs: Self) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] -= rhs[value];
         }
     }
 }
 
-impl SubAssign<Value> for TopicVector {
+impl SubAssign<Value> for DictMetaVector {
     fn sub_assign(&mut self, rhs: Value) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] -= rhs;
         }
     }
 }
 
-impl Mul for TopicVector {
-    type Output = TopicVector;
+impl Mul for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn mul(mut self, rhs: Self) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] *= rhs[value];
         }
         self
     }
 }
 
-impl Mul<Value> for TopicVector {
-    type Output = TopicVector;
+impl Mul<Value> for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn mul(mut self, rhs: Value) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] *= rhs;
         }
         self
     }
 }
 
-impl MulAssign for TopicVector {
+impl MulAssign for DictMetaVector {
     fn mul_assign(&mut self, rhs: Self) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] *= rhs[value];
         }
     }
 }
 
-impl MulAssign<Value> for TopicVector {
+impl MulAssign<Value> for DictMetaVector {
     fn mul_assign(&mut self, rhs: Value) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] *= rhs;
         }
     }
 }
 
-impl Div for TopicVector {
-    type Output = TopicVector;
+impl Div for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn div(mut self, rhs: Self) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] /= rhs[value];
         }
         self
     }
 }
 
-impl Div<Value> for TopicVector {
-    type Output = TopicVector;
+impl Div<Value> for DictMetaVector {
+    type Output = DictMetaVector;
 
     fn div(mut self, rhs: Value) -> Self::Output {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] /= rhs;
         }
         self
     }
 }
 
-impl DivAssign for TopicVector {
+impl DivAssign for DictMetaVector {
     fn div_assign(&mut self, rhs: Self) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] /= rhs[value];
         }
     }
 }
 
-impl DivAssign<Value> for TopicVector {
+impl DivAssign<Value> for DictMetaVector {
     fn div_assign(&mut self, rhs: Value) {
-        for value in 0..DOMAIN_MODEL_ENTRY_MAX_SIZE {
+        for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] /= rhs;
         }
     }
 }
 
-impl Deref for TopicVector {
+impl Deref for DictMetaVector {
     type Target = [Value];
 
     fn deref(&self) -> &Self::Target {
@@ -509,13 +509,13 @@ impl Deref for TopicVector {
     }
 }
 
-impl DerefMut for TopicVector {
+impl DerefMut for DictMetaVector {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl Display for TopicVector {
+impl Display for DictMetaVector {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}]", self.inner.iter().join(", "))
     }

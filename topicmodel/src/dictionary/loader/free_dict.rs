@@ -536,8 +536,8 @@ mod test {
     use std::collections::HashSet;
     use std::fs::File;
     use std::io::BufReader;
-    use crate::topicmodel::dictionary::loader::free_dict::{read_free_dict};
-    use crate::topicmodel::dictionary::loader::helper::gen_freedict_tei_reader::{iter_for_usg_element, TypeAttribute};
+    use crate::dictionary::loader::free_dict::{read_free_dict};
+    use crate::dictionary::loader::helper::gen_freedict_tei_reader::{iter_for_usg_element, TypeAttribute};
 
     #[test]
     fn can_da(){

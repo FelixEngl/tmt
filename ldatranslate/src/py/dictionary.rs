@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::py::helpers::LanguageHintValue;
 use crate::py::vocabulary::PyVocabulary;
-use ldatranslate_topicmodel::dictionary::direction::{DirectionKind, DirectionTuple, LanguageKind};
+use ldatranslate_topicmodel::dictionary::direction::{DirectionMarker, DirectedElement, LanguageMarker};
 use ldatranslate_topicmodel::dictionary::iterators::{DictionaryWithMetaIterator};
 use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetadataEx, MetaField};
 use ldatranslate_topicmodel::dictionary::metadata::{MetaIterOwned, MetadataManager};
@@ -43,7 +43,7 @@ use ldatranslate_toolkit::from_str_ex::ParseEx;
 use ldatranslate_toolkit::special_python_values::{PyEither, PyEitherOrBoth};
 use ldatranslate_topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 use ldatranslate_topicmodel::dictionary::len::Len;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::TopicVector;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector;
 use ldatranslate_topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
 
 pub type DefaultDict = EfficientDictWithMetaDefault;
@@ -155,7 +155,7 @@ impl PyDictionary {
         query: SearchInput<'py>,
         search_type: Option<SearchTypeUnion>,
         threshold: Option<PyEither<usize, f64>>,
-        target_language: Option<LanguageKind>,
+        target_language: Option<LanguageMarker>,
         ignores_ascii_case: Option<bool>,
     ) -> PyResult<SearchResultContainer> {
         let ignores_ascii_case = ignores_ascii_case.unwrap_or(false);
@@ -192,10 +192,10 @@ impl PyDictionary {
                             PyEither::left(Vec::with_capacity(0))
                         )
                     }
-                    Some(LanguageKind::A) => {
+                    Some(LanguageMarker::A) => {
                         PyEitherOrBoth::left(PyEither::left(Vec::with_capacity(0)))
                     }
-                    Some(LanguageKind::B) => {
+                    Some(LanguageMarker::B) => {
                         PyEitherOrBoth::right(PyEither::left(Vec::with_capacity(0)))
                     }
                 }
@@ -306,7 +306,7 @@ impl PyDictionary {
     fn voc_a_py(&self) -> PyVocabulary {
         PyVocabulary::new_from_dict(
             self.inner.clone(),
-            LanguageKind::A
+            LanguageMarker::A
         )
     }
 
@@ -316,13 +316,13 @@ impl PyDictionary {
     fn voc_b_py(&self) -> PyVocabulary {
         PyVocabulary::new_from_dict(
             self.inner.clone(),
-            LanguageKind::B
+            LanguageMarker::B
         )
     }
 
     /// Returns the topic vetor vor a specific word. Can be None if the word does not exist or
     /// no metadata is set.
-    pub fn topic_vector_a(&self, word: &str) -> Option<TopicVector> {
+    pub fn topic_vector_a(&self, word: &str) -> Option<DictMetaVector> {
         let read = self.get();
         let entry = read.voc_a().get_id(word)?;
         read.metadata().get_meta_a(entry)?.topic_vector()
@@ -330,7 +330,7 @@ impl PyDictionary {
 
     /// Returns the topic vetor vor a specific word. Can be None if the word does not exist or
     /// no metadata is set.
-    pub fn topic_vector_b(&self, word: &str) -> Option<TopicVector> {
+    pub fn topic_vector_b(&self, word: &str) -> Option<DictMetaVector> {
         let read = self.get();
         let entry = read.voc_b().get_id(word)?;
         read.metadata().get_meta_b(entry)?.topic_vector()
@@ -385,7 +385,7 @@ impl PyDictionary {
         &mut self,
         word_a: (String, Option<LoadedMetadataEx>),
         word_b: (String, Option<LoadedMetadataEx>)
-    ) -> PyResult<(usize, usize, DirectionKind)> {
+    ) -> PyResult<(usize, usize, DirectionMarker)> {
         let (a_word, a_solved) = word_a;
         let (b_word, b_solved) = word_b;
 
@@ -398,7 +398,7 @@ impl PyDictionary {
             b_solved.as_ref(),
         ) {
             Ok((a, b)) => {
-                Ok((a, b, DirectionKind::Invariant))
+                Ok((a, b, DirectionMarker::Invariant))
             }
             Err((_, err)) => {
                 Err(PyValueError::new_err(format!("{err}")))
@@ -494,11 +494,11 @@ impl PyDictionary {
     }
 
     fn iter_meta_a(&self) -> PyMetaIter {
-        PyMetaIter::new(self, DirectionKind::AToB)
+        PyMetaIter::new(self, DirectionMarker::AToB)
     }
 
     fn iter_meta_b(&self) -> PyMetaIter {
-        PyMetaIter::new(self, DirectionKind::BToA)
+        PyMetaIter::new(self, DirectionMarker::BToA)
     }
 
     /// Filters a dictionary by the defined methods and returns a new instance.
@@ -777,8 +777,8 @@ impl crate::py::dictionary::PyDictIter {
         slf
     }
 
-    fn __next__(&mut self) -> Option<((usize, String, Option<LoadedMetadataEx>), (usize, String, Option<LoadedMetadataEx>), DirectionKind)> {
-        let DirectionTuple{
+    fn __next__(&mut self) -> Option<((usize, String, Option<LoadedMetadataEx>), (usize, String, Option<LoadedMetadataEx>), DirectionMarker)> {
+        let DirectedElement {
             a: (a, word_a, meta_a),
             b: (b, word_b, meta_b),
             direction
@@ -805,7 +805,7 @@ unsafe impl Send for PyMetaIter {}
 unsafe impl Sync for PyMetaIter {}
 
 impl PyMetaIter {
-    pub fn new(inner: &PyDictionary, direction: DirectionKind) -> Self {
+    pub fn new(inner: &PyDictionary, direction: DirectionMarker) -> Self {
         Self {
             inner: MetaIterOwned::new(inner.inner.clone(), direction)
         }
@@ -837,7 +837,7 @@ mod test  {
     use std::collections::HashSet;
     use strum::IntoEnumIterator;
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryFilterable, DictionaryWithVocabulary};
-    use ldatranslate_topicmodel::dictionary::direction::DirectionKind;
+    use ldatranslate_topicmodel::dictionary::direction::DirectionMarker;
     use ldatranslate_topicmodel::dictionary::io::WriteableDictionary;
     use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
     use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
@@ -848,7 +848,7 @@ mod test  {
     fn see(){
         let dict = PyDictionary::load(r#"E:\git\tmt\test\dictionary_final3.dat.zst"#.into()).unwrap();
         let mut set = HashSet::new();
-        for value in dict.get().iter_with_meta_dir(DirectionKind::Invariant) {
+        for value in dict.get().iter_with_meta_dir(DirectionMarker::Invariant) {
             assert!(set.insert((value.a.0, value.b.0)))
         }
     }

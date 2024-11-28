@@ -121,7 +121,7 @@ macro_rules! create_struct {
 
             fn get_meta_mut_for<'a>(
                 &'a mut self,
-                lang: $crate::dictionary::direction::LanguageKind,
+                lang: $crate::dictionary::direction::LanguageMarker,
                 vocabulary: &'a mut dyn $crate::vocabulary::AnonymousVocabularyMut,
                 word_id: usize
             ) -> Option<Self::MutReference<'a>> {
@@ -144,7 +144,7 @@ macro_rules! create_struct {
 
             fn get_or_create_meta_for<'a>(
                 &'a mut self,
-                lang: $crate::dictionary::direction::LanguageKind,
+                lang: $crate::dictionary::direction::LanguageMarker,
                 vocabulary: &'a mut dyn $crate::vocabulary::AnonymousVocabularyMut,
                 word_id: usize
             ) -> Self::MutReference<'a> {
@@ -178,7 +178,7 @@ macro_rules! create_struct {
 
             fn get_meta_ref_for<'a>(
                 &'a self,
-                lang: $crate::dictionary::direction::LanguageKind,
+                lang: $crate::dictionary::direction::LanguageMarker,
                 vocabulary: $crate::vocabulary::AnonymousVocabularyRef<'a>,
                 word_id: usize
             ) -> Option<Self::Reference<'a>> {

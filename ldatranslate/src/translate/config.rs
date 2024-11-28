@@ -4,6 +4,7 @@ use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use strum::{AsRefStr, Display, EnumString, ParseError};
 use ldatranslate_toolkit::register_python;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{GeneralDictMetaTagIndex, DictMetaTagIndex};
 
 /// Setting if to keep the original word from language A
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
@@ -65,9 +66,17 @@ pub struct TranslateConfig<V: VotingMethodMarker> {
     pub top_candidate_limit: Option<NonZeroUsize>,
 }
 
+pub enum BoostScoreBy {
+    Domains(Vec<DictMetaTagIndex>)
+}
+
 impl<V> TranslateConfig<V> where V: VotingMethodMarker {
     pub fn new(voting: V, epsilon: Option<f64>, threshold: Option<f64>, keep_original_word: KeepOriginalWord, top_candidate_limit: Option<NonZeroUsize>) -> Self {
         Self { epsilon, voting, threshold, keep_original_word, top_candidate_limit }
+    }
+
+    pub fn requires_metadata(&self) -> bool {
+        todo!()
     }
 }
 

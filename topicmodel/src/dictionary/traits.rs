@@ -6,7 +6,7 @@ use std::borrow::Borrow;
 use std::hash::Hash;
 use itertools::Itertools;
 use ldatranslate_tokenizer::Tokenizer;
-use crate::dictionary::direction::{DirectionKind, DirectionTuple, A, B};
+use crate::dictionary::direction::{DirectionMarker, DirectedElement, A, B};
 use crate::dictionary::hacks::ABMutReference;
 use crate::dictionary::iterators::{DictIter, DictIterImpl, DictLangIter};
 use crate::dictionary::len::Len;
@@ -35,21 +35,21 @@ pub trait BasicDictionary: Send + Sync {
 
     /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
     fn iter(&self) -> DictIter {
-        self.iter_dir(DirectionKind::Invariant)
+        self.iter_dir(DirectionMarker::Invariant)
     }
 
-    fn iter_dir(&self, direction: DirectionKind) -> DictIter {
+    fn iter_dir(&self, direction: DirectionMarker) -> DictIter {
         DictIterImpl::new(self, direction)
     }
 
     /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
     fn iter_a(&self) -> DictIter {
-        self.iter_dir(DirectionKind::AToB)
+        self.iter_dir(DirectionMarker::AToB)
     }
 
     /// Iterates over all mappings (a to b and b to a), does not filter for uniqueness.
     fn iter_b(&self) -> DictIter {
-        self.iter_dir(DirectionKind::BToA)
+        self.iter_dir(DirectionMarker::BToA)
     }
 }
 
@@ -192,7 +192,7 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         Q: Hash + Eq,
         V: SearchableVocabulary<T>
     {
-        self.translate_id_b_to_id_a(self.voc_a().get_id(word)?)
+        self.translate_id_b_to_id_a(self.voc_b().get_id(word)?)
     }
 
 
@@ -326,49 +326,49 @@ where
         self.insert_raw_values_b_to_a(word_id_a, word_id_b);
     }
 
-    fn insert_word_a_to_b(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_a_to_b(&mut self, word_a: T, word_b: T) -> DirectedElement<usize, usize> {
         let id_a = self.voc_a_mut().add_value(word_a);
         let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_a_to_b(id_a, id_b); }
-        DirectionTuple::new(id_a, id_b, DirectionKind::AToB)
+        DirectedElement::new(id_a, id_b, DirectionMarker::AToB)
     }
-    fn insert_word_b_to_a(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_b_to_a(&mut self, word_a: T, word_b: T) -> DirectedElement<usize, usize> {
         let id_a = self.voc_a_mut().add_value(word_a);
         let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_b_to_a(id_a, id_b); }
-        DirectionTuple::new(id_a, id_b, DirectionKind::BToA)
+        DirectedElement::new(id_a, id_b, DirectionMarker::BToA)
     }
-    fn insert_word_invariant(&mut self, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_word_invariant(&mut self, word_a: T, word_b: T) -> DirectedElement<usize, usize> {
         let id_a = self.voc_a_mut().add_value(word_a);
         let id_b = self.voc_b_mut().add_value(word_b);
         unsafe { self.insert_raw_values_invariant(id_a, id_b); }
-        DirectionTuple::new(id_a, id_b, DirectionKind::Invariant)
+        DirectedElement::new(id_a, id_b, DirectionMarker::Invariant)
     }
-    fn insert_value_dir(&mut self, dir: DirectionKind, word_a: T, word_b: T) -> DirectionTuple<usize, usize> {
+    fn insert_value_dir(&mut self, dir: DirectionMarker, word_a: T, word_b: T) -> DirectedElement<usize, usize> {
         match dir {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 self.insert_word_a_to_b(word_a, word_b)
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 self.insert_word_b_to_a(word_a, word_b)
             }
-            DirectionKind::Invariant => {
+            DirectionMarker::Invariant => {
                 self.insert_word_invariant(word_a, word_b)
             }
         }
     }
 
 
-    fn insert_a_to_b(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
+    fn insert_a_to_b(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectedElement<usize, usize> {
         self.insert_word_a_to_b(word_a.into(), word_b.into())
     }
-    fn insert_b_to_a(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
+    fn insert_b_to_a(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectedElement<usize, usize> {
         self.insert_word_b_to_a(word_a.into(), word_b.into())
     }
-    fn insert_invariant(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
+    fn insert_invariant(&mut self, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectedElement<usize, usize> {
         self.insert_word_invariant(word_a.into(), word_b.into())
     }
-    fn insert_dir(&mut self, dir: DirectionKind, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectionTuple<usize, usize> {
+    fn insert_dir(&mut self, dir: DirectionMarker, word_a: impl Into<T>, word_b: impl Into<T>) -> DirectedElement<usize, usize> {
         self.insert_value_dir(dir, word_a.into(), word_b.into())
     }
 
@@ -456,24 +456,24 @@ where
 
     fn metadata_mut(&mut self) -> &mut M;
 
-    fn iter_with_meta_dir(&self, direction: DirectionKind) -> DictionaryWithMetaIter<Self, M, V> {
+    fn iter_with_meta_dir(&self, direction: DirectionMarker) -> DictionaryWithMetaIter<Self, M, V> {
         DictionaryWithMetaIter::new(self, direction)
     }
 
     fn iter_with_meta(&self) -> DictionaryWithMetaIter<Self, M, V> {
-        self.iter_with_meta_dir(DirectionKind::Invariant)
+        self.iter_with_meta_dir(DirectionMarker::Invariant)
     }
 
     fn iter_meta(&self) -> MetaIter<Self, M, V> {
-        MetaIter::new(self, DirectionKind::Invariant)
+        MetaIter::new(self, DirectionMarker::Invariant)
     }
 
     fn iter_meta_a(&self) -> MetaIter<Self, M, V> {
-        MetaIter::new(self, DirectionKind::AToB)
+        MetaIter::new(self, DirectionMarker::AToB)
     }
 
     fn iter_meta_b(&self) -> MetaIter<Self, M, V> {
-        MetaIter::new(self, DirectionKind::BToA)
+        MetaIter::new(self, DirectionMarker::BToA)
     }
 
     fn get_meta_for_a<'a>(&'a self, word_id: usize) -> Option<<M as MetadataManager>::Reference<'a>>;
@@ -489,15 +489,15 @@ where
 {
 
     fn iter_meta_mut(&mut self) -> MetaMutIter<Self, M, V> {
-        MetaMutIter::new(self, DirectionKind::Invariant)
+        MetaMutIter::new(self, DirectionMarker::Invariant)
     }
 
     fn iter_meta_a_mut(&mut self) -> MetaMutIter<Self, M, V> {
-        MetaMutIter::new(self, DirectionKind::AToB)
+        MetaMutIter::new(self, DirectionMarker::AToB)
     }
 
     fn iter_meta_b_mut(&mut self) -> MetaMutIter<Self, M, V> {
-        MetaMutIter::new(self, DirectionKind::BToA)
+        MetaMutIter::new(self, DirectionMarker::BToA)
     }
 
     fn get_mut_meta_a<'a>(&'a mut self, word_id: usize) -> Option<<M as MetadataManager>::MutReference<'a>>;
@@ -521,47 +521,47 @@ where
 {
 
     fn push_hash_ref_a_to_b<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
-        let DirectionTuple { a, b, direction: _ } = self.insert_word_a_to_b(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_word_a_to_b(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_hash_ref_b_to_a<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
-        let DirectionTuple { a, b, direction: _ } = self.insert_word_b_to_a(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_word_b_to_a(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_hash_ref_invariant<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M> {
-        let DirectionTuple { a, b, direction: _ } = self.insert_word_invariant(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_word_invariant(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_word_a_to_b<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M>  {
-        let DirectionTuple { a, b, direction: _ } = self.insert_word_a_to_b(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_word_a_to_b(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_word_b_to_a<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M>  {
-        let DirectionTuple { a, b, direction: _ } = self.insert_word_b_to_a(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_word_b_to_a(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_word_invariant<'a>(&'a mut self, a: T, b: T) -> ABMutReference<'a, M>  {
-        let DirectionTuple { a, b, direction: _ } = self.insert_word_invariant(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_word_invariant(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_a_to_b<'a>(&'a mut self, a: impl Into<T>, b: impl Into<T>) -> ABMutReference<'a, M>  {
-        let DirectionTuple { a, b, direction: _ } = self.insert_a_to_b(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_a_to_b(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_b_to_a<'a>(&'a mut self, a: impl Into<T>, b: impl Into<T>) -> ABMutReference<'a, M>  {
-        let DirectionTuple { a, b, direction: _ } = self.insert_b_to_a(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_b_to_a(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
     fn push_invariant<'a>(&'a mut self, a: impl Into<T>, b: impl Into<T>) -> ABMutReference<'a, M>  {
-        let DirectionTuple { a, b, direction: _ } = self.insert_invariant(a, b);
+        let DirectedElement { a, b, direction: _ } = self.insert_invariant(a, b);
         self.get_or_create_meta_a_and_b(a, b)
     }
 
@@ -636,20 +636,20 @@ where
 
     fn insert_translation_ref_with_meta_dir(
         &mut self,
-        direction: DirectionKind,
+        direction: DirectionMarker,
         word_a: T,
         meta_a: Option<&<M as MetadataManager>::ResolvedMetadata>,
         word_b: T,
         meta_b: Option<&<M as MetadataManager>::ResolvedMetadata>
     ) -> Result<(usize, usize), (usize, <M as MetadataManager>::UpdateError)> {
         match direction {
-            DirectionKind::AToB => {
+            DirectionMarker::AToB => {
                 self.insert_translation_ref_with_meta_a_to_b(word_a, meta_a, word_b, meta_b)
             }
-            DirectionKind::BToA => {
+            DirectionMarker::BToA => {
                 self.insert_translation_ref_with_meta_b_to_a(word_a, meta_a, word_b, meta_b)
             }
-            DirectionKind::Invariant => {
+            DirectionMarker::Invariant => {
                 self.insert_translation_ref_with_meta_invariant(word_a, meta_a, word_b, meta_b)
             }
         }

@@ -150,7 +150,7 @@ pub mod test {
     use std::error::Error;
     use std::fmt::{Debug, Display};
     use nom::IResult;
-    use crate::topicmodel::dictionary::loader::helper::{take_nested_bracket_delimited, HasLineInfo};
+    use crate::dictionary::loader::helper::{take_nested_bracket_delimited, HasLineInfo};
 
     pub fn execute_test_read_for<O, E, I, Iter>(
         function_based_line_wise_reader: I,

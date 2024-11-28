@@ -24,11 +24,11 @@ use crate::py::dictionary::{PyDictionary};
 use crate::py::helpers::{LanguageHintValue, ListOrInt};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_toolkit::rw_ext::RWLockUnwrapped;
-use ldatranslate_topicmodel::create_topic_model_specific_dictionary as create_topic_model_specific_dictionary_impl;
 use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithVocabulary, DictionaryWithMeta};
-use ldatranslate_topicmodel::dictionary::direction::LanguageKind;
+use ldatranslate_topicmodel::dictionary::direction::LanguageMarker;
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataManagerEx;
 use ldatranslate_topicmodel::language_hint::{LanguageHint};
+use ldatranslate_topicmodel::translate::create_topic_vocabulary_specific_dictionary;
 use ldatranslate_topicmodel::vocabulary::{LoadableVocabulary, StoreableVocabulary, BasicVocabulary, Vocabulary, VocabularyMut, SearchableVocabulary};
 
 
@@ -54,7 +54,7 @@ impl PyVocabulary {
 
     pub fn new_from_dict(
         origin: Arc<RwLock<DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>>,
-        target: LanguageKind,
+        target: LanguageMarker,
     ) -> Self {
         Self { inner: PyVocabularyInner::dict_based(origin, target) }
     }
@@ -189,7 +189,7 @@ impl PyVocabulary {
 enum PyVocabularyInner {
     DictBased {
         origin: Arc<RwLock<DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>>,
-        target: LanguageKind,
+        target: LanguageMarker,
         mut_version: Arc<AtomicUsize>
     },
     Raw {
@@ -207,7 +207,7 @@ impl PyVocabularyInner {
 
     pub fn dict_based(
         origin: Arc<RwLock<DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>>,
-        target: LanguageKind,
+        target: LanguageMarker,
     ) -> Self {
         Self::DictBased {
             origin,
@@ -313,7 +313,7 @@ impl PyVocabularyInner {
 pub enum PyVocabularyRef<'a> {
     DictBased {
         origin: RwLockReadGuard<'a, DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>,
-        target: LanguageKind,
+        target: LanguageMarker,
         mut_version: Arc<AtomicUsize>,
     },
     Raw {
@@ -344,10 +344,10 @@ impl<'a> Deref for PyVocabularyRef<'a> {
                 ..
             } => {
                 match target {
-                    LanguageKind::A => {
+                    LanguageMarker::A => {
                         origin.voc_a()
                     }
-                    LanguageKind::B => {
+                    LanguageMarker::B => {
                         origin.voc_b()
                     }
                 }
@@ -366,7 +366,7 @@ impl<'a> Deref for PyVocabularyRef<'a> {
 pub enum PyVocabularyRefMut<'a> {
     DictBased {
         origin: RwLockWriteGuard<'a, DictionaryWithMeta<UnderlyingPyWord, Vocabulary<UnderlyingPyWord>, MetadataManagerEx>>,
-        target: LanguageKind,
+        target: LanguageMarker,
         mut_version: Arc<AtomicUsize>,
     },
     Raw {
@@ -397,10 +397,10 @@ impl<'a> Deref for PyVocabularyRefMut<'a> {
                 ..
             } => {
                 match target {
-                    LanguageKind::A => {
+                    LanguageMarker::A => {
                         origin.voc_a()
                     }
-                    LanguageKind::B => {
+                    LanguageMarker::B => {
                         origin.voc_b()
                     }
                 }
@@ -424,10 +424,10 @@ impl<'a> DerefMut for PyVocabularyRefMut<'a> {
             } => {
                 mut_version.fetch_add(1, Ordering::Release);
                 match target {
-                    LanguageKind::A => {
+                    LanguageMarker::A => {
                         origin.voc_a_mut()
                     }
-                    LanguageKind::B => {
+                    LanguageMarker::B => {
                         origin.voc_b_mut()
                     }
                 }
@@ -496,7 +496,7 @@ impl PyVocIter {
 pub fn create_topic_model_specific_dictionary(dictionary: &PyDictionary, vocabulary: &PyVocabulary) -> PyDictionary {
     let read = dictionary.get();
     let read_voc = vocabulary.get();
-    let result = create_topic_model_specific_dictionary_impl(
+    let result = create_topic_vocabulary_specific_dictionary(
         read.deref(),
         read_voc.deref()
     );
