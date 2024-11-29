@@ -38,6 +38,8 @@ inventory.workspace = true
 sealed.workspace = true
 ndarray.workspace = true
 ndarray-stats.workspace = true
+num.workspace = true
+approx.workspace = true
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

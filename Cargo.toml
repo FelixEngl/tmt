@@ -37,11 +37,7 @@ num = "0.4"
 num_enum = "0.7"
 derive_more = { version = "1.0", features = ["from", "try_from", "try_into"] }
 paste = "1.0"
-#derive-where = "1.2"
-#tap = "1"
 compact_str = "0.7"
-#sevenz-rust = "0.6.0"
-#memchr = "2"
 rust-stemmers = { version = "1" }
 charabia = "0.8"
 trie-rs = { version = "0.4", features = ["serde", "rayon"] }
@@ -56,7 +52,6 @@ const-str = "0.5"
 quick-xml = { version = "0.37" }
 derive_builder = "0.20"
 memchr = "2.7"
-#derive-where = "1.2"
 convert_case = "0"
 indexmap = { version = "2.6", features = ["serde"] }
 tar = "0.4"

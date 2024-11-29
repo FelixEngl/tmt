@@ -216,6 +216,12 @@ impl DomainCount {
     }
 }
 
+impl AsRef<[u64; META_DICT_ARRAY_LENTH]> for DomainCount {
+    fn as_ref(&self) -> &[u64; META_DICT_ARRAY_LENTH] {
+        &self.counts
+    }
+}
+
 impl Deref for DomainCount {
     type Target = [u64; META_DICT_ARRAY_LENTH];
     fn deref(&self) -> &Self::Target {

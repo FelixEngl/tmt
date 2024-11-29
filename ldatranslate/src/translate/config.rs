@@ -4,7 +4,7 @@ use pyo3::{pyclass, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use strum::{AsRefStr, Display, EnumString, ParseError};
 use ldatranslate_toolkit::register_python;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{GeneralDictMetaTagIndex, DictMetaTagIndex};
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex};
 
 /// Setting if to keep the original word from language A
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]

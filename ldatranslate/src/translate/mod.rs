@@ -18,6 +18,7 @@ mod language;
 mod phantoms;
 mod candidate;
 mod dict_meta;
+mod entropies;
 // pub mod topic_model_specific;
 
 use std::collections::hash_map::Entry;

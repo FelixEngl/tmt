@@ -14,7 +14,6 @@
 
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
-use std::fs::read_to_string;
 use std::num::NonZeroUsize;
 use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprNumericTypesConvert, IterateVariablesContext, Value};
 use crate::variable_provider::variable_names::{BOOST_SCORE, NUMBER_OF_VOTERS, RANK};

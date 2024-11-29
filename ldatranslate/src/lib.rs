@@ -12,8 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-extern crate core;
-
 use env_logger::Target;
 use log::LevelFilter;
 use pyo3::{pymodule, Bound, PyResult};

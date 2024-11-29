@@ -1242,6 +1242,7 @@ name = "ldatranslate"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "approx",
  "arcstr",
  "bincode",
  "camino",
@@ -1264,6 +1265,7 @@ dependencies = [
  "ndarray",
  "ndarray-stats",
  "nom",
+ "num",
  "pyo3",
  "pyo3-stub-gen",
  "rayon",
