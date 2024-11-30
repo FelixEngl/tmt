@@ -272,6 +272,11 @@ impl<D> WriteableDictionary for D where D: BasicDictionary + Serialize {
 
     fn write_to_path(&self, mode: WriteMode, path: impl AsRef<Utf8Path>) -> Result<Utf8PathBuf, IoError> {
         let mut path = path.as_ref().to_path_buf();
+        if !path.exists() {
+            std::fs::create_dir_all(
+                path.parent().ok_or_else(|| IoError::IoError(io::Error::from(io::ErrorKind::NotFound)))?
+            )?;
+        }
         if !path
             .file_name()
             .map(|value| value.ends_with(mode.associated_extension()))

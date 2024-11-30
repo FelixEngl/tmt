@@ -125,7 +125,7 @@ impl<'a, T, V> DictBridge<'a, T, V> where V: BasicVocabulary<T> + AnonymousVocab
     }
 }
 
-pub fn vote_for_domains_with_targets<'a, Target, T, V, Voc, P>(
+pub fn meta_to_topic_association_voting<'a, Target, T, V, Voc, P>(
     target: &'a Target,
     dictionary: &'a DictionaryWithMeta<T, Voc, MetadataManagerEx>,
     translate_config: &VoteConfig<V>,
@@ -234,19 +234,19 @@ where
                     }
                 }
             } else {
-               Ok(topic_context_2.to_owning_with(&topic_context))
+                Ok(topic_context_2.to_owning_with(&topic_context))
             }.and_then(|context| {
 
-                let mut candidates_to_voters: [_; META_DICT_ARRAY_LENTH] = std::array::from_fn(|_| Vec::with_capacity(topic.len()));
+                let mut meta_info_to_word_to_normalized_count: [_; META_DICT_ARRAY_LENTH] = std::array::from_fn(|_| Vec::with_capacity(topic.len()));
                 for (original_word_id, _) in topic.iter().enumerate() {
                     if let Some(value) = bridge.get_meta_for_voc_id(original_word_id) {
                         let domain_count = value.domain_count();
                         for (i, value) in domain_count.iter().enumerate() {
-                            candidates_to_voters[i].push((*value) as f64 / norm_value);
+                            meta_info_to_word_to_normalized_count[i].push((*value) as f64 / norm_value);
                         }
                     }
                 }
-                candidates_to_voters.par_iter().enumerate().map(|(candidate_id, voters)| {
+                meta_info_to_word_to_normalized_count.par_iter().enumerate().map(|(candidate_id, voters)| {
                     vote_for_domain_in_topic(
                         target,
                         topic_id,
@@ -293,7 +293,7 @@ where V: VotingMethodMarker,
     let mut voters = mapped.iter().zip_eq(candidate_scores.iter()).map(|(voter_a, domain_score_norm)|{
         let mut context_voter_a = context_map! {
             SCORE_CANDIDATE => as float voter_a.score(),
-            SCORE_DOMAIN => as float  *domain_score_norm,
+            SCORE_DOMAIN => as float *domain_score_norm,
             SCORE => as float  voter_a.score(),
             VOTER_ID => as int  voter_a.voter_id(),
             RECIPROCAL_RANK => as float 1./ voter_a.importance() as f64,
@@ -326,4 +326,9 @@ where V: VotingMethodMarker,
         &mut context,
         voters.as_mut_slice()
     )?)
+}
+
+#[cfg(test)]
+mod test {
+
 }

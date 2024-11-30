@@ -24,7 +24,6 @@ use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
-use crate::domain_voting::{vote_for_domains_with_targets, VoteConfig};
 use crate::translate::{KeepOriginalWord, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
@@ -34,71 +33,71 @@ use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyExprValue, PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
 
-/// The config for a translation
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct PyVoteConfig {
-    /// The epsilon to be used, if it is none it is determined heuristically.
-    pub epsilon: Option<f64>,
-    /// The threshold of the probabilities allowed to be used as voters
-    pub threshold: Option<f64>,
-    /// Limits the number of accepted candidates to N. If not set keep all.
-    pub top_candidate_limit: Option<NonZeroUsize>,
-    /// Declares a field that boosts the score iff present.
-    pub boost_with: Option<Value>
-}
-
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
-#[pymethods]
-impl PyVoteConfig {
-    #[new]
-    #[pyo3(signature = (epsilon=None, threshold=None, top_candidate_limit=None, boost_with=None))]
-    pub fn new(epsilon: Option<f64>, threshold: Option<f64>, top_candidate_limit: Option<usize>, boost_with: Option<PyExprValue>) -> Self {
-        Self {
-            epsilon,
-            threshold,
-            top_candidate_limit: top_candidate_limit.and_then(|x| NonZeroUsize::new(x)),
-            boost_with: boost_with.map(|v| v.into())
-        }
-    }
-}
-
-impl PyVoteConfig {
-    fn to_vote_config(self, voting: VotingArg, voting_registry: Option<PyVotingRegistry>) -> PyResult<VoteConfig<Wrapper>> {
-        let voting = match voting {
-            VotingArg::Voting(voting) => {
-                Wrapper::Internal(voting)
-            }
-            VotingArg::Parseable(voting) => {
-                match parse::<nom::error::Error<_>>(ParserInput::new(&voting, voting_registry.unwrap_or_default().registry())) {
-                    Ok((_, value)) => {
-                        Wrapper::Internal(value.into())
-                    }
-                    Err(err) => {
-                        return Err(PyValueError::new_err(err.to_string()))
-                    }
-                }
-            }
-            VotingArg::BuildIn(build_in) => {
-                Wrapper::Internal(build_in.into())
-            }
-            VotingArg::PyCallable(def) => {
-                Wrapper::External(def)
-            }
-        };
-
-        Ok(
-            VoteConfig::new(
-                voting,
-                self.epsilon,
-                self.threshold,
-                self.top_candidate_limit,
-                self.boost_with,
-            )
-        )
-    }
-}
+// /// The config for a translation
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+// #[pyclass]
+// #[derive(Debug, Clone)]
+// pub struct PyVoteConfig {
+//     /// The epsilon to be used, if it is none it is determined heuristically.
+//     pub epsilon: Option<f64>,
+//     /// The threshold of the probabilities allowed to be used as voters
+//     pub threshold: Option<f64>,
+//     /// Limits the number of accepted candidates to N. If not set keep all.
+//     pub top_candidate_limit: Option<NonZeroUsize>,
+//     /// Declares a field that boosts the score iff present.
+//     pub boost_with: Option<Value>
+// }
+//
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+// #[pymethods]
+// impl PyVoteConfig {
+//     #[new]
+//     #[pyo3(signature = (epsilon=None, threshold=None, top_candidate_limit=None, boost_with=None))]
+//     pub fn new(epsilon: Option<f64>, threshold: Option<f64>, top_candidate_limit: Option<usize>, boost_with: Option<PyExprValue>) -> Self {
+//         Self {
+//             epsilon,
+//             threshold,
+//             top_candidate_limit: top_candidate_limit.and_then(|x| NonZeroUsize::new(x)),
+//             boost_with: boost_with.map(|v| v.into())
+//         }
+//     }
+// }
+//
+// impl PyVoteConfig {
+//     fn to_vote_config(self, voting: VotingArg, voting_registry: Option<PyVotingRegistry>) -> PyResult<VoteConfig<Wrapper>> {
+//         let voting = match voting {
+//             VotingArg::Voting(voting) => {
+//                 Wrapper::Internal(voting)
+//             }
+//             VotingArg::Parseable(voting) => {
+//                 match parse::<nom::error::Error<_>>(ParserInput::new(&voting, voting_registry.unwrap_or_default().registry())) {
+//                     Ok((_, value)) => {
+//                         Wrapper::Internal(value.into())
+//                     }
+//                     Err(err) => {
+//                         return Err(PyValueError::new_err(err.to_string()))
+//                     }
+//                 }
+//             }
+//             VotingArg::BuildIn(build_in) => {
+//                 Wrapper::Internal(build_in.into())
+//             }
+//             VotingArg::PyCallable(def) => {
+//                 Wrapper::External(def)
+//             }
+//         };
+//
+//         Ok(
+//             VoteConfig::new(
+//                 voting,
+//                 self.epsilon,
+//                 self.threshold,
+//                 self.top_candidate_limit,
+//                 self.boost_with,
+//             )
+//         )
+//     }
+// }
 
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
@@ -222,29 +221,29 @@ pub fn translate_topic_model<'a>(
 }
 
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
-#[pyfunction]
-#[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
-pub fn vote_for_domains<'a>(
-    topic_model: &PyTopicModel,
-    dictionary: &PyDictionary,
-    // VotingArg<'a>
-    voting: VotingArg<'a>,
-    config: PyVoteConfig,
-    provider: Option<&PyVariableProvider>,
-    voting_registry: Option<PyVotingRegistry>
-) -> PyResult<Vec<Vec<f64>>> {
-    let cfg = config.to_vote_config(voting, voting_registry)?;
-    let read = dictionary.get();
-    match vote_for_domains_with_targets(topic_model, read.deref(), &cfg, provider) {
-        Ok(result) => {
-            Ok(result)
-        }
-        Err(err) => {
-            Err(PyValueError::new_err(err.to_string()))
-        }
-    }
-}
+// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
+// #[pyfunction]
+// #[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
+// pub fn vote_for_domains<'a>(
+//     topic_model: &PyTopicModel,
+//     dictionary: &PyDictionary,
+//     // VotingArg<'a>
+//     voting: VotingArg<'a>,
+//     config: PyVoteConfig,
+//     provider: Option<&PyVariableProvider>,
+//     voting_registry: Option<PyVotingRegistry>
+// ) -> PyResult<Vec<Vec<f64>>> {
+//     let cfg = config.to_vote_config(voting, voting_registry)?;
+//     let read = dictionary.get();
+//     match meta_to_topic_association_voting(topic_model, read.deref(), &cfg, provider) {
+//         Ok(result) => {
+//             Ok(result)
+//         }
+//         Err(err) => {
+//             Err(PyValueError::new_err(err.to_string()))
+//         }
+//     }
+// }
 
 
 register_python! {

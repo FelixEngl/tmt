@@ -17,8 +17,8 @@ mod errors;
 mod language;
 mod phantoms;
 mod candidate;
-mod dict_meta;
 mod entropies;
+mod dictionary_meta;
 // pub mod topic_model_specific;
 
 use std::collections::hash_map::Entry;
@@ -31,7 +31,7 @@ use rayon::prelude::*;
 use language::*;
 pub use errors::*;
 pub use config::*;
-use ldatranslate_toolkit::evalexpr::{CombineableContext};
+use ldatranslate_toolkit::evalexpr::CombineableContext;
 use ldatranslate_topicmodel::dictionary::*;
 use ldatranslate_topicmodel::dictionary::direction::{AToB, BToA, DirectionMarker, B};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
@@ -601,9 +601,10 @@ pub(crate) mod test {
     use ldatranslate_voting::BuildInVoting;
     use std::num::NonZeroUsize;
     use Extend;
+    use arcstr::ArcStr;
 
-    pub fn create_test_data() -> (Vocabulary<String>, Vocabulary<String>, Dictionary<String, Vocabulary<String>>){
-        let mut voc_a = Vocabulary::<String>::default();
+    pub fn create_test_data() -> (Vocabulary<ArcStr>, Vocabulary<ArcStr>, Dictionary<ArcStr, Vocabulary<ArcStr>>){
+        let mut voc_a = Vocabulary::<ArcStr>::default();
         voc_a.extend(vec![
             "plane".to_string(),
             "aircraft".to_string(),
@@ -617,7 +618,7 @@ pub(crate) mod test {
             "foil".to_string(),
             "bearing surface".to_string()
         ]);
-        let mut voc_b = Vocabulary::<String>::default();
+        let mut voc_b = Vocabulary::<ArcStr>::default();
         voc_b.extend(vec![
             "Flugzeug".to_string(),
             "Flieger".to_string(),

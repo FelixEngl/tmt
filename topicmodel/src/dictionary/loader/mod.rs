@@ -1411,6 +1411,7 @@ pub enum LineReaderError<T: Debug> {
 #[cfg(test)]
 mod test {
     use arcstr::ArcStr;
+    use camino::Utf8PathBuf;
     use crate::dictionary::word_infos::LanguageDirection;
     use crate::dictionary::{DictionaryWithMeta, EnrichOption, LoadInstruction, UnifiedTranslationHelper};
     use either::Either;
@@ -1423,37 +1424,37 @@ mod test {
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: FreeDict,
-            paths: Either::Left("dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei"),
+            paths: Either::Left("./dictionaries/freedict/freedict-eng-deu-1.9-fd1.src/eng-deu/eng-deu.tei"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: FreeDict,
-            paths: Either::Left("dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei"),
+            paths: Either::Left("./dictionaries/freedict/freedict-deu-eng-1.9-fd1.src/deu-eng/deu-eng.tei"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: DictCC,
-            paths: Either::Left("dictionaries/DictCC/dict.txt"),
+            paths: Either::Left("./dictionaries/DictCC/dict.txt"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Ding,
-            paths: Either::Left("dictionaries/ding/de-en.txt"),
+            paths: Either::Left("./dictionaries/ding/de-en.txt"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: IATE,
-            paths: Either::Left("dictionaries/IATE/IATE_export.tbx"),
+            paths: Either::Left("./dictionaries/IATE/IATE_export.tbx"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Omega,
-            paths: Either::Left("dictionaries/dicts.info/OmegaWiki.txt"),
+            paths: Either::Left("./dictionaries/dicts.info/OmegaWiki.txt"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
@@ -1461,8 +1462,8 @@ mod test {
             kind: MSTerms,
             paths: Either::Right(
                 vec![
-                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
-                    "dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
+                    "./dictionaries/Microsoft TermCollection/MicrosoftTermCollectio_british_englisch.tbx",
+                    "./dictionaries/Microsoft TermCollection/MicrosoftTermCollection_german.tbx"
                 ]
             ),
             enrich_with_meta: EnrichOption::Off
@@ -1470,25 +1471,25 @@ mod test {
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Muse,
-            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+            paths: Either::Left("./dictionaries/MUSE/dictionaries.tar.gz"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Muse,
-            paths: Either::Left("dictionaries/MUSE/dictionaries.tar.gz"),
+            paths: Either::Left("./dictionaries/MUSE/dictionaries.tar.gz"),
             enrich_with_meta: EnrichOption::Off
         },
         LoadInstruction {
             direction: LanguageDirection::EN_DE,
             kind: Wiktionary,
-            paths: Either::Left("dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
+            paths: Either::Left("./dictionaries/Wiktionary/raw-wiktextract-data.jsonl.gz"),
             enrich_with_meta: EnrichOption::OnFinalize
         },
         LoadInstruction {
             direction: LanguageDirection::DE_EN,
             kind: Wiktionary,
-            paths: Either::Left("dictionaries/Wiktionary/de-extract.jsonl.gz"),
+            paths: Either::Left("./dictionaries/Wiktionary/de-extract.jsonl.gz"),
             enrich_with_meta: EnrichOption::OnFinalize
         }
     ]);
@@ -1533,6 +1534,9 @@ mod test {
 
     #[test]
     pub fn test2(){
+
+        println!("{}", Utf8PathBuf::from(".").canonicalize_utf8().unwrap().to_string());
+
         let mut default = UnifiedTranslationHelper::new(LanguageDirection::EN_DE);
         match default.read_all_by_instruction(&TARGETS) {
             Ok(_) => {}
@@ -1552,12 +1556,12 @@ mod test {
         };
         data.write_to_path(
             WriteMode::binary(true),
-            "./test/dictionary_final4",
+            "./test/dictionary_20241130",
         ).unwrap();
 
 
         let _: DictionaryWithMeta<String, Vocabulary<String>, MetadataManagerEx> = DictionaryWithMeta::from_path_with_extension(
-            "./test/dictionary_final4.dat.zst"
+            "./test/dictionary_20241130.dat.zst"
         ).unwrap();
 
 

@@ -1,70 +1,32 @@
-use std::borrow::{Borrow};
-use std::collections::HashMap;
+use std::borrow::{Borrow, Cow};
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::ops::*;
-use std::sync::{Arc};
+use std::sync::{Arc, RwLock};
 use itertools::{Itertools};
 use ndarray::Ix1;
 use ndarray_stats::EntropyExt;
 use ndarray_stats::errors::MultiInputError;
 use thiserror::Error;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DomainModelIndex, META_DICT_ARRAY_LENTH};
+use crate::translate::dictionary_meta::iter::{Iter, IterSorted};
 
 
-pub struct IterSorted<'a, 'b: 'a> {
-    vector: &'b SparseMetaVector<'a>,
-    pos: Range<usize>
+pub trait DictMetaFieldPattern {
+    fn pattern(&self) -> Cow<[DictMetaTagIndex]>;
 }
 
-impl<'a, 'b: 'a> IterSorted<'a, 'b> {
-    pub fn new(vector: &'b SparseMetaVector<'a>) -> Self {
-        Self { vector, pos: 0..META_DICT_ARRAY_LENTH }
+impl<T> DictMetaFieldPattern for T where T: AsRef<[DictMetaTagIndex]> {
+    fn pattern(&self) -> Cow<[DictMetaTagIndex]> {
+        Cow::Borrowed(self.as_ref())
     }
 }
-
-impl<'a, 'b: 'a> Iterator for IterSorted<'a, 'b> {
-    type Item = (DictMetaTagIndex, f64);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let next = self.pos.next()?;
-            if let Some(idx) = self.vector.reversed[next] {
-                let key = self.vector.template[idx];
-                let value = self.vector.inner[idx];
-                break Some((key, value))
-            }
-        }
-    }
-}
-
-pub struct Iter<'a, 'b: 'a> {
-    vector: &'b SparseMetaVector<'a>,
-    pos: Range<usize>
-}
-
-impl<'a, 'b: 'a> Iter<'a, 'b> {
-    pub fn new(vector: &'b SparseMetaVector<'a>) -> Self {
-        Self { vector, pos: 0..vector.template.len() }
-    }
-}
-
-impl<'a, 'b: 'a> Iterator for Iter<'a, 'b> {
-    type Item = (DictMetaTagIndex, f64);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.pos.next()?;
-        let key = self.vector.template[next];
-        let value = self.vector.inner[next];
-        Some((key, value))
-    }
-}
-
 
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
-struct UniqueTags {
-    inner: Arc<Vec<DictMetaTagIndex>>
+pub(super) struct UniqueTags {
+    pub(super) inner: Arc<Vec<DictMetaTagIndex>>
 }
 impl UniqueTags {
     pub fn new<T: AsRef<[DictMetaTagIndex]>>(inner: T) -> Self {
@@ -90,14 +52,16 @@ impl Deref for UniqueTags {
     }
 }
 
+pub type PatternMap = [Option<usize>; META_DICT_ARRAY_LENTH];
 
-#[derive(Debug, Default)]
-pub(super) struct SparseDomainFactory {
-    unique_mapping: HashMap<Vec<DictMetaTagIndex>, UniqueTags>,
-    pattern_mapping: HashMap<UniqueTags, [Option<usize>; META_DICT_ARRAY_LENTH]>
+
+#[derive(Debug, Default, Clone)]
+pub struct SparseVectorFactory {
+    unique_mapping: Arc<RwLock<HashMap<Vec<DictMetaTagIndex>, UniqueTags>>>,
+    pattern_mapping: Arc<RwLock<HashMap<UniqueTags, Arc<PatternMap>>>>
 }
 
-impl SparseDomainFactory {
+impl SparseVectorFactory {
     pub fn new() -> Self {
         Self {
             pattern_mapping: Default::default(),
@@ -105,44 +69,52 @@ impl SparseDomainFactory {
         }
     }
 
-    fn convert_to_mapping<'a, T: AsRef<[DictMetaTagIndex]>>(&'a mut self, tags: T) -> (&'a [DictMetaTagIndex], &'a [Option<usize>; META_DICT_ARRAY_LENTH]) {
-        let tags = tags.as_ref();
+    fn convert_to_mapping<T>(&self, tags: &T) -> (UniqueTags, Arc<PatternMap>)
+    where
+        T: DictMetaFieldPattern + ?Sized
+    {
+        let tags_borrow = tags.pattern();
+        let tags = tags_borrow.as_ref();
         {
-            if let Some((k, v)) = self.pattern_mapping.get_key_value(tags) {
-                return unsafe{ std::mem::transmute((k.as_ref(), v)) }
+            let read_mapping = self.pattern_mapping.read().unwrap();
+            if let Some((k, v)) = read_mapping.get_key_value(tags) {
+                return (k.clone(), v.clone());
             }
-        }
-        {
-            if let Some(v) = self.unique_mapping.get(tags) {
-                if let Some((k, v)) = self.pattern_mapping.get_key_value(v) {
-                    return unsafe{ std::mem::transmute((k.as_ref(), v)) }
+            let read_unique = self.unique_mapping.read().unwrap();
+            if let Some(v) = read_unique.get(tags) {
+                if let Some((k, v)) = read_mapping.get_key_value(v) {
+                    return (k.clone(), v.clone());
                 }
             }
         }
         {
             let raw_keys = tags.to_vec();
             let unique_tags: UniqueTags = UniqueTags::new(tags);
-            let unique_tags: UniqueTags = if raw_keys.len() == unique_tags.len() {
-                debug_assert_eq!(raw_keys.as_slice(), unique_tags.deref());
-                drop(raw_keys);
-                unique_tags
+            if cfg!(debug_assertions) {
+                if raw_keys.len() == unique_tags.len() {
+                    debug_assert_eq!(raw_keys.as_slice(), unique_tags.deref());
+                }
+            }
+
+            let unique_tags: UniqueTags = if raw_keys.len() != unique_tags.len() {
+                self.unique_mapping.write().unwrap().entry(raw_keys).or_insert(unique_tags).clone()
             } else {
-                self.unique_mapping.entry(raw_keys).or_insert(unique_tags).clone()
+                unique_tags
             };
 
             let mut new = [None; META_DICT_ARRAY_LENTH];
             for (k, v) in tags.iter().enumerate() {
                 new[(*v).as_index()] = Some(k);
             }
-            self.pattern_mapping.insert(unique_tags.clone(), new);
-            let (k, v) = self.pattern_mapping.get_key_value(tags).unwrap();
-            unsafe{ std::mem::transmute((k.as_ref(), v)) }
+            let new = Arc::new(new);
+            self.pattern_mapping.write().unwrap().insert(unique_tags.clone(), new.clone());
+            (unique_tags, new)
         }
     }
 
-    pub fn create<T, V, N>(&mut self, tags: T, values: V) -> Result<SparseMetaVector, IllegalValueCount>
+    pub fn create<T, V, N>(&self, tags: &T, values: V) -> Result<SparseMetaVector, IllegalValueCount>
     where
-        T: AsRef<[DictMetaTagIndex]>,
+        T: DictMetaFieldPattern + ?Sized,
         V: AsRef<[N]>,
         N: num::cast::AsPrimitive<f64>
     {
@@ -160,9 +132,9 @@ impl SparseDomainFactory {
     }
 
 
-    fn create_from<T, V, N>(&mut self, tags: T, values: V) -> SparseMetaVector
+    fn create_from<T, V, N>(&mut self, tags: &T, values: V) -> SparseMetaVector
     where
-        T: AsRef<[DictMetaTagIndex]>,
+        T: DictMetaFieldPattern + ?Sized,
         V: AsRef<[N; META_DICT_ARRAY_LENTH]>,
         N: num::cast::AsPrimitive<f64>
     {
@@ -170,9 +142,9 @@ impl SparseDomainFactory {
     }
 
 
-    pub unsafe fn create_unchecked<T, N>(&mut self, tags: T, values: &[N]) -> SparseMetaVector
+    pub unsafe fn create_unchecked<T, N>(&self, tags: &T, values: &[N]) -> SparseMetaVector
     where
-        T: AsRef<[DictMetaTagIndex]>,
+        T: DictMetaFieldPattern + ?Sized,
         N: num::cast::AsPrimitive<f64>
     {
         let (template, reversed) = self.convert_to_mapping(tags);
@@ -183,6 +155,19 @@ impl SparseDomainFactory {
         );
         SparseMetaVector {
             inner,
+            template,
+            reversed
+        }
+    }
+
+
+    pub fn create_empty<T>(&self, tags: &T) -> SparseMetaVector
+    where
+        T: DictMetaFieldPattern + ?Sized
+    {
+        let (template, reversed) = self.convert_to_mapping(tags);
+        SparseMetaVector {
+            inner: ndarray::Array::<f64, Ix1>::zeros(template.len()),
             template,
             reversed
         }
@@ -200,81 +185,51 @@ pub struct IllegalValueCount {
 pub type MetaVectorRaw<T> =  ndarray::Array<T, Ix1>;
 
 #[derive(Debug, Clone)]
-pub(super) struct SparseMetaVector<'a> {
-    inner: MetaVectorRaw<f64>,
-    template: &'a [DictMetaTagIndex],
-    reversed: &'a [Option<usize>; META_DICT_ARRAY_LENTH]
+pub struct SparseMetaVector {
+    pub(super) inner: MetaVectorRaw<f64>,
+    pub(super) template: UniqueTags,
+    pub(super) reversed: Arc<PatternMap>
 }
 
 
-impl<'a> SparseMetaVector<'a> {
-    pub fn iter<'b: 'a>(&'b self) -> Iter<'a, 'b> {
+impl SparseMetaVector {
+    pub fn iter(&self) -> Iter {
         Iter::new(self)
     }
 
-    pub fn iter_sorted<'b: 'a>(&'b self) -> IterSorted<'a, 'b> {
+    pub fn iter_sorted(&self) -> IterSorted {
         IterSorted::new(self)
     }
 
     #[inline]
-    pub fn is_same(&self, other: &SparseMetaVector<'_>) -> bool {
-        std::ptr::eq(self.reversed, other.reversed)
+    pub fn is_same(&self, other: &SparseMetaVector) -> bool {
+        self.reversed == other.reversed
     }
 
     #[inline]
-    fn create_successor(&self, value: MetaVectorRaw<f64>) -> Self {
+    pub fn create_successor(&self, value: MetaVectorRaw<f64>) -> Self {
         Self {
             inner: value,
-            reversed: self.reversed,
-            template: self.template
+            reversed: self.reversed.clone(),
+            template: self.template.clone()
         }
-    }
-
-    pub fn calculate_distance_to_with(&self, other: &SparseMetaVector<'_>, dist: DistanceCalculation) -> Result<f64, DistanceCalculationError> {
-        dist.calculate(self, other)
     }
 }
 
-impl Deref for SparseMetaVector<'_> {
+impl Deref for SparseMetaVector {
     type Target = MetaVectorRaw<f64>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-#[derive(Debug, Error)]
-pub enum DistanceCalculationError {
-    #[error(transparent)]
-    MultiInput(#[from] MultiInputError)
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DistanceCalculation {
-    KullbackLeiblerDivergence,
-    CrossEntropy,
-    RenyiDivergence {
-        alpha: f64,
+impl DerefMut for SparseMetaVector {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 
-impl DistanceCalculation {
-    pub fn calculate<'a>(&self, a: &SparseMetaVector<'a>, b: &SparseMetaVector<'_>) -> Result<f64, DistanceCalculationError> {
-        match self {
-            DistanceCalculation::KullbackLeiblerDivergence => {
-                Ok(a.kl_divergence(b)?)
-            }
-            DistanceCalculation::CrossEntropy => {
-                Ok(a.cross_entropy(b)?)
-            }
-            DistanceCalculation::RenyiDivergence { alpha } => {
-                todo!()
-            }
-        }
-    }
-}
-
-
-impl Display for SparseMetaVector<'_> {
+impl Display for SparseMetaVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{\n")?;
         for (k, v) in self.iter_sorted() {
@@ -286,14 +241,14 @@ impl Display for SparseMetaVector<'_> {
 
 macro_rules! impl_math {
     ($name: ident::<$ty: ty>::$method: ident(2); $($tt:tt)*) => {
-        impl<'a> $name<$ty> for SparseMetaVector<'a> {
+        impl $name<$ty> for SparseMetaVector {
             type Output = Self;
 
             fn $method(self, rhs: $ty) -> Self::Output {
                 Self {
                     inner: self.inner.$method(rhs),
-                    template: self.template,
-                    reversed: self.reversed
+                    template: self.template.clone(),
+                    reversed: self.reversed.clone()
                 }
             }
         }
@@ -301,14 +256,14 @@ macro_rules! impl_math {
         impl_math!($($tt)*);
     };
     ($name: ident::$method: ident(1); $($tt:tt)*) => {
-        impl<'a> $name for SparseMetaVector<'a> {
+        impl $name for SparseMetaVector {
             type Output = Self;
 
             fn $method(self) -> Self::Output {
                 Self {
                     inner: self.inner.$method(),
-                    template: self.template,
-                    reversed: self.reversed
+                    template: self.template.clone(),
+                    reversed: self.reversed.clone()
                 }
             }
         }
@@ -316,15 +271,15 @@ macro_rules! impl_math {
         impl_math!($($tt)*);
     };
     ($name: ident::$method: ident(2); $($tt:tt)*) => {
-        impl<'a> $name<Self> for SparseMetaVector<'a> {
+        impl $name<Self> for SparseMetaVector {
             type Output = Self;
 
             fn $method(self, rhs: Self) -> Self::Output {
-                assert!(std::ptr::eq(self.reversed, rhs.reversed));
+                assert_eq!(self.reversed, rhs.reversed);
                 Self {
                     inner: self.inner.$method(rhs.inner),
-                    template: self.template,
-                    reversed: self.reversed
+                    template: self.template.clone(),
+                    reversed: self.reversed.clone()
                 }
             }
         }
@@ -338,19 +293,25 @@ macro_rules! impl_math {
 }
 
 macro_rules! impl_assign_math {
-    ($name: ident::<$ty:ty>::$method:ident => $delegate: ident; $($tt:tt)*) => {
-        impl<'a> $name<$ty> for SparseMetaVector<'a> {
+    ($name: ident::<$ty:ty>::$method:ident; $($tt:tt)*) => {
+        impl $name<$ty> for SparseMetaVector {
             fn $method(&mut self, rhs: $ty) {
-                self.inner = self.inner.clone().$delegate(rhs);
+                self.inner.$method(rhs);
             }
         }
         impl_assign_math!($($tt)*);
     };
-    ($name: ident::$method:ident => $delegate: ident; $($tt:tt)*) => {
-        impl<'a> $name<Self> for SparseMetaVector<'a> {
+    ($name: ident::$method:ident; $($tt:tt)*) => {
+        impl $name<Self> for SparseMetaVector {
             fn $method(&mut self, rhs: Self) {
-                assert!(std::ptr::eq(self.reversed, rhs.reversed));
-                self.inner = self.inner.clone().$delegate(rhs.inner);
+                assert_eq!(self.reversed, rhs.reversed);
+                self.inner.$method(&rhs.inner);
+            }
+        }
+        impl $name<&Self> for SparseMetaVector {
+            fn $method(&mut self, rhs: &Self) {
+                assert_eq!(self.reversed, rhs.reversed);
+                self.inner.$method(&rhs.inner);
             }
         }
         impl_assign_math!($($tt)*);
@@ -367,12 +328,13 @@ impl_math! {
     Neg::neg(1);
 }
 
+
 impl_assign_math! {
-    AddAssign::add_assign => add;
-    SubAssign::sub_assign => sub;
-    MulAssign::mul_assign => mul;
-    DivAssign::div_assign => div;
-    RemAssign::rem_assign => rem;
+    AddAssign::add_assign;
+    SubAssign::sub_assign;
+    MulAssign::mul_assign;
+    DivAssign::div_assign;
+    RemAssign::rem_assign;
 }
 
 macro_rules! impl_math_for {
@@ -386,11 +348,11 @@ macro_rules! impl_math_for {
             Rem::<$ty>::rem(2);
         }
         impl_assign_math! {
-            AddAssign::<$ty>::add_assign => add;
-            SubAssign::<$ty>::sub_assign => sub;
-            MulAssign::<$ty>::mul_assign => mul;
-            DivAssign::<$ty>::div_assign => div;
-            RemAssign::<$ty>::rem_assign => rem;
+            AddAssign::<$ty>::add_assign;
+            SubAssign::<$ty>::sub_assign;
+            MulAssign::<$ty>::mul_assign;
+            DivAssign::<$ty>::div_assign;
+            RemAssign::<$ty>::rem_assign;
         }
         )+
     };
@@ -398,8 +360,15 @@ macro_rules! impl_math_for {
 
 impl_math_for! {f64}
 
-unsafe impl Send for SparseMetaVector<'_>{}
-unsafe impl Sync for SparseMetaVector<'_>{}
+unsafe impl Send for SparseMetaVector{}
+unsafe impl Sync for SparseMetaVector{}
+
+impl PartialEq for SparseMetaVector {
+    fn eq(&self, other: &Self) -> bool {
+        self.reversed.eq(&other.reversed)
+            && self.inner.eq(&other.inner)
+    }
+}
 
 
 #[cfg(test)]
@@ -411,7 +380,7 @@ mod test {
     use ldatranslate_topicmodel::dictionary::metadata::ex::{MetaField, MetadataCollectionBuilder};
     use ldatranslate_topicmodel::dictionary::metadata::MetadataMutReference;
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, GrammaticalGender, PartOfSpeech};
-    use crate::translate::dict_meta::{SparseDomainFactory};
+    use crate::translate::dictionary_meta::dict_meta::{SparseVectorFactory};
 
     #[test]
     fn works() {
@@ -516,10 +485,10 @@ mod test {
             DictMetaTagIndex::new_by_domain(Domain::Alchemy),
         ];
 
-        let mut provider = SparseDomainFactory::new();
+        let mut provider = SparseVectorFactory::new();
 
         let model_vec = provider.create_from(
-            PATTERN,
+            &PATTERN,
             domains.a()
         );
 
