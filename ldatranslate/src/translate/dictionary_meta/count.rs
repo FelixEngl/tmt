@@ -1,5 +1,7 @@
+use std::fmt::{Display, Formatter};
 use std::ops::{AddAssign, Deref, DerefMut, DivAssign};
 use std::sync::Arc;
+use itertools::Itertools;
 use ndarray::Zip;
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
 use ldatranslate_topicmodel::model::WordId;
@@ -75,6 +77,17 @@ impl ByCount {
     }
 }
 
+impl Display for ByCount {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f,"topic_model_count: {}\n", self.topic_model_count)?;
+        write!(f,"words_counts: [\n")?;
+        for value in self.word_count.iter() {
+            write!(f,"\t{},\n", value)?;
+        }
+        write!(f,"]")
+    }
+}
+
 impl DictionaryMetaProbabilityProvider for ByCount {
     fn whole_topic_model(&self) -> &SparseMetaVector {
         &self.topic_model_count
@@ -114,7 +127,7 @@ mod test {
             &factory,
             &pattern,
             CountConfig {
-                as_probability: false,
+                as_probability: true,
                 kind: CountKind::Count
             }
         ).unwrap();
@@ -123,6 +136,11 @@ mod test {
 
         println!("{}", meta.topic_model_count);
 
+        for value in meta.word_count.iter().filter(|v| !v.is_zero()).take(10) {
+            println!("{}\n+++\n{}\n+++\n\n#####\n\n", value, &value.inner * &meta.topic_model_count.inner);
+        }
         println!("{}", dict.metadata().domain_count());
+
+
     }
 }

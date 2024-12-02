@@ -90,14 +90,14 @@ impl PyTopicModel {
     }
 
 
-    fn save(&self, path: PathBuf) -> PyResult<usize> {
-        Ok(self.inner.save(path, TopicModelVersion::V1, true, true)?)
-    }
-
-    #[staticmethod]
-    fn load(path: PathBuf) -> PyResult<PyTopicModel> {
-        Ok(Self { inner: TopicModel::<_, UnderlyingPyVocabulary>::load(path, true)?.0 })
-    }
+    // fn save(&self, path: PathBuf) -> PyResult<usize> {
+    //     Ok(self.inner.save(path, TopicModelVersion::V1, true, true)?)
+    // }
+    //
+    // #[staticmethod]
+    // fn load(path: PathBuf) -> PyResult<PyTopicModel> {
+    //     Ok(Self { inner: TopicModel::<_, UnderlyingPyVocabulary>::load(path, true)?.0 })
+    // }
 
     #[pyo3(signature = (n=None))]
     fn show_top(&self, n: Option<usize>) -> PyResult<()> {
@@ -312,7 +312,7 @@ impl From<TopicModelSaveError> for PyErr {
 impl PyTopicModel {
     pub fn save_to<W: Write>(&self, writer: W, compressed: bool) -> Result<(), TopicModelSaveError> {
         let mut writer: Box<dyn Write> = if compressed {
-            Box::new(zstd::Encoder::new(writer, 0)?)
+            Box::new(zstd::Encoder::new(writer, 6)?)
         } else {
             Box::new(BufWriter::new(writer))
         };

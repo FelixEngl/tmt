@@ -32,7 +32,7 @@ use std::io;
 use std::io::{Write};
 use std::marker::PhantomData;
 use std::ops::{Range};
-use std::sync::{Arc};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 use crate::model::meta::*;
 use crate::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
@@ -81,6 +81,9 @@ pub struct TopicModel<T, V> {
     #[serde(skip)]
     _word_type: PhantomData<T>
 }
+
+
+
 
 
 unsafe impl<T, V> Send for TopicModel<T, V>{}

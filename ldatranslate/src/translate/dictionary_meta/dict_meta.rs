@@ -21,6 +21,7 @@ impl<T> DictMetaFieldPattern for T where T: AsRef<[DictMetaTagIndex]> {
 }
 
 
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub(super) struct UniqueTags {
@@ -193,6 +194,10 @@ pub struct SparseMetaVector {
 impl SparseMetaVector {
     pub fn iter(&self) -> Iter {
         Iter::new(self)
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.inner.is_empty() || self.inner.iter().all(|v| *v == 0.0)
     }
 
     pub fn iter_sorted(&self) -> IterSorted {

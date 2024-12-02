@@ -186,7 +186,7 @@ class LoadedMetadataEx:
     contextual_informations_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
     unclassified_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
     synonyms_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
-    def __new__(cls,values,additional_dictionaries = ...): ...
+    def __new__(cls,values:dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]] | dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]] | dict[MetaField, tuple[typing.Optional[ResolvedValueTypeOut | list[ResolvedValueTypeOut]], typing.Optional[dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]] | tuple[typing.Optional[dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]], typing.Optional[dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]],additional_dictionaries: None | list[str] = None): ...
     def domain_vector(self) -> DictMetaVector:
         r"""
         Returns a domain vector. The returned DictMetaVector consists of the counts of the
@@ -194,133 +194,133 @@ class LoadedMetadataEx:
         """
         ...
 
-    def get_languages_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_languages_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_domains_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_domains_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_registers_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_registers_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_genders_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_genders_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_pos_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_pos_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_pos_tag_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_pos_tag_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_regions_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_regions_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_numbers_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_numbers_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_internal_ids_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_internal_ids_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_inflected_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_inflected_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_abbreviations_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_abbreviations_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_unaltered_vocabulary_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_unaltered_vocabulary_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_look_at_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_look_at_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_ids_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_ids_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_outgoing_ids_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_outgoing_ids_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_original_entry_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_original_entry_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_contextual_informations_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_contextual_informations_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_unclassified_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_unclassified_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
         """
         ...
 
-    def get_synonyms_single(self, dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_synonyms_single(self, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the general value for this specific field.
         If a dictionary name is provided, it returns the value of this specific dictionary.
@@ -333,7 +333,7 @@ class LoadedMetadataEx:
     def __repr__(self) -> str:
         ...
 
-    def get_single_field(self, field,dictionary) -> typing.Optional[set[ResolvedValueTypeOut]]:
+    def get_single_field(self, field:MetaField, dictionary:typing.Optional[str] = None) -> typing.Optional[set[ResolvedValueTypeOut]]:
         r"""
         Retrieves the value for a specific field. If a dictionary name is provided,
         it returns the values of this specific dictionary.
@@ -341,7 +341,7 @@ class LoadedMetadataEx:
         """
         ...
 
-    def get_field(self, field) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
+    def get_field(self, field:MetaField) -> tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]:
         r"""
         Get the metadata of this specific field.
         """
@@ -807,10 +807,10 @@ class PyAlignedArticleProcessor:
 
 
 class PyArticle:
-    py_is_list: bool
-    py_lang: LanguageHint
-    py_categories: typing.Optional[list[int]]
-    py_content: typing.Optional[str]
+    is_list: bool
+    lang: LanguageHint
+    categories: typing.Optional[list[int]]
+    content: typing.Optional[str]
     def __new__(cls,language_hint,content,categories = ...,is_list = ...): ...
     def __str__(self) -> str:
         ...
@@ -873,7 +873,7 @@ class PyDictionary:
     voc_a_py: PyVocabulary
     voc_b_py: PyVocabulary
     def __new__(cls,language_a:typing.Optional[str | LanguageHint], language_b:typing.Optional[str | LanguageHint]): ...
-    def search(self, query,search_type = ...,threshold = ...,target_language = ...,ignores_ascii_case = ...) -> SearchResultContainerType:
+    def search(self, query:str | list[str] | typing.Callable[[LanguageMarker, str], bool] = None, search_type:typing.Optional[SearchTypeUnionType] = None, threshold:typing.Optional[int | float] = None, target_language:typing.Optional[LanguageMarker] = None, ignores_ascii_case:typing.Optional[bool] = None) -> SearchResultContainerType:
         r"""
         A search function for the dictionary, requires a query or matcher as first argument.
         
@@ -1264,13 +1264,6 @@ class PyTopicModel:
     py_k: int
     def __new__(cls,topics:typing.Sequence[typing.Sequence[float]], vocabulary:PyVocabulary, used_vocab_frequency:typing.Sequence[int], doc_topic_distributions:typing.Sequence[typing.Sequence[float]], document_lengths:typing.Sequence[int]): ...
     def get_topic(self, topic_id:int) -> typing.Optional[list[float]]:
-        ...
-
-    def save(self, path:str | os.PathLike | pathlib.Path) -> int:
-        ...
-
-    @staticmethod
-    def load(path:str | os.PathLike | pathlib.Path) -> PyTopicModel:
         ...
 
     def show_top(self, n = ...) -> None:

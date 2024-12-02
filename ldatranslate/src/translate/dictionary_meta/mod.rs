@@ -2,6 +2,8 @@ mod voting;
 mod count;
 mod dict_meta;
 mod iter;
+mod count_weighted;
+mod topic_associated;
 
 pub use dict_meta::*;
 pub use count::*;
