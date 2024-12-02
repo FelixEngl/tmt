@@ -2,16 +2,33 @@ use std::borrow::Borrow;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::io;
-use std::io::{ErrorKind, Write};
+use std::io::{Write};
 use std::ops::Range;
-use std::sync::Arc;
 use ldatranslate_translate::VoterInfoProvider;
-use crate::model::{DocumentId, DocumentLength, DocumentTo, Probability, TopicId, TopicTo, WordFrequency, WordId, WordTo};
-use crate::model::meta::{TopicMeta, WordMeta, WordMetaWithWord};
+use crate::model::{DocumentId, DocumentLength, DocumentTo, PositionTo, Probability, Rank, TopicId, TopicTo, WordFrequency, WordId, WordTo};
+use crate::model::meta::{WordMetaWithWord};
 use crate::vocabulary::BasicVocabulary;
+
+
+pub trait PrimitiveWordMeta {
+    fn word_id(&self) -> WordId;
+    fn probability(&self) -> Probability;
+
+    /// Returns the [self.probability] + 1
+    fn rank(&self) -> Rank;
+}
 
 /// A basic topic model fulfilling the bare minimum of a topic model.
 pub trait BasicTopicModel: Send + Sync + VoterInfoProvider {
+
+    /// Maps a topic id to a topic meta
+    type TopicMetas<'a> where Self: 'a;
+
+    /// Contains the meta for a topic
+    type TopicMeta<'a> where Self: 'a;
+
+    type WordMeta<'a>: PrimitiveWordMeta + 'a where Self: 'a;
+
     /// The number of topics in this model
     fn topic_count(&self) -> usize;
 
@@ -43,10 +60,13 @@ pub trait BasicTopicModel: Send + Sync + VoterInfoProvider {
     fn get_topic(&self, topic_id: TopicId) -> Option<&WordTo<Probability>>;
 
     /// The meta of the topic
-    fn topic_metas(&self) -> &TopicTo<TopicMeta>;
+    fn topic_metas<'a>(&'a self) -> Self::TopicMetas<'a>;
 
     /// Get the `TopicMeta` for `topic_id`
-    fn get_topic_meta(&self, topic_id: TopicId) -> Option<&TopicMeta>;
+    fn get_topic_meta<'a>(&'a self, topic_id: TopicId) -> Option<Self::TopicMeta<'a>>;
+
+    /// Get the [WordMeta] of `word_id` of `topic_id`
+    fn get_word_meta<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Self::WordMeta<'a>>;
 
     /// Get the word freuencies for each word.
     fn used_vocab_frequency(&self) -> &WordTo<WordFrequency>;
@@ -57,23 +77,19 @@ pub trait BasicTopicModel: Send + Sync + VoterInfoProvider {
     /// Get all probabilities of `word_id`
     fn get_topic_probabilities_for(&self, word_id: WordId) -> Option<TopicTo<Probability>>;
 
-    /// Get the [WordMeta] of `word_id` of `topic_id`
-    fn get_word_meta(&self, topic_id: TopicId, word_id: WordId) -> Option<&Arc<WordMeta>>;
-
-    /// Get all [WordMeta] for `word_id`
-    fn get_word_metas_for(&self, word_id: WordId) -> Option<TopicTo<&Arc<WordMeta>>>;
 
     /// Get all [WordMeta] values with a similar importance in `topic_id` than `word_id`.
     /// (including the `word_id`)
-    fn get_all_similar_important(&self, topic_id: TopicId, word_id: WordId) -> Option<&Vec<Arc<WordMeta>>>;
+    fn get_all_similar_important<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Vec<Self::WordMeta<'a>>>;
 
-    fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<&[Arc<WordMeta>]>;
+    /// Get the word ids sorted by position.
+    fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<PositionTo<WordId>>;
 
     /// Get the `n` best [WordMeta] in `topic_id` by their position.
-    fn get_n_best_for_topic(&self, topic_id: TopicId, n: usize) -> Option<&[Arc<WordMeta>]>;
+    fn get_n_best_for_topic(&self, topic_id: TopicId, n: usize) -> Option<PositionTo<WordId>>;
 
     /// Get the `n` best [WordMeta] for all topics by their position.
-    fn get_n_best_for_topics(&self, n: usize) -> Option<TopicTo<&[Arc<WordMeta>]>>;
+    fn get_n_best_for_topics(&self, n: usize) -> TopicTo<Vec<WordId>>;
 }
 
 
@@ -105,25 +121,27 @@ pub trait BasicTopicModelWithVocabulary<T, Voc>: BasicTopicModel where Voc: Basi
     }
 
     /// Get the [WordMetaWithWord] of `word_id` of `topic_id`
-    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, T>>  where Voc: 'a {
-        let topic_meta = self.get_topic_meta(topic_id)?;
-        let word_meta = topic_meta.by_words.get(word_id)?;
-        let word = self.vocabulary().get_value_by_id(word_meta.word_id)?;
+    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, T, <Self as BasicTopicModel>::WordMeta<'a>>>  where Voc: 'a {
+        let word_meta = self.get_word_meta(topic_id, word_id)?;
+        let word = self.vocabulary().get_value_by_id(word_id)?;
         Some(WordMetaWithWord::new(word, word_meta))
     }
 
     /// Get the [WordMetaWithWord] of `word_id` for all topics.
-    fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, T>>> where Voc: 'a {
+    fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, T, <Self as BasicTopicModel>::WordMeta<'a>>>> where Voc: 'a {
         self.topic_ids().map(|topic_id| self.get_word_meta_with_word(topic_id, word_id)).collect()
     }
 
     /// Get all [WordMetaWithWord] values with a similar importance in `topic_id` than `word_id`.
     /// (including the `word_id`)
-    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, T>>> where Voc: 'a {
+    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, T, <Self as BasicTopicModel>::WordMeta<'a>>>> where Voc: 'a {
         Some(
             self.get_all_similar_important(topic_id, word_id)?
-                .iter()
-                .map(|value| WordMetaWithWord::new(self.vocabulary().get_value_by_id(value.word_id).unwrap(), value))
+                .into_iter()
+                .map(|value| WordMetaWithWord::new(
+                    self.vocabulary().get_value_by_id(value.word_id()).unwrap(),
+                    value
+                ))
                 .collect()
         )
     }
@@ -148,20 +166,20 @@ pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc
 
     /// Get the [WordMeta] of `word` of `topic_id`
     #[inline]
-    fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<&Arc<WordMeta>> where T: Borrow<Q>, Q: Hash + Eq {
+    fn get_word_meta_by_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Self::WordMeta<'a>> where T: Borrow<Q>, Q: Hash + Eq {
         self.get_word_meta(topic_id, self.get_id(word)?)
     }
 
     /// Get the [WordMetaWithWord] of `word` for all topics.
     #[inline]
-    fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, T>>> where T: Borrow<Q>, Q: Hash + Eq, Voc: 'a {
+    fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, T, <Self as BasicTopicModel>::WordMeta<'a>>>> where T: Borrow<Q>, Q: Hash + Eq, Voc: 'a {
         self.get_word_metas_with_word(self.get_id(word)?)
     }
 
     /// Get all [WordMeta] values with a similar importance in `topic_id` than `word`.
     /// (including the `word_id`)
     #[inline]
-    fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<&Vec<Arc<WordMeta>>> where T: Borrow<Q>, Q: Hash + Eq {
+    fn get_all_similar_important_words_for_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Vec<<Self as BasicTopicModel>::WordMeta<'a>>> where T: Borrow<Q>, Q: Hash + Eq {
         self.get_all_similar_important(topic_id, self.get_id(word)?)
     }
 
@@ -195,14 +213,15 @@ where
 /// A topic model that allows basic show methods
 pub trait DisplayableTopicModel<T, Voc>: BasicTopicModelWithVocabulary<T, Voc> where T: Display, Voc: BasicVocabulary<T> + Display {
     fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
-        for (topic_id, topic_entries) in self.get_n_best_for_topics(n).ok_or(io::Error::from(ErrorKind::Other))?.iter().enumerate() {
+        for (topic_id, topic_entries) in self.get_n_best_for_topics(n).iter().enumerate() {
             if topic_id != 0 {
                 out.write(b"\n")?;
             }
             write!(out, "Topic({topic_id}):")?;
-            for it in topic_entries.iter() {
+            for &it in topic_entries.iter() {
                 out.write(b"\n")?;
-                write!(out, "    {}: {} ({})", self.get_word(it.word_id).unwrap(), it.probability, it.rank())?;
+                let meta = self.get_word_meta(topic_id, it).unwrap();
+                write!(out, "    {}: {} ({})", self.get_word(meta.word_id()).unwrap(), meta.probability(), meta.rank())?;
             }
         }
         Ok(())

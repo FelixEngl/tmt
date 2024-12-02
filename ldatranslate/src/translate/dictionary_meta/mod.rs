@@ -3,11 +3,9 @@ mod count;
 mod dict_meta;
 mod iter;
 
-pub use iter::*;
 pub use dict_meta::*;
 pub use count::*;
 use ldatranslate_topicmodel::model::WordId;
-pub use voting::*;
 
 pub trait DictionaryMetaProbabilityProvider: Send + Sync {
     fn whole_topic_model(&self) -> &SparseMetaVector;

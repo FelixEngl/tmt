@@ -1,11 +1,8 @@
 use std::ops::{AddAssign, Deref, DerefMut, DivAssign};
 use std::sync::Arc;
 use ndarray::Zip;
-use ldatranslate_topicmodel::dictionary::BasicDictionaryWithMeta;
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
-use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::model::WordId;
-use ldatranslate_topicmodel::vocabulary::AnonymousVocabulary;
 use crate::translate::dictionary_meta::{DictMetaFieldPattern, SparseVectorFactory, SparseMetaVector, IllegalValueCount, DictionaryMetaProbabilityProvider};
 
 #[derive(Debug, Clone, Copy)]

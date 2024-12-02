@@ -18,20 +18,21 @@ pub mod meta;
 mod traits;
 mod classic_serialisation;
 mod inferencer;
-
+mod views;
+mod meta_small;
 pub use inferencer::*;
 pub use traits::*;
 
 use approx::relative_eq;
 use std::borrow::Borrow;
-use std::cmp::{min, Ordering, Reverse};
+use std::cmp::{Ordering, Reverse};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io;
-use std::io::{ErrorKind, Write};
+use std::io::{Write};
 use std::marker::PhantomData;
 use std::ops::{Range};
-use std::sync::Arc;
+use std::sync::{Arc};
 
 use crate::model::meta::*;
 use crate::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
@@ -40,12 +41,14 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use ldatranslate_toolkit::normal_number::IsNormalNumber;
 use ldatranslate_translate::VoterInfoProvider;
-use crate::model::meta::TopicMeta;
+use crate::model::meta_small::{SmallTopicMeta, SmallTopicStats, SmallWordMeta};
+use crate::model::views::{ImportanceIndex, MetaView, PositionIndex, TopicMetaView};
 
 pub type TopicTo<T> = Vec<T>;
 pub type WordTo<T> = Vec<T>;
 pub type PositionTo<T> = Vec<T>;
 pub type DocumentTo<T> = Vec<T>;
+pub type ImportanceTo<T> = Vec<T>;
 pub type ImportanceRankTo<T> = Vec<T>;
 pub type Probability = f64;
 
@@ -74,10 +77,11 @@ pub struct TopicModel<T, V> {
     used_vocab_frequency: WordTo<WordFrequency>,
     doc_topic_distributions: DocumentTo<TopicTo<Probability>>,
     document_lengths: DocumentTo<DocumentLength>,
-    topic_metas: TopicTo<TopicMeta>,
+    topic_metas: TopicTo<SmallTopicMeta>,
     #[serde(skip)]
     _word_type: PhantomData<T>
 }
+
 
 unsafe impl<T, V> Send for TopicModel<T, V>{}
 unsafe impl<T, V> Sync for TopicModel<T, V>{}
@@ -97,9 +101,82 @@ impl<T, V> Clone for TopicModel<T, V> where V: Clone {
 }
 
 
+
+impl<T, V> TopicModel<T, V> {
+    pub fn get_meta_for(&self, topic_id: TopicId, word_id: WordId) -> Option<WordMeta> {
+        let probability = *self.topics.get(topic_id)?.get(word_id)?;
+        let small_meta = unsafe {
+            self.topic_metas.get_unchecked(topic_id).by_word.get_unchecked(word_id)
+        };
+        Some(
+            WordMeta {
+                topic_id,
+                word_id,
+                probability,
+                position: small_meta.position,
+                importance: small_meta.importance,
+            }
+        )
+    }
+
+    pub unsafe fn get_meta_for_unchecked(&self, topic_id: TopicId, word_id: WordId) -> WordMeta {
+        let probability = *self.topics.get_unchecked(topic_id).get_unchecked(word_id);
+        let small_meta = unsafe {
+            self.topic_metas.get_unchecked(topic_id).by_word.get_unchecked(word_id)
+        };
+        WordMeta {
+            topic_id,
+            word_id,
+            probability,
+            position: small_meta.position,
+            importance: small_meta.importance,
+        }
+    }
+
+    pub fn meta_view_for<'a>(&'a self, topic_id: TopicId) -> Option<TopicMetaView<'a>> {
+        Some(
+            TopicMetaView {
+                probabilities_ref: self.topics.get(topic_id)?,
+                stats_ref: unsafe{self.topic_metas.get_unchecked(topic_id)},
+                topic_id
+            }
+        )
+    }
+
+    pub unsafe fn meta_view_for_unchecked(&self, topic_id: TopicId) -> TopicMetaView {
+        TopicMetaView {
+            probabilities_ref: self.topics.get_unchecked(topic_id),
+            stats_ref: unsafe{self.topic_metas.get_unchecked(topic_id)},
+            topic_id
+        }
+    }
+
+    pub fn position_index(&self, topic_id: TopicId) -> Option<PositionIndex> {
+        self.meta_view_for(topic_id).map(|value| value.to_position_index())
+    }
+
+    pub fn importance_index(&self, topic_id: TopicId) -> Option<ImportanceIndex> {
+        self.meta_view_for(topic_id).map(|value| value.to_importance_index())
+    }
+
+    pub fn topic_stats_for(&self, topic_id: TopicId) -> Option<TopicStats> {
+        let meta = self.topic_metas.get(topic_id)?;
+        Some(
+            TopicStats {
+                topic_id,
+                min_value: meta.stats.min,
+                max_value: meta.stats.max,
+                average_value: meta.stats.avg,
+                sum_value: meta.stats.sum,
+            }
+        )
+    }
+}
+
+
 impl<T, V> TopicModel<T, V> where
     T: Hash + Eq + Ord,
-    V: SearchableVocabulary<T> + Sync + Send
+    V: BasicVocabulary<T> + Sync + Send
 {
     fn recalculate_statistics(&mut self) {
         self.topic_metas = unsafe {
@@ -107,7 +184,7 @@ impl<T, V> TopicModel<T, V> where
         };
     }
 
-    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &(impl BasicVocabulary<T> + Sync + Send)) -> TopicTo<TopicMeta> {
+    unsafe fn calculate_topic_metas(topics: &TopicTo<WordTo<Probability>>, vocabulary: &(impl BasicVocabulary<T> + Sync + Send)) -> TopicTo<SmallTopicMeta> {
         struct SortHelper<'a, Q, V> where V: BasicVocabulary<Q> {
             word_id: WordId,
             probability: Probability,
@@ -163,8 +240,7 @@ impl<T, V> TopicModel<T, V> where
             }
         }
 
-
-        topics.par_iter().enumerate().map(|(topic_id, topic)| {
+        topics.par_iter().map(|topic| {
             let position_to_word_id_and_prob =
                 topic
                     .iter()
@@ -195,13 +271,15 @@ impl<T, V> TopicModel<T, V> where
                 importance_to_word_ids.push(current_sink);
             }
 
-            let mut word_id_to_importance: Vec<_> = importance_to_word_ids
+            let mut word_id_to_importance: Vec<(Importance, WordId)> = importance_to_word_ids
                 .into_iter()
                 .enumerate()
                 .flat_map(|(importance, words)| {
                     words.into_iter().map(move |value| (importance, value))
                 }).collect_vec();
             word_id_to_importance.sort_by_key(|value| value.1);
+
+            let max_importance = word_id_to_importance.iter().map(|(v, _)| *v).max().unwrap();
 
             let word_id_to_position: Vec<_> = position_to_word_id_and_prob
                 .into_iter()
@@ -210,75 +288,41 @@ impl<T, V> TopicModel<T, V> where
                 .sorted_by_key(|(word_id, _, _)| *word_id)
                 .collect_vec();
 
-            let mut topic_content = word_id_to_position
+            let mut by_word: WordTo<SmallWordMeta> = word_id_to_position
                 .into_iter()
                 .zip_eq(word_id_to_importance.into_iter())
                 .map(|((word_id_1, prob, position), (importance, word_id_2))| {
                     assert_eq!(word_id_1, word_id_2, "Word ids {} {} are not compatible!", word_id_1, word_id_2);
                     (word_id_1, prob, position, importance)
                 })
-                .zip_eq(topic.into_iter().enumerate())
-                .map(|((word_id_1, probability_1, position, importance), (word_id, probability))| {
-                    assert_eq!(
-                        word_id,
-                        word_id_1,
-                        "Word ids {} {} are not compatible in zipping!",
-                        word_id,
-                        word_id_1
-                    );
-                    assert_eq!(
-                        *probability,
-                        probability_1,
-                        "Probabilities fir the ids {}({}) {}({}) are not compatible in zipping!",
-                        word_id,
-                        probability,
-                        word_id_1,
-                        probability_1
-                    );
-                    Arc::new(
-                        WordMeta {
-                            topic_id,
-                            word_id,
-                            probability: probability_1,
-                            position,
-                            importance,
-                        }
-                    )
+                .map(|(_, _, position, importance)| {
+                    SmallWordMeta {
+                        position,
+                        importance
+                    }
                 }).collect_vec();
-            topic_content.shrink_to_fit();
-            (topic_id, topic_content)
-        }).map(|(topic_id, topic_content)| {
-            let position_to_meta: PositionTo<_> = topic_content.iter().sorted_by_key(|value| value.position).cloned().collect_vec();
-
-            let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
-
-            for value in position_to_meta.iter() {
-                while importance_to_meta.len() <= value.importance {
-                    importance_to_meta.push(Vec::new())
-                }
-                importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());
-            }
+            by_word.shrink_to_fit();
 
             let mut max_value: f64 = f64::MIN;
             let mut min_value: f64 = f64::MAX;
             let mut sum_value: f64 = 0.0;
 
-            for value in &topic_content {
-                max_value = max_value.max(value.probability);
-                min_value = min_value.min(value.probability);
-                sum_value += value.probability;
+            for &value in topic.iter() {
+                max_value = max_value.max(value);
+                min_value = min_value.min(value);
+                sum_value += value;
             }
-
-
-            let stats = TopicStats {
-                topic_id,
-                max_value,
-                min_value,
-                sum_value,
-                average_value: sum_value / (topic_content.len() as f64)
+            let stats = SmallTopicStats {
+                max: max_value,
+                min: min_value,
+                sum: sum_value,
+                avg: sum_value / (by_word.len() as f64),
+                max_importance
             };
-
-            TopicMeta::new(stats, topic_content, position_to_meta, importance_to_meta)
+            SmallTopicMeta {
+                stats,
+                by_word
+            }
         }).collect()
     }
 }
@@ -363,6 +407,11 @@ impl<T, V> TopicModel<T, V> {
 }
 
 impl<T, V> BasicTopicModel for TopicModel<T, V> where V: BasicVocabulary<T> {
+
+    type TopicMetas<'a> = MetaView<'a, T, V> where Self: 'a;
+    type TopicMeta<'a> = TopicMetaView<'a> where Self: 'a;
+    type WordMeta<'a> = WordMeta where Self: 'a;
+
     fn topic_count(&self) -> usize {
         self.topics.len()
     }
@@ -395,12 +444,12 @@ impl<T, V> BasicTopicModel for TopicModel<T, V> where V: BasicVocabulary<T> {
         self.topics.get(topic_id)
     }
 
-    fn topic_metas(&self) -> &Vec<TopicMeta> {
-        &self.topic_metas
+    fn topic_metas<'a>(&'a self) -> Self::TopicMetas<'a> {
+        MetaView::new(self)
     }
 
-    fn get_topic_meta(&self, topic_id: usize) -> Option<&TopicMeta> {
-        self.topic_metas.get(topic_id)
+    fn get_topic_meta<'a>(&'a self, topic_id: usize) -> Option<Self::TopicMeta<'a>> {
+        self.meta_view_for(topic_id)
     }
 
     fn used_vocab_frequency(&self) -> &WordTo<WordFrequency> {
@@ -420,43 +469,88 @@ impl<T, V> BasicTopicModel for TopicModel<T, V> where V: BasicVocabulary<T> {
         }
     }
 
-    fn get_word_meta(&self, topic_id: TopicId, word_id: WordId) -> Option<&Arc<WordMeta>> {
-        self.topic_metas.get(topic_id)?.by_words.get(word_id)
+    fn get_word_meta(&self, topic_id: TopicId, word_id: WordId) -> Option<WordMeta> {
+        self.get_meta_for(topic_id, word_id)
     }
 
-    fn get_word_metas_for(&self, word_id: WordId) -> Option<TopicTo<&Arc<WordMeta>>> {
-        if self.contains_word_id(word_id) {
-            Some(self.topic_metas.iter().map(|value| unsafe{value.by_words.get_unchecked(word_id)}).collect())
+
+    fn get_all_similar_important<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMeta>> {
+        let metas = self.topic_metas.get(topic_id)?;
+        let targ_imp = metas.by_word.get(word_id)?.importance;
+        if metas.by_word.len() > 1024 {
+            Some(
+                metas.by_word
+                    .par_iter()
+                    .enumerate()
+                    .filter_map(|(word_id, v)| {
+                        if v.importance == targ_imp {
+                            Some(unsafe{
+                                self.get_meta_for_unchecked(topic_id, word_id)
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            )
         } else {
-            None
+            Some(
+                metas.by_word
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(word_id, v)| {
+                        if v.importance == targ_imp {
+                            Some(unsafe{
+                                self.get_meta_for_unchecked(topic_id, word_id)
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            )
         }
+
+
     }
 
-    fn get_all_similar_important(&self, topic_id: usize, word_id: usize) -> Option<&Vec<Arc<WordMeta>>> {
-        let topic = self.topic_metas.get(topic_id)?;
-        topic.by_importance.get(topic.by_words.get(word_id)?.importance)
+    fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<PositionTo<WordId>> {
+        let value = Arc::into_inner(self.meta_view_for(topic_id)?.to_position_index().sorted_by_pos).expect("This unpacking never fails!");
+        Some(value)
     }
 
-    fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<&[Arc<WordMeta>]> {
+
+    fn get_n_best_for_topic(&self, topic_id: usize, n: usize) -> Option<PositionTo<WordId>> {
         let metas = self.topic_metas.get(topic_id)?;
-        Some(&metas.by_position)
+        if n == 0 {
+            return Some(Vec::new())
+        }
+
+        Some(
+            metas.by_word
+                .iter()
+                .enumerate()
+                .filter(|&(_, v)|  v.position < n)
+                .sorted_unstable_by_key(|(_, v)| v.position)
+                .map(|(k, _)| k)
+                .collect()
+        )
     }
 
-
-    fn get_n_best_for_topic(&self, topic_id: usize, n: usize) -> Option<&[Arc<WordMeta>]> {
-        let metas = self.topic_metas.get(topic_id)?;
-        Some(&metas.by_position[..min(n, metas.by_position.len())])
+    fn get_n_best_for_topics(&self, n: usize) -> TopicTo<Vec<WordId>> {
+        self.topic_ids().map(
+            |topic_id|
+                self.get_n_best_for_topic(topic_id, n)
+                    .expect("Never fails.")
+        ).collect()
     }
 
-    fn get_n_best_for_topics(&self, n: usize) -> Option<Vec<&[Arc<WordMeta>]>> {
-        self.topic_ids().map(|topic_id| self.get_n_best_for_topic(topic_id, n)).collect()
-    }
 }
 
 impl<T, V> VoterInfoProvider for TopicModel<T, V> where V: BasicVocabulary<T> {
-    type VoterMeta = Arc<WordMeta>;
+    type VoterMeta<'b> = WordMeta where Self: 'b;
 
-    fn get_voter_meta<'a>(&'a self, column: usize, row: usize) -> Option<&'a Self::VoterMeta> {
+    fn get_voter_meta<'a>(&'a self, column: usize, row: usize) -> Option<WordMeta> {
         self.get_word_meta(column, row)
     }
 }
@@ -464,22 +558,6 @@ impl<T, V> VoterInfoProvider for TopicModel<T, V> where V: BasicVocabulary<T> {
 impl<T, V> BasicTopicModelWithVocabulary<T, V> for TopicModel<T, V> where V: BasicVocabulary<T> {
     fn vocabulary(&self) -> &V {
         &self.vocabulary
-    }
-
-    fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, T>>  where V: 'a  {
-        let topic_meta = self.get_topic_meta(topic_id)?;
-        let word_meta = topic_meta.by_words.get(word_id)?;
-        let word = self.vocabulary.get_value_by_id(word_meta.word_id)?;
-        Some(WordMetaWithWord::new(word, word_meta))
-    }
-
-    fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, T>>> where V: 'a {
-        Some(
-            self.get_all_similar_important(topic_id, word_id)?
-                .iter()
-                .map(|value| WordMetaWithWord::new(self.vocabulary.get_value_by_id(value.word_id).unwrap(), value))
-                .collect()
-        )
     }
 }
 
@@ -548,14 +626,22 @@ impl<T, V> TopicModelWithDocumentStats for TopicModel<T, V> {
 impl<T: Display, V> TopicModel<T, V> where V: BasicVocabulary<T> {
 
     pub fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
-        for (topic_id, topic_entries) in self.get_n_best_for_topics(n).ok_or(io::Error::from(ErrorKind::Other))?.iter().enumerate() {
+        for (topic_id, topic_entries) in self.get_n_best_for_topics(n).iter().enumerate() {
             if topic_id != 0 {
                 out.write(b"\n")?;
             }
+            let topic = self.get_topic_meta(topic_id).expect("All words should be known!");
             write!(out, "Topic({topic_id}):")?;
             for it in topic_entries.iter() {
+                let word_meta = topic.get_word_meta(*it).expect("All words should be known!");
                 out.write(b"\n")?;
-                write!(out, "    {}: {} ({})", self.vocabulary.get_value_by_id(it.word_id).unwrap(), it.probability, it.rank())?;
+                write!(
+                    out,
+                    "    {}: {} ({})",
+                    self.vocabulary.get_value_by_id(word_meta.word_id).unwrap(),
+                    word_meta.probability,
+                    word_meta.rank()
+                )?;
             }
         }
         Ok(())
@@ -613,7 +699,7 @@ impl<T, V> MappableTopicModel<T, V> for TopicModel<T, V> where T: Clone + Hash +
 pub mod test {
     use arcstr::ArcStr;
     use crate::enums::TopicModelVersion;
-    use crate::model::{FullTopicModel, TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
+    use crate::model::{BasicTopicModel, FullTopicModel, TopicModel, TopicModelInferencer, TopicModelWithVocabulary};
     use crate::vocabulary::{EfficientStringVocabulary, Vocabulary, VocabularyMut};
     use itertools::{assert_equal, Itertools};
     use bincode;
@@ -651,6 +737,12 @@ pub mod test {
     }
 
     #[test]
+    fn the_new_sorts_work_as_expected(){
+        let test = create_test_data();
+        println!("{:#?}", test.get_all_similar_important(0, 4).expect("Should returns something"))
+    }
+
+    #[test]
     fn can_load_and_unlad_json(){
         let topic_model = create_test_data();
 
@@ -659,11 +751,7 @@ pub mod test {
         let topic: TopicModel<String, Vocabulary<String>> = serde_json::from_str(&ser).unwrap();
 
         for (a, b) in topic_model.topic_metas.iter().zip_eq(topic.topic_metas.iter()) {
-            assert_equal(a.by_words.clone(), b.by_words.clone());
-            assert_equal(a.by_position.clone(), b.by_position.clone());
-            for (k, v) in a.by_importance.clone().into_iter().zip_eq(b.by_importance.clone().into_iter()) {
-                assert_equal(k, v);
-            }
+            assert_equal(a.by_word.as_slice(), b.by_word.as_slice());
         }
     }
 
@@ -683,11 +771,7 @@ pub mod test {
         let topic: TopicModel<String, Vocabulary<String>> = bincode::deserialize(&ser).unwrap();
 
         for (a, b) in topic_model.topic_metas.iter().zip_eq(topic.topic_metas.iter()) {
-            assert_equal(a.by_words.clone(), b.by_words.clone());
-            assert_equal(a.by_position.clone(), b.by_position.clone());
-            for (k, v) in a.by_importance.clone().into_iter().zip_eq(b.by_importance.clone().into_iter()) {
-                assert_equal(k, v);
-            }
+            assert_equal(a.by_word.iter(), b.by_word.iter());
         }
     }
 

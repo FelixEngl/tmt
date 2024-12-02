@@ -15,7 +15,7 @@
 use std::hash::Hash;
 use evalexpr::{ContextWithMutableVariables, EvalexprNumericTypesConvert};
 use ldatranslate_translate::{ContextExtender, ExtensionLevelKind, TopicMeta, TopicMetas, TopicModelLikeMatrix, VoterInfoProvider, VoterMeta};
-use crate::model::{FullTopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
+use crate::model::{BasicTopicModel, FullTopicModel, TopicModelWithDocumentStats, TopicModelWithVocabulary};
 use crate::vocabulary::{BasicVocabulary, SearchableVocabulary};
 use crate::model::meta::{TopicMeta as TopicModelTopicMeta, WordMeta};
 
@@ -30,9 +30,9 @@ pub trait TranslatableTopicMatrix<T, Voc>: VoterInfoProvider
 where
     Voc: BasicVocabulary<T>
 {
-    type TopicToVoterMatrix: TopicModelLikeMatrix;
+    type TopicToVoterMatrix<'a>: TopicModelLikeMatrix + 'a where Self: 'a;
 
-    type TopicMetas: TopicMetas;
+    type TopicMetas<'a>: TopicMetas + 'a where Self: 'a;
 
     fn len(&self) -> usize;
 
@@ -40,10 +40,10 @@ where
     fn vocabulary(&self) -> &Voc;
 
     /// The raw matrix. It is usually something like Vec<Vec<f64>>
-    fn matrix(&self) -> &Self::TopicToVoterMatrix;
+    fn matrix<'a>(&'a self) -> Self::TopicToVoterMatrix<'a>;
 
     /// The matrix meta. It is usually something like Vec<Vec<VoterMeta>>
-    fn matrix_meta(&self) -> &Self::TopicMetas;
+    fn matrix_meta<'a>(&'a self) -> Self::TopicMetas<'a>;
 }
 
 
@@ -60,10 +60,11 @@ pub trait TranslatableTopicMatrixWithCreate<T, Voc>: TranslatableTopicMatrix<T, 
 impl<Model, T, Voc> TranslatableTopicMatrix<T, Voc> for Model
 where
     Model: TopicModelWithVocabulary<T, Voc> + TopicModelWithDocumentStats,
-    Voc: BasicVocabulary<T>
+    Voc: BasicVocabulary<T>,
+    for<'a> <Model as BasicTopicModel>::TopicMetas<'a>: TopicMetas
 {
-    type TopicToVoterMatrix = Vec<Vec<f64>>;
-    type TopicMetas = Vec<TopicModelTopicMeta>;
+    type TopicToVoterMatrix<'a> = &'a [Vec<f64>] where Self: 'a;
+    type TopicMetas<'a> = <Self as BasicTopicModel>::TopicMetas<'a> where Self: 'a;
 
     #[inline(always)]
     fn len(&self) -> usize {
@@ -76,12 +77,12 @@ where
     }
 
     #[inline(always)]
-    fn matrix(&self) -> &Self::TopicToVoterMatrix {
-        self.topics()
+    fn matrix<'a>(&'a self) -> Self::TopicToVoterMatrix<'a> {
+        self.topics().as_slice()
     }
 
     #[inline(always)]
-    fn matrix_meta(&self) -> &Self::TopicMetas {
+    fn matrix_meta<'a>(&'a self) -> Self::TopicMetas<'a> {
         self.topic_metas()
     }
 }

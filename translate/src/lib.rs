@@ -51,10 +51,10 @@ pub trait ContextExtender {
 /// Provides some info for some voters.
 pub trait VoterInfoProvider: Send + Sync {
     /// Provides the metadata to a voter
-    type VoterMeta: VoterMeta + Sync;
+    type VoterMeta<'a>: VoterMeta + Sync + 'a where Self: 'a;
 
     /// Get the meta for a specific voter.
-    fn get_voter_meta<'a>(&'a self, column: usize, voter_id: usize) -> Option<&'a Self::VoterMeta>;
+    fn get_voter_meta<'a>(&'a self, column: usize, voter_id: usize) -> Option<Self::VoterMeta<'a>>;
 }
 
 
@@ -114,20 +114,20 @@ pub trait TopicLike {
 pub trait TopicMetas {
 
     /// A topic meta
-    type TopicMeta: TopicMeta + Send + Sync;
+    type TopicMeta<'a>: TopicMeta + Send + Sync + 'a where Self: 'a;
 
-    type Iter<'a>: Iterator<Item = &'a Self::TopicMeta> where Self: 'a;
-    type ParIter<'a>: ParallelIterator<Item = &'a Self::TopicMeta> + IndexedParallelIterator where Self: 'a;
+    type Iter<'a>: Iterator<Item = Self::TopicMeta<'a>> where Self: 'a;
 
-    /// Returns the meta for a specific topic id
-    fn get(&self, topic_id: usize) -> Option<&Self::TopicMeta>;
+    type ParIter<'a>: ParallelIterator<Item = Self::TopicMeta<'a>> + IndexedParallelIterator where Self: 'a;
 
     /// Returns the meta for a specific topic id
-    unsafe fn get_unchecked(&self, topic_id: usize) -> &Self::TopicMeta;
+    fn get<'a>(&'a self, topic_id: usize) -> Option<Self::TopicMeta<'a>>;
+
+    /// Returns the meta for a specific topic id
+    unsafe fn get_unchecked<'a>(&'a self, topic_id: usize) -> Self::TopicMeta<'a>;
 
     /// The number of topics
     fn len(&self) -> usize;
-
 
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
     fn par_iter<'a>(&'a self) -> Self::ParIter<'a>;
@@ -172,66 +172,35 @@ pub trait VoterMeta: ContextExtender {
     fn importance(&self) -> usize;
 }
 
-impl<T, R> ContextExtender for T
-where
-    T: Deref<Target = R>,
-    R: VoterMeta
-{
-    const EXTENSION_LEVEL: ExtensionLevelKind = T::EXTENSION_LEVEL;
+// impl<T, R> ContextExtender for T
+// where
+//     T: Deref<Target = R>,
+//     R: VoterMeta
+// {
+//     const EXTENSION_LEVEL: ExtensionLevelKind = T::EXTENSION_LEVEL;
+//
+//     delegate::delegate! {
+//         to self.deref() {
+//             fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut impl ContextWithMutableVariables<NumericTypes=NumericTypes>);
+//         }
+//     }
+// }
 
-    delegate::delegate! {
-        to self.deref() {
-            fn extend_context<NumericTypes: EvalexprNumericTypesConvert>(&self, context: &mut impl ContextWithMutableVariables<NumericTypes=NumericTypes>);
-        }
-    }
-}
+// impl<T, R> VoterMeta for T
+// where
+//     T: Deref<Target = R>,
+//     R: VoterMeta
+// {
+//     delegate::delegate! {
+//         to self.deref() {
+//             fn voter_id(&self) -> usize;
+//             fn score(&self) -> f64;
+//             fn rank(&self) -> usize;
+//             fn importance(&self) -> usize;
+//         }
+//     }
+// }
 
-impl<T, R> VoterMeta for T
-where
-    T: Deref<Target = R>,
-    R: VoterMeta
-{
-    delegate::delegate! {
-        to self.deref() {
-            fn voter_id(&self) -> usize;
-            fn score(&self) -> f64;
-            fn rank(&self) -> usize;
-            fn importance(&self) -> usize;
-        }
-    }
-}
-
-
-
-impl<T, L> TopicMetas for T
-where
-    T: Deref<Target=[L]>,
-    L: TopicMeta + Send + Sync + 'static
-{
-    type TopicMeta = L;
-    type Iter<'a> = std::slice::Iter<'a, Self::TopicMeta> where Self: 'a;
-    type ParIter<'a> = rayon::slice::Iter<'a, Self::TopicMeta> where Self: 'a;
-
-    fn get(&self, topic_id: usize) -> Option<&Self::TopicMeta> {
-        <[_]>::get(self, topic_id)
-    }
-
-    unsafe fn get_unchecked(&self, topic_id: usize) -> &Self::TopicMeta {
-        <[_]>::get_unchecked(self, topic_id)
-    }
-
-    fn len(&self) -> usize {
-        <[_]>::len(self)
-    }
-
-    fn iter<'a>(&'a self) -> Self::Iter<'a> {
-        <&[_]>::into_iter(self)
-    }
-
-    fn par_iter<'a>(&'a self) -> Self::ParIter<'a> {
-        <&[_]>::into_par_iter(self)
-    }
-}
 
 impl<T, L> TopicModelLikeMatrix for T
 where

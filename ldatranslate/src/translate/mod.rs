@@ -25,6 +25,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::time::{Duration};
 use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext, Value};
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -45,6 +46,7 @@ use ldatranslate_voting::variable_provider::{VariableProvider, VariableProviderO
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::traits::VotingMethodMarker;
 use ldatranslate_voting::VotingMethod;
+use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
 use crate::variable_provider::AsVariableProvider;
 
@@ -85,6 +87,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     P: AsVariableProvider<T>
 {
 
+    let reporter = MemoryReporter::new(Duration::from_millis(2000));
+
     if let Some(lang_model) = target.vocabulary().language() {
         if let (Some(lang_a), lang_b) = dictionary.language_direction_a_to_b() {
             if lang_model != lang_a {
@@ -108,10 +112,13 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         return Err(TranslateError::DictionaryEmpty(DirectionMarker::BToA));
     }
 
+    log::info!("Create topic specific dictionary. {}", reporter.create_report_now());
     let dictionary: D = create_topic_vocabulary_specific_dictionary(
         dictionary,
         target.vocabulary()
     );
+    log::info!("After cration of topic specific dict. {}", reporter.create_report_now());
+
 
     if dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
@@ -153,7 +160,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         topic_context.to_static_with(EmptyContextWithBuiltinFunctions::default());
 
 
-
+    log::info!("Memory usage before loop: {}", reporter.create_report_now());
     // topic to word id to probable translation candidates.
     let result = target
         .matrix()
@@ -216,7 +223,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }
     }).collect_vec_list();
 
-
+    log::info!("Memory usage after loop: {}", reporter.create_report_now());
     let mut voc_b = voc_b_col.iter().flatten().cloned().collect::<Voc>();
     voc_b.set_language(dictionary.language::<B>().cloned());
 
@@ -253,6 +260,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         topic.into_iter().sorted_unstable_by_key(|value| value.0).map(|(_, b)| b).collect_vec()
     }).collect::<Vec<_>>();
 
+    log::info!("Memory usage when finished: {}", reporter.create_report_now());
     Ok(Target::create_new_from(
         inner_topic_model,
         voc_b,
@@ -267,7 +275,7 @@ fn translate_topic<Target, T, V, Voc, P, C>(
     target: &Target,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
     topic_id: usize,
-    topic: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
+    topic: &<Target::TopicToVoterMatrix<'_> as TopicModelLikeMatrix>::TopicLike,
     topic_context: C,
     config: &TranslateConfig<V>,
     provider: Option<&P>

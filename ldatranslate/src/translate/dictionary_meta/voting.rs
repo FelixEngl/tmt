@@ -4,7 +4,6 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use evalexpr::{context_map, Context, ContextWithMutableVariables, ConvertibleWithEvalexprNumericTypes, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext, Value};
 use itertools::Itertools;
-use rayon::prelude::*;
 use thiserror::Error;
 use ldatranslate_toolkit::evalexpr::{CombineableContext, SimpleCombineableContext};
 use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithMeta, DictionaryWithVocabulary};
@@ -16,7 +15,6 @@ use ldatranslate_topicmodel::translate::{TranslatableTopicMatrix, TranslatableTo
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};
 use ldatranslate_translate::{ContextExtender, TopicLike, TopicMeta, TopicModelLikeMatrix, VoterMeta};
 use ldatranslate_voting::variable_provider::{VariableProviderError, VariableProviderOut};
-use ldatranslate_voting::variable_provider::variable_names::*;
 use ldatranslate_voting::traits::VotingMethodMarker;
 pub use crate::translate::*;
 use ldatranslate_voting::constants::TMTNumericTypes;
@@ -266,7 +264,7 @@ where
 fn vote_for_domain_in_topic<'a, Target, T, V, Voc, P>(
     target: &'a Target,
     topic_id: usize,
-    voters: &<Target::TopicToVoterMatrix as TopicModelLikeMatrix>::TopicLike,
+    voters: &<Target::TopicToVoterMatrix<'_> as TopicModelLikeMatrix>::TopicLike,
     candidate_scores: &(impl TopicLike + Send + Sync),
     topic_context: impl Context<NumericTypes=TMTNumericTypes> + Send + Sync + IterateVariablesContext,
     config: &VoteConfig<V>,

@@ -1,12 +1,10 @@
 use std::borrow::{Borrow, Cow};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::fmt::Display;
 use std::ops::*;
 use std::sync::{Arc, RwLock};
 use itertools::{Itertools};
 use ndarray::Ix1;
-use ndarray_stats::EntropyExt;
-use ndarray_stats::errors::MultiInputError;
 use thiserror::Error;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DomainModelIndex, META_DICT_ARRAY_LENTH};
 use crate::translate::dictionary_meta::iter::{Iter, IterSorted};

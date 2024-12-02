@@ -87,3 +87,4 @@ bitvec = { version = "1", features = ["serde"] }
 arcstr = { version = "1.2.0", features = ["serde"] }
 ndarray = "0.16.1"
 ndarray-stats = "0.6.0"
+sysinfo = "0.32.1"

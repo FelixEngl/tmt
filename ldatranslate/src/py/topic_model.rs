@@ -16,15 +16,15 @@ use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::ops::Range;
 use std::path::{PathBuf};
-use std::sync::Arc;
 use itertools::Itertools;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use ldatranslate_topicmodel::model::{DocumentLength, DocumentTo, Probability, TopicTo, WordFrequency, WordTo};
+use thiserror::Error;
+use ldatranslate_topicmodel::model::{DocumentLength, DocumentTo, PositionTo, Probability, TopicTo, WordFrequency, WordTo};
 use crate::py::helpers::{LanguageHintValue};
 use crate::py::topic_model_builder::PyTopicModelBuilder;
 use crate::py::vocabulary::{PyVocabulary};
@@ -144,12 +144,17 @@ impl PyTopicModel {
     }
 
     fn get_words_of_topic_sorted(&self, topic_id: usize) -> Option<Vec<(String, f64)>> {
+        let probabilities = self.inner.topics().get(topic_id)?;
         self.get_words_for_topic_sorted(topic_id)
             .map(|value|
                 value
                     .iter()
-                    .map(|v| {
-                        (self.inner.vocabulary().get_value_by_id(v.word_id).unwrap().to_string(), v.probability)
+                    .map(|&word_id| {
+                        let word = self.inner.vocabulary().get_value_by_id(word_id).unwrap().to_string();
+                        let prob = unsafe{
+                            *probabilities.get_unchecked(word_id)
+                        };
+                        (word, prob)
                     })
                     .collect_vec()
             )
@@ -174,7 +179,6 @@ impl PyTopicModel {
         let min_value = self.inner.topics().iter().flatten().min_partial_filtered().unwrap().clone();
 
         let mut new_probability = Vec::new();
-
 
         let mut vocab_frequency: Vec<u64>;
 
@@ -237,17 +241,28 @@ impl PyTopicModel {
         serde_json::to_writer(BufWriter::new(File::options().write(true).create_new(true).open(path)?), &self.inner).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
-    fn save_binary(&self, path: PathBuf) -> PyResult<()> {
-        bincode::serialize_into(BufWriter::new(File::options().write(true).create_new(true).open(path)?), &self.inner).map_err(|value| PyValueError::new_err(value.to_string()))
-    }
+
     #[staticmethod]
     fn load_json(path: PathBuf) -> PyResult<Self> {
         serde_json::from_reader(BufReader::new(File::options().read(true).open(path)?)).map_err(|value| PyValueError::new_err(value.to_string()))
     }
 
+    fn save_binary(&self, path: PathBuf) -> PyResult<()> {
+        self.save_to(
+            File::options().write(true).create_new(true).open(path)?,
+            true
+        )?;
+        Ok(())
+    }
+
     #[staticmethod]
     fn load_binary(path: PathBuf) -> PyResult<Self> {
-        bincode::deserialize_from(BufReader::new(File::options().read(true).open(path)?)).map_err(|value| PyValueError::new_err(value.to_string()))
+        Ok(
+            Self::load_from(
+                File::options().read(true).open(path)?,
+                true
+            )?
+        )
     }
 
 
@@ -273,8 +288,63 @@ impl PyTopicModel {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum TopicModelSaveError {
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
+    #[error(transparent)]
+    BinarySerialisation(#[from] bincode::Error),
+}
+
+impl From<TopicModelSaveError> for PyErr {
+    fn from(value: TopicModelSaveError) -> Self {
+        match value {
+            TopicModelSaveError::IO(value) => {
+                value.into()
+            }
+            TopicModelSaveError::BinarySerialisation(value) => {
+                PyRuntimeError::new_err(value.to_string())
+            }
+        }
+    }
+}
+
+impl PyTopicModel {
+    pub fn save_to<W: Write>(&self, writer: W, compressed: bool) -> Result<(), TopicModelSaveError> {
+        let mut writer: Box<dyn Write> = if compressed {
+            Box::new(zstd::Encoder::new(writer, 0)?)
+        } else {
+            Box::new(BufWriter::new(writer))
+        };
+
+        bincode::serialize_into(&mut writer, &self.inner)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    pub fn load_from<R: Read>(reader: R, compressed: bool) -> Result<Self, TopicModelSaveError> {
+        let reader: Box<dyn Read> = if compressed {
+            Box::new(zstd::Decoder::new(reader)?)
+        } else {
+            Box::new(BufReader::with_capacity(
+                byte_unit::Byte::from_u64_with_unit(
+                    250,
+                    byte_unit::Unit::MB
+                ).unwrap().as_u64() as usize,
+                reader
+            ))
+        };
+        Ok(bincode::deserialize_from(reader)?)
+    }
+}
+
 
 impl BasicTopicModel for PyTopicModel {
+
+    type TopicMeta<'a> = <UnderlyingPyTopicModel as BasicTopicModel>::TopicMeta<'a>;
+    type TopicMetas<'a> = <UnderlyingPyTopicModel as BasicTopicModel>::TopicMetas<'a>;
+    type WordMeta<'a> = <UnderlyingPyTopicModel as BasicTopicModel>::WordMeta<'a>;
+
     delegate::delegate! {
         to self.inner {
             /// The number of topics in this model
@@ -306,10 +376,13 @@ impl BasicTopicModel for PyTopicModel {
             fn get_topic(&self, topic_id: TopicId) -> Option<&WordTo<Probability>>;
 
             /// The meta of the topic
-            fn topic_metas(&self) -> &TopicTo<TopicMeta>;
+            fn topic_metas<'a>(&'a self) -> Self::TopicMetas<'a>;
 
             /// Get the `TopicMeta` for `topic_id`
-            fn get_topic_meta(&self, topic_id: TopicId) -> Option<&TopicMeta>;
+            fn get_topic_meta<'a>(&'a self, topic_id: TopicId) -> Option<Self::TopicMeta<'a>>;
+
+            /// Get the [WordMeta] of `word_id` of `topic_id`
+            fn get_word_meta<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Self::WordMeta<'a>>;
 
             /// Get the word freuencies for each word.
             fn used_vocab_frequency(&self) -> &WordTo<WordFrequency>;
@@ -320,23 +393,19 @@ impl BasicTopicModel for PyTopicModel {
             /// Get all probabilities of `word_id`
             fn get_topic_probabilities_for(&self, word_id: WordId) -> Option<TopicTo<Probability>>;
 
-            /// Get the [WordMeta] of `word_id` of `topic_id`
-            fn get_word_meta(&self, topic_id: TopicId, word_id: WordId) -> Option<&Arc<WordMeta>>;
-
-            /// Get all [WordMeta] for `word_id`
-            fn get_word_metas_for(&self, word_id: WordId) -> Option<TopicTo<&Arc<WordMeta>>>;
-
             /// Get all [WordMeta] values with a similar importance in `topic_id` than `word_id`.
             /// (including the `word_id`)
-            fn get_all_similar_important(&self, topic_id: TopicId, word_id: WordId) -> Option<&Vec<Arc<WordMeta>>>;
+            fn get_all_similar_important<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Vec<Self::WordMeta<'a>>>;
 
-            fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<&[Arc<WordMeta>]>;
+            /// Get the word ids sorted by position.
+
+            fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<PositionTo<WordId>>;
 
             /// Get the `n` best [WordMeta] in `topic_id` by their position.
-            fn get_n_best_for_topic(&self, topic_id: TopicId, n: usize) -> Option<&[Arc<WordMeta>]>;
+            fn get_n_best_for_topic(&self, topic_id: TopicId, n: usize) -> Option<PositionTo<WordId>>;
 
             /// Get the `n` best [WordMeta] for all topics by their position.
-            fn get_n_best_for_topics(&self, n: usize) -> Option<TopicTo<&[Arc<WordMeta>]>>;
+            fn get_n_best_for_topics(&self, n: usize) -> TopicTo<Vec<WordId>>;
         }
     }
 }
@@ -364,9 +433,9 @@ impl BasicTopicModelWithVocabulary<UnderlyingPyWord, UnderlyingPyVocabulary> for
         to self.inner {
             fn vocabulary(&self) -> &UnderlyingPyVocabulary;
             fn get_word<'a>(&'a self, word_id: usize) -> Option<&'a UnderlyingPyWord> where UnderlyingPyVocabulary: 'a;
-            fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, UnderlyingPyWord>>  where UnderlyingPyVocabulary: 'a;
-            fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord>>> where UnderlyingPyVocabulary: 'a;
-            fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, UnderlyingPyWord>>> where UnderlyingPyVocabulary: 'a;
+            fn get_word_meta_with_word<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>  where UnderlyingPyVocabulary: 'a;
+            fn get_word_metas_with_word<'a>(&'a self, word_id: usize) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>> where UnderlyingPyVocabulary: 'a;
+            fn get_all_similar_important_with_word_for<'a>(&'a self, topic_id: usize, word_id: usize) -> Option<Vec<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>> where UnderlyingPyVocabulary: 'a;
         }
     }
 }
@@ -378,9 +447,9 @@ impl TopicModelWithVocabulary<UnderlyingPyWord, UnderlyingPyVocabulary> for PyTo
             fn contains<Q: ?Sized>(&self, word: &Q) -> bool where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
             fn get_probability_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Probability> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
             fn get_topic_probabilities_for_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicTo<Probability>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
-            fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Arc<WordMeta>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
-            fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq, Vocabulary<String>: 'a;
-            fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Vec<Arc<WordMeta>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn get_word_meta_by_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Self::WordMeta<'a>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+            fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq, Vocabulary<String>: 'a;
+            fn get_all_similar_important_words_for_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Vec<<Self as BasicTopicModel>::WordMeta<'a>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
             fn seems_equal_to<Q, VOther>(&self, other: &impl TopicModelWithVocabulary<Q, VOther>) -> bool where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq + Borrow<UnderlyingPyWord>, VOther: BasicVocabulary<Q>;
         }
     }
@@ -399,11 +468,11 @@ impl From<UnderlyingPyTopicModel> for PyTopicModel {
 }
 
 impl VoterInfoProvider for PyTopicModel {
-    type VoterMeta = <UnderlyingPyTopicModel as VoterInfoProvider>::VoterMeta;
+    type VoterMeta<'a> = <UnderlyingPyTopicModel as VoterInfoProvider>::VoterMeta<'a>;
 
     delegate::delegate! {
         to self.inner {
-            fn get_voter_meta<'a>(&'a self, column: usize, voter_id: usize) -> Option<&'a Self::VoterMeta>;
+            fn get_voter_meta<'a>(&'a self, column: usize, voter_id: usize) -> Option<Self::VoterMeta<'a>>;
         }
     }
 }
@@ -436,10 +505,11 @@ register_python!(struct PyTopicModel;);
 
 #[cfg(test)]
 mod test {
+    use std::io::Cursor;
     use arcstr::ArcStr;
     use crate::py::helpers::LanguageHintValue;
     use crate::py::topic_model::{PyTopicModel};
-    use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
+    use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel, TopicModelWithVocabulary};
     use ldatranslate_topicmodel::vocabulary::MappableVocabulary;
     use crate::translate::test::create_test_data;
 
@@ -493,8 +563,23 @@ mod test {
                     "k".to_string(),
                 ]
             ].into()
-        );
+        ).unwrap();
 
-        tranlation.unwrap().show_top(Some(20)).unwrap()
+        let mut vec = Vec::new();
+        tranlation.save_to(
+            &mut vec,
+            true
+        ).expect("save failed");
+
+        let translation2 = PyTopicModel::load_from(
+            Cursor::new(&vec),
+            true
+        ).expect("load failed");
+
+        assert!(tranlation.inner.seems_equal_to(&translation2.inner));
+
+        tranlation.show_top(Some(20)).unwrap()
+
+
     }
 }

@@ -14,15 +14,14 @@
 
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::sync::Arc;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::{MapAccess, SeqAccess, Visitor};
-use serde::ser::{SerializeSeq, SerializeStruct};
+use std::sync::{Arc, OnceLock};
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
-use crate::model::{Importance, ImportanceRank, ImportanceRankTo, Position, PositionTo, Probability, Rank, TopicId, WordId, WordTo};
+use crate::model::{Importance, ImportanceRank, ImportanceRankTo, Position, PositionTo, PrimitiveWordMeta, Probability, Rank, TopicId, WordId, WordTo};
 
 /// The precalculated stats of a topic
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TopicStats {
     pub topic_id: usize,
     pub max_value: f64,
@@ -32,155 +31,80 @@ pub struct TopicStats {
 }
 
 
+
+
 /// The meta for a topic.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicMeta {
     pub stats: TopicStats,
-    pub by_words: WordTo<Arc<WordMeta>>,
-    pub by_position: PositionTo<Arc<WordMeta>>,
-    pub by_importance: ImportanceRankTo<Vec<Arc<WordMeta>>>
+    pub by_words: Arc<WordTo<Arc<WordMeta>>>,
+    #[serde(skip, default)]
+    by_position: OnceLock<Arc<PositionTo<WordId>>>,
+    #[serde(skip, default)]
+    by_importance: OnceLock<Arc<ImportanceRankTo<Vec<WordId>>>>
 }
+
 
 impl TopicMeta {
     pub fn new(
         stats: TopicStats,
-        mut by_words: WordTo<Arc<WordMeta>>,
-        mut by_position: PositionTo<Arc<WordMeta>>,
-        mut by_importance: ImportanceRankTo<Vec<Arc<WordMeta>>>
+        mut by_words: WordTo<Arc<WordMeta>>
     ) -> Self {
         by_words.shrink_to_fit();
-        by_position.shrink_to_fit();
-        by_importance.shrink_to_fit();
-
         Self {
             stats,
-            by_words,
-            by_position,
-            by_importance
+            by_words: Arc::new(by_words),
+            by_position: OnceLock::new(),
+            by_importance: OnceLock::new()
         }
     }
 
-    fn new_with(stats: TopicStats, by_words: WordTo<Arc<WordMeta>>) -> TopicMeta {
-        let mut position_to_meta: PositionTo<Arc<WordMeta>> = by_words.clone();
-        position_to_meta.sort_by_key(|value| value.position);
-
-        let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
-
-        for value in position_to_meta.iter() {
-            while importance_to_meta.len() <= value.importance {
-                importance_to_meta.push(Vec::new())
+    pub fn by_position(&self) -> &[WordId] {
+        self.by_position.get_or_init(|| {
+            let mut position_to_meta: PositionTo<WordId> = (0..self.by_words.len()).collect_vec();
+            position_to_meta.shrink_to_fit();
+            unsafe{
+                position_to_meta
+                    .sort_by_key(|&word_id| self.by_words.get_unchecked(word_id).position);
             }
-            unsafe{importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());}
-        }
-
-        TopicMeta::new(
-            stats,
-            by_words,
-            position_to_meta,
-            importance_to_meta
-        )
+            Arc::new(position_to_meta)
+        })
     }
-}
 
-impl Serialize for TopicMeta {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        if serializer.is_human_readable() {
-            let mut ser = serializer.serialize_struct("TopicMeta", 2)?;
-            ser.serialize_field("stats", &self.stats)?;
-            ser.serialize_field("bywords", &self.by_words)?;
-            ser.end()
-        } else {
-            let mut ser = serializer.serialize_seq(Some(2))?;
-            ser.serialize_element(&self.stats)?;
-            ser.serialize_element(&self.by_words)?;
-            ser.end()
-        }
+    pub fn by_position_iter<'a>(&'a self) -> impl IntoIterator<Item = &'a Arc<WordMeta>> + 'a {
+        self.by_position().into_iter().map(|&value| {
+            unsafe{self.by_words.get_unchecked(value)}
+        })
     }
-}
 
-
-impl<'de> Deserialize<'de> for TopicMeta {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-        struct TopicMetaVisitor;
-
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "lowercase")]
-        enum Field { Stats, ByWords }
-
-        impl<'de> Visitor<'de> for TopicMetaVisitor {
-            type Value = TopicMeta;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("a TopicMeta")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error> where A: SeqAccess<'de> {
-                let stats_field = seq.next_element()?.ok_or_else(|| de::Error::missing_field("stats"))?;
-                let by_words_field: Vec<Arc<WordMeta>> = seq.next_element()?.ok_or_else(|| de::Error::missing_field("bywords"))?;
-                let mut position_to_meta: PositionTo<Arc<WordMeta>> = by_words_field.clone();
-                position_to_meta.sort_by_key(|value| value.position);
-
-                let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
-
-                for value in position_to_meta.iter() {
-                    while importance_to_meta.len() <= value.importance {
-                        importance_to_meta.push(Vec::new())
-                    }
-                    unsafe{importance_to_meta.get_unchecked_mut(value.importance).push(value.clone());}
+    pub fn by_importance(&self) -> &[Vec<WordId>] {
+        self.by_importance.get_or_init(|| {
+            let mut importance_to_meta: ImportanceRankTo<_> = Vec::new();
+            for value in self.by_position_iter() {
+                if importance_to_meta.len() <= value.importance {
+                    importance_to_meta.resize_with(
+                        value.importance + 1,
+                        Vec::new
+                    );
                 }
-
-                Ok(
-                    TopicMeta::new(
-                        stats_field,
-                        by_words_field,
-                        position_to_meta,
-                        importance_to_meta
-                    )
-                )
+                unsafe{importance_to_meta.get_unchecked_mut(value.importance).push(value.word_id);}
             }
+            Arc::new(importance_to_meta)
+        })
+    }
 
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
-                let mut stats_field = None;
-                let mut by_words_field = None;
-                while let Some(key) = map.next_key::<Field>()? {
-                    match key {
-                        Field::Stats => {
-                            if stats_field.is_some() {
-                                return Err(de::Error::duplicate_field("stats"));
-                            }
-                            stats_field = Some(map.next_value::<TopicStats>()?);
-                        }
-                        Field::ByWords => {
-                            if by_words_field.is_some() {
-                                return Err(de::Error::duplicate_field("bywords"));
-                            }
-                            by_words_field = Some(map.next_value::<WordTo<Arc<WordMeta>>>()?)
-                        }
-                    }
-                }
-                let stats_field = stats_field.ok_or_else(|| de::Error::missing_field("stats"))?;
-                let by_words_field = by_words_field.ok_or_else(|| de::Error::missing_field("bywords"))?;
-
-                Ok(TopicMeta::new_with(stats_field, by_words_field))
-            }
-        }
-
-        if deserializer.is_human_readable() {
-            deserializer.deserialize_struct(
-                "TopicMeta",
-                &["stats", "bywords"],
-                TopicMetaVisitor
-            )
-        } else {
-            deserializer.deserialize_seq(TopicMetaVisitor)
-        }
-
-
+    pub fn by_importance_iter<'a>(&'a self) -> impl IntoIterator<Item = Vec<&'a Arc<WordMeta>>> + 'a {
+        self.by_importance().into_iter().map(|value| {
+            value.iter().map(|&value| {
+                unsafe{self.by_words.get_unchecked(value)}
+            }).collect_vec()
+        })
     }
 }
+
 
 /// The meta for a word.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct WordMeta {
     pub topic_id: TopicId,
     pub word_id: WordId,
@@ -192,16 +116,26 @@ pub struct WordMeta {
 }
 
 impl WordMeta {
-    /// Returns the [self.probability] + 1
-    #[inline]
-    pub fn rank(&self) -> Rank {
-        self.position + 1
-    }
-
     /// Returns the [self.importance] + 1
     #[inline]
     pub fn importance_rank(&self) -> ImportanceRank {
         self.importance + 1
+    }
+}
+
+impl PrimitiveWordMeta for WordMeta {
+    fn word_id(&self) -> WordId {
+        self.word_id
+    }
+
+    fn probability(&self) -> Probability {
+        self.probability
+    }
+
+    /// Returns the [self.probability] + 1
+    #[inline]
+    fn rank(&self) -> Rank {
+        self.position + 1
     }
 }
 
@@ -214,13 +148,13 @@ impl Display for WordMeta {
 
 /// Contains a reference to the associated word and the associated [WordMeta]
 #[derive(Debug)]
-pub struct WordMetaWithWord<'a, T> {
+pub struct WordMetaWithWord<'a, T, M> {
     pub word: &'a T,
-    inner: &'a Arc<WordMeta>
+    inner: M
 }
 
-impl<'a, T> WordMetaWithWord<'a, T> {
-    pub fn new(word: &'a T, inner: &'a Arc<WordMeta>) -> Self {
+impl<'a, T, M> WordMetaWithWord<'a, T, M> {
+    pub fn new(word: &'a T, inner: M) -> Self {
         Self {
             word,
             inner
@@ -228,26 +162,26 @@ impl<'a, T> WordMetaWithWord<'a, T> {
     }
 }
 
-impl<'a, T> WordMetaWithWord<'a, T> {
-    pub fn into_inner(self) -> &'a Arc<WordMeta> {
+impl<'a, T, M>WordMetaWithWord<'a, T, M> {
+    pub fn into_inner(self) ->M {
         self.inner
     }
 }
 
-impl<'a, T> Clone for WordMetaWithWord<'a, T> {
+impl<'a, T, M> Clone for WordMetaWithWord<'a, T, M> where M: Clone {
     fn clone(&self) -> Self {
         Self {
             word: self.word,
-            inner: self.inner
+            inner: self.inner.clone()
         }
     }
 }
 
-impl<T> Deref for WordMetaWithWord<'_, T> {
-    type Target = Arc<WordMeta>;
+impl<'a, T, M> Deref for WordMetaWithWord<'a, T, M>{
+    type Target = M;
 
     fn deref(&self) -> &Self::Target {
-        self.inner
+        &self.inner
     }
 }
 

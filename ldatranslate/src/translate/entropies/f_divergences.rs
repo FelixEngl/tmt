@@ -1,11 +1,8 @@
-use std::ops::Div;
-
 use evalexpr::export::evalexpr_num::{Float, FromPrimitive};
 use itertools::Itertools;
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use ndarray_stats::EntropyExt;
 use ndarray_stats::errors::{EmptyInput, MultiInputError, ShapeMismatch};
-use nom::Parser;
 use num::{cast};
 use sealed::sealed;
 use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
@@ -535,7 +532,6 @@ where
 #[cfg(test)]
 mod test {
     use approx::assert_relative_eq;
-    use evalexpr::export::evalexpr_num::Zero;
     use ndarray::{array, Array1};
     use ndarray_stats::{DeviationExt, EntropyExt};
     use crate::translate::entropies::{FDivergenceExt};

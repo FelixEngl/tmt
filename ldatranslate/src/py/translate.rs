@@ -12,8 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::fs::File;
+use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use std::path::PathBuf;
 use derive_more::From;
 use evalexpr::{Value};
 use pyo3::{pyclass, pyfunction, pymethods, PyResult};
@@ -30,9 +33,9 @@ use ldatranslate_voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
 use ldatranslate_voting::{VotingMethod, VotingMethodContext, VotingResult};
 use ldatranslate_voting::constants::TMTNumericTypes;
-use ldatranslate_voting::py::{PyExprValue, PyVotingModel};
+use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
-
+use crate::tools::memory::MemoryReporter;
 // /// The config for a translation
 // #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 // #[pyclass]
@@ -210,14 +213,48 @@ pub fn translate_topic_model<'a>(
 ) -> PyResult<PyTopicModel> {
     let cfg =config.to_translation_config(voting, voting_registry)?;
     let read = dictionary.get();
+    log::info!("Start with translation.");
     match translate(topic_model, read.deref(), &cfg, provider) {
         Ok(result) => {
+            log::info!("Memory usage: {}", MemoryReporter::instant_report());
             Ok(result)
         }
         Err(err) => {
             Err(PyValueError::new_err(err.to_string()))
         }
     }
+}
+
+/// Saves some ratings
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
+#[pyfunction]
+pub fn save_ratings(
+    path: PathBuf,
+    ratings: Vec<(u64, Vec<(u64, f64)>)>
+) -> PyResult<()> {
+    let mut writer = zstd::Encoder::new(
+        File::options().write(true).create_new(true).open(path)?,
+        0
+    )?;
+    bincode::serialize_into(
+        &mut writer,
+        &ratings
+    ).map_err(|err| PyValueError::new_err(err.to_string()))?;
+    writer.flush()?;
+    Ok(())
+}
+
+/// Loads some ratings
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
+#[pyfunction]
+pub fn load_ratings(
+    path: PathBuf,
+) -> PyResult<Vec<(u64, Vec<(u64, f64)>)>> {
+    bincode::deserialize_from(
+        zstd::Decoder::new(
+            File::options().read(true).open(path)?
+        )?
+    ).map_err(|err| PyValueError::new_err(err.to_string()))
 }
 
 
@@ -249,4 +286,6 @@ pub fn translate_topic_model<'a>(
 register_python! {
     struct PyTranslationConfig;
     fn translate_topic_model;
+    fn save_ratings;
+    fn load_ratings;
 }

@@ -40,6 +40,9 @@ ndarray.workspace = true
 ndarray-stats.workspace = true
 num.workspace = true
 approx.workspace = true
+sysinfo.workspace = true
+byte-unit.workspace = true
+zstd.workspace = true
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
