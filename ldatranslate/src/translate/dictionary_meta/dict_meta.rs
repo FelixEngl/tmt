@@ -2,11 +2,11 @@ use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap};
 use std::fmt::Display;
 use std::ops::*;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 use itertools::{Itertools};
 use ndarray::Ix1;
 use thiserror::Error;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DomainModelIndex, META_DICT_ARRAY_LENTH};
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex, META_DICT_ARRAY_LENTH};
 use crate::translate::dictionary_meta::iter::{Iter, IterSorted};
 
 
@@ -22,93 +22,113 @@ impl<T> DictMetaFieldPattern for T where T: AsRef<[DictMetaTagIndex]> {
 
 
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-#[repr(transparent)]
-pub(super) struct UniqueTags {
-    pub(super) inner: Arc<Vec<DictMetaTagIndex>>
+#[derive(Debug, Clone, Eq, Hash)]
+pub struct MetaTagTemplate {
+    pub template: Arc<Vec<DictMetaTagIndex>>,
+    pub mapping: Arc<[Option<usize>; META_DICT_ARRAY_LENTH]>
 }
-impl UniqueTags {
-    pub fn new<T: AsRef<[DictMetaTagIndex]>>(inner: T) -> Self {
-        Self {
-            inner: Arc::new(inner.as_ref().into_iter().copied().unique().collect::<Vec<_>>())
-        }
-    }
-}
-impl Borrow<[DictMetaTagIndex]> for UniqueTags {
-    fn borrow(&self) -> &[DictMetaTagIndex] {
-        self.inner.deref()
-    }
-}
-impl AsRef<[DictMetaTagIndex]> for UniqueTags {
-    fn as_ref(&self) -> &[DictMetaTagIndex] {
-        self.inner.deref()
-    }
-}
-impl Deref for UniqueTags {
-    type Target = [DictMetaTagIndex];
-    fn deref(&self) -> &Self::Target {
-        self.inner.deref()
+
+impl PartialEq for MetaTagTemplate {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.mapping, &other.mapping)
+        || (self.template == other.template && self.mapping == other.mapping)
     }
 }
 
-pub type PatternMap = [Option<usize>; META_DICT_ARRAY_LENTH];
+impl MetaTagTemplate {
+    pub fn new<T: AsRef<[DictMetaTagIndex]>>(pattern: T) -> Self {
+        let tags = pattern.as_ref();
+        let mut mapping = [None; META_DICT_ARRAY_LENTH];
+        for (k, v) in tags.iter().enumerate() {
+            mapping[(*v).as_index()] = Some(k);
+        }
+        let mapping = Arc::new(mapping);
+        let template = Arc::new(tags.into_iter().copied().unique().collect::<Vec<_>>());
+        Self {
+            template,
+            mapping
+        }
+    }
+
+    pub fn all() -> Self {
+        static ALL: LazyLock<Arc<[Option<usize>; META_DICT_ARRAY_LENTH]>> = LazyLock::new(||
+            Arc::new([
+                Some(0),	Some(1),	Some(2),	Some(3),	Some(4),	Some(5),	Some(6),	Some(7),
+                Some(8),	Some(9),	Some(10),	Some(11),	Some(12),	Some(13),	Some(14),	Some(15),
+                Some(16),	Some(17),	Some(18),	Some(19),	Some(20),	Some(21),	Some(22),	Some(23),
+                Some(24),	Some(25),	Some(26),	Some(27),	Some(28),	Some(29),	Some(30),	Some(31),
+                Some(32),	Some(33),	Some(34),	Some(35),	Some(36),	Some(37),	Some(38),	Some(39),
+                Some(40),	Some(41),	Some(42),	Some(43),	Some(44),	Some(45),	Some(46),	Some(47),
+                Some(48),	Some(49),	Some(50),	Some(51),	Some(52),	Some(53),	Some(54),	Some(55),
+                Some(56),	Some(57),	Some(58),	Some(59),	Some(60),	Some(61),	Some(62),	Some(63),
+                Some(64),	Some(65),	Some(66),	Some(67),	Some(68),	Some(69),	Some(70),	Some(71),
+                Some(72),	Some(73),	Some(74),	Some(75),	Some(76),	Some(77),	Some(78),	Some(79),
+                Some(80),	Some(81),	Some(82),	Some(83),	Some(84),	Some(85),	Some(86),	Some(87),
+                Some(88),	Some(89),	Some(90),	Some(91),	Some(92),	Some(93),	Some(94),	Some(95),
+                Some(96),	Some(97),	Some(98),	Some(99),	Some(100),	Some(101),	Some(102),	Some(103),
+                Some(104),	Some(105),	Some(106),	Some(107),	Some(108),	Some(109),	Some(110),	Some(111),
+                Some(112),	Some(113),	Some(114),	Some(115),	Some(116),	Some(117),	Some(118),	Some(119),
+                Some(120),	Some(121),	Some(122),	Some(123),	Some(124),	Some(125),	Some(126),	Some(127),
+                Some(128),	Some(129),	Some(130),	Some(131),	Some(132),	Some(133),	Some(134),	Some(135),
+                Some(136),	Some(137),	Some(138),	Some(139),	Some(140),	Some(141),	Some(142),	Some(143),
+                Some(144),	Some(145),	Some(146),	Some(147),	Some(148),	Some(149),	Some(150),	Some(151),
+                Some(152),	Some(153),	Some(154),	Some(155),	Some(156),	Some(157),	Some(158),	Some(159),
+                Some(160),	Some(161),	Some(162),	Some(163),	Some(164),	Some(165),	Some(166),	Some(167),
+                Some(168),	Some(169),	Some(170),	Some(171),	Some(172),	Some(173),	Some(174),	Some(175),
+                Some(176),	Some(177),	Some(178),	Some(179),	Some(180),	Some(181)
+            ])
+        );
+
+        MetaTagTemplate {
+            template: Arc::new(DictMetaTagIndex::all().to_vec()),
+            mapping: ALL.clone()
+        }
+    }
+}
+
+impl Borrow<[DictMetaTagIndex]> for MetaTagTemplate {
+    fn borrow(&self) -> &[DictMetaTagIndex] {
+        self.template.deref()
+    }
+}
+impl AsRef<[DictMetaTagIndex]> for MetaTagTemplate {
+    fn as_ref(&self) -> &[DictMetaTagIndex] {
+        self.template.deref()
+    }
+}
+impl Deref for MetaTagTemplate {
+    type Target = [DictMetaTagIndex];
+    fn deref(&self) -> &Self::Target {
+        self.template.deref()
+    }
+}
 
 
 #[derive(Debug, Default, Clone)]
 pub struct SparseVectorFactory {
-    unique_mapping: Arc<RwLock<HashMap<Vec<DictMetaTagIndex>, UniqueTags>>>,
-    pattern_mapping: Arc<RwLock<HashMap<UniqueTags, Arc<PatternMap>>>>
+    templates: Arc<RwLock<HashMap<Vec<DictMetaTagIndex>, MetaTagTemplate>>>
 }
 
 impl SparseVectorFactory {
     pub fn new() -> Self {
         Self {
-            pattern_mapping: Default::default(),
-            unique_mapping: Default::default()
+            templates: Default::default()
         }
     }
 
-    fn convert_to_mapping<T>(&self, tags: &T) -> (UniqueTags, Arc<PatternMap>)
+    pub fn convert_to_template<T>(&self, tags: &T) -> MetaTagTemplate
     where
         T: DictMetaFieldPattern + ?Sized
     {
-        let tags_borrow = tags.pattern();
-        let tags = tags_borrow.as_ref();
+        let pattern = tags.pattern();
         {
-            let read_mapping = self.pattern_mapping.read().unwrap();
-            if let Some((k, v)) = read_mapping.get_key_value(tags) {
-                return (k.clone(), v.clone());
-            }
-            let read_unique = self.unique_mapping.read().unwrap();
-            if let Some(v) = read_unique.get(tags) {
-                if let Some((k, v)) = read_mapping.get_key_value(v) {
-                    return (k.clone(), v.clone());
-                }
+            if let Some(template) = self.templates.read().unwrap().get(pattern.as_ref()) {
+                return template.clone();
             }
         }
-        {
-            let raw_keys = tags.to_vec();
-            let unique_tags: UniqueTags = UniqueTags::new(tags);
-            if cfg!(debug_assertions) {
-                if raw_keys.len() == unique_tags.len() {
-                    debug_assert_eq!(raw_keys.as_slice(), unique_tags.deref());
-                }
-            }
-
-            let unique_tags: UniqueTags = if raw_keys.len() != unique_tags.len() {
-                self.unique_mapping.write().unwrap().entry(raw_keys).or_insert(unique_tags).clone()
-            } else {
-                unique_tags
-            };
-
-            let mut new = [None; META_DICT_ARRAY_LENTH];
-            for (k, v) in tags.iter().enumerate() {
-                new[(*v).as_index()] = Some(k);
-            }
-            let new = Arc::new(new);
-            self.pattern_mapping.write().unwrap().insert(unique_tags.clone(), new.clone());
-            (unique_tags, new)
-        }
+        let vec = pattern.as_ref().to_vec();
+        let mut write = self.templates.write().unwrap();
+        write.entry(vec).or_insert_with(|| MetaTagTemplate::new(pattern)).clone()
     }
 
     pub fn create<T, V, N>(&self, tags: &T, values: V) -> Result<SparseMetaVector, IllegalValueCount>
@@ -146,7 +166,7 @@ impl SparseVectorFactory {
         T: DictMetaFieldPattern + ?Sized,
         N: num::cast::AsPrimitive<f64>
     {
-        let (template, reversed) = self.convert_to_mapping(tags);
+        let template = self.convert_to_template(tags);
         let inner = ndarray::Array::<f64, Ix1>::from_iter(
             template.as_ref().iter().map(|index| {
                 values.get_unchecked((*index).as_index()).as_()
@@ -155,7 +175,6 @@ impl SparseVectorFactory {
         SparseMetaVector {
             inner,
             template,
-            reversed
         }
     }
 
@@ -164,11 +183,10 @@ impl SparseVectorFactory {
     where
         T: DictMetaFieldPattern + ?Sized
     {
-        let (template, reversed) = self.convert_to_mapping(tags);
+        let template = self.convert_to_template(tags);
         SparseMetaVector {
             inner: ndarray::Array::<f64, Ix1>::zeros(template.len()),
             template,
-            reversed
         }
     }
 }
@@ -186,8 +204,7 @@ pub type MetaVectorRaw<T> =  ndarray::Array<T, Ix1>;
 #[derive(Debug, Clone)]
 pub struct SparseMetaVector {
     pub(super) inner: MetaVectorRaw<f64>,
-    pub(super) template: UniqueTags,
-    pub(super) reversed: Arc<PatternMap>
+    pub(super) template: MetaTagTemplate
 }
 
 
@@ -206,14 +223,13 @@ impl SparseMetaVector {
 
     #[inline]
     pub fn is_same(&self, other: &SparseMetaVector) -> bool {
-        self.reversed == other.reversed
+        self.template == other.template
     }
 
     #[inline]
     pub fn create_successor(&self, value: MetaVectorRaw<f64>) -> Self {
         Self {
             inner: value,
-            reversed: self.reversed.clone(),
             template: self.template.clone()
         }
     }
@@ -251,7 +267,6 @@ macro_rules! impl_math {
                 Self {
                     inner: self.inner.$method(rhs),
                     template: self.template.clone(),
-                    reversed: self.reversed.clone()
                 }
             }
         }
@@ -266,7 +281,6 @@ macro_rules! impl_math {
                 Self {
                     inner: self.inner.$method(),
                     template: self.template.clone(),
-                    reversed: self.reversed.clone()
                 }
             }
         }
@@ -278,11 +292,10 @@ macro_rules! impl_math {
             type Output = Self;
 
             fn $method(self, rhs: Self) -> Self::Output {
-                assert_eq!(self.reversed, rhs.reversed);
+                assert_eq!(self.template, rhs.template);
                 Self {
                     inner: self.inner.$method(rhs.inner),
                     template: self.template.clone(),
-                    reversed: self.reversed.clone()
                 }
             }
         }
@@ -307,13 +320,13 @@ macro_rules! impl_assign_math {
     ($name: ident::$method:ident; $($tt:tt)*) => {
         impl $name<Self> for SparseMetaVector {
             fn $method(&mut self, rhs: Self) {
-                assert_eq!(self.reversed, rhs.reversed);
+                assert_eq!(self.template, rhs.template);
                 self.inner.$method(&rhs.inner);
             }
         }
         impl $name<&Self> for SparseMetaVector {
             fn $method(&mut self, rhs: &Self) {
-                assert_eq!(self.reversed, rhs.reversed);
+                assert_eq!(self.template, rhs.template);
                 self.inner.$method(&rhs.inner);
             }
         }
@@ -368,7 +381,7 @@ unsafe impl Sync for SparseMetaVector{}
 
 impl PartialEq for SparseMetaVector {
     fn eq(&self, other: &Self) -> bool {
-        self.reversed.eq(&other.reversed)
+        self.template.eq(&other.template)
             && self.inner.eq(&other.inner)
     }
 }

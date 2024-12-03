@@ -503,7 +503,7 @@ use strum::{EnumIs};
 use thiserror::Error;
 use tinyset::Fits64;
 use ldatranslate_toolkit::exports::string_interner::Symbol;
-use crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector;
+use crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector;
 use super::*;
 
 
@@ -932,8 +932,8 @@ pub struct AssociatedMetadataImpl {
 
 impl AssociatedMetadataImpl {
 
-    pub fn topic_vector(&self) ->  DictMetaVector {
-        let mut new = DictMetaVector::new();
+    pub fn topic_vector(&self) -> PyDictMetaVector {
+        let mut new = PyDictMetaVector::new();
         if let Some(domains) = self.inner.get(&MetaField::Domains) {
             let domains = unsafe{domains.as_ref_unchecked_domains()};
             for (idx, value) in domains.iter_counts() {
@@ -1048,6 +1048,9 @@ pub struct MetadataEx {
     associated_metadata: Vec<AssociatedMetadata>,
 }
 
+unsafe impl Send for MetadataEx {}
+unsafe impl Sync for MetadataEx {}
+
 impl MetadataEx {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -1154,8 +1157,8 @@ impl MetadataEx {
         }
     }
 
-    pub fn topic_vector(&self) ->  Option<DictMetaVector> {
-        let mut topic_vector = DictMetaVector::new();
+    pub fn topic_vector(&self) ->  Option<PyDictMetaVector> {
+        let mut topic_vector = PyDictMetaVector::new();
         let mut topic_vector_set = false;
         if let Some(topic) = self.general_metadata.get() {
             topic_vector_set = true;
@@ -1208,6 +1211,29 @@ impl MetadataEx {
         let general  =self.general_metadata.get().and_then(|m| m.get(meta_field));
         let other = self.associated_metadata.iter().map(|v| v.get().and_then(|m| m.get(meta_field))).collect_vec();
         (general, other)
+    }
+
+    pub fn get_domain_count_for<T: DictionaryMetaIndex>(&self, i: T) -> u32 {
+        let domain_and_register = (Domain::from_other(i).ok(), Register::from_other(i).ok());
+        let mut ct = 0;
+        for value in self.iter() {
+            if let Some(meta) = value.meta().get() {
+                match domain_and_register {
+                    (Some(domain), None) => {
+                        if let Some(m) = meta.get(MetaField::Domains).and_then(|v| v.as_ref_domains()) {
+                            ct += m.count_of(domain);
+                        }
+                    }
+                    (None, Some(register)) => {
+                        if let Some(m) = meta.get(MetaField::Registers).and_then(|v| v.as_ref_registers()) {
+                            ct += m.count_of(register);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        ct
     }
 
     pub fn domain_count(&self) -> DomainCount {
@@ -1435,7 +1461,7 @@ impl AssociatedMetadata {
         })
     }
 
-    pub fn topic_vector(&self) ->  Option<DictMetaVector> {
+    pub fn topic_vector(&self) ->  Option<PyDictMetaVector> {
         self.get().map(|value| value.topic_vector())
     }
 

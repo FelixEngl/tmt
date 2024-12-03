@@ -32,7 +32,6 @@ use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
 use ldatranslate_toolkit::{register_python};
 use crate::py::aliases::{UnderlyingPyTopicModel, UnderlyingPyVocabulary, UnderlyingPyWord};
 use ldatranslate_toolkit::special_python_values::{SingleOrVec};
-use ldatranslate_topicmodel::enums::{TopicModelVersion};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
 use ldatranslate_topicmodel::model::{BasicTopicModel, BasicTopicModelWithVocabulary, DocumentId, FullTopicModel, TopicId, TopicModel, TopicModelInferencer, TopicModelWithDocumentStats, TopicModelWithVocabulary, WordId};
 use ldatranslate_topicmodel::model::meta::*;

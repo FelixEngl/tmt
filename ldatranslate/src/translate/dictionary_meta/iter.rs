@@ -19,7 +19,7 @@ impl<'a> Iterator for IterSorted<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let next = self.pos.next()?;
-            if let Some(idx) = self.vector.reversed[next] {
+            if let Some(idx) = self.vector.template.mapping[next] {
                 let key = self.vector.template[idx];
                 let value = self.vector.inner[idx];
                 break Some((key, value))

@@ -21,7 +21,7 @@ use crate::interners::*;
 
 use tinyset::Set64;
 use crate::dictionary::word_infos::*;
-use crate::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, DictMetaTagIndex, META_DICT_ARRAY_LENTH};
+use crate::dictionary::metadata::dict_meta_topic_matrix::{DictionaryMetaIndex, DictMetaTagIndex, META_DICT_ARRAY_LENTH};
 use std::ops::{Deref, DerefMut};
 use pretty::*;
 use pyo3::{pyclass, pymethods};

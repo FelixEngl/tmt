@@ -1,11 +1,10 @@
 use std::fmt::{Display, Formatter};
 use std::ops::{AddAssign, Deref, DerefMut, DivAssign};
 use std::sync::Arc;
-use itertools::Itertools;
 use ndarray::Zip;
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
 use ldatranslate_topicmodel::model::WordId;
-use crate::translate::dictionary_meta::{DictMetaFieldPattern, SparseVectorFactory, SparseMetaVector, IllegalValueCount, DictionaryMetaProbabilityProvider};
+use crate::translate::dictionary_meta::{DictMetaFieldPattern, SparseVectorFactory, SparseMetaVector, IllegalValueCount, HorizontalDictionaryMetaProbabilityProvider};
 
 #[derive(Debug, Clone, Copy)]
 pub struct CountConfig {
@@ -88,7 +87,7 @@ impl Display for ByCount {
     }
 }
 
-impl DictionaryMetaProbabilityProvider for ByCount {
+impl HorizontalDictionaryMetaProbabilityProvider for ByCount {
     fn whole_topic_model(&self) -> &SparseMetaVector {
         &self.topic_model_count
     }

@@ -43,7 +43,7 @@ use ldatranslate_toolkit::from_str_ex::ParseEx;
 use ldatranslate_toolkit::special_python_values::{PyEither, PyEitherOrBoth};
 use ldatranslate_topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 use ldatranslate_topicmodel::dictionary::len::Len;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector;
 use ldatranslate_topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
 
 pub type DefaultDict = EfficientDictWithMetaDefault;
@@ -322,7 +322,7 @@ impl PyDictionary {
 
     /// Returns the topic vetor vor a specific word. Can be None if the word does not exist or
     /// no metadata is set.
-    pub fn topic_vector_a(&self, word: &str) -> Option<DictMetaVector> {
+    pub fn topic_vector_a(&self, word: &str) -> Option<PyDictMetaVector> {
         let read = self.get();
         let entry = read.voc_a().get_id(word)?;
         read.metadata().get_meta_a(entry)?.topic_vector()
@@ -330,7 +330,7 @@ impl PyDictionary {
 
     /// Returns the topic vetor vor a specific word. Can be None if the word does not exist or
     /// no metadata is set.
-    pub fn topic_vector_b(&self, word: &str) -> Option<DictMetaVector> {
+    pub fn topic_vector_b(&self, word: &str) -> Option<PyDictMetaVector> {
         let read = self.get();
         let entry = read.voc_b().get_id(word)?;
         read.metadata().get_meta_b(entry)?.topic_vector()

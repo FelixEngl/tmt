@@ -1,12 +1,10 @@
-use std::fmt::{Display, Formatter};
-use std::ops::{AddAssign, Deref, DerefMut, DivAssign};
+use std::ops::{AddAssign, DivAssign};
 use std::sync::Arc;
 use itertools::Itertools;
-use ndarray::Zip;
 use strum::EnumIs;
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
 use ldatranslate_topicmodel::model::WordId;
-use crate::translate::dictionary_meta::{ DictMetaFieldPattern, DictionaryMetaProbabilityProvider, IllegalValueCount, SparseMetaVector, SparseVectorFactory};
+use crate::translate::dictionary_meta::{DictMetaFieldPattern, HorizontalDictionaryMetaProbabilityProvider, IllegalValueCount, SparseMetaVector, SparseVectorFactory};
 
 #[derive(Clone, Debug)]
 pub struct ByCountWeigthed {
@@ -43,11 +41,19 @@ impl ByCountWeigthed {
                 words_col.push(value);
             }
             if matches!(fit_to_topic, Some(FitTo::Topic)) {
-
+                words_col.iter_mut().for_each(|word| {
+                    word.div_assign(&topic_model_values);
+                })
             }
             overall_topic_model.add_assign(&topic_model_values);
             topic_model_ct.push(topic_model_values);
             word_per_topic.push(words_col);
+        }
+
+        if matches!(fit_to_topic, Some(FitTo::Model)) {
+            word_per_topic.iter_mut().flatten().for_each(|word| {
+                word.div_assign(&overall_topic_model);
+            })
         }
 
         Ok(
@@ -60,16 +66,16 @@ impl ByCountWeigthed {
     }
 }
 
-// impl DictionaryMetaProbabilityProvider for ByCountWeigthed {
-//     fn whole_topic_model(&self) -> &SparseMetaVector {
-//         &self.overall_topic_model
-//     }
-//
-//     fn for_topic(&self, _: usize) -> Option<&SparseMetaVector> {
-//         Some(&self.overall_topic_model)
-//     }
-//
-//     fn for_word_in_topic(&self, _: usize, word_id: WordId) -> Option<&SparseMetaVector> {
-//         self.word_count.get(word_id)
-//     }
-// }
+impl HorizontalDictionaryMetaProbabilityProvider for ByCountWeigthed {
+    fn whole_topic_model(&self) -> &SparseMetaVector {
+        &self.overall_topic_model
+    }
+
+    fn for_topic(&self, topic_id: usize) -> Option<&SparseMetaVector> {
+        self.topic_model.get(topic_id)
+    }
+
+    fn for_word_in_topic(&self, topic_id: usize, word_id: WordId) -> Option<&SparseMetaVector> {
+        self.word_per_topic.get(topic_id)?.get(word_id)
+    }
+}

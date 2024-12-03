@@ -17,7 +17,7 @@ mod errors;
 mod language;
 mod phantoms;
 mod candidate;
-mod entropies;
+pub mod entropies;
 mod dictionary_meta;
 // pub mod topic_model_specific;
 
@@ -35,9 +35,11 @@ pub use config::*;
 use ldatranslate_toolkit::evalexpr::CombineableContext;
 use ldatranslate_topicmodel::dictionary::*;
 use ldatranslate_topicmodel::dictionary::direction::{AToB, BToA, DirectionMarker, B};
+use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataManagerEx;
+use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::language_hint::LanguageHint;
 use ldatranslate_topicmodel::translate::{create_topic_vocabulary_specific_dictionary, TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
-use ldatranslate_topicmodel::vocabulary::{BasicVocabulary, MappableVocabulary, VocabularyMut};
+use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, MappableVocabulary, VocabularyMut};
 use ldatranslate_translate::{ContextExtender, TopicLike, TopicMeta, TopicMetas, TopicModelLikeMatrix, VoterInfoProvider, VoterMeta};
 use crate::translate::phantoms::DummyAsVariableProvider;
 use crate::translate::TranslateError::IncompatibleLanguages;
@@ -48,6 +50,8 @@ use ldatranslate_voting::traits::VotingMethodMarker;
 use ldatranslate_voting::VotingMethod;
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
+use crate::translate::dictionary_meta::SparseVectorFactory;
+use crate::translate::dictionary_meta::topic_associated::VerticalCountDictionaryMetaVector;
 use crate::variable_provider::AsVariableProvider;
 
 
@@ -75,14 +79,14 @@ where
 
 pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     target: &'a Target,
-    dictionary: &'a D,
+    original_dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
     provider: Option<&P>
 ) -> Result<Target, TranslateError<'a>> where
     T: Hash + Eq + Ord + Clone + Send + Sync + 'a + Debug,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a + Debug,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync + Debug,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a + Debug + AnonymousVocabulary,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync + Debug + BasicDictionaryWithMeta<MetadataManagerEx, Voc>,
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
     P: AsVariableProvider<T>
 {
@@ -90,7 +94,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     let reporter = MemoryReporter::new(Duration::from_millis(2000));
 
     if let Some(lang_model) = target.vocabulary().language() {
-        if let (Some(lang_a), lang_b) = dictionary.language_direction_a_to_b() {
+        if let (Some(lang_a), lang_b) = original_dictionary.language_direction_a_to_b() {
             if lang_model != lang_a {
                 let lang_b = lang_b.cloned().unwrap_or_else(|| LanguageHint::new("###"));
                 return Err(
@@ -104,21 +108,38 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }
     }
 
-    if dictionary.map_a_to_b().is_empty() {
+    if original_dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::DictionaryEmpty(DirectionMarker::AToB));
     }
 
-    if dictionary.map_b_to_a().is_empty() {
+    if original_dictionary.map_b_to_a().is_empty() {
         return Err(TranslateError::DictionaryEmpty(DirectionMarker::BToA));
     }
 
     log::info!("Create topic specific dictionary. {}", reporter.create_report_now());
     let dictionary: D = create_topic_vocabulary_specific_dictionary(
-        dictionary,
+        original_dictionary,
         target.vocabulary()
     );
     log::info!("After cration of topic specific dict. {}", reporter.create_report_now());
 
+    let divergence_calc = if let Some(divergence) = translate_config.divergence_config.clone() {
+        let sparse = SparseVectorFactory::new();
+        let metas = dictionary.voc_a().iter().map(|word| {
+            let id = original_dictionary.voc_a().get_id(word).expect("The id for every whord in the specialized dict should be known to the original!");
+            unsafe{
+                original_dictionary.metadata().meta_a().get_unchecked(id)
+            }
+        }).collect_vec();
+        let new = VerticalCountDictionaryMetaVector::new(
+            metas,
+            &sparse,
+            divergence,
+        );
+        Some((sparse, new))
+    } else {
+        None
+    };
 
     if dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
@@ -210,6 +231,9 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                 ).map_err(TranslateError::WithOrigin)
             }
         }).collect::<Result<Vec<_>, _>>()?;
+
+
+    drop(divergence_calc);
 
 
     let voc_b_col = result.par_iter().flatten().map(|value| {
@@ -702,7 +726,8 @@ pub(crate) mod test {
             voting: BuildInVoting::PCombSum.spy(),
             epsilon: None,
             keep_original_word: Never,
-            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap())
+            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
+            divergence_config: None,
         };
 
         let model_b = translate_topic_model_without_provider(

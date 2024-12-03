@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr, VariantArray};
 use tinyset::Fits64;
 use ldatranslate_toolkit::register_python;
-use crate::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, NotAIndexFor};
+use crate::dictionary::metadata::dict_meta_topic_matrix::{DictionaryMetaIndex, NotAIndexFor};
 use crate::dictionary::metadata::ex::impl_try_from_as_unpack;
 
 register_python! {
@@ -1797,7 +1797,7 @@ impl Domain {
     }
 }
 
-impl DomainModelIndex for Domain {
+impl DictionaryMetaIndex for Domain {
     #[inline(always)]
     fn as_index(self) -> usize {
         (self as u16) as usize

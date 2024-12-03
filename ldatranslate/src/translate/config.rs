@@ -1,21 +1,27 @@
-use std::num::NonZeroUsize;
-use ldatranslate_voting::traits::VotingMethodMarker;
-use pyo3::{pyclass, pymethods, PyResult};
-use pyo3::exceptions::PyValueError;
-use strum::{AsRefStr, Display, EnumString, ParseError};
+use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
 use ldatranslate_toolkit::register_python;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex};
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
+use ldatranslate_voting::traits::VotingMethodMarker;
+use pyo3::exceptions::PyValueError;
+use pyo3::{pyclass, pymethods, PyResult};
+use std::num::NonZeroUsize;
+use std::sync::Arc;
+use strum::{AsRefStr, Display, EnumString, ParseError};
 
 /// Setting if to keep the original word from language A
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[cfg_attr(
+    feature = "gen_python_api",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum
+)]
 #[pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
-#[derive(AsRefStr, Display, EnumString)]
+#[derive(
+    Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default, AsRefStr, Display, EnumString,
+)]
 pub enum KeepOriginalWord {
     Always,
     IfNoTranslation,
     #[default]
-    Never
+    Never,
 }
 
 // #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -30,9 +36,11 @@ impl KeepOriginalWord {
     }
 
     #[staticmethod]
-    #[pyo3(name="from_string")]
+    #[pyo3(name = "from_string")]
     pub fn from_string_py(value: &str) -> PyResult<Self> {
-        value.parse().map_err(|value: ParseError | PyValueError::new_err(value.to_string()))
+        value
+            .parse()
+            .map_err(|value: ParseError| PyValueError::new_err(value.to_string()))
     }
 
     pub fn __reduce__(&self) -> String {
@@ -48,9 +56,6 @@ register_python! {
     enum KeepOriginalWord;
 }
 
-
-
-
 /// The config for a translation
 #[derive(Debug)]
 pub struct TranslateConfig<V: VotingMethodMarker> {
@@ -64,35 +69,50 @@ pub struct TranslateConfig<V: VotingMethodMarker> {
     pub keep_original_word: KeepOriginalWord,
     /// Limits the number of accepted candidates to N. If not set keep all.
     pub top_candidate_limit: Option<NonZeroUsize>,
+    /// The config for a divergence applied to the base score.
+    /// Right now we only support calculating on topic level.
+    pub divergence_config: Option<Arc<FDivergenceCalculator>>,
 }
 
 pub enum BoostScoreBy {
-    Domains(Vec<DictMetaTagIndex>)
+    Domains(Vec<DictMetaTagIndex>),
 }
 
-impl<V> TranslateConfig<V> where V: VotingMethodMarker {
-    pub fn new(voting: V, epsilon: Option<f64>, threshold: Option<f64>, keep_original_word: KeepOriginalWord, top_candidate_limit: Option<NonZeroUsize>) -> Self {
-        Self { epsilon, voting, threshold, keep_original_word, top_candidate_limit }
-    }
-
-    pub fn requires_metadata(&self) -> bool {
-        todo!()
+impl<V> TranslateConfig<V>
+where
+    V: VotingMethodMarker,
+{
+    pub fn new(
+        voting: V,
+        epsilon: Option<f64>,
+        threshold: Option<f64>,
+        keep_original_word: KeepOriginalWord,
+        top_candidate_limit: Option<NonZeroUsize>,
+        divergence_config: Option<FDivergenceCalculator>,
+    ) -> Self {
+        Self {
+            epsilon,
+            voting,
+            threshold,
+            keep_original_word,
+            top_candidate_limit,
+            divergence_config: divergence_config.map(Arc::new),
+        }
     }
 }
 
-impl<'a, V> Clone for TranslateConfig<V> where V: VotingMethodMarker + Clone {
+impl<'a, V> Clone for TranslateConfig<V>
+where
+    V: VotingMethodMarker + Clone,
+{
     fn clone(&self) -> Self {
         Self {
             voting: self.voting.clone(),
             epsilon: self.epsilon,
             threshold: self.threshold,
             keep_original_word: self.keep_original_word,
-            top_candidate_limit: self.top_candidate_limit
+            top_candidate_limit: self.top_candidate_limit,
+            divergence_config: self.divergence_config.clone(),
         }
     }
 }
-
-
-
-
-

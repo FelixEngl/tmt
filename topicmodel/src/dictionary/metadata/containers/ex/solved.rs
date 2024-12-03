@@ -78,8 +78,8 @@ macro_rules! create_python_getter {
 
             /// Returns a domain vector. The returned DictMetaVector consists of the counts of the
             /// single topics [Domain] and [Register].
-            pub fn domain_vector(&self) -> $crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector {
-                $crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector::from_meta(&self)
+            pub fn domain_vector(&self) -> $crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector {
+                $crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector::from_meta(&self)
             }
 
             $(
@@ -141,11 +141,11 @@ macro_rules! create_python_getter {
                 }
             }
 
-            pub fn topic_vector(&self) -> $crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector {
-                use $crate::dictionary::metadata::dict_meta_topic_matrix::DictMetaVector;
+            pub fn topic_vector(&self) -> $crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector {
+                use $crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector;
                 use $crate::dictionary::metadata::containers::ex::*;
 
-                let mut tv = DictMetaVector::new();
+                let mut tv = PyDictMetaVector::new();
                 if let Some(ref dg) = self.domains.0 {
                     for ResolvedValue(dir, value) in dg {
                         match dir {

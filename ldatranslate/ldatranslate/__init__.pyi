@@ -186,6 +186,7 @@ class LoadedMetadataEx:
     contextual_informations_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
     unclassified_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
     synonyms_py: tuple[typing.Optional[set[ResolvedValueTypeOut]], typing.Optional[dict[str, set[ResolvedValueTypeOut]]]]
+
     def __new__(cls,values:dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]] | dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]] | dict[MetaField, tuple[typing.Optional[ResolvedValueTypeOut | list[ResolvedValueTypeOut]], typing.Optional[dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]] | tuple[typing.Optional[dict[MetaField, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]], typing.Optional[dict[MetaField, dict[str, ResolvedValueTypeOut | list[ResolvedValueTypeOut]]]]],additional_dictionaries: None | list[str] = None): ...
     def domain_vector(self) -> DictMetaVector:
         r"""

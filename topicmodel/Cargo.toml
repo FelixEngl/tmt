@@ -56,6 +56,7 @@ pathdiff.workspace = true
 enum-map.workspace = true
 const-str.workspace = true
 float-cmp.workspace = true
+num.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true

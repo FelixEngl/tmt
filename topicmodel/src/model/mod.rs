@@ -32,7 +32,7 @@ use std::io;
 use std::io::{Write};
 use std::marker::PhantomData;
 use std::ops::{Range};
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::{Arc};
 
 use crate::model::meta::*;
 use crate::vocabulary::{BasicVocabulary, MappableVocabulary, SearchableVocabulary, VocabularyMut};

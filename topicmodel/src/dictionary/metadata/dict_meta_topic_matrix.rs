@@ -17,7 +17,7 @@ use thiserror::Error;
 
 register_python!(
     struct DictMetaModel;
-    struct DictMetaVector;
+    struct PyDictMetaVector;
 );
 
 pub struct DomainVotingModel {
@@ -34,7 +34,7 @@ pub enum DomainModelErrors {
 #[pyclass]
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct DictMetaModel {
-    matrix: Vec<DictMetaVector>,
+    matrix: Vec<PyDictMetaVector>,
 }
 
 #[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -54,7 +54,7 @@ impl DictMetaModel {
         self.to_string()
     }
 
-    pub fn to_list(&self) -> Vec<DictMetaVector> {
+    pub fn to_list(&self) -> Vec<PyDictMetaVector> {
         self.matrix.iter().copied().collect()
     }
 }
@@ -70,12 +70,12 @@ impl DictMetaModel {
         }
     }
 
-    pub fn create_next(&mut self) -> &mut DictMetaVector {
-        self.matrix.push(DictMetaVector::new());
+    pub fn create_next(&mut self) -> &mut PyDictMetaVector {
+        self.matrix.push(PyDictMetaVector::new());
         self.matrix.last_mut().unwrap()
     }
 
-    pub fn add_single_in_place<I: DomainModelIndex>(
+    pub fn add_single_in_place<I: DictionaryMetaIndex>(
         &mut self,
         word: usize,
         index: I,
@@ -84,20 +84,20 @@ impl DictMetaModel {
         *(self.resize_if_necessary(word).get_mut(index)) += value
     }
 
-    fn resize_if_necessary(&mut self, word: usize) -> &mut DictMetaVector {
+    fn resize_if_necessary(&mut self, word: usize) -> &mut PyDictMetaVector {
         if self.matrix.capacity() <= word {
             self.matrix.reserve(word - self.matrix.len() + 1);
-            self.matrix.fill(DictMetaVector::ZERO)
+            self.matrix.fill(PyDictMetaVector::ZERO)
         }
         unsafe { self.matrix.get_unchecked_mut(word) }
     }
 
-    pub fn add_in_place<E: Into<DictMetaVector>>(&mut self, word: usize, entry: E) {
+    pub fn add_in_place<E: Into<PyDictMetaVector>>(&mut self, word: usize, entry: E) {
         let entry = entry.into();
         self.resize_if_necessary(word).add_assign(entry)
     }
 
-    pub fn try_add_in_place<E: TryInto<DictMetaVector>>(
+    pub fn try_add_in_place<E: TryInto<PyDictMetaVector>>(
         &mut self,
         word: usize,
         entry: E,
@@ -112,13 +112,13 @@ impl DictMetaModel {
             pub fn reserve(&mut self, additional: usize);
             pub fn reserve_exact(&mut self, additional: usize);
             pub fn truncate(&mut self, len: usize);
-            pub fn drain<R>(&mut self, range: R) -> Drain<'_, DictMetaVector> where R: RangeBounds<usize>;
+            pub fn drain<R>(&mut self, range: R) -> Drain<'_, PyDictMetaVector> where R: RangeBounds<usize>;
         }
     }
 }
 
 impl Deref for DictMetaModel {
-    type Target = [DictMetaVector];
+    type Target = [PyDictMetaVector];
 
     fn deref(&self) -> &Self::Target {
         &self.matrix
@@ -145,13 +145,13 @@ type Value = f64;
 
 #[derive(Debug, Copy, Clone, FromPyObject)]
 pub enum ValidAdd {
-    Entry(DictMetaVector),
+    Entry(PyDictMetaVector),
     Domain(Domain, Value),
     Register(Register, Value),
 }
 
 impl_py_stub!(
-    ValidAdd: DictMetaVector, (Domain, Value), (Register, Value)
+    ValidAdd: PyDictMetaVector, (Domain, Value), (Register, Value)
 );
 
 
@@ -162,27 +162,27 @@ impl_py_stub!(
 #[pyclass(eq, frozen)]
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
-pub struct DictMetaVector {
+pub struct PyDictMetaVector {
     inner: [Value; Domain::COUNT + Register::COUNT],
 }
 
-impl Eq for DictMetaVector {}
+impl Eq for PyDictMetaVector {}
 
-impl PartialEq for DictMetaVector {
+impl PartialEq for PyDictMetaVector {
     fn eq(&self, other: &Self) -> bool {
         self.iter().zip_eq(other.iter()).all(|(a, b)| a.eq(b))
     }
 }
 
-impl DictMetaVector {
-    pub const ZERO: DictMetaVector = DictMetaVector {
+impl PyDictMetaVector {
+    pub const ZERO: PyDictMetaVector = PyDictMetaVector {
         inner: [0.0; Domain::COUNT + Register::COUNT],
     };
 }
 
 #[cfg_attr(feature = "gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl DictMetaVector {
+impl PyDictMetaVector {
     #[new]
     pub const fn new() -> Self {
         Self::ZERO
@@ -224,7 +224,7 @@ impl DictMetaVector {
     }
 }
 
-impl DictMetaVector {
+impl PyDictMetaVector {
     pub fn from_meta(meta: &LoadedMetadataEx) -> Self {
         let mut new = Self::new();
         {
@@ -274,11 +274,11 @@ impl DictMetaVector {
         }
     }
 
-    pub fn get<I: DomainModelIndex>(&self, i: I) -> Value {
+    pub fn get<I: DictionaryMetaIndex>(&self, i: I) -> Value {
         self.inner[i.as_index()]
     }
 
-    pub fn get_mut<I: DomainModelIndex>(&mut self, i: I) -> &mut Value {
+    pub fn get_mut<I: DictionaryMetaIndex>(&mut self, i: I) -> &mut Value {
         &mut self.inner[i.as_index()]
     }
 
@@ -286,22 +286,22 @@ impl DictMetaVector {
         self.inner
     }
 
-    pub fn increment_by<I: DomainModelIndex>(&mut self, index: I, value: Value) {
+    pub fn increment_by<I: DictionaryMetaIndex>(&mut self, index: I, value: Value) {
         self.inner[index.as_index()] += value;
     }
 
-    pub fn increment<I: DomainModelIndex>(&mut self, index: I) {
+    pub fn increment<I: DictionaryMetaIndex>(&mut self, index: I) {
         self.inner[index.as_index()] += 1.0;
     }
 }
 
-impl From<[Value; Domain::COUNT + Register::COUNT]> for DictMetaVector {
+impl From<[Value; Domain::COUNT + Register::COUNT]> for PyDictMetaVector {
     fn from(inner: [Value; Domain::COUNT + Register::COUNT]) -> Self {
         Self { inner }
     }
 }
 
-impl From<&[Value; Domain::COUNT + Register::COUNT]> for DictMetaVector {
+impl From<&[Value; Domain::COUNT + Register::COUNT]> for PyDictMetaVector {
     fn from(value: &[Value; Domain::COUNT + Register::COUNT]) -> Self {
         Self {
             inner: value.clone(),
@@ -309,7 +309,7 @@ impl From<&[Value; Domain::COUNT + Register::COUNT]> for DictMetaVector {
     }
 }
 
-impl From<ValidAdd> for DictMetaVector {
+impl From<ValidAdd> for PyDictMetaVector {
     fn from(value: ValidAdd) -> Self {
         match value {
             ValidAdd::Entry(value) => value,
@@ -349,8 +349,8 @@ impl WrongLenError {
 //     }
 // }
 
-impl Add for DictMetaVector {
-    type Output = DictMetaVector;
+impl Add for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn add(mut self, rhs: Self) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -360,8 +360,8 @@ impl Add for DictMetaVector {
     }
 }
 
-impl Add<Value> for DictMetaVector {
-    type Output = DictMetaVector;
+impl Add<Value> for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn add(mut self, rhs: Value) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -371,7 +371,7 @@ impl Add<Value> for DictMetaVector {
     }
 }
 
-impl AddAssign for DictMetaVector {
+impl AddAssign for PyDictMetaVector {
     fn add_assign(&mut self, rhs: Self) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] += rhs[value];
@@ -379,7 +379,7 @@ impl AddAssign for DictMetaVector {
     }
 }
 
-impl AddAssign<Value> for DictMetaVector {
+impl AddAssign<Value> for PyDictMetaVector {
     fn add_assign(&mut self, rhs: Value) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] += rhs;
@@ -387,8 +387,8 @@ impl AddAssign<Value> for DictMetaVector {
     }
 }
 
-impl Sub for DictMetaVector {
-    type Output = DictMetaVector;
+impl Sub for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn sub(mut self, rhs: Self) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -398,8 +398,8 @@ impl Sub for DictMetaVector {
     }
 }
 
-impl Sub<Value> for DictMetaVector {
-    type Output = DictMetaVector;
+impl Sub<Value> for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn sub(mut self, rhs: Value) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -409,7 +409,7 @@ impl Sub<Value> for DictMetaVector {
     }
 }
 
-impl SubAssign for DictMetaVector {
+impl SubAssign for PyDictMetaVector {
     fn sub_assign(&mut self, rhs: Self) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] -= rhs[value];
@@ -417,7 +417,7 @@ impl SubAssign for DictMetaVector {
     }
 }
 
-impl SubAssign<Value> for DictMetaVector {
+impl SubAssign<Value> for PyDictMetaVector {
     fn sub_assign(&mut self, rhs: Value) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] -= rhs;
@@ -425,8 +425,8 @@ impl SubAssign<Value> for DictMetaVector {
     }
 }
 
-impl Mul for DictMetaVector {
-    type Output = DictMetaVector;
+impl Mul for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn mul(mut self, rhs: Self) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -436,8 +436,8 @@ impl Mul for DictMetaVector {
     }
 }
 
-impl Mul<Value> for DictMetaVector {
-    type Output = DictMetaVector;
+impl Mul<Value> for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn mul(mut self, rhs: Value) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -447,7 +447,7 @@ impl Mul<Value> for DictMetaVector {
     }
 }
 
-impl MulAssign for DictMetaVector {
+impl MulAssign for PyDictMetaVector {
     fn mul_assign(&mut self, rhs: Self) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] *= rhs[value];
@@ -455,7 +455,7 @@ impl MulAssign for DictMetaVector {
     }
 }
 
-impl MulAssign<Value> for DictMetaVector {
+impl MulAssign<Value> for PyDictMetaVector {
     fn mul_assign(&mut self, rhs: Value) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] *= rhs;
@@ -463,8 +463,8 @@ impl MulAssign<Value> for DictMetaVector {
     }
 }
 
-impl Div for DictMetaVector {
-    type Output = DictMetaVector;
+impl Div for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn div(mut self, rhs: Self) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -474,8 +474,8 @@ impl Div for DictMetaVector {
     }
 }
 
-impl Div<Value> for DictMetaVector {
-    type Output = DictMetaVector;
+impl Div<Value> for PyDictMetaVector {
+    type Output = PyDictMetaVector;
 
     fn div(mut self, rhs: Value) -> Self::Output {
         for value in 0..META_DICT_ARRAY_LENTH {
@@ -485,7 +485,7 @@ impl Div<Value> for DictMetaVector {
     }
 }
 
-impl DivAssign for DictMetaVector {
+impl DivAssign for PyDictMetaVector {
     fn div_assign(&mut self, rhs: Self) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] /= rhs[value];
@@ -493,7 +493,7 @@ impl DivAssign for DictMetaVector {
     }
 }
 
-impl DivAssign<Value> for DictMetaVector {
+impl DivAssign<Value> for PyDictMetaVector {
     fn div_assign(&mut self, rhs: Value) {
         for value in 0..META_DICT_ARRAY_LENTH {
             self.inner[value] /= rhs;
@@ -501,7 +501,7 @@ impl DivAssign<Value> for DictMetaVector {
     }
 }
 
-impl Deref for DictMetaVector {
+impl Deref for PyDictMetaVector {
     type Target = [Value];
 
     fn deref(&self) -> &Self::Target {
@@ -509,13 +509,13 @@ impl Deref for DictMetaVector {
     }
 }
 
-impl DerefMut for DictMetaVector {
+impl DerefMut for PyDictMetaVector {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl Display for DictMetaVector {
+impl Display for PyDictMetaVector {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}]", self.inner.iter().join(", "))
     }

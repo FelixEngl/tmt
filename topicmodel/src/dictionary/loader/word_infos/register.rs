@@ -5,7 +5,7 @@ use strum::{Display, EnumCount, EnumIter, EnumString, IntoStaticStr};
 use tinyset::Fits64;
 use ldatranslate_toolkit::register_python;
 use crate::dictionary::loader::iate_reader::AdministrativeStatus;
-use crate::dictionary::metadata::dict_meta_topic_matrix::{DomainModelIndex, NotAIndexFor};
+use crate::dictionary::metadata::dict_meta_topic_matrix::{DictionaryMetaIndex, NotAIndexFor};
 use crate::dictionary::metadata::ex::impl_try_from_as_unpack;
 use crate::dictionary::word_infos::Domain;
 
@@ -175,7 +175,7 @@ impl Register {
     }
 }
 
-impl DomainModelIndex for Register {
+impl DictionaryMetaIndex for Register {
     #[inline(always)]
     fn as_index(self) -> usize {
         Domain::COUNT + (self as u16) as usize

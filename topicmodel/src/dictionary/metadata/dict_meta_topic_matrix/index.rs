@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::sync::LazyLock;
 use deranged::RangedUsize;
 use derive_more::From;
 use either::Either;
@@ -16,13 +17,17 @@ pub const META_DICT_ARRAY_LENTH: usize = Domain::COUNT + Register::COUNT;
 #[error("The value {1} is not an index for {0}!")]
 pub struct NotAIndexFor(pub &'static str, pub usize);
 
-pub trait DomainModelIndex
+pub trait DictionaryMetaIndex
 where
     Self: Sized + Copy,
 {
     fn as_index(self) -> usize;
 
     fn from_index(index: usize) -> Result<Self, NotAIndexFor>;
+
+    fn from_other<T: DictionaryMetaIndex>(other: T) -> Result<Self, NotAIndexFor> {
+        Self::from_index(other.as_index())
+    }
 }
 
 
@@ -93,7 +98,7 @@ impl TryFrom<usize> for GeneralDictMetaTagIndex {
     }
 }
 
-impl DomainModelIndex for GeneralDictMetaTagIndex {
+impl DictionaryMetaIndex for GeneralDictMetaTagIndex {
     #[inline(always)]
     fn as_index(self) -> usize {
         RangedUsize::get(self.0)
@@ -104,7 +109,7 @@ impl DomainModelIndex for GeneralDictMetaTagIndex {
     }
 }
 
-impl DomainModelIndex for RangedUsize<0, META_DICT_ARRAY_LENTH> {
+impl DictionaryMetaIndex for RangedUsize<0, META_DICT_ARRAY_LENTH> {
     #[inline(always)]
     fn as_index(self) -> usize {
         RangedUsize::get(self)
@@ -127,7 +132,16 @@ pub enum DictMetaTagIndex {
     Index(GeneralDictMetaTagIndex),
 }
 
+
+
 impl DictMetaTagIndex {
+    pub fn all() -> &'static [DictMetaTagIndex] {
+        static ALL: LazyLock<Vec<DictMetaTagIndex>> = LazyLock::new(|| {
+            (0..META_DICT_ARRAY_LENTH).map(|v| DictMetaTagIndex::from_index(v).unwrap()).collect()
+        });
+        &ALL
+    }
+
     pub const fn new_by_domain(domain: Domain) -> Self {
         Self::Domain(domain)
     }
@@ -176,7 +190,7 @@ impl IntoPy<PyObject> for DictMetaTagIndex {
     }
 }
 
-impl DomainModelIndex for DictMetaTagIndex {
+impl DictionaryMetaIndex for DictMetaTagIndex {
     fn as_index(self) -> usize {
         match self {
             DictMetaTagIndex::Domain(value) => value.as_index(),

@@ -4,9 +4,99 @@ use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use ndarray_stats::EntropyExt;
 use ndarray_stats::errors::{EmptyInput, MultiInputError, ShapeMismatch};
 use num::{cast};
+use pyo3::pyclass;
 use sealed::sealed;
 use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
+use ldatranslate_toolkit::register_python;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
+use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
 use crate::translate::entropies::errors::*;
+
+register_python! {
+    enum FDivergence;
+}
+
+
+#[derive(Clone, Debug)]
+pub struct FDivergenceCalculator {
+    pub fdivergence: FDivergence,
+    pub alpha: Option<f64>,
+    pub target_fields: Option<Vec<DictMetaTagIndex>>,
+    pub invert_target_fields: bool
+}
+
+impl FDivergenceCalculator {
+
+
+    pub fn calculate<S1, S2, A, D>(&self, p: &ArrayBase<S1, D>, q: &ArrayBase<S2, D>) -> Result<A, EntropyWithAlphaError<A, f64>>
+    where
+        S1: Data<Elem=A>,
+        S2: Data<Elem=A>,
+        A: Float + FromPrimitive,
+        D: Dimension
+    {
+        match self.fdivergence {
+            FDivergence::Renyi => {
+                p.renyi_divergence(q, self.alpha.unwrap_or(1.0))
+            }
+            FDivergence::Total => {
+                Ok(p.total_variantion(q)?)
+            }
+            FDivergence::ChiAlpha => {
+                if let Some(alpha) = self.alpha {
+                    p.chi_alpha_divergence(q, alpha)
+                } else {
+                    Ok(p.total_variantion(q)?)
+                }
+            }
+            FDivergence::KL => {
+                Ok(p.kullback_leibert(q)?)
+            }
+            FDivergence::KLReversed => {
+                Ok(p.kullback_leibert_reversed(q)?)
+            }
+            FDivergence::JensenShannon => {
+                Ok(p.jensen_shannon(q)?)
+            }
+            FDivergence::Jeffrey => {
+                Ok(p.jeffreys_divergence(q)?)
+            }
+            FDivergence::Bhattacharyya => {
+                Ok(p.bhattacharyya_divergence(q)?)
+            }
+            FDivergence::Hellinger => {
+                Ok(p.hellinger_distance(q)?)
+            }
+            FDivergence::PearsonChiSquare => {
+                Ok(p.pearson_chi_square_divergence(q)?)
+            }
+            FDivergence::NeymanChiSquare => {
+                Ok(p.neyman_chi_square_divergence(q)?)
+            }
+        }
+    }
+
+    pub fn new(fdivergence: FDivergence, alpha: Option<f64>, target_fields: Option<Vec<DictMetaTagIndex>>, invert_target_fields: bool) -> Self {
+        Self { fdivergence, alpha, target_fields, invert_target_fields }
+    }
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyo3::pyclass(eq, eq_int, hash, frozen)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum FDivergence {
+    Renyi,
+    Total,
+    ChiAlpha,
+    KL,
+    KLReversed,
+    JensenShannon,
+    Jeffrey,
+    Bhattacharyya,
+    Hellinger,
+    PearsonChiSquare,
+    NeymanChiSquare
+}
 
 #[sealed]
 pub trait FDivergenceExt<A, S, D>

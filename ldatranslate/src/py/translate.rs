@@ -27,6 +27,8 @@ use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
+use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
 use crate::translate::{KeepOriginalWord, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
@@ -36,6 +38,7 @@ use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
 use crate::tools::memory::MemoryReporter;
+use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
 // /// The config for a translation
 // #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 // #[pyclass]
@@ -111,27 +114,39 @@ pub struct PyTranslationConfig {
     threshold: Option<f64>,
     keep_original_word: KeepOriginalWord,
     top_candidate_limit: Option<NonZeroUsize>,
+    f_divergence: Option<FDivergence>,
+    alpha: Option<f64>,
+    target_fields: Option<Vec<DictMetaTagIndex>>,
+    invert_target_fields: bool
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTranslationConfig {
     #[new]
-    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None))]
+    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None, f_divergence=None, alpha=None, target_fields=None, invert_target_fields=None))]
     pub fn new(
         epsilon: Option<f64>,
         threshold: Option<f64>,
         keep_original_word: Option<KeepOriginalWordArg>,
         top_candidate_limit: Option<usize>,
+        f_divergence: Option<FDivergence>,
+        alpha: Option<f64>,
+        target_fields: Option<Vec<DictMetaTagIndex>>,
+        invert_target_fields: Option<bool>
     ) -> PyResult<Self> {
         Ok(Self{
-             epsilon,
-             threshold,
-             keep_original_word: keep_original_word
-                 .unwrap_or(KeepOriginalWordArg::Value(KeepOriginalWord::Never))
-                 .try_into()
-                 .map_err(|value: <KeepOriginalWordArg as TryInto<KeepOriginalWord>>::Error| PyValueError::new_err(value.to_string()))?,
-             top_candidate_limit: top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten()
+            epsilon,
+            threshold,
+            keep_original_word: keep_original_word
+                .unwrap_or(KeepOriginalWordArg::Value(KeepOriginalWord::Never))
+                .try_into()
+                .map_err(|value: <KeepOriginalWordArg as TryInto<KeepOriginalWord>>::Error| PyValueError::new_err(value.to_string()))?,
+            top_candidate_limit: top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten(),
+            f_divergence,
+            alpha,
+            target_fields,
+            invert_target_fields: invert_target_fields.unwrap_or_default()
         })
     }
 }
@@ -167,6 +182,14 @@ impl PyTranslationConfig {
                 self.threshold,
                 self.keep_original_word,
                 self.top_candidate_limit,
+                self.f_divergence.map(|value| {
+                    FDivergenceCalculator::new(
+                        value,
+                        self.alpha,
+                        self.target_fields,
+                        self.invert_target_fields,
+                    )
+                }),
             )
         )
     }
