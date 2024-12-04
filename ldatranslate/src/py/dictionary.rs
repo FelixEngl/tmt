@@ -17,7 +17,7 @@ use crate::py::helpers::LanguageHintValue;
 use crate::py::vocabulary::PyVocabulary;
 use ldatranslate_topicmodel::dictionary::direction::{DirectionMarker, DirectedElement, LanguageMarker};
 use ldatranslate_topicmodel::dictionary::iterators::{DictionaryWithMetaIterator};
-use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetadataEx, MetaField};
+use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetadataEx, MetaField, DictMetaCounts};
 use ldatranslate_topicmodel::dictionary::metadata::{MetaIterOwned, MetadataManager};
 use ldatranslate_topicmodel::dictionary::*;
 use ldatranslate_topicmodel::language_hint::LanguageHint;
@@ -43,7 +43,7 @@ use ldatranslate_toolkit::from_str_ex::ParseEx;
 use ldatranslate_toolkit::special_python_values::{PyEither, PyEitherOrBoth};
 use ldatranslate_topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 use ldatranslate_topicmodel::dictionary::len::Len;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, PyDictMetaVector};
 use ldatranslate_topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
 
 pub type DefaultDict = EfficientDictWithMetaDefault;
@@ -682,6 +682,10 @@ impl PyDictionary {
             )
         )
     }
+
+    fn dictionary_meta_counts(&self) -> DictMetaCounts {
+        self.get().metadata().dict_meta_counts()
+    }
 }
 
 
@@ -921,7 +925,7 @@ mod test  {
         };
 
         println!("Len0 {}", dict.get().len());
-        let domain_counts = dict.get().metadata().domain_count();
+        let domain_counts = dict.get().metadata().dict_meta_counts();
         println!("Vec {}", domain_counts);
 
         // ca 7 min
@@ -937,7 +941,7 @@ mod test  {
         };
 
         println!("Len1 {}", dict.get().len());
-        let domain_counts = dict.get().metadata().domain_count();
+        let domain_counts = dict.get().metadata().dict_meta_counts();
         println!("Vec {}", domain_counts);
 
         let dict = {
@@ -951,7 +955,7 @@ mod test  {
         };
 
         println!("Len2: {}", dict.len());
-        let domain_counts = dict.metadata().domain_count();
+        let domain_counts = dict.metadata().dict_meta_counts();
         println!("Vec {}", domain_counts);
 
         let dict = {
@@ -965,7 +969,7 @@ mod test  {
         };
 
         println!("Len4: {}", dict.len());
-        let domain_counts = dict.metadata().domain_count();
+        let domain_counts = dict.metadata().dict_meta_counts();
         println!("Vec {}", domain_counts);
     }
 }

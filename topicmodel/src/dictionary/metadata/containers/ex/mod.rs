@@ -31,7 +31,8 @@ use crate::dictionary::metadata::MetadataManager;
 register_python! {
     struct LoadedMetadataEx;
     struct MetaField;
-    struct DomainCounts;
+    struct DictMetaCount;
+    struct DictMetaCounts;
 }
 
 
@@ -182,17 +183,16 @@ generate_field_code! {
     },
 }
 
-register_python!(struct DomainCount;);
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
-pub struct DomainCount {
+pub struct DictMetaCount {
     counts: [u64; META_DICT_ARRAY_LENTH]
 }
 
-impl DomainCount {
+impl DictMetaCount {
     pub const fn new(counts: [u64; META_DICT_ARRAY_LENTH]) -> Self {
         Self {counts}
     }
@@ -216,20 +216,20 @@ impl DomainCount {
     }
 }
 
-impl AsRef<[u64; META_DICT_ARRAY_LENTH]> for DomainCount {
+impl AsRef<[u64; META_DICT_ARRAY_LENTH]> for DictMetaCount {
     fn as_ref(&self) -> &[u64; META_DICT_ARRAY_LENTH] {
         &self.counts
     }
 }
 
-impl Deref for DomainCount {
+impl Deref for DictMetaCount {
     type Target = [u64; META_DICT_ARRAY_LENTH];
     fn deref(&self) -> &Self::Target {
         &self.counts
     }
 }
 
-impl DerefMut for DomainCount {
+impl DerefMut for DictMetaCount {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.counts
     }
@@ -238,7 +238,7 @@ impl DerefMut for DomainCount {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl DomainCount {
+impl DictMetaCount {
     fn full(&self) -> HashMap<DictMetaTagIndex, u64> {
         self.counts.iter().enumerate().map(|(i, value)| {
             (DictMetaTagIndex::from_index(i).unwrap(), *value)
@@ -268,9 +268,19 @@ impl DomainCount {
     fn __str__(&self) -> String {
         self.to_string()
     }
+
+    /// Converts the count to a normal dict
+    fn as_dict(&self) -> HashMap<DictMetaTagIndex, u64> {
+        self.counts.iter().copied().enumerate().map(|(i, value)| {
+            (
+                DictMetaTagIndex::from_index(i).unwrap(),
+                value
+            )
+        }).collect()
+    }
 }
 
-impl<'a, 'b, D, A> Pretty<'a, D, A> for &'b DomainCount
+impl<'a, 'b, D, A> Pretty<'a, D, A> for &'b DictMetaCount
 where
     A: 'a + Clone,
     D: DocAllocator<'a, A>,
@@ -286,7 +296,7 @@ where
     }
 }
 
-impl Display for DomainCount {
+impl Display for DictMetaCount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         RcDoc::<()>::nil().append(self).render_fmt(80, f)
     }
@@ -296,19 +306,19 @@ impl Display for DomainCount {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Copy, Clone)]
-pub struct DomainCounts {
-    counts_a: DomainCount,
-    counts_b: DomainCount,
+pub struct DictMetaCounts {
+    counts_a: DictMetaCount,
+    counts_b: DictMetaCount,
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl DomainCounts {
-    pub fn a(&self) -> DomainCount {
+impl DictMetaCounts {
+    pub fn a(&self) -> DictMetaCount {
         self.counts_a
     }
 
-    pub fn b(&self) -> DomainCount {
+    pub fn b(&self) -> DictMetaCount {
         self.counts_b
     }
 
@@ -329,23 +339,31 @@ impl DomainCounts {
     fn __str__(&self) -> String {
         self.to_string()
     }
+
+    /// Returns a tuple of dicts, representing (a, b) as hashmaps.
+    fn as_dicts(&self) -> (HashMap<DictMetaTagIndex, u64>, HashMap<DictMetaTagIndex, u64>) {
+        (
+            self.counts_a.as_dict(),
+            self.counts_b.as_dict()
+        )
+    }
 }
 
-impl DomainCounts {
+impl DictMetaCounts {
     pub fn new(counts_a: [u64; META_DICT_ARRAY_LENTH], counts_b: [u64; META_DICT_ARRAY_LENTH]) -> Self {
-        Self { counts_a: DomainCount::new(counts_a), counts_b: DomainCount::new(counts_b) }
+        Self { counts_a: DictMetaCount::new(counts_a), counts_b: DictMetaCount::new(counts_b) }
     }
 
-    pub fn ref_a(&self) -> &DomainCount {
+    pub fn ref_a(&self) -> &DictMetaCount {
         &self.counts_a
     }
 
-    pub fn ref_b(&self) -> &DomainCount {
+    pub fn ref_b(&self) -> &DictMetaCount {
         &self.counts_b
     }
 }
 
-impl Display for DomainCounts {
+impl Display for DictMetaCounts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         RcDoc::<()>::nil().append(self).render_fmt(80, f)
     }
@@ -353,7 +371,7 @@ impl Display for DomainCounts {
 
 
 
-impl<'a, 'b, D, A> Pretty<'a, D, A> for &'b DomainCounts
+impl<'a, 'b, D, A> Pretty<'a, D, A> for &'b DictMetaCounts
 where
     A: 'a + Clone,
     D: DocAllocator<'a, A>,
@@ -399,7 +417,7 @@ where
 impl MetadataManagerEx {
 
     /// Returns the domain counts for A and B
-    pub fn domain_count(&self) -> DomainCounts {
+    pub fn dict_meta_counts(&self) -> DictMetaCounts {
         use std::sync::Arc;
         use itertools::Itertools;
         use lockfree_object_pool::LinearObjectPool;
@@ -458,6 +476,6 @@ impl MetadataManagerEx {
 
         let a = sum_up_meta(pool.clone(), &self.meta_a());
         let b = sum_up_meta(pool.clone(), &self.meta_b());
-        DomainCounts::new(a, b)
+        DictMetaCounts::new(a, b)
     }
 }

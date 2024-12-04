@@ -194,7 +194,7 @@ where
     let topic_context =
         topic_context.to_static_with(EmptyContextWithBuiltinFunctions::default());
 
-    let domain_counts = bridge.dictionary.metadata().domain_count();
+    let domain_counts = bridge.dictionary.metadata().dict_meta_counts();
 
 
     let norm_value = domain_counts.ref_a().sum() as f64;

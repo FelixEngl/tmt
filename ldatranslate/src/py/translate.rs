@@ -38,6 +38,7 @@ use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
 use crate::tools::memory::MemoryReporter;
+use crate::translate::dictionary_meta::topic_associated::ScoreModifierCalculator;
 use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
 // /// The config for a translation
 // #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
@@ -117,14 +118,15 @@ pub struct PyTranslationConfig {
     f_divergence: Option<FDivergence>,
     alpha: Option<f64>,
     target_fields: Option<Vec<DictMetaTagIndex>>,
-    invert_target_fields: bool
+    invert_target_fields: bool,
+    score_modifier_calculator: ScoreModifierCalculator
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTranslationConfig {
     #[new]
-    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None, f_divergence=None, alpha=None, target_fields=None, invert_target_fields=None))]
+    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None, f_divergence=None, alpha=None, target_fields=None, invert_target_fields=None, score_modifier_calculator=None))]
     pub fn new(
         epsilon: Option<f64>,
         threshold: Option<f64>,
@@ -133,7 +135,8 @@ impl PyTranslationConfig {
         f_divergence: Option<FDivergence>,
         alpha: Option<f64>,
         target_fields: Option<Vec<DictMetaTagIndex>>,
-        invert_target_fields: Option<bool>
+        invert_target_fields: Option<bool>,
+        score_modifier_calculator: Option<ScoreModifierCalculator>
     ) -> PyResult<Self> {
         Ok(Self{
             epsilon,
@@ -146,7 +149,8 @@ impl PyTranslationConfig {
             f_divergence,
             alpha,
             target_fields,
-            invert_target_fields: invert_target_fields.unwrap_or_default()
+            invert_target_fields: invert_target_fields.unwrap_or_default(),
+            score_modifier_calculator: score_modifier_calculator.unwrap_or(ScoreModifierCalculator::Max)
         })
     }
 }
@@ -188,6 +192,7 @@ impl PyTranslationConfig {
                         self.alpha,
                         self.target_fields,
                         self.invert_target_fields,
+                        self.score_modifier_calculator
                     )
                 }),
             )

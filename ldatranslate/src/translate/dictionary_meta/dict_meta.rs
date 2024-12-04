@@ -493,7 +493,7 @@ mod test {
             x.build().unwrap().write_into(&mut y);
         }
 
-        let domains =  d.metadata().domain_count();
+        let domains =  d.metadata().dict_meta_counts();
 
         const PATTERN: &[DictMetaTagIndex] = &[
             DictMetaTagIndex::new_by_domain(Domain::Acad),

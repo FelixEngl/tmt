@@ -138,7 +138,7 @@ mod test {
         for value in meta.word_count.iter().filter(|v| !v.is_zero()).take(10) {
             println!("{}\n+++\n{}\n+++\n\n#####\n\n", value, &value.inner * &meta.topic_model_count.inner);
         }
-        println!("{}", dict.metadata().domain_count());
+        println!("{}", dict.metadata().dict_meta_counts());
 
 
     }

@@ -1,47 +1,47 @@
+use crate::translate::dictionary_meta::topic_associated::ScoreModifierCalculator;
+use crate::translate::entropies::errors::*;
 use evalexpr::export::evalexpr_num::{Float, FromPrimitive};
 use itertools::Itertools;
-use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
-use ndarray_stats::EntropyExt;
-use ndarray_stats::errors::{EmptyInput, MultiInputError, ShapeMismatch};
-use num::{cast};
-use pyo3::pyclass;
-use sealed::sealed;
 use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
 use ldatranslate_toolkit::register_python;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, META_DICT_ARRAY_LENTH};
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
-use crate::translate::entropies::errors::*;
+use ndarray::{Array, Array1, ArrayBase, Data, Dimension, Zip};
+use ndarray_stats::errors::{EmptyInput, MultiInputError, ShapeMismatch};
+use ndarray_stats::EntropyExt;
+use num::cast;
+use pyo3::pyclass;
+use sealed::sealed;
+use ldatranslate_translate::TopicLike;
 
 register_python! {
     enum FDivergence;
 }
-
 
 #[derive(Clone, Debug)]
 pub struct FDivergenceCalculator {
     pub fdivergence: FDivergence,
     pub alpha: Option<f64>,
     pub target_fields: Option<Vec<DictMetaTagIndex>>,
-    pub invert_target_fields: bool
+    pub invert_target_fields: bool,
+    pub score_modifier_calc: ScoreModifierCalculator,
 }
 
 impl FDivergenceCalculator {
-
-
-    pub fn calculate<S1, S2, A, D>(&self, p: &ArrayBase<S1, D>, q: &ArrayBase<S2, D>) -> Result<A, EntropyWithAlphaError<A, f64>>
+    pub fn calculate<S1, S2, A, D>(
+        &self,
+        p: &ArrayBase<S1, D>,
+        q: &ArrayBase<S2, D>,
+    ) -> Result<A, EntropyWithAlphaError<A, f64>>
     where
-        S1: Data<Elem=A>,
-        S2: Data<Elem=A>,
+        S1: Data<Elem = A>,
+        S2: Data<Elem = A>,
         A: Float + FromPrimitive,
-        D: Dimension
+        D: Dimension,
     {
         match self.fdivergence {
-            FDivergence::Renyi => {
-                p.renyi_divergence(q, self.alpha.unwrap_or(1.0))
-            }
-            FDivergence::Total => {
-                Ok(p.total_variantion(q)?)
-            }
+            FDivergence::Renyi => p.renyi_divergence(q, self.alpha.unwrap_or(1.0)),
+            FDivergence::Total => Ok(p.total_variantion(q)?),
             FDivergence::ChiAlpha => {
                 if let Some(alpha) = self.alpha {
                     p.chi_alpha_divergence(q, alpha)
@@ -49,39 +49,54 @@ impl FDivergenceCalculator {
                     Ok(p.total_variantion(q)?)
                 }
             }
-            FDivergence::KL => {
-                Ok(p.kullback_leibert(q)?)
-            }
-            FDivergence::KLReversed => {
-                Ok(p.kullback_leibert_reversed(q)?)
-            }
-            FDivergence::JensenShannon => {
-                Ok(p.jensen_shannon(q)?)
-            }
-            FDivergence::Jeffrey => {
-                Ok(p.jeffreys_divergence(q)?)
-            }
-            FDivergence::Bhattacharyya => {
-                Ok(p.bhattacharyya_divergence(q)?)
-            }
-            FDivergence::Hellinger => {
-                Ok(p.hellinger_distance(q)?)
-            }
-            FDivergence::PearsonChiSquare => {
-                Ok(p.pearson_chi_square_divergence(q)?)
-            }
-            FDivergence::NeymanChiSquare => {
-                Ok(p.neyman_chi_square_divergence(q)?)
-            }
+            FDivergence::KL => Ok(p.kullback_leibert(q)?),
+            FDivergence::KLReversed => Ok(p.kullback_leibert_reversed(q)?),
+            FDivergence::JensenShannon => Ok(p.jensen_shannon(q)?),
+            FDivergence::Jeffrey => Ok(p.jeffreys_divergence(q)?),
+            FDivergence::Bhattacharyya => Ok(p.bhattacharyya_divergence(q)?),
+            FDivergence::Hellinger => Ok(p.hellinger_distance(q)?),
+            FDivergence::PearsonChiSquare => Ok(p.pearson_chi_square_divergence(q)?),
+            FDivergence::NeymanChiSquare => Ok(p.neyman_chi_square_divergence(q)?),
         }
     }
 
-    pub fn new(fdivergence: FDivergence, alpha: Option<f64>, target_fields: Option<Vec<DictMetaTagIndex>>, invert_target_fields: bool) -> Self {
-        Self { fdivergence, alpha, target_fields, invert_target_fields }
+    #[inline(always)]
+    pub fn calculate_score<T: TopicLike>(
+        &self,
+        topic: &T,
+        counts: &[(DictMetaTagIndex, Array1<u32>)],
+        counts_as_probs: &[(DictMetaTagIndex, Array1<f64>)],
+        topic_assoc: [f64; META_DICT_ARRAY_LENTH],
+    ) -> Vec<f64> {
+        self.score_modifier_calc.calculate(
+            topic,
+            counts,
+            counts_as_probs,
+            topic_assoc,
+        )
+    }
+
+    pub fn new(
+        fdivergence: FDivergence,
+        alpha: Option<f64>,
+        target_fields: Option<Vec<DictMetaTagIndex>>,
+        invert_target_fields: bool,
+        score_modifier_calc: ScoreModifierCalculator,
+    ) -> Self {
+        Self {
+            fdivergence,
+            alpha,
+            target_fields,
+            invert_target_fields,
+            score_modifier_calc
+        }
     }
 }
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[cfg_attr(
+    feature = "gen_python_api",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum
+)]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum FDivergence {
@@ -95,7 +110,7 @@ pub enum FDivergence {
     Bhattacharyya,
     Hellinger,
     PearsonChiSquare,
-    NeymanChiSquare
+    NeymanChiSquare,
 }
 
 #[sealed]
@@ -105,15 +120,21 @@ where
     D: Dimension,
 {
     /// https://en.wikipedia.org/wiki/R%C3%A9nyi_entropy#Definition
-    fn renyi_entropy<A2>(&self, alpha: A2) -> Result<A, EntropyWithAlphaError<A, A2>> where A: Float, A2: Float;
+    fn renyi_entropy<A2>(&self, alpha: A2) -> Result<A, EntropyWithAlphaError<A, A2>>
+    where
+        A: Float,
+        A2: Float;
 
     /// https://en.wikipedia.org/wiki/R%C3%A9nyi_entropy#R%C3%A9nyi_divergence
-    fn renyi_divergence<S2, A2>(&self, q: &ArrayBase<S2, D>, alpha: A2) -> Result<A, EntropyWithAlphaError<A, A2>>
+    fn renyi_divergence<S2, A2>(
+        &self,
+        q: &ArrayBase<S2, D>,
+        alpha: A2,
+    ) -> Result<A, EntropyWithAlphaError<A, A2>>
     where
         S2: Data<Elem = A>,
         A: Float + FromPrimitive,
         A2: Float + FromPrimitive;
-
 
     /// In probability theory, the total variation distance is a distance measure for probability
     /// distributions. It is an example of a statistical distance metric, and is sometimes
@@ -136,7 +157,11 @@ where
     ///
     /// See also:
     /// [F-Divergence](https://en.wikipedia.org/wiki/F-divergence)
-    fn chi_alpha_divergence<S2, A2>(&self, q: &ArrayBase<S2, D>, alpha: A2) -> Result<A, EntropyWithAlphaError<A, A2>>
+    fn chi_alpha_divergence<S2, A2>(
+        &self,
+        q: &ArrayBase<S2, D>,
+        alpha: A2,
+    ) -> Result<A, EntropyWithAlphaError<A, A2>>
     where
         S2: Data<Elem = A>,
         A: Float + FromPrimitive,
@@ -185,7 +210,6 @@ where
         S2: Data<Elem = A>,
         A: Float;
 
-
     /// https://en.wikipedia.org/wiki/Bhattacharyya_distance
     fn bhattacharyya_coefficient<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
@@ -203,7 +227,7 @@ where
     fn bhattacharyya_divergence<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
         S2: Data<Elem = A>,
-        A: Float
+        A: Float,
     {
         self.bhattacharyya_coefficient(q).map(|value| {
             if value.is_zero() {
@@ -220,9 +244,10 @@ where
     fn hellinger_distance<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
         S2: Data<Elem = A>,
-        A: Float
+        A: Float,
     {
-        self.bhattacharyya_coefficient(q).map(|temp| A::one() - temp)
+        self.bhattacharyya_coefficient(q)
+            .map(|temp| A::one() - temp)
     }
 
     /// [F-Divergence](https://en.wikipedia.org/wiki/F-divergence)
@@ -236,10 +261,7 @@ where
     where
         S2: Data<Elem = A>,
         A: Float;
-
 }
-
-
 
 // see: [F-Divergence](https://en.wikipedia.org/wiki/F-divergence)
 
@@ -249,7 +271,7 @@ fn convert_float<A: Float>(f: f64) -> Result<A, EntropyError<A>> {
     } else {
         Err(EntropyError::FloatCastError {
             typ: std::any::type_name::<f64>(),
-            value: f
+            value: f,
         })
     }
 }
@@ -265,29 +287,25 @@ where
     S2: Data<Elem = A>,
     A: Float,
     D: Dimension,
-    F: Fn(A, A) -> A
+    F: Fn(A, A) -> A,
 {
     if p.is_empty() {
         return Err(MultiInputError::EmptyInput.into());
     }
     if p.shape() != q.shape() {
-        return Err(MultiInputError::ShapeMismatch(
-            ShapeMismatch {
-                first_shape: p.shape().to_vec(),
-                second_shape: q.shape().to_vec(),
-            }
-        ).into());
+        return Err(MultiInputError::ShapeMismatch(ShapeMismatch {
+            first_shape: p.shape().to_vec(),
+            second_shape: q.shape().to_vec(),
+        })
+        .into());
     }
     let mut temp: ArrayBase<_, D> = Array::zeros(p.raw_dim());
     Zip::from(&mut temp)
         .and(p)
         .and(q)
-        .for_each(|result, &p, &q| {
-            *result = f(p, q)
-        });
+        .for_each(|result, &p, &q| *result = f(p, q));
     Ok(temp.sum())
 }
-
 
 #[sealed]
 impl<A, S, D> FDivergenceExt<A, S, D> for ArrayBase<S, D>
@@ -298,20 +316,18 @@ where
     fn renyi_entropy<A2>(&self, alpha: A2) -> Result<A, EntropyWithAlphaError<A, A2>>
     where
         A: Float,
-        A2: Float
+        A2: Float,
     {
         if alpha.is_one() {
-            return Ok(self.entropy()?)
+            return Ok(self.entropy()?);
         }
         if self.is_empty() {
             Err(EntropyError::EmptyInput(EmptyInput).into())
         } else {
-            let alpha: A = cast(alpha).ok_or_else(
-                || EntropyWithAlphaError::CastError {
-                    value: alpha.into(),
-                    typ: std::any::type_name::<A>(),
-                }
-            )?;
+            let alpha: A = cast(alpha).ok_or_else(|| EntropyWithAlphaError::CastError {
+                value: alpha.into(),
+                typ: std::any::type_name::<A>(),
+            })?;
             let entropy = self
                 .mapv(|x| {
                     if x == A::zero() {
@@ -327,14 +343,20 @@ where
         }
     }
 
-    fn renyi_divergence<S2, A2>(&self, q: &ArrayBase<S2, D>, alpha: A2) -> Result<A, EntropyWithAlphaError<A, A2>>
+    fn renyi_divergence<S2, A2>(
+        &self,
+        q: &ArrayBase<S2, D>,
+        alpha: A2,
+    ) -> Result<A, EntropyWithAlphaError<A, A2>>
     where
-        S2: Data<Elem=A>,
+        S2: Data<Elem = A>,
         A: Float + FromPrimitive,
-        A2: Float + FromPrimitive
+        A2: Float + FromPrimitive,
     {
         if alpha.is_sign_negative() {
-            return Err(EntropyWithAlphaError::negative_alpha(stringify!(renyi_divergence)));
+            return Err(EntropyWithAlphaError::negative_alpha(stringify!(
+                renyi_divergence
+            )));
         }
 
         if alpha.is_nan() {
@@ -342,21 +364,19 @@ where
         }
 
         if alpha.is_one() {
-            return Ok(self.kl_divergence(q)?)
+            return Ok(self.kl_divergence(q)?);
         }
 
         if self.is_empty() {
             return Err(MultiInputError::EmptyInput.into());
         }
         if self.shape() != q.shape() {
-            return Err(MultiInputError::ShapeMismatch(
-                ShapeMismatch {
-                    first_shape: self.shape().to_vec(),
-                    second_shape: q.shape().to_vec(),
-                }
-            ).into());
+            return Err(MultiInputError::ShapeMismatch(ShapeMismatch {
+                first_shape: self.shape().to_vec(),
+                second_shape: q.shape().to_vec(),
+            })
+            .into());
         }
-
 
         if alpha.is_zero() {
             let mut temp = Array::zeros(self.raw_dim());
@@ -368,36 +388,35 @@ where
                         *result = q;
                     }
                 });
-            return Ok(temp.sum().ln().neg())
+            return Ok(temp.sum().ln().neg());
         }
 
         if alpha.is_infinite() {
             //  the log of the maximum ratio of the probabilities.
             // todo: is this really what they mean?
-            return Ok(
-                self.iter().zip_eq(q.iter()).filter_map(|(&p, &q)|{
+            return Ok(self
+                .iter()
+                .zip_eq(q.iter())
+                .filter_map(|(&p, &q)| {
                     if p.is_zero() || q.is_zero() {
                         None
                     } else {
-                        Some((p*p)/q)
+                        Some((p * p) / q)
                     }
-                }).max_partial_filtered().unwrap_or_else(A::zero)
-            )
+                })
+                .max_partial_filtered()
+                .unwrap_or_else(A::zero));
         }
 
         if Some(alpha) == A2::from_f64(0.5) {
-            return Ok(
-                self.bhattacharyya_coefficient(q).map(
-                    |value| {
-                        if value.is_zero() {
-                            A::zero()
-                        } else {
-                            let value = value.ln();
-                            -(value + value)
-                        }
-                    }
-                )?
-            )
+            return Ok(self.bhattacharyya_coefficient(q).map(|value| {
+                if value.is_zero() {
+                    A::zero()
+                } else {
+                    let value = value.ln();
+                    -(value + value)
+                }
+            })?);
         }
 
         let mut temp = Array::zeros(self.raw_dim());
@@ -410,10 +429,10 @@ where
                 .and(q)
                 .for_each(|result, &p, &q| {
                     if !p.is_zero() && !q.is_zero() {
-                        *result = (p*p)/q;
+                        *result = (p * p) / q;
                     }
                 });
-            return Ok(temp.sum().ln())
+            return Ok(temp.sum().ln());
         }
 
         let factor = if alpha.is_zero() {
@@ -431,12 +450,10 @@ where
                 });
             A::one().neg()
         } else {
-            let alpha: A = cast(alpha).ok_or_else(
-                || EntropyWithAlphaError::CastError {
-                    value: alpha.into(),
-                    typ: std::any::type_name::<A>(),
-                }
-            )?;
+            let alpha: A = cast(alpha).ok_or_else(|| EntropyWithAlphaError::CastError {
+                value: alpha.into(),
+                typ: std::any::type_name::<A>(),
+            })?;
 
             let alpha_minus_one = alpha - A::one();
 
@@ -461,40 +478,37 @@ where
     #[inline]
     fn total_variantion<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
-        A: Float
+        S2: Data<Elem = A>,
+        A: Float,
     {
         let two = convert_float(2.0)?;
-        generic_divergence(self, q, |p, q| {
-            (p - q).abs()
-        }).map(|temp| {
-            temp / two
-        })
+        generic_divergence(self, q, |p, q| (p - q).abs()).map(|temp| temp / two)
     }
 
-    fn chi_alpha_divergence<S2, A2>(&self, q: &ArrayBase<S2, D>, alpha: A2) -> Result<A, EntropyWithAlphaError<A, A2>>
+    fn chi_alpha_divergence<S2, A2>(
+        &self,
+        q: &ArrayBase<S2, D>,
+        alpha: A2,
+    ) -> Result<A, EntropyWithAlphaError<A, A2>>
     where
-        S2: Data<Elem=A>,
+        S2: Data<Elem = A>,
         A: Float,
-        A2: Float
+        A2: Float,
     {
         if alpha.is_one() {
-            return Ok(self.total_variantion(q)?)
+            return Ok(self.total_variantion(q)?);
         }
-        let alpha: A = cast(alpha).ok_or_else(
-            || EntropyWithAlphaError::CastError {
-                value: alpha.into(),
-                typ: std::any::type_name::<A>(),
-            }
-        )?;
+        let alpha: A = cast(alpha).ok_or_else(|| EntropyWithAlphaError::CastError {
+            value: alpha.into(),
+            typ: std::any::type_name::<A>(),
+        })?;
         if alpha < A::one() {
-            return Err(
-                EntropyError::IllegalParameterError {
-                    name: "alpha",
-                    value: alpha,
-                    explanation: Some("Must be equal or greater than 1!")
-                }.into()
-            )
+            return Err(EntropyError::IllegalParameterError {
+                name: "alpha",
+                value: alpha,
+                explanation: Some("Must be equal or greater than 1!"),
+            }
+            .into());
         }
 
         let temp = generic_divergence(self, q, |p, q| {
@@ -511,7 +525,7 @@ where
     #[inline]
     fn kullback_leibert<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
+        S2: Data<Elem = A>,
         A: Float,
     {
         generic_divergence(self, q, |p, q| {
@@ -520,14 +534,15 @@ where
             } else {
                 p * (q / p).ln()
             }
-        }).map(A::neg)
+        })
+        .map(A::neg)
     }
 
     #[inline]
     fn kullback_leibert_reversed<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
-        A: Float
+        S2: Data<Elem = A>,
+        A: Float,
     {
         generic_divergence(self, q, |p, q| {
             if p.is_zero() {
@@ -541,8 +556,8 @@ where
     #[inline]
     fn jensen_shannon<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
-        A: Float
+        S2: Data<Elem = A>,
+        A: Float,
     {
         let two = convert_float(2.0)?;
         generic_divergence(self, q, |p, q| {
@@ -557,9 +572,8 @@ where
                 };
                 a + (q * (q / k).ln())
             }
-        }).map(|temp| {
-            temp / two
         })
+        .map(|temp| temp / two)
     }
 
     /// Requires a relative entropy with absolute continuity, where Q(x) = 0 implies P(x) = 0.
@@ -568,27 +582,26 @@ where
     #[inline]
     fn jeffreys_divergence<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
-        A: Float
+        S2: Data<Elem = A>,
+        A: Float,
     {
         generic_divergence(self, q, |p, q| {
             if p.is_zero() {
                 A::zero()
             } else {
-                (p - q) * (q/p).ln()
+                (p - q) * (q / p).ln()
             }
-        }).map(A::neg)
+        })
+        .map(A::neg)
     }
 
     #[inline]
     fn bhattacharyya_coefficient<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
-        A: Float
+        S2: Data<Elem = A>,
+        A: Float,
     {
-        generic_divergence(self, q, |p, q| {
-            (p * q).sqrt()
-        })
+        generic_divergence(self, q, |p, q| (p * q).sqrt())
     }
 
     /// This implementation depends on the assumption that we have a relative entropy with
@@ -598,8 +611,8 @@ where
     #[inline]
     fn pearson_chi_square_divergence<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
-        A: Float
+        S2: Data<Elem = A>,
+        A: Float,
     {
         generic_divergence(self, q, |p, q| {
             if q.is_zero() {
@@ -614,8 +627,8 @@ where
     #[inline]
     fn neyman_chi_square_divergence<S2>(&self, q: &ArrayBase<S2, D>) -> Result<A, EntropyError<A>>
     where
-        S2: Data<Elem=A>,
-        A: Float
+        S2: Data<Elem = A>,
+        A: Float,
     {
         generic_divergence(self, q, |p, q| {
             if p.is_zero() {
@@ -628,42 +641,29 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod test {
+    use crate::translate::entropies::FDivergenceExt;
     use approx::assert_relative_eq;
     use ndarray::{array, Array1};
     use ndarray_stats::{DeviationExt, EntropyExt};
-    use crate::translate::entropies::{FDivergenceExt};
 
     #[test]
-    fn hellinger_distance_works_ad_defined(){
-        let x: Array1<f64> = array![
-            0.0, 0.1, 0.5, 0.4
-        ];
-        let y: Array1<f64> = array![
-            0.3, 0.6, 0.02, 0.08
-        ];
+    fn hellinger_distance_works_ad_defined() {
+        let x: Array1<f64> = array![0.0, 0.1, 0.5, 0.4];
+        let y: Array1<f64> = array![0.3, 0.6, 0.02, 0.08];
 
-        let a: Array1<f64> = array![
-            1.0, 0.0
-        ];
-        let b: Array1<f64> = array![
-            0.0, 1.0
-        ];
+        let a: Array1<f64> = array![1.0, 0.0];
+        let b: Array1<f64> = array![0.0, 1.0];
 
         const MAX_DIST_UNOPT: f64 = std::f64::consts::SQRT_2;
 
         println!("{}", x.hellinger_distance(&y).unwrap());
 
+        assert_relative_eq!(1.0, a.hellinger_distance(&b).unwrap());
 
         assert_relative_eq!(
-            1.0,
-            a.hellinger_distance(&b).unwrap()
-        );
-
-        assert_relative_eq!(
-            1.0/std::f64::consts::SQRT_2 * a.l2_dist(&b).unwrap(),
+            1.0 / std::f64::consts::SQRT_2 * a.l2_dist(&b).unwrap(),
             a.hellinger_distance(&b).unwrap()
         );
 
@@ -674,32 +674,30 @@ mod test {
 
         println!("total_variantion {}", x.total_variantion(&y).unwrap());
         println!("kullback_leibert {}", x.kullback_leibert(&y).unwrap());
-        println!("kullback_leibert_reversed {}", x.kullback_leibert_reversed(&y).unwrap());
+        println!(
+            "kullback_leibert_reversed {}",
+            x.kullback_leibert_reversed(&y).unwrap()
+        );
         println!("jensen_shannon {}", x.jensen_shannon(&y).unwrap());
         println!("jeffreys_divergence {}", x.jeffreys_divergence(&y).unwrap());
-        println!("bhattacharyya_divergence {}", x.bhattacharyya_divergence(&y).unwrap());
+        println!(
+            "bhattacharyya_divergence {}",
+            x.bhattacharyya_divergence(&y).unwrap()
+        );
         println!("hellinger_distance {}", x.hellinger_distance(&y).unwrap());
-        println!("pearson_chi_square_divergence {}", x.pearson_chi_square_divergence(&y).unwrap());
-        println!("neyman_chi_square_divergence {}", x.neyman_chi_square_divergence(&y).unwrap());
+        println!(
+            "pearson_chi_square_divergence {}",
+            x.pearson_chi_square_divergence(&y).unwrap()
+        );
+        println!(
+            "neyman_chi_square_divergence {}",
+            x.neyman_chi_square_divergence(&y).unwrap()
+        );
         println!("Rényi divergence {}", x.renyi_divergence(&y, 2.0).unwrap());
 
         // Rényi divergence 2.675297414630402
-
     }
-
-
 }
-
-
-
-
-
-
-
-
-
-
-
 
 // if self.is_empty() {
 //     return Err(MultiInputError::EmptyInput.into());

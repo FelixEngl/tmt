@@ -6,6 +6,7 @@ use itertools::Itertools;
 use ndarray::{ArcArray, Array1, ArrayBase, Data, Ix1};
 use num::Float;
 use rayon::prelude::*;
+use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex, META_DICT_ARRAY_LENTH};
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
 use ldatranslate_topicmodel::translate::TranslatableTopicMatrixWithCreate;
@@ -35,6 +36,58 @@ impl MetaFieldCountProvider for MetadataEx {
 impl MetaFieldCountProvider for &MetadataEx {
     fn get_count_for<T: DictionaryMetaIndex>(&self, i: T) -> u32 {
         self.get_domain_count_for(i)
+    }
+}
+
+register_python! {
+    enum ScoreModifierCalculator;
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyo3::pyclass(eq, eq_int, hash, frozen)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ScoreModifierCalculator {
+    Max,
+    WeightedSum
+}
+
+impl ScoreModifierCalculator {
+    pub fn calculate<T: TopicLike>(
+        &self,
+        topic: &T,
+        counts: &[(DictMetaTagIndex, Array1<u32>)],
+        counts_as_probs: &[(DictMetaTagIndex, Array1<f64>)],
+        mut topic_assoc: [f64; META_DICT_ARRAY_LENTH],
+    ) -> Vec<f64> {
+        match self {
+            ScoreModifierCalculator::Max => {
+                if topic_assoc.iter().any(|&v| v < 1.0) {
+                    for value in topic_assoc.iter_mut() {
+                        *value += 1.0;
+                    }
+                }
+                topic.par_iter().enumerate().map(|(word_id, word_probability)| {
+                    let (max_pos, ct) = counts.iter().map(|(k, v)| {
+                        (*k, unsafe{*v.uget(word_id)})
+                    }).max_by_key(|(_, b)| *b).unwrap();
+                    log::trace!(
+                        "Mult {word_id} ({word_probability}) with {} because: {max_pos} = {ct}", topic_assoc[max_pos.as_index()]
+                    );
+                    (*word_probability) * topic_assoc[max_pos.as_index()]
+                }).collect::<Vec<_>>()
+            }
+            ScoreModifierCalculator::WeightedSum => {
+                topic.par_iter().enumerate().map(|(word_id, word_probability)| {
+                    let weigthed_sum = counts_as_probs.iter().map(|(k, v)|{
+                        topic_assoc[k.as_index()] * unsafe{v.uget(word_id)}
+                    }).sum::<f64>() + 1.0;
+                    log::trace!(
+                        "Mult {word_id} ({word_probability}) with {weigthed_sum}"
+                    );
+                    (*word_probability) * weigthed_sum
+                }).collect::<Vec<_>>()
+            }
+        }
     }
 }
 
@@ -93,7 +146,7 @@ where
     }).collect();
 
 
-    let normalized_probabilities = counts.iter().map(|(k, v)| {
+    let encounter_probabilities = counts.iter().map(|(k, v)| {
         let v = v.map(|&x| x as f64);
         let sum: f64 = v.sum();
         if sum == 0.0 {
@@ -107,19 +160,14 @@ where
         calculate_for_topic_model(
             topic,
             &calculator,
-            normalized_probabilities.iter(),
-        ).map(|mut topic_assoc| {
-            if topic_assoc.iter().any(|&v| v < 1.0) {
-                for value in topic_assoc.iter_mut() {
-                    *value += 1.0;
-                }
-            }
-            let end_result = topic.par_iter().enumerate().map(|(word_id, word_probability)| {
-                let (max_pos, _) = counts.iter().map(|(k, v)| {
-                    (*k, unsafe{*v.uget(word_id)})
-                }).max_by_key(|(_, b)| *b).unwrap();
-                (*word_probability) * topic_assoc[max_pos.as_index()]
-            }).collect::<Vec<_>>();
+            encounter_probabilities.iter(),
+        ).map(|topic_assoc| {
+            let end_result = calculator.calculate_score(
+                topic,
+                &counts,
+                &encounter_probabilities,
+                topic_assoc,
+            );
             assert_eq!(
                 end_result.len(),
                 matrix.vocabulary().len(),
@@ -128,12 +176,6 @@ where
             end_result
         })
     }).collect::<Result<Vec<_>, _>>()?;
-
-    assert_eq!(
-        result.len(),
-        matrix.matrix().len(),
-        "The new topic matrix has not the same length as the old!"
-    );
 
     if normalized {
         for topic in result.iter_mut() {
@@ -156,9 +198,11 @@ where
     S: Data<Elem=f64> + 'a,
 {
     let topic = Array1::from(topic.iter().copied().collect::<Vec<_>>());
+    println!("{topic}\n#######");
     let mut result = [0.0; META_DICT_ARRAY_LENTH];
     for (idx, counts) in topic_model_meta.into_iter() {
         let div = calculator.calculate(counts, &topic)?;
+        println!("  {idx}: {counts} -> {div}");
         result[(*idx).as_index()] = div;
     }
     Ok(result)
@@ -173,7 +217,7 @@ mod test {
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use ldatranslate_topicmodel::model::{BasicTopicModel, FullTopicModel, TopicModel};
     use crate::translate::dictionary_meta::SparseVectorFactory;
-    use crate::translate::dictionary_meta::topic_associated::calculate_modified_model_values;
+    use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values, ScoreModifierCalculator};
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
     use crate::translate::test::create_test_data;
 
@@ -220,7 +264,7 @@ mod test {
             dict.metadata().meta_a(),
             &sparse,
             &FDivergenceCalculator::new(
-                FDivergence::PearsonChiSquare,
+                FDivergence::Bhattacharyya,
                 None,
                 Some(vec![
                     Domain::Aviat.into(),
@@ -229,7 +273,8 @@ mod test {
                     Register::Techn.into(),
                     Register::Archaic.into(),
                 ]),
-                false
+                false,
+                ScoreModifierCalculator::WeightedSum
             ),
             &model_a,
             true

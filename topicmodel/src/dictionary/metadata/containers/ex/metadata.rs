@@ -949,8 +949,8 @@ impl AssociatedMetadataImpl {
         new
     }
 
-    pub fn domain_count(&self) -> DomainCount {
-        let mut domain = DomainCount::empty();
+    pub fn domain_count(&self) -> DictMetaCount {
+        let mut domain = DictMetaCount::empty();
         if let Some(domains) = self.inner.get(&MetaField::Domains) {
             let domains = unsafe{domains.as_ref_unchecked_domains()};
             for (idx, value) in domains.iter_counts() {
@@ -1236,8 +1236,8 @@ impl MetadataEx {
         ct
     }
 
-    pub fn domain_count(&self) -> DomainCount {
-        let mut domain = DomainCount::empty();
+    pub fn domain_count(&self) -> DictMetaCount {
+        let mut domain = DictMetaCount::empty();
         for value in self.iter() {
             if let Some(domains) = value.meta().get().and_then(|v| v.get(MetaField::Domains)) {
                 let domains = unsafe{domains.as_ref_unchecked_domains()};
@@ -1465,7 +1465,7 @@ impl AssociatedMetadata {
         self.get().map(|value| value.topic_vector())
     }
 
-    pub fn domain_count(&self) -> Option<DomainCount> {
+    pub fn domain_count(&self) -> Option<DictMetaCount> {
         self.get().map(|value| value.domain_count())
     }
 }
