@@ -115,7 +115,7 @@ impl ScoreModifierCalculator {
 /// ```
 ///
 pub fn calculate_modified_model_values<Target, C, T, Voc>(
-    word_id_to_meta: &[C],
+    word_id_to_meta: &[Option<C>],
     factory: &SparseVectorFactory,
     calculator: &FDivergenceCalculator,
     matrix: &Target,
@@ -139,9 +139,9 @@ where
 
     let counts: Vec<_> = template.iter().par_bridge().map(|&target| {
         (target, matrix.vocabulary().ids().map(|id| {
-            word_id_to_meta.get(id).map_or(0, |meta| {
-                meta.get_count_for(target)
-            })
+            word_id_to_meta.get(id)
+                .and_then(|value| value.as_ref())
+                .map_or(0, |meta| { meta.get_count_for(target) })
         }).collect::<Array1<u32>>())
     }).collect();
 
@@ -261,7 +261,7 @@ mod test {
         let sparse = SparseVectorFactory::new();
 
         let alt = calculate_modified_model_values(
-            dict.metadata().meta_a(),
+            &dict.metadata().meta_a().iter().map(|v| Some(v)).collect_vec(),
             &sparse,
             &FDivergenceCalculator::new(
                 FDivergence::KL,

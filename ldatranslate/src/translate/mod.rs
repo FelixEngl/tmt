@@ -127,10 +127,9 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     let alternative_scores = if let Some(divergence) = translate_config.divergence_config.clone() {
         let sparse = SparseVectorFactory::new();
         let metas = dictionary.voc_a().iter().map(|word| {
-            let id = original_dictionary.voc_a().get_id(word).expect("The id for every whord in the specialized dict should be known to the original!");
-            unsafe{
-                original_dictionary.metadata().meta_a().get_unchecked(id)
-            }
+            original_dictionary.voc_a().get_id(word).map(|id| {
+                unsafe{original_dictionary.metadata().meta_a().get_unchecked(id)}
+            })
         }).collect_vec();
         let new = calculate_modified_model_values(
             &metas,
