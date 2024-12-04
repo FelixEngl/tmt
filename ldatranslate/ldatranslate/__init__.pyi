@@ -1354,7 +1354,18 @@ class PyTopicModelBuilder:
 
 
 class PyTranslationConfig:
-    def __new__(cls,epsilon = ...,threshold = ...,keep_original_word = ...,top_candidate_limit = ...,f_divergence = ...,alpha = ...,target_fields = ...,invert_target_fields = ...,score_modifier_calculator = ...): ...
+    def __new__(
+            cls,
+            epsilon: None | float = None,
+            threshold: None | float = None,
+            keep_original_word: None | KeepOriginalWord | str = None,
+            top_candidate_limit: None | int = None,
+            f_divergence: None | FDivergence = None,
+            alpha: None | float = None,
+            target_fields: None | typing.Sequence[Domain | Register | int] = None,
+            invert_target_fields: None | bool = None,
+            score_modifier_calculator: None | ScoreModifierCalculator = None
+    ): ...
     ...
 
 class PyVariableProvider:
@@ -2185,6 +2196,13 @@ def save_ratings(path:str | os.PathLike | pathlib.Path,ratings:typing.Sequence[t
     """
     ...
 
-def translate_topic_model(topic_model,dictionary,voting,config,provider = ...,voting_registry = ...) -> PyTopicModel:
+def translate_topic_model(
+        topic_model : PyTopicModel,
+        dictionary: PyDictionary,
+        voting: str | PyVoting | BuildInVoting | typing.Callable[[PyContextWithMutableVariables, list[PyContextWithMutableVariables]], PyExprValueSingle],
+        config: PyTranslationConfig,
+        provider: None | PyVariableProvider = None,
+        voting_registry: None | PyVotingRegistry = None
+) -> PyTopicModel:
     ...
 

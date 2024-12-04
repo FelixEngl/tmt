@@ -510,7 +510,8 @@ where
         topic_id: usize,
         voter_id: usize,
         probability: f64,
-        voting: &V
+        voting: &V,
+        alternative_topic_probabilities: Option<&Vec<f64>>,
     ) -> Result<Candidate, TranslateErrorWithOrigin>
     where
         C: Context<NumericTypes=TMTNumericTypes> + Send + Sync + IterateVariablesContext,
@@ -531,11 +532,18 @@ where
 
         assert_eq!(original_meta.voter_id(), voter_id, "The voter ids differ!");
 
+        let probability_of_voter = alternative_topic_probabilities.map_or(
+            original_meta.score(),
+            |value| {
+                unsafe{ *value.get_unchecked(original_meta.voter_id()) }
+            }
+        );
+
         let mut voters = vec![
             context_map! {
                 RECIPROCAL_RANK => as float 1./ original_meta.importance() as f64,
                 REAL_RECIPROCAL_RANK => as float 1./ original_meta.rank() as f64,
-                SCORE => as float original_meta.score(),
+                SCORE => as float probability_of_voter,
                 RANK => as int original_meta.rank(),
                 IMPORTANCE => as int original_meta.importance(),
                 VOTER_ID => as int voter_id,
@@ -565,7 +573,8 @@ where
                     topic_id,
                     original_voter_id,
                     probability,
-                    &config.voting
+                    &config.voting,
+                    alternative_topic_probabilities
                 ) {
                     Ok(value) => {
                         candidates.push(value);
@@ -581,7 +590,8 @@ where
                     topic_id,
                     original_voter_id,
                     probability,
-                    &config.voting
+                    &config.voting,
+                    alternative_topic_probabilities
                 ) {
                     Ok(value) => {
                         Ok(vec![value])
@@ -602,7 +612,8 @@ where
                         topic_id,
                         original_voter_id,
                         probability,
-                        &config.voting
+                        &config.voting,
+                        alternative_topic_probabilities
                     ) {
                         Ok(value) => {
                             Ok(vec![value])
