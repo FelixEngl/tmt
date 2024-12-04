@@ -264,7 +264,7 @@ mod test {
             dict.metadata().meta_a(),
             &sparse,
             &FDivergenceCalculator::new(
-                FDivergence::Bhattacharyya,
+                FDivergence::KL,
                 None,
                 Some(vec![
                     Domain::Aviat.into(),

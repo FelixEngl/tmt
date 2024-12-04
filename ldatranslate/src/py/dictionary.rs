@@ -43,7 +43,7 @@ use ldatranslate_toolkit::from_str_ex::ParseEx;
 use ldatranslate_toolkit::special_python_values::{PyEither, PyEitherOrBoth};
 use ldatranslate_topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
 use ldatranslate_topicmodel::dictionary::len::Len;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, PyDictMetaVector};
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{PyDictMetaVector};
 use ldatranslate_topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
 
 pub type DefaultDict = EfficientDictWithMetaDefault;
