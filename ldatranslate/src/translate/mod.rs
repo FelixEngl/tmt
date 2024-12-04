@@ -25,6 +25,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::sync::Arc;
 use std::time::{Duration};
 use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext, Value};
 use itertools::Itertools;
@@ -51,7 +52,7 @@ use ldatranslate_voting::VotingMethod;
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
 use crate::translate::dictionary_meta::SparseVectorFactory;
-use crate::translate::dictionary_meta::topic_associated::VerticalCountDictionaryMetaVector;
+use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values, VerticalCountDictionaryMetaVector};
 use crate::variable_provider::AsVariableProvider;
 
 
@@ -64,8 +65,8 @@ pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V>(
 where
     T: Hash + Eq + Ord + Clone + Sync + Send + 'a + Debug,
     V: VotingMethodMarker,
-    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a + Debug,
-    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync + Debug,
+    Voc: VocabularyMut<T> + MappableVocabulary<T> + Clone + Send + Sync + for<'b> FromIterator<&'b T> + 'a + Debug + AnonymousVocabulary,
+    D: DictionaryWithVocabulary<T, Voc> + DictionaryMut<T, Voc> + FromVoc<T, Voc> + Send + Sync + Debug + BasicDictionaryWithMeta<MetadataManagerEx, Voc>,
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
 {
     translate_topic_model(
@@ -123,7 +124,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     );
     log::info!("After cration of topic specific dict. {}", reporter.create_report_now());
 
-    let divergence_calc = if let Some(divergence) = translate_config.divergence_config.clone() {
+    let alternative_scores = if let Some(divergence) = translate_config.divergence_config.clone() {
         let sparse = SparseVectorFactory::new();
         let metas = dictionary.voc_a().iter().map(|word| {
             let id = original_dictionary.voc_a().get_id(word).expect("The id for every whord in the specialized dict should be known to the original!");
@@ -131,12 +132,15 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                 original_dictionary.metadata().meta_a().get_unchecked(id)
             }
         }).collect_vec();
-        let new = VerticalCountDictionaryMetaVector::new(
-            metas,
+        let new = calculate_modified_model_values(
+            &metas,
             &sparse,
-            divergence,
-        );
-        Some((sparse, new))
+            &divergence,
+            target,
+            true
+        )?;
+        // todo!("need improv");
+        Some(new)
     } else {
         None
     };
@@ -189,6 +193,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         .zip_eq(target.matrix_meta().par_iter())
         .enumerate()
         .map(|(topic_id, (topic, meta))| {
+            let alternative_scores_topic = alternative_scores.as_ref().map(|value| unsafe{value.get_unchecked(topic_id)});
             let mut topic_context_2 = context_map! {
                 TOPIC_MAX_PROBABILITY => float meta.max_score(),
                 TOPIC_MIN_PROBABILITY => float meta.min_score(),
@@ -202,7 +207,6 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                     Ok(_) => {
                         let topic_context_2 = topic_context_2
                             .to_static_with(topic_context.clone());
-
                         translate_topic(
                             target,
                             &dictionary,
@@ -210,7 +214,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                             topic,
                             topic_context_2,
                             &translate_config,
-                            Some(provider)
+                            Some(provider),
+                            alternative_scores_topic
                         ).map_err(TranslateError::WithOrigin)
                     }
                     Err(err) => {
@@ -227,13 +232,14 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                     topic,
                     topic_context_2,
                     &translate_config,
-                    None::<&VariableProvider>
+                    None::<&VariableProvider>,
+                    alternative_scores_topic
                 ).map_err(TranslateError::WithOrigin)
             }
         }).collect::<Result<Vec<_>, _>>()?;
 
 
-    drop(divergence_calc);
+    drop(alternative_scores);
 
 
     let voc_b_col = result.par_iter().flatten().map(|value| {
@@ -302,7 +308,8 @@ fn translate_topic<Target, T, V, Voc, P, C>(
     topic: &<Target::TopicToVoterMatrix<'_> as TopicModelLikeMatrix>::TopicLike,
     topic_context: C,
     config: &TranslateConfig<V>,
-    provider: Option<&P>
+    provider: Option<&P>,
+    alternative_scores_topic: Option<&Vec<f64>>
 ) -> Result<Vec<Candidate>, TranslateErrorWithOrigin>
 where
     V: VotingMethodMarker,
@@ -315,6 +322,13 @@ where
         .par_iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
+            let probability = if let Some(prob) = alternative_scores_topic.as_ref().map(|value| unsafe{
+                *value.get_unchecked(original_word_id)
+            }) {
+                prob
+            } else {
+                *probability
+            };
             if let Some(provider) = provider {
                 let mut context = HashMapContext::new();
                 match provider.provide_for_word_a(original_word_id, &mut context) {
@@ -329,7 +343,7 @@ where
                                     &combined,
                                     config,
                                     original_word_id,
-                                    *probability,
+                                    probability,
                                     Some(provider)
                                 )
                             }
@@ -354,7 +368,7 @@ where
                     &topic_context,
                     config,
                     original_word_id,
-                    *probability,
+                    probability,
                     provider
                 )
             }
@@ -623,7 +637,7 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::direction::Invariant;
-    use ldatranslate_topicmodel::dictionary::{Dictionary, DictionaryMutGen};
+    use ldatranslate_topicmodel::dictionary::{Dictionary, DictionaryMutGen, DictionaryWithMeta};
     use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
     use crate::translate::translate_topic_model_without_provider;
@@ -703,6 +717,8 @@ pub(crate) mod test {
     #[test]
     fn test_complete_translation(){
         let (voc_a, _, dict) = create_test_data();
+
+        let dict = DictionaryWithMeta::from(dict);
 
         let model_a = TopicModel::new(
             vec![

@@ -2,62 +2,66 @@ macro_rules! create_adders {
     (voc: $ident:ident: $ty:ty, $($tt:tt)*) => {
         impl<'a> MetadataMutRefEx<'a> {
             paste::paste! {
-                pub unsafe fn [<add_single_to_ $ident _default_unchecked>](&mut self, value: $ty) {
+                pub unsafe fn [<add_single_to_ $ident _default_unchecked>](&mut self, value: $ty) -> &mut Self {
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<add_single_to_ $ident>](value)
+                        .[<add_single_to_ $ident>](value);
+                    self
                 }
 
-                pub unsafe fn [<add_single_to_ $ident _by_dict_unchecked>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: $ty) {
+                pub unsafe fn [<add_single_to_ $ident _by_dict_unchecked>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: $ty) -> &mut Self {
                     self.meta
                         .get_or_create(dictionary_name)
-                        .[<add_single_to_ $ident>](value)
+                        .[<add_single_to_ $ident>](value);
+                    self
                 }
 
-                pub unsafe fn [<add_single_to_ $ident _unchecked>](&mut self, dictionary_name: impl AsRef<str>, value: $ty) {
+                pub unsafe fn [<add_single_to_ $ident _unchecked>](&mut self, dictionary_name: impl AsRef<str>, value: $ty) -> &mut Self {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_single_to_ $ident _by_dict_unchecked>](name, value)
                 }
 
-                pub unsafe fn [<add_all_to_ $ident _default_unchecked>]<I: IntoIterator<Item=$ty>>(&mut self, values: I) {
+                pub unsafe fn [<add_all_to_ $ident _default_unchecked>]<I: IntoIterator<Item=$ty>>(&mut self, values: I) -> &mut Self {
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<add_all_to_ $ident>](values)
+                        .[<add_all_to_ $ident>](values);
+                    self
                 }
 
-                pub unsafe fn [<add_all_to_ $ident _by_dict_unchecked>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, values: I) {
+                pub unsafe fn [<add_all_to_ $ident _by_dict_unchecked>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, values: I) -> &mut Self {
                     self.meta.get_or_create(dictionary_name)
-                        .[<add_all_to_ $ident>](values)
+                        .[<add_all_to_ $ident>](values);
+                    self
                 }
 
-                pub unsafe fn [<add_all_to_ $ident _unchecked>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: impl AsRef<str>, values: I) {
+                pub unsafe fn [<add_all_to_ $ident _unchecked>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> &mut Self {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_all_to_ $ident _by_dict_unchecked>](name, values)
                 }
 
-                pub fn [<add_single_to_ $ident _default>](&mut self, value: impl AsRef<str>) {
+                pub fn [<add_single_to_ $ident _default>](&mut self, value: impl AsRef<str>) -> &mut Self {
                     let id = self.dict_mut().entry_to_id(value.as_ref());
                     unsafe{self.[<add_single_to_ $ident _default_unchecked>](id)}
                 }
 
-                pub fn [<add_single_to_ $ident _by_dict>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: impl AsRef<str>) {
+                pub fn [<add_single_to_ $ident _by_dict>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: impl AsRef<str>) -> &mut Self {
                     let id = self.dict_mut().entry_to_id(value.as_ref());
                     unsafe{self.[<add_single_to_ $ident _by_dict_unchecked>](dictionary_name, id)}
                 }
 
-                pub fn [<add_single_to_ $ident>](&mut self, dictionary_name: impl AsRef<str>, value: impl AsRef<str>) {
+                pub fn [<add_single_to_ $ident>](&mut self, dictionary_name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
                     let id = self.dict_mut().entry_to_id(value.as_ref());
                     unsafe{self.[<add_single_to_ $ident _unchecked>](dictionary_name, id)}
                 }
 
-                pub fn [<add_all_to_ $ident _default>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, values: I) {
+                pub fn [<add_all_to_ $ident _default>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, values: I) -> &mut Self {
                     let x = values.into_iter().map(|value| {
                             self.dict_mut().entry_to_id(value.as_ref())
                     }).collect::<Vec<$ty>>();
                     unsafe{self.[<add_all_to_ $ident _default_unchecked>](x)}
                 }
 
-                pub fn [<add_all_to_ $ident _by_dict>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, values: I) {
+                pub fn [<add_all_to_ $ident _by_dict>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, values: I) -> &mut Self {
                     let x = values.into_iter().map(|value| {
                             self.dict_mut().entry_to_id(value.as_ref())
                     }).collect::<Vec<$ty>>();
@@ -67,7 +71,7 @@ macro_rules! create_adders {
                     )}
                 }
 
-                pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, dictionary_name: impl AsRef<str>, values: I) {
+                pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=T>, T: AsRef<str>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> &mut Self {
                     let x = values.into_iter().map(|value| {
                             self.dict_mut().entry_to_id(value.as_ref())
                     }).collect::<Vec<$ty>>();
@@ -100,53 +104,57 @@ macro_rules! create_adders {
     (interned: $ident:ident, $interner_name:ident, $interner_method: ident: $ty:ty, $($tt:tt)*) => {
         impl<'a> MetadataMutRefEx<'a> {
             paste::paste! {
-                pub fn [<add_single_to_ $ident _default>](&mut self, value: impl AsRef<str>) {
+                pub fn [<add_single_to_ $ident _default>](&mut self, value: impl AsRef<str>) -> &mut Self {
                     let interned = unsafe { &mut *self.manager_ref }.$interner_method(value);
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<add_single_to_ $ident>](interned)
+                        .[<add_single_to_ $ident>](interned);
+                    self
                 }
 
-                pub fn [<add_single_to_ $ident _by_dict>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: impl AsRef<str>) {
+                pub fn [<add_single_to_ $ident _by_dict>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: impl AsRef<str>) -> &mut Self {
                     let interned = unsafe { &mut *self.manager_ref }.$interner_method(value);
-                    self.meta.get_or_create(dictionary_name).[<add_single_to_ $ident>](interned)
+                    self.meta.get_or_create(dictionary_name).[<add_single_to_ $ident>](interned);
+                    self
                 }
 
-                pub fn [<add_single_to_ $ident>](&mut self, dictionary_name: impl AsRef<str>, value: impl AsRef<str>) {
+                pub fn [<add_single_to_ $ident>](&mut self, dictionary_name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_single_to_ $ident _by_dict>](name, value)
                 }
 
                 pub fn [<add_all_to_ $ident _default>]<I: IntoIterator<Item=T>, T: AsRef<str>>(
                     &mut self, values: I
-                ) {
+                ) -> &mut Self {
                     use $crate::dictionary::metadata::MetadataMutReference;
                     let converted = values.into_iter().map(
                         |value| self.meta_container_mut().$interner_method(value)
                     ).collect::<Vec<_>>();
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<add_all_to_ $ident>](converted)
+                        .[<add_all_to_ $ident>](converted);
+                    self
                 }
 
                 pub fn [<add_all_to_ $ident _by_dict>]<I: IntoIterator<Item=T>, T: AsRef<str>>(
                     &mut self,
                     dictionary_name: $crate::interners::DictionaryOriginSymbol,
                     values: I
-                ) {
+                ) -> &mut Self {
                     use $crate::dictionary::metadata::MetadataMutReference;
                     let converted = values.into_iter().map(
                         |value| self.meta_container_mut().$interner_method(value)
                     ).collect::<Vec<_>>();
                     self.meta.get_or_create(dictionary_name)
-                        .[<add_all_to_ $ident>](converted)
+                        .[<add_all_to_ $ident>](converted);
+                    self
                 }
 
                 pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=T>, T: AsRef<str>>(
                     &mut self,
                     dictionary_name: impl AsRef<str>,
                     values: I
-                ) {
+                ) -> &mut Self {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_all_to_ $ident _by_dict>](name, values)
                 }
@@ -185,33 +193,37 @@ macro_rules! create_adders {
     (set: $ident:ident: $ty:ty, $($tt:tt)*) => {
         impl<'a> MetadataMutRefEx<'a> {
             paste::paste! {
-                pub fn [<add_single_to_ $ident _default>](&mut self, value: $ty) {
+                pub fn [<add_single_to_ $ident _default>](&mut self, value: $ty) -> &mut Self {
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<add_single_to_ $ident>](value)
+                        .[<add_single_to_ $ident>](value);
+                    self
                 }
 
-                pub fn [<add_single_to_ $ident _by_dict>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: $ty) {
-                    self.meta.get_or_create(dictionary_name).[<add_single_to_ $ident>](value)
+                pub fn [<add_single_to_ $ident _by_dict>](&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, value: $ty) -> &mut Self {
+                    self.meta.get_or_create(dictionary_name).[<add_single_to_ $ident>](value);
+                    self
                 }
 
-                pub fn [<add_single_to_ $ident>](&mut self, dictionary_name: impl AsRef<str>, value: $ty) {
+                pub fn [<add_single_to_ $ident>](&mut self, dictionary_name: impl AsRef<str>, value: $ty) -> &mut Self {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_single_to_ $ident _by_dict>](name, value)
                 }
 
-                pub fn [<add_all_to_ $ident _default>]<I: IntoIterator<Item=$ty>>(&mut self, values: I) {
+                pub fn [<add_all_to_ $ident _default>]<I: IntoIterator<Item=$ty>>(&mut self, values: I) -> &mut Self {
                     self.meta
                         .get_mut_or_init_general_metadata()
-                        .[<add_all_to_ $ident>](values)
+                        .[<add_all_to_ $ident>](values);
+                    self
                 }
 
-                pub fn [<add_all_to_ $ident _by_dict>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, values: I) {
+                pub fn [<add_all_to_ $ident _by_dict>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: $crate::interners::DictionaryOriginSymbol, values: I) -> &mut Self {
                     self.meta.get_or_create(dictionary_name)
-                        .[<add_all_to_ $ident>](values)
+                        .[<add_all_to_ $ident>](values);
+                    self
                 }
 
-                pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: impl AsRef<str>, values: I) {
+                pub fn [<add_all_to_ $ident>]<I: IntoIterator<Item=$ty>>(&mut self, dictionary_name: impl AsRef<str>, values: I) -> &mut Self {
                     let name = self.add_dictionary(dictionary_name);
                     self.[<add_all_to_ $ident _by_dict>](name, values)
                 }

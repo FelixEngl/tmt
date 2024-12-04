@@ -4,6 +4,7 @@ use ldatranslate_topicmodel::dictionary::direction::DirectionMarker;
 use ldatranslate_voting::variable_provider::VariableProviderError;
 use ldatranslate_voting::{VotingExpressionError, VotingResult};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
+use crate::translate::entropies::EntropyWithAlphaError;
 use crate::variable_provider::{AsVariableProviderError};
 
 /// An error that happened while translating
@@ -26,7 +27,9 @@ pub enum TranslateError<'a> {
     #[error("The dictionary is empty in the direction: {0}")]
     DictionaryEmpty(DirectionMarker),
     #[error("The optimized dictionary is empty in the direction: {0}")]
-    OptimizedDictionaryEmpty(DirectionMarker)
+    OptimizedDictionaryEmpty(DirectionMarker),
+    #[error(transparent)]
+    EntropyError(#[from] EntropyWithAlphaError<f64, f64>)
 }
 
 #[derive(Debug, Error)]

@@ -1,4 +1,4 @@
-use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
+use crate::translate::entropies::{FDivergenceCalculator};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
 use ldatranslate_voting::traits::VotingMethodMarker;

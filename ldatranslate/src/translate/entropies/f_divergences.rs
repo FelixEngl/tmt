@@ -205,7 +205,13 @@ where
         S2: Data<Elem = A>,
         A: Float
     {
-        self.bhattacharyya_coefficient(q).map(|value| value.ln().neg())
+        self.bhattacharyya_coefficient(q).map(|value| {
+            if value.is_zero() {
+                A::zero()
+            } else {
+                value.ln().neg()
+            }
+        })
     }
 
     /// The squared hellinger distance is related to the euclidean distance.
@@ -383,8 +389,12 @@ where
             return Ok(
                 self.bhattacharyya_coefficient(q).map(
                     |value| {
-                        let value = value.ln();
-                        -(value + value)
+                        if value.is_zero() {
+                            A::zero()
+                        } else {
+                            let value = value.ln();
+                            -(value + value)
+                        }
                     }
                 )?
             )
