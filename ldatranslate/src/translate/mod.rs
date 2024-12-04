@@ -309,7 +309,7 @@ fn translate_topic<Target, T, V, Voc, P, C>(
     topic_context: C,
     config: &TranslateConfig<V>,
     provider: Option<&P>,
-    alternative_scores_topic: Option<&Vec<f64>>
+    alternative_topic_probabilities: Option<&Vec<f64>>
 ) -> Result<Vec<Candidate>, TranslateErrorWithOrigin>
 where
     V: VotingMethodMarker,
@@ -322,10 +322,8 @@ where
         .par_iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
-            let probability = if let Some(prob) = alternative_scores_topic.as_ref().map(|value| unsafe{
-                *value.get_unchecked(original_word_id)
-            }) {
-                prob
+            let probability = if let Some(alternative_topic_probabilities) = alternative_topic_probabilities {
+                unsafe{*alternative_topic_probabilities.get_unchecked(original_word_id)}
             } else {
                 *probability
             };
@@ -344,7 +342,8 @@ where
                                     config,
                                     original_word_id,
                                     probability,
-                                    Some(provider)
+                                    Some(provider),
+                                    alternative_topic_probabilities
                                 )
                             }
                             Err(err) => {Some(Err(TranslateErrorWithOrigin::new(
@@ -369,7 +368,8 @@ where
                     config,
                     original_word_id,
                     probability,
-                    provider
+                    provider,
+                    alternative_topic_probabilities
                 )
             }
         }).collect::<Result<Vec<_>, _>>().map(|value| {
@@ -388,7 +388,8 @@ fn translate_single_candidate<Target, T, V, Voc, P, C>(
     config: &TranslateConfig<V>,
     original_voter_id: usize,
     probability: f64,
-    provider: Option<&P>
+    provider: Option<&P>,
+    alternative_topic_probabilities: Option<&Vec<f64>>,
 ) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>>
 where
     V: VotingMethodMarker,
@@ -430,12 +431,20 @@ where
                         let voters = mapped
                             .iter()
                             .map(|voter_a| {
+
+                                let probability_of_voter = alternative_topic_probabilities.map_or(
+                                    voter_a.score(),
+                                    |value| {
+                                        unsafe{ *value.get_unchecked(voter_a.voter_id()) }
+                                    }
+                                );
+
                                 let mut context_voter_a = context_map! {
                                     RECIPROCAL_RANK => float 1./ voter_a.importance() as f64,
                                     REAL_RECIPROCAL_RANK => float 1./ voter_a.rank() as f64,
                                     RANK => int voter_a.rank() as i64,
                                     IMPORTANCE => int voter_a.importance() as i64,
-                                    SCORE => float voter_a.score(),
+                                    SCORE => float probability_of_voter,
                                     VOTER_ID => int voter_a.voter_id() as i64
                                 }.unwrap();
                                 voter_a.extend_context(&mut context_voter_a);
