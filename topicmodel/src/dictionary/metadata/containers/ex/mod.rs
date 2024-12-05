@@ -193,14 +193,17 @@ pub struct DictMetaCount {
 }
 
 impl DictMetaCount {
+
+    const EMPTY: DictMetaCount = DictMetaCount {
+        counts: [0; META_DICT_ARRAY_LENTH]
+    };
+
     pub const fn new(counts: [u64; META_DICT_ARRAY_LENTH]) -> Self {
         Self {counts}
     }
 
     pub const fn empty() -> Self {
-        Self {
-            counts: [0; META_DICT_ARRAY_LENTH]
-        }
+        Self::EMPTY
     }
 
     pub fn into_inner(self) -> [u64; META_DICT_ARRAY_LENTH] {
@@ -213,6 +216,41 @@ impl DictMetaCount {
 
     pub fn get_mut(&mut self, index: impl Into<DictMetaTagIndex>) -> &mut u64 {
         &mut self.counts[index.into().as_index()]
+    }
+
+    pub fn from_meta(meta: &LoadedMetadataEx) -> Self {
+        let mut new = Self::empty();
+        {
+            let SolvedMetadataField(a, b) = meta.domains();
+            if let Some(a) = a {
+                for x in a {
+                    let (domain, count): (Domain, u32) = x.clone().try_into().unwrap();
+                    *new.get_mut(domain) += count as u64;
+                }
+            }
+            if let Some(b) = b {
+                for x in b.values().flat_map(|value| value.iter().cloned()) {
+                    let (domain, count): (Domain, u32) = x.clone().try_into().unwrap();
+                    *new.get_mut(domain) += count as u64;
+                }
+            }
+        }
+        {
+            let SolvedMetadataField(a, b) = meta.registers();
+            if let Some(a) = a {
+                for x in a {
+                    let (register, count): (Register, u32) = x.clone().try_into().unwrap();
+                    *new.get_mut(register) += count as u64;
+                }
+            }
+            if let Some(b) = b {
+                for x in b.values().flat_map(|value| value.iter().cloned()) {
+                    let (register, count): (Register, u32) = x.clone().try_into().unwrap();
+                    *new.get_mut(register) += count as u64;
+                }
+            }
+        }
+        new
     }
 }
 

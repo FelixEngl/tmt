@@ -1,4 +1,4 @@
-use crate::translate::dictionary_meta::topic_associated::ScoreModifierCalculator;
+use crate::translate::dictionary_meta::topic_associated::{CalculateVerticalScore, ScoreModifierCalculator};
 use crate::translate::entropies::errors::*;
 use evalexpr::export::evalexpr_num::{Float, FromPrimitive};
 use itertools::Itertools;
@@ -11,6 +11,7 @@ use ndarray_stats::EntropyExt;
 use num::cast;
 use sealed::sealed;
 use ldatranslate_translate::TopicLike;
+use crate::translate::dictionary_meta::Similarity;
 
 register_python! {
     enum FDivergence;
@@ -26,7 +27,47 @@ pub struct FDivergenceCalculator {
 }
 
 impl FDivergenceCalculator {
-    pub fn calculate<S1, S2, A, D>(
+
+
+    pub fn new(
+        fdivergence: FDivergence,
+        alpha: Option<f64>,
+        target_fields: Option<Vec<DictMetaTagIndex>>,
+        invert_target_fields: bool,
+        score_modifier_calc: ScoreModifierCalculator,
+    ) -> Self {
+        Self {
+            fdivergence,
+            alpha,
+            target_fields,
+            invert_target_fields,
+            score_modifier_calc
+        }
+    }
+}
+
+impl CalculateVerticalScore for FDivergenceCalculator {
+    #[inline(always)]
+    fn calculate_score<T: TopicLike>(
+        &self,
+        topic: &T,
+        counts: &[(DictMetaTagIndex, Array1<u32>)],
+        counts_as_probs: &[(DictMetaTagIndex, Array1<f64>)],
+        topic_assoc: [f64; META_DICT_ARRAY_LENTH],
+    ) -> Vec<f64> {
+        self.score_modifier_calc.calculate(
+            topic,
+            counts,
+            counts_as_probs,
+            topic_assoc,
+        )
+    }
+}
+
+impl Similarity for FDivergenceCalculator {
+    type Error<A> = EntropyWithAlphaError<A, f64>;
+
+    fn calculate<S1, S2, A, D>(
         &self,
         p: &ArrayBase<S1, D>,
         q: &ArrayBase<S2, D>,
@@ -58,38 +99,8 @@ impl FDivergenceCalculator {
         }
     }
 
-    #[inline(always)]
-    pub fn calculate_score<T: TopicLike>(
-        &self,
-        topic: &T,
-        counts: &[(DictMetaTagIndex, Array1<u32>)],
-        counts_as_probs: &[(DictMetaTagIndex, Array1<f64>)],
-        topic_assoc: [f64; META_DICT_ARRAY_LENTH],
-    ) -> Vec<f64> {
-        self.score_modifier_calc.calculate(
-            topic,
-            counts,
-            counts_as_probs,
-            topic_assoc,
-        )
-    }
-
-    pub fn new(
-        fdivergence: FDivergence,
-        alpha: Option<f64>,
-        target_fields: Option<Vec<DictMetaTagIndex>>,
-        invert_target_fields: bool,
-        score_modifier_calc: ScoreModifierCalculator,
-    ) -> Self {
-        Self {
-            fdivergence,
-            alpha,
-            target_fields,
-            invert_target_fields,
-            score_modifier_calc
-        }
-    }
 }
+
 
 #[cfg_attr(
     feature = "gen_python_api",

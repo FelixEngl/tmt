@@ -6,6 +6,7 @@ use std::borrow::Borrow;
 use std::hash::Hash;
 use itertools::Itertools;
 use ldatranslate_tokenizer::Tokenizer;
+use crate::dictionary::{Dictionary, DictionaryWithMeta};
 use crate::dictionary::direction::{DirectionMarker, DirectedElement, A, B};
 use crate::dictionary::hacks::ABMutReference;
 use crate::dictionary::iterators::{DictIter, DictIterImpl, DictLangIter};
@@ -268,6 +269,50 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         Some(self.convert_ids_a_to_values(self.translate_word_b_to_ids_a(word)?.iter().copied()))
     }
 }
+
+pub trait SearchableDictionaryWithMetadata<T, V, M>: DictionaryWithVocabulary<T, V> + BasicDictionaryWithMeta<M, V>
+where
+    M: MetadataManager,
+    V: AnonymousVocabulary + BasicVocabulary<T>
+
+{
+    fn meta_for_word_a<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<<M as MetadataManager>::Reference>
+    where
+        T: Borrow<Q> + Eq + Hash,
+        Q: Hash + Eq,
+        V: 'a + SearchableVocabulary<T>
+    {
+        Some(
+            self.get_meta_for_a(
+                self.word_to_id_a(
+                    word
+                )?
+            )
+        )
+    }
+
+    fn meta_for_word_b<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<<M as MetadataManager>::Reference>
+    where
+        T: Borrow<Q> + Eq + Hash,
+        Q: Hash + Eq,
+        V: 'a + SearchableVocabulary<T>
+    {
+        Some(
+            self.get_meta_for_b(
+                self.word_to_id_b(
+                    word
+                )?
+            )
+        )
+    }
+}
+
+impl<T, V, M, D> SearchableDictionaryWithMetadata<T, V, M> for D
+where
+    D: DictionaryWithVocabulary<T, V> + BasicDictionaryWithMeta<M, V>,
+    M: MetadataManager,
+    V: AnonymousVocabulary + BasicVocabulary<T>
+{}
 
 
 pub trait DictionaryWithSearch<T, V>: DictionaryWithVocabulary<T, V>

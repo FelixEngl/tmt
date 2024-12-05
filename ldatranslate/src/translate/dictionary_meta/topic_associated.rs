@@ -9,7 +9,7 @@ use ldatranslate_topicmodel::translate::TranslatableTopicMatrixWithCreate;
 use ldatranslate_topicmodel::vocabulary::BasicVocabulary;
 use ldatranslate_translate::{TopicLike, TopicModelLikeMatrix};
 use crate::translate::dictionary_meta::dict_meta::MetaTagTemplate;
-use crate::translate::dictionary_meta::{SparseVectorFactory};
+use crate::translate::dictionary_meta::{Similarity, SparseVectorFactory};
 use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
 
 pub struct VerticalCountDictionaryMetaVector {
@@ -86,6 +86,16 @@ impl ScoreModifierCalculator {
     }
 }
 
+pub trait CalculateVerticalScore {
+    fn calculate_score<T: TopicLike>(
+        &self,
+        topic: &T,
+        counts: &[(DictMetaTagIndex, Array1<u32>)],
+        counts_as_probs: &[(DictMetaTagIndex, Array1<f64>)],
+        topic_assoc: [f64; META_DICT_ARRAY_LENTH],
+    ) -> Vec<f64>;
+}
+
 /// Calculates modified model values for the metadata specified in calculator
 /// The modified values are always >= the original topic probability of the word.
 ///
@@ -114,7 +124,7 @@ impl ScoreModifierCalculator {
 /// }
 /// ```
 ///
-pub fn calculate_modified_model_values_vertical<Target, C, T, Voc>(
+pub fn calculate_modified_model_values_vertical<Target, C, T, Voc, A>(
     word_id_to_meta: &[Option<C>],
     factory: &SparseVectorFactory,
     calculator: &FDivergenceCalculator,
