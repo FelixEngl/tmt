@@ -1,6 +1,4 @@
-use ndarray::{ArrayBase, Data, Dimension};
-use num::{Float};
-use num::traits::{ConstZero};
+use ndarray::{Data, Dimension};
 
 pub trait Norm<A, S, D>
 where

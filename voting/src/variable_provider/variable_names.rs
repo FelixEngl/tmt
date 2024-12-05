@@ -136,7 +136,7 @@ macro_rules! declare_variable_names {
             use ldatranslate_toolkit;
             ldatranslate_toolkit::register_python! {
                 custom(m) {
-                    let submodule = PyModule::new_bound(m.py(), "variable_names")?;
+                    let submodule = PyModule::new(m.py(), "variable_names")?;
                     declare_py_module!(submodule, doc = $doc $variable_name: $name, $($tt)+);
                     m.add_submodule(&submodule)?;
                 }

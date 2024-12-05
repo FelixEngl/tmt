@@ -60,13 +60,13 @@ pub trait BasicTopicModel: Send + Sync + VoterInfoProvider {
     fn get_topic(&self, topic_id: TopicId) -> Option<&WordTo<Probability>>;
 
     /// The meta of the topic
-    fn topic_metas<'a>(&'a self) -> Self::TopicMetas<'a>;
+    fn topic_metas(&self) -> Self::TopicMetas<'_>;
 
     /// Get the `TopicMeta` for `topic_id`
-    fn get_topic_meta<'a>(&'a self, topic_id: TopicId) -> Option<Self::TopicMeta<'a>>;
+    fn get_topic_meta(&self, topic_id: TopicId) -> Option<Self::TopicMeta<'_>>;
 
     /// Get the [WordMeta] of `word_id` of `topic_id`
-    fn get_word_meta<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Self::WordMeta<'a>>;
+    fn get_word_meta(&self, topic_id: TopicId, word_id: WordId) -> Option<Self::WordMeta<'_>>;
 
     /// Get the word freuencies for each word.
     fn used_vocab_frequency(&self) -> &WordTo<WordFrequency>;
@@ -80,7 +80,7 @@ pub trait BasicTopicModel: Send + Sync + VoterInfoProvider {
 
     /// Get all [WordMeta] values with a similar importance in `topic_id` than `word_id`.
     /// (including the `word_id`)
-    fn get_all_similar_important<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Vec<Self::WordMeta<'a>>>;
+    fn get_all_similar_important(&self, topic_id: TopicId, word_id: WordId) -> Option<Vec<Self::WordMeta<'_>>>;
 
     /// Get the word ids sorted by position.
     fn get_words_for_topic_sorted(&self, topic_id: TopicId) -> Option<PositionTo<WordId>>;
@@ -166,7 +166,8 @@ pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc
 
     /// Get the [WordMeta] of `word` of `topic_id`
     #[inline]
-    fn get_word_meta_by_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Self::WordMeta<'a>> where T: Borrow<Q>, Q: Hash + Eq {
+    fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<Self::WordMeta<'_>>
+    where T: Borrow<Q>, Q: Hash + Eq {
         self.get_word_meta(topic_id, self.get_id(word)?)
     }
 
@@ -179,7 +180,7 @@ pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc
     /// Get all [WordMeta] values with a similar importance in `topic_id` than `word`.
     /// (including the `word_id`)
     #[inline]
-    fn get_all_similar_important_words_for_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Vec<<Self as BasicTopicModel>::WordMeta<'a>>> where T: Borrow<Q>, Q: Hash + Eq {
+    fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<Vec<<Self as BasicTopicModel>::WordMeta<'_>>> where T: Borrow<Q>, Q: Hash + Eq {
         self.get_all_similar_important(topic_id, self.get_id(word)?)
     }
 

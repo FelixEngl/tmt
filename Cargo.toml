@@ -10,12 +10,12 @@ ldatranslate-tokenizer = {path = "tokenizer"}
 ldatranslate-translate = {path = "translate"}
 
 # Python binding
-pyo3 = { version = "0.22", features = ["default", "serde", "hashbrown", "either", "auto-initialize"] }
+pyo3 = { version = "0.23", features = ["default", "serde", "hashbrown", "either", "auto-initialize"] }
 itertools = "0.13"
-thiserror = "1.0"
+thiserror = "2"
 zip = "2"
 strum = { version = "0.26", features = ["derive"] }
-delegate = "0.12"
+delegate = "0"
 serde = { version = "1.0.202", features = ["derive", "rc"] }
 serde_json = "1"
 #byteorder = "1"

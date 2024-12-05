@@ -54,7 +54,7 @@ pub trait VoterInfoProvider: Send + Sync {
     type VoterMeta<'a>: VoterMeta + Sync + 'a where Self: 'a;
 
     /// Get the meta for a specific voter.
-    fn get_voter_meta<'a>(&'a self, column: usize, voter_id: usize) -> Option<Self::VoterMeta<'a>>;
+    fn get_voter_meta(&self, column: usize, voter_id: usize) -> Option<Self::VoterMeta<'_>>;
 }
 
 

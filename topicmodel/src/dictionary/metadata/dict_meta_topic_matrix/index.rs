@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use deranged::RangedUsize;
 use derive_more::From;
 use either::Either;
-use pyo3::{Bound, FromPyObject, IntoPy, PyAny, PyErr, PyObject, PyResult, Python};
+use pyo3::{Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyErr, PyResult, Python};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::PyAnyMethods;
 use strum::{Display, EnumCount};
@@ -180,12 +180,16 @@ impl DictMetaTagIndex {
     }
 }
 
-impl IntoPy<PyObject> for DictMetaTagIndex {
-    fn into_py(self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for DictMetaTagIndex {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
-            DictMetaTagIndex::Domain(value) => {value.into_py(py)},
-            DictMetaTagIndex::Register(value) => {value.into_py(py)},
-            DictMetaTagIndex::Index(value) => {value.0.get().into_py(py)},
+            DictMetaTagIndex::Domain(value) => value.into_bound_py_any(py),
+            DictMetaTagIndex::Register(value) => value.into_bound_py_any(py),
+            DictMetaTagIndex::Index(value) => value.0.get().into_bound_py_any(py),
         }
     }
 }

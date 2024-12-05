@@ -28,7 +28,6 @@ use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
-use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
 use crate::translate::{KeepOriginalWord, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};

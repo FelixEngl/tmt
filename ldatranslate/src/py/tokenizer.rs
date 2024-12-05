@@ -36,7 +36,7 @@ use fst::raw::Fst;
 use thiserror::Error;
 use fst::Set;
 use itertools::Itertools;
-use pyo3::{Bound, FromPyObject, IntoPy, pyclass, pyfunction, pymethods, PyObject, PyRef, PyResult, Python};
+use pyo3::{Bound, FromPyObject, pyclass, pyfunction, pymethods, PyRef, PyResult, Python, IntoPyObject, PyAny, PyErr, IntoPyObjectExt};
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use rayon::prelude::*;
 use rust_stemmers::{Algorithm};
@@ -903,15 +903,23 @@ where
 }
 
 
-impl<'py, TAlignedArticle, TArticle> IntoPy<PyObject> for PyAlignedArticleResultUnion<TAlignedArticle, TArticle>
-    where TAlignedArticle: IntoPy<PyObject>, TArticle: IntoPy<PyObject> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py, TAlignedArticle, TArticle> IntoPyObject<'py> for PyAlignedArticleResultUnion<TAlignedArticle, TArticle>
+    where
+        TAlignedArticle: IntoPyObject<'py>,
+        TArticle: IntoPyObject<'py>
+{
+
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self {
             PyAlignedArticleResultUnion::Normal(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             PyAlignedArticleResultUnion::WithDoublets(value, dubletes) => {
-                (value, dubletes).into_py(py)
+                (value, dubletes).into_bound_py_any(py)
             }
         }
     }
@@ -1023,14 +1031,18 @@ pub enum PyTokenizedArticleUnion {
 impl_py_stub!(PyTokenizedArticleUnion: PyArticle, Vec<(String, PyToken)>);
 
 
-impl IntoPy<PyObject> for PyTokenizedArticleUnion {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for PyTokenizedArticleUnion {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self {
             PyTokenizedArticleUnion::Tokenized(article, values) => {
-                (article, values).into_py(py)
+                (article, values).into_bound_py_any(py)
             }
             PyTokenizedArticleUnion::NotTokenized(article) => {
-                article.into_py(py)
+                article.into_bound_py_any(py)
             }
         }
     }

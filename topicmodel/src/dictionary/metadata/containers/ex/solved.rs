@@ -78,7 +78,7 @@ macro_rules! create_python_getter {
 
             /// Returns a domain vector. The returned DictMetaVector consists of the counts of the
             /// single topics [Domain] and [Register].
-            pub fn domain_vector(&self) -> $crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector {
+            pub fn dict_meta_vector(&self) -> $crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector {
                 $crate::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector::from_meta(&self)
             }
 

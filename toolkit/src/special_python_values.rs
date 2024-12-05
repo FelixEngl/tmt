@@ -1,4 +1,4 @@
-use pyo3::{Bound, FromPyObject, IntoPy, PyAny, PyObject, PyResult, Python};
+use pyo3::{Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyErr, PyResult, Python};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet};
 use std::hash::Hash;
@@ -67,18 +67,22 @@ impl<L, R> Into<Either<L, R>> for PyEither<L, R> {
     }
 }
 
-impl<L, R> IntoPy<PyObject>  for PyEither<L, R>
+impl<'py, L, R> IntoPyObject<'py>  for PyEither<L, R>
 where
-    L: IntoPy<PyObject>,
-    R: IntoPy<PyObject>,
+    L: IntoPyObject<'py>,
+    R: IntoPyObject<'py>,
 {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             Either::Left(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             Either::Right(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
         }
     }
@@ -162,10 +166,14 @@ impl<L, R> Into<(Option<L>, Option<R>)> for PyEitherOrBoth<L, R> {
     }
 }
 
-impl<L, R> IntoPy<PyObject> for PyEitherOrBoth<L, R> where L: IntoPy<PyObject>, R: IntoPy<PyObject> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py, L, R> IntoPyObject<'py> for PyEitherOrBoth<L, R> where L: IntoPyObject<'py>, R: IntoPyObject<'py> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let value: (Option<L>, Option<R>) = self.into();
-        value.into_py(py)
+        value.into_bound_py_any(py)
     }
 }
 
@@ -180,7 +188,7 @@ impl<'py, T, > ::pyo3::FromPyObject<'py> for VecOrSet<T>
 where
     T: FromPyObject<'py> + Hash + Eq,
 {
-    fn extract_bound(obj: &Bound<'py, pyo3::PyAny>) -> PyResult<Self> {
+    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
         let errors = [{
             let maybe_ret = || -> PyResult<Self>   { pyo3::impl_::frompyobject::extract_tuple_struct_field(obj, "SetOrVec::Set", 0).map(VecOrSet::SetValue) }();
             match maybe_ret {
@@ -251,14 +259,18 @@ impl<T> VecOrSet<T> where T: Hash + Eq {
     }
 }
 
-impl<T> IntoPy<PyObject> for VecOrSet<T> where T: IntoPy<PyObject> + Eq + Hash {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py, T> IntoPyObject<'py> for VecOrSet<T> where T: IntoPyObject<'py> + Eq + Hash {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
             VecOrSet::SetValue(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             VecOrSet::VecValue(values) => {
-                values.into_py(py)
+                values.into_bound_py_any(py)
             }
         }
     }
@@ -283,14 +295,18 @@ pub enum SingleOrVec<T> {
     Vec(#[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>"))] Vec<T>),
 }
 
-impl<T> IntoPy<PyObject> for SingleOrVec<T> where T: IntoPy<PyObject> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py, T> IntoPyObject<'py> for SingleOrVec<T>  where T: IntoPyObject<'py> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
             SingleOrVec::Single(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             SingleOrVec::Vec(values) => {
-                values.into_py(py)
+                values.into_bound_py_any(py)
             }
         }
     }

@@ -104,6 +104,7 @@ type_def_wrapper!(
       SearchTypeUnion<PyEither<SearchType, SearchTypeLiteral>>
 );
 
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyDictionary {

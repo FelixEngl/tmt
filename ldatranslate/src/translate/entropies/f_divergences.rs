@@ -5,12 +5,10 @@ use itertools::Itertools;
 use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, META_DICT_ARRAY_LENTH};
-use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
 use ndarray::{Array, Array1, ArrayBase, Data, Dimension, Zip};
 use ndarray_stats::errors::{EmptyInput, MultiInputError, ShapeMismatch};
 use ndarray_stats::EntropyExt;
 use num::cast;
-use pyo3::pyclass;
 use sealed::sealed;
 use ldatranslate_translate::TopicLike;
 

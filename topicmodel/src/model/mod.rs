@@ -447,7 +447,7 @@ impl<T, V> BasicTopicModel for TopicModel<T, V> where V: BasicVocabulary<T> {
         self.topics.get(topic_id)
     }
 
-    fn topic_metas<'a>(&'a self) -> Self::TopicMetas<'a> {
+    fn topic_metas(&self) -> Self::TopicMetas<'_> {
         MetaView::new(self)
     }
 

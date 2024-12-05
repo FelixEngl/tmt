@@ -1,10 +1,6 @@
-use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
-use evalexpr::export::evalexpr_num::FromPrimitive;
 use itertools::Itertools;
 use ndarray::{ArcArray, Array1, ArrayBase, Data, Ix1};
-use num::Float;
 use rayon::prelude::*;
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex, META_DICT_ARRAY_LENTH};
@@ -12,7 +8,6 @@ use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
 use ldatranslate_topicmodel::translate::TranslatableTopicMatrixWithCreate;
 use ldatranslate_topicmodel::vocabulary::BasicVocabulary;
 use ldatranslate_translate::{TopicLike, TopicModelLikeMatrix};
-use crate::tools::ndarray_ext::Norm;
 use crate::translate::dictionary_meta::dict_meta::MetaTagTemplate;
 use crate::translate::dictionary_meta::{SparseVectorFactory};
 use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
@@ -99,6 +94,11 @@ impl ScoreModifierCalculator {
 /// ```text
 /// new_topic_model = []
 ///
+///
+/// plane || [Aviat.] [Engin.], "FreeDict" [Aviat.]
+///     [Aviat.] -> plane == 2
+///     [Engin.] -> plane == 1
+///
 /// for topic_id, topic in topic_model {
 ///     topic_model_meta: Map<Domain | Register, Map<WordId, ProbabilityForWord>>
 ///         where ProbabilityForWord = CountInWord/SumOf(All(CountInWord))
@@ -114,7 +114,7 @@ impl ScoreModifierCalculator {
 /// }
 /// ```
 ///
-pub fn calculate_modified_model_values<Target, C, T, Voc>(
+pub fn calculate_modified_model_values_vertical<Target, C, T, Voc>(
     word_id_to_meta: &[Option<C>],
     factory: &SparseVectorFactory,
     calculator: &FDivergenceCalculator,
@@ -126,6 +126,13 @@ where
     C: MetaFieldCountProvider + Sync,
     Voc: BasicVocabulary<T>
 {
+
+    // TODO: Horizontal normieren
+    // TODO: A -> B für refine term
+    log::info!(
+        "Number of availables metas: {}",
+        word_id_to_meta.iter().filter(|v| v.is_some()).count()
+    );
     let template = if let Some(targ_fields) = calculator.target_fields.as_ref() {
         if calculator.invert_target_fields {
             let value = DictMetaTagIndex::all().into_iter().copied().filter(|v| !targ_fields.contains(v)).collect_vec();
@@ -198,11 +205,9 @@ where
     S: Data<Elem=f64> + 'a,
 {
     let topic = Array1::from(topic.iter().copied().collect::<Vec<_>>());
-    println!("{topic}\n#######");
     let mut result = [0.0; META_DICT_ARRAY_LENTH];
     for (idx, counts) in topic_model_meta.into_iter() {
         let div = calculator.calculate(counts, &topic)?;
-        println!("  {idx}: {counts} -> {div}");
         result[(*idx).as_index()] = div;
     }
     Ok(result)
@@ -217,7 +222,7 @@ mod test {
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use ldatranslate_topicmodel::model::{BasicTopicModel, FullTopicModel, TopicModel};
     use crate::translate::dictionary_meta::SparseVectorFactory;
-    use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values, ScoreModifierCalculator};
+    use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values_vertical, ScoreModifierCalculator};
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
     use crate::translate::test::create_test_data;
 
@@ -260,7 +265,7 @@ mod test {
 
         let sparse = SparseVectorFactory::new();
 
-        let alt = calculate_modified_model_values(
+        let alt = calculate_modified_model_values_vertical(
             &dict.metadata().meta_a().iter().map(|v| Some(v)).collect_vec(),
             &sparse,
             &FDivergenceCalculator::new(

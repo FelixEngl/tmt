@@ -1,7 +1,8 @@
 use std::fmt::{Debug, Display};
 use std::hash::BuildHasher;
 use derive_more::From;
-use pyo3::{FromPyObject, IntoPy, PyObject, Python};
+use pyo3::{Bound, FromPyObject, IntoPyObject, PyAny, PyErr, Python, IntoPyObjectExt};
+use pyo3::types::PyTuple;
 use serde::{Deserialize, Serialize};
 use string_interner::Symbol;
 use thiserror::Error;
@@ -196,7 +197,11 @@ impl From<&str> for ResolvableValue {
     }
 }
 
-impl IntoPy<PyObject> for ResolvableValue {
+impl<'py> IntoPyObject<'py> for ResolvableValue {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
     delegate::delegate! {
         to match self {
             ResolvableValue::Language(value) => value,
@@ -210,14 +215,20 @@ impl IntoPy<PyObject> for ResolvableValue {
             ResolvableValue::String(value) => value,
             ResolvableValue::RawId(value) => value,
         } {
-            fn into_py(self, py: Python<'_>) -> PyObject;
+            #[call(into_bound_py_any)]
+            fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error>;
         }
     }
 }
 
-impl IntoPy<PyObject> for ResolvedValue {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        (self.0, self.1).into_py(py)
+impl<'py> IntoPyObject<'py> for ResolvedValue {
+    type Target = PyTuple;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    #[inline(always)]
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        (self.0, self.1).into_pyobject(py)
     }
 }
 

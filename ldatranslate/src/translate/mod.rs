@@ -25,7 +25,6 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::sync::Arc;
 use std::time::{Duration};
 use evalexpr::{context_map, Context, ContextWithMutableVariables, EmptyContextWithBuiltinFunctions, HashMapContext, IterateVariablesContext, Value};
 use itertools::Itertools;
@@ -52,7 +51,7 @@ use ldatranslate_voting::VotingMethod;
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
 use crate::translate::dictionary_meta::SparseVectorFactory;
-use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values, VerticalCountDictionaryMetaVector};
+use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values_vertical};
 use crate::variable_provider::AsVariableProvider;
 
 
@@ -118,7 +117,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     }
 
     log::info!("Create topic specific dictionary. {}", reporter.create_report_now());
-    let dictionary: D = create_topic_vocabulary_specific_dictionary(
+    let translation_dictionary: D = create_topic_vocabulary_specific_dictionary(
         original_dictionary,
         target.vocabulary()
     );
@@ -126,12 +125,12 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
 
     let alternative_scores = if let Some(divergence) = translate_config.divergence_config.clone() {
         let sparse = SparseVectorFactory::new();
-        let metas = dictionary.voc_a().iter().map(|word| {
+        let metas = translation_dictionary.voc_a().iter().map(|word| {
             original_dictionary.voc_a().get_id(word).map(|id| {
                 unsafe{original_dictionary.metadata().meta_a().get_unchecked(id)}
             })
         }).collect_vec();
-        let new = calculate_modified_model_values(
+        let new = calculate_modified_model_values_vertical(
             &metas,
             &sparse,
             &divergence,
@@ -144,17 +143,17 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         None
     };
 
-    if dictionary.map_a_to_b().is_empty() {
+    if translation_dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
     }
 
-    if dictionary.map_b_to_a().is_empty() {
+    if translation_dictionary.map_b_to_a().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::BToA))
     }
 
     // TODO: make clean for rust.
     let provider = if let Some(provider) = provider {
-        Some(provider.as_variable_provider_for(target, &dictionary))
+        Some(provider.as_variable_provider_for(target, &translation_dictionary))
     } else {
         None
     }.transpose()?;
@@ -172,8 +171,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
 
     let mut topic_context: HashMapContext<TMTNumericTypes> = context_map! {
         EPSILON => as float epsilon,
-        VOCABULARY_SIZE_A => as int dictionary.voc_a().len(),
-        VOCABULARY_SIZE_B => as int dictionary.voc_b().len(),
+        VOCABULARY_SIZE_A => as int translation_dictionary.voc_a().len(),
+        VOCABULARY_SIZE_B => as int translation_dictionary.voc_b().len(),
     }.unwrap();
 
     if let Some(ref provider) = provider {
@@ -208,7 +207,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                             .to_static_with(topic_context.clone());
                         translate_topic(
                             target,
-                            &dictionary,
+                            &translation_dictionary,
                             topic_id,
                             topic,
                             topic_context_2,
@@ -226,7 +225,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                     .to_static_with(topic_context.clone());
                 translate_topic(
                     target,
-                    &dictionary,
+                    &translation_dictionary,
                     topic_id,
                     topic,
                     topic_context_2,
@@ -244,17 +243,17 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     let voc_b_col = result.par_iter().flatten().map(|value| {
         match value.candidate_word_id {
             LanguageOrigin::Origin(word_id) => {
-                dictionary.voc_a().get_value_by_id(word_id).unwrap()
+                translation_dictionary.voc_a().get_value_by_id(word_id).unwrap()
             }
             LanguageOrigin::Target(word_id) => {
-                dictionary.voc_b().get_value_by_id(word_id).unwrap()
+                translation_dictionary.voc_b().get_value_by_id(word_id).unwrap()
             }
         }
     }).collect_vec_list();
 
     log::info!("Memory usage after loop: {}", reporter.create_report_now());
     let mut voc_b = voc_b_col.iter().flatten().cloned().collect::<Voc>();
-    voc_b.set_language(dictionary.language::<B>().cloned());
+    voc_b.set_language(translation_dictionary.language::<B>().cloned());
 
     let mut counts = vec![0u64; voc_b.len()];
 
@@ -268,10 +267,10 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         let mut topic = topic_content.into_par_iter().map(|candidate| {
             let word = match candidate.candidate_word_id {
                 LanguageOrigin::Origin(word_id) => {
-                    dictionary.voc_a().get_value_by_id(word_id).unwrap()
+                    translation_dictionary.voc_a().get_value_by_id(word_id).unwrap()
                 }
                 LanguageOrigin::Target(word_id) => {
-                    dictionary.voc_b().get_value_by_id(word_id).unwrap()
+                    translation_dictionary.voc_b().get_value_by_id(word_id).unwrap()
                 }
             };
             (voc_b.get_id(word).unwrap(), candidate.relative_score)

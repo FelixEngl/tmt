@@ -18,7 +18,7 @@ use evalexpr::{Context, ContextWithMutableVariables, EvalexprError, EvalexprResu
 use itertools::Itertools;
 use nom::error::Error;
 use nom::Finish;
-use pyo3::{Bound, FromPyObject, PyAny, pyclass, pymethods, PyResult, IntoPy, PyObject, Python};
+use pyo3::{Bound, FromPyObject, PyAny, pyclass, pymethods, PyResult, IntoPyObject, Python, PyErr, IntoPyObjectExt};
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::{PyAnyMethods};
 use pyo3::types::PyFunction;
@@ -140,26 +140,30 @@ impl<'a> FromPyObject<'a> for PyExprValue {
     }
 }
 
-impl IntoPy<PyObject> for PyExprValue {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for PyExprValue {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
             PyExprValue::String(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             PyExprValue::Float(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             PyExprValue::Int(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             PyExprValue::Boolean(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             PyExprValue::Tuple(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
             PyExprValue::Empty => {
-                py.None()
+                py.None().into_bound_py_any(py)
             }
         }
     }
@@ -384,10 +388,10 @@ impl PyVotingRegistry {
             Ok((_, result)) => {
                 match result {
                     InterpretedVoting::BuildIn(_) => {
-                        return Err(PyValueError::new_err("BuildIn functions can not be registered!".to_string()))
+                        Err(PyValueError::new_err("BuildIn functions can not be registered!".to_string()))
                     }
                     InterpretedVoting::FromRegistry(_) => {
-                        return Err(PyValueError::new_err("The name is already registered!".to_string()))
+                        Err(PyValueError::new_err("The name is already registered!".to_string()))
                     }
                     InterpretedVoting::Parsed(parsed) => {
                         self.inner.register(name.to_string(), parsed);
@@ -400,7 +404,7 @@ impl PyVotingRegistry {
                         Ok(())
                     }
                     InterpretedVoting::Limited(_) => {
-                        return Err(PyValueError::new_err("You can not register a limited method!".to_string()))
+                        Err(PyValueError::new_err("You can not register a limited method!".to_string()))
                     }
                 }
             }

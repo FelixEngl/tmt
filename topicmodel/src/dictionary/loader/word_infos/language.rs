@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use pyo3::{pyclass, pymethods, FromPyObject, IntoPy, PyObject, Python};
+use pyo3::{pyclass, pymethods, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyErr, PyResult, Python};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, IntoStaticStr};
 use tinyset::Fits64;
@@ -236,14 +236,18 @@ pub enum LanguageDirectionArg {
     Direction(LanguageDirection)
 }
 
-impl IntoPy<PyObject> for LanguageDirectionArg {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for LanguageDirectionArg {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self {
             LanguageDirectionArg::Tuple(lang_a, lang_b) => {
-                LanguageDirection::new(lang_a, lang_b).into_py(py)
+                LanguageDirection::new(lang_a, lang_b).into_bound_py_any(py)
             }
             LanguageDirectionArg::Direction(value) => {
-                value.into_py(py)
+                value.into_bound_py_any(py)
             }
         }
     }

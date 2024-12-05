@@ -375,13 +375,13 @@ impl BasicTopicModel for PyTopicModel {
             fn get_topic(&self, topic_id: TopicId) -> Option<&WordTo<Probability>>;
 
             /// The meta of the topic
-            fn topic_metas<'a>(&'a self) -> Self::TopicMetas<'a>;
+            fn topic_metas(&self) -> Self::TopicMetas<'_>;
 
             /// Get the `TopicMeta` for `topic_id`
-            fn get_topic_meta<'a>(&'a self, topic_id: TopicId) -> Option<Self::TopicMeta<'a>>;
+            fn get_topic_meta(&self, topic_id: TopicId) -> Option<Self::TopicMeta<'_>>;
 
             /// Get the [WordMeta] of `word_id` of `topic_id`
-            fn get_word_meta<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Self::WordMeta<'a>>;
+            fn get_word_meta(&self, topic_id: TopicId, word_id: WordId) -> Option<Self::WordMeta<'_>>;
 
             /// Get the word freuencies for each word.
             fn used_vocab_frequency(&self) -> &WordTo<WordFrequency>;
@@ -394,7 +394,7 @@ impl BasicTopicModel for PyTopicModel {
 
             /// Get all [WordMeta] values with a similar importance in `topic_id` than `word_id`.
             /// (including the `word_id`)
-            fn get_all_similar_important<'a>(&'a self, topic_id: TopicId, word_id: WordId) -> Option<Vec<Self::WordMeta<'a>>>;
+            fn get_all_similar_important(&self, topic_id: TopicId, word_id: WordId) -> Option<Vec<Self::WordMeta<'_>>>;
 
             /// Get the word ids sorted by position.
 
@@ -444,11 +444,24 @@ impl TopicModelWithVocabulary<UnderlyingPyWord, UnderlyingPyVocabulary> for PyTo
         to self.inner {
             fn get_id<Q: ?Sized>(&self, word: &Q) -> Option<WordId> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
             fn contains<Q: ?Sized>(&self, word: &Q) -> bool where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
-            fn get_probability_by_word<Q: ?Sized>(&self, topic_id: usize, word: &Q) -> Option<&Probability> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+
+            /// Get the probability of `word` of `topic_id`
+            fn get_probability_by_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<&Probability> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+
+            /// Get all probabilities of `word`
             fn get_topic_probabilities_for_by_word<Q: ?Sized>(&self, word: &Q) -> Option<TopicTo<Probability>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
-            fn get_word_meta_by_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Self::WordMeta<'a>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
-            fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq, Vocabulary<String>: 'a;
-            fn get_all_similar_important_words_for_word<'a, Q: ?Sized>(&'a self, topic_id: TopicId, word: &Q) -> Option<Vec<<Self as BasicTopicModel>::WordMeta<'a>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+
+            /// Get the [WordMeta] of `word` of `topic_id`
+            fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<Self::WordMeta<'_>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+
+            /// Get the [WordMetaWithWord] of `word` for all topics.
+            fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq, UnderlyingPyVocabulary: 'a;
+
+            /// Get all [WordMeta] values with a similar importance in `topic_id` than `word`.
+            /// (including the `word_id`)
+            fn get_all_similar_important_words_for_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<Vec<<Self as BasicTopicModel>::WordMeta<'_>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
+
+            /// Returns true iff the topic models seem similar.
             fn seems_equal_to<Q, VOther>(&self, other: &impl TopicModelWithVocabulary<Q, VOther>) -> bool where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq + Borrow<UnderlyingPyWord>, VOther: BasicVocabulary<Q>;
         }
     }
@@ -471,7 +484,7 @@ impl VoterInfoProvider for PyTopicModel {
 
     delegate::delegate! {
         to self.inner {
-            fn get_voter_meta<'a>(&'a self, column: usize, voter_id: usize) -> Option<Self::VoterMeta<'a>>;
+            fn get_voter_meta(&self, column: usize, voter_id: usize) -> Option<Self::VoterMeta<'_>>;
         }
     }
 }

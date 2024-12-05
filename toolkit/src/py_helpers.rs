@@ -332,9 +332,12 @@ macro_rules! type_def_wrapper {
 
         $crate::type_def_wrapper!($v $name <$ty>);
 
-        impl $crate::exports::pyo3::IntoPy<$crate::exports::pyo3::PyObject> for $name {
-            fn into_py(self, py: $crate::exports::pyo3::Python<'_>) -> $crate::exports::pyo3::PyObject {
-                self.0.into_py(py)
+        impl<'py> $crate::exports::pyo3::IntoPyObject<'py> for $name {
+            type Target = <$ty as $crate::exports::pyo3::IntoPyObject<'py>>::Target;
+            type Output = <$ty as $crate::exports::pyo3::IntoPyObject<'py>>::Output;
+            type Error = <$ty as $crate::exports::pyo3::IntoPyObject<'py>>::Error;
+            fn into_pyobject(self, py: $crate::exports::pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+                self.0.into_pyobject(py)
             }
         }
     };

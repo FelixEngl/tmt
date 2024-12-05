@@ -3,7 +3,8 @@ use std::collections::hash_map::{Entry};
 use std::ops::Deref;
 use itertools::Itertools;
 use pretty::{DocAllocator, DocBuilder, Pretty};
-use pyo3::{FromPyObject, IntoPy, PyObject, Python};
+use pyo3::{Bound, FromPyObject, IntoPyObject, PyErr, PyResult, Python};
+use pyo3::types::PyTuple;
 use serde::{Deserialize, Serialize};
 use ldatranslate_toolkit::impl_py_stub;
 use ldatranslate_toolkit::special_python_values::{SingleOrVec};
@@ -37,9 +38,13 @@ impl From<(Option<HashSet<ResolvedValue>>, Option<HashMap<String, HashSet<Resolv
     }
 }
 
-impl IntoPy<PyObject> for SolvedMetadataField {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        (self.0, self.1).into_py(py)
+impl<'py> IntoPyObject<'py> for SolvedMetadataField {
+    type Target = PyTuple;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        (self.0, self.1).into_pyobject(py)
     }
 }
 
