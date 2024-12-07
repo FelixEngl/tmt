@@ -58,7 +58,7 @@ mod test {
             .init();
 
         Python::with_gil(|py| {
-            let ldatranslate = PyModule::new_bound(py, "ldatranslate")?;
+            let ldatranslate = PyModule::new(py, "ldatranslate")?;
             super::ldatranslate(&ldatranslate)
         }).unwrap();
     }

@@ -1,6 +1,8 @@
+use std::fmt::{Debug, Display};
 use std::sync::Arc;
 use itertools::Itertools;
-use ndarray::{ArcArray, Array1, ArrayBase, Data, Ix1};
+use ndarray::{ArcArray, Array1, ArrayBase, Data, Dimension, Ix1};
+use num::{Float, FromPrimitive};
 use rayon::prelude::*;
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex, META_DICT_ARRAY_LENTH};
@@ -96,6 +98,54 @@ pub trait CalculateVerticalScore {
     ) -> Vec<f64>;
 }
 
+#[derive(Clone, Debug)]
+pub struct VerticalScoreCalculator {
+    pub target_fields: Option<Vec<DictMetaTagIndex>>,
+    pub invert_target_fields: bool,
+    pub calculator: FDivergenceCalculator
+}
+
+impl VerticalScoreCalculator {
+    pub fn new(target_fields: Option<Vec<DictMetaTagIndex>>, invert_target_fields: bool, calculator: FDivergenceCalculator) -> Self {
+        Self { target_fields, invert_target_fields, calculator }
+    }
+
+
+}
+
+impl CalculateVerticalScore for VerticalScoreCalculator {
+    delegate::delegate! {
+        to self.calculator {
+            fn calculate_score<T: TopicLike>(
+                &self,
+                topic: &T,
+                counts: &[(DictMetaTagIndex, Array1<u32>)],
+                counts_as_probs: &[(DictMetaTagIndex, Array1<f64>)],
+                topic_assoc: [f64; META_DICT_ARRAY_LENTH],
+            ) -> Vec<f64>;
+        }
+    }
+}
+
+impl Similarity for VerticalScoreCalculator {
+    type Error<A: Debug + Display> = EntropyWithAlphaError<A, f64>;
+
+    delegate::delegate! {
+        to self.calculator {
+            fn calculate<S1, S2, A, D>(
+                &self,
+                p: &ArrayBase<S1, D>,
+                q: &ArrayBase<S2, D>,
+            ) -> Result<A, EntropyWithAlphaError<A, f64>>
+            where
+                S1: Data<Elem = A>,
+                S2: Data<Elem = A>,
+                A: Float + FromPrimitive + Debug + Display,
+                D: Dimension;
+        }
+    }
+}
+
 /// Calculates modified model values for the metadata specified in calculator
 /// The modified values are always >= the original topic probability of the word.
 ///
@@ -124,10 +174,10 @@ pub trait CalculateVerticalScore {
 /// }
 /// ```
 ///
-pub fn calculate_modified_model_values_vertical<Target, C, T, Voc, A>(
+pub fn calculate_modified_model_values_vertical<Target, C, T, Voc>(
     word_id_to_meta: &[Option<C>],
     factory: &SparseVectorFactory,
-    calculator: &FDivergenceCalculator,
+    calculator: &VerticalScoreCalculator,
     matrix: &Target,
     normalized: bool
 ) -> Result<Vec<Vec<f64>>, EntropyWithAlphaError<f64, f64>>
@@ -176,10 +226,10 @@ where
     let mut result = matrix.matrix().iter().map(|topic| {
         calculate_for_topic_model(
             topic,
-            &calculator,
+            &calculator.calculator,
             encounter_probabilities.iter(),
         ).map(|topic_assoc| {
-            let end_result = calculator.calculate_score(
+            let end_result = calculator.calculator.calculate_score(
                 topic,
                 &counts,
                 &encounter_probabilities,
@@ -232,7 +282,7 @@ mod test {
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use ldatranslate_topicmodel::model::{BasicTopicModel, FullTopicModel, TopicModel};
     use crate::translate::dictionary_meta::SparseVectorFactory;
-    use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values_vertical, ScoreModifierCalculator};
+    use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values_vertical, ScoreModifierCalculator, VerticalScoreCalculator};
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
     use crate::translate::test::create_test_data;
 
@@ -278,9 +328,7 @@ mod test {
         let alt = calculate_modified_model_values_vertical(
             &dict.metadata().meta_a().iter().map(|v| Some(v)).collect_vec(),
             &sparse,
-            &FDivergenceCalculator::new(
-                FDivergence::KL,
-                None,
+            &VerticalScoreCalculator::new(
                 Some(vec![
                     Domain::Aviat.into(),
                     Domain::Engin.into(),
@@ -289,7 +337,11 @@ mod test {
                     Register::Archaic.into(),
                 ]),
                 false,
-                ScoreModifierCalculator::WeightedSum
+                FDivergenceCalculator::new(
+                    FDivergence::KL,
+                    None,
+                    ScoreModifierCalculator::WeightedSum
+                )
             ),
             &model_a,
             true

@@ -43,6 +43,7 @@ approx.workspace = true
 sysinfo.workspace = true
 byte-unit.workspace = true
 zstd.workspace = true
+rstats.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]

@@ -5,7 +5,9 @@ mod iter;
 mod count_weighted;
 pub mod topic_associated;
 mod dictionary_association;
+mod coocurrence;
 
+use std::fmt::{Debug, Display};
 use ndarray::{ArrayBase, Data, Dimension};
 use num::{Float, FromPrimitive};
 pub use dict_meta::*;
@@ -32,7 +34,7 @@ pub trait VerticalDictionaryMetaProbabilityProvider: Send + Sync {
 }
 
 pub trait Similarity {
-    type Error<A>: std::error::Error;
+    type Error<A: Debug + Display>: std::error::Error;
     fn calculate<S1, S2, A, D>(
         &self,
         p: &ArrayBase<S1, D>,
@@ -42,5 +44,5 @@ pub trait Similarity {
         S1: Data<Elem = A>,
         S2: Data<Elem = A>,
         D: Dimension,
-        A: Float + FromPrimitive;
+        A: Float + FromPrimitive + Debug + Display;
 }

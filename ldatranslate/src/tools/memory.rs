@@ -17,7 +17,7 @@ impl MemoryReporter {
     pub fn new(interval: Duration) -> MemoryReporter {
         Self {
             sys: Arc::new(Mutex::new(sysinfo::System::new_with_specifics(
-                RefreshKind::new().with_memory(MemoryRefreshKind::everything())
+                RefreshKind::nothing().with_memory(MemoryRefreshKind::everything())
             ))),
             last_report: Arc::new(RwLock::new(Instant::now())),
             interval

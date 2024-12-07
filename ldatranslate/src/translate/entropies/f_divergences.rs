@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display};
 use crate::translate::dictionary_meta::topic_associated::{CalculateVerticalScore, ScoreModifierCalculator};
 use crate::translate::entropies::errors::*;
 use evalexpr::export::evalexpr_num::{Float, FromPrimitive};
@@ -17,30 +18,22 @@ register_python! {
     enum FDivergence;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct FDivergenceCalculator {
     pub fdivergence: FDivergence,
     pub alpha: Option<f64>,
-    pub target_fields: Option<Vec<DictMetaTagIndex>>,
-    pub invert_target_fields: bool,
     pub score_modifier_calc: ScoreModifierCalculator,
 }
 
 impl FDivergenceCalculator {
-
-
     pub fn new(
         fdivergence: FDivergence,
         alpha: Option<f64>,
-        target_fields: Option<Vec<DictMetaTagIndex>>,
-        invert_target_fields: bool,
         score_modifier_calc: ScoreModifierCalculator,
     ) -> Self {
         Self {
             fdivergence,
             alpha,
-            target_fields,
-            invert_target_fields,
             score_modifier_calc
         }
     }
@@ -65,7 +58,7 @@ impl CalculateVerticalScore for FDivergenceCalculator {
 }
 
 impl Similarity for FDivergenceCalculator {
-    type Error<A> = EntropyWithAlphaError<A, f64>;
+    type Error<A: Debug + Display> = EntropyWithAlphaError<A, f64>;
 
     fn calculate<S1, S2, A, D>(
         &self,
@@ -75,7 +68,7 @@ impl Similarity for FDivergenceCalculator {
     where
         S1: Data<Elem = A>,
         S2: Data<Elem = A>,
-        A: Float + FromPrimitive,
+        A: Float + FromPrimitive + Debug + Display,
         D: Dimension,
     {
         match self.fdivergence {
@@ -339,7 +332,7 @@ where
             })?;
             let entropy = self
                 .mapv(|x| {
-                    if x == A::zero() {
+                    if x.is_zero() {
                         A::zero()
                     } else {
                         x.powf(alpha)

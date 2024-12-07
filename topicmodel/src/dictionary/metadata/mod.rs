@@ -16,5 +16,6 @@ pub(super) mod dictionary;
 pub mod containers;
 pub mod dict_meta_topic_matrix;
 mod html_support;
+pub mod coocurrence_matrix;
 
 pub use containers::*;

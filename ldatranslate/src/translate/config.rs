@@ -7,6 +7,7 @@ use pyo3::{pyclass, pymethods, PyResult};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use strum::{AsRefStr, Display, EnumString, ParseError};
+use crate::translate::dictionary_meta::topic_associated::VerticalScoreCalculator;
 
 /// Setting if to keep the original word from language A
 #[cfg_attr(
@@ -71,7 +72,7 @@ pub struct TranslateConfig<V: VotingMethodMarker> {
     pub top_candidate_limit: Option<NonZeroUsize>,
     /// The config for a divergence applied to the base score.
     /// Right now we only support calculating on topic level.
-    pub divergence_config: Option<Arc<FDivergenceCalculator>>,
+    pub divergence_config: Option<Arc<VerticalScoreCalculator>>,
 }
 
 pub enum BoostScoreBy {
@@ -88,7 +89,7 @@ where
         threshold: Option<f64>,
         keep_original_word: KeepOriginalWord,
         top_candidate_limit: Option<NonZeroUsize>,
-        divergence_config: Option<FDivergenceCalculator>,
+        divergence_config: Option<VerticalScoreCalculator>,
     ) -> Self {
         Self {
             epsilon,

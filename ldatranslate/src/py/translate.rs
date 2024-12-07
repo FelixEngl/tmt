@@ -37,7 +37,7 @@ use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
 use crate::tools::memory::MemoryReporter;
-use crate::translate::dictionary_meta::topic_associated::ScoreModifierCalculator;
+use crate::translate::dictionary_meta::topic_associated::{ScoreModifierCalculator, VerticalScoreCalculator};
 use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
 // /// The config for a translation
 // #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
@@ -186,12 +186,14 @@ impl PyTranslationConfig {
                 self.keep_original_word,
                 self.top_candidate_limit,
                 self.f_divergence.map(|value| {
-                    FDivergenceCalculator::new(
-                        value,
-                        self.alpha,
+                    VerticalScoreCalculator::new(
                         self.target_fields,
                         self.invert_target_fields,
-                        self.score_modifier_calculator
+                        FDivergenceCalculator::new(
+                            value,
+                            self.alpha,
+                            self.score_modifier_calculator
+                        )
                     )
                 }),
             )
