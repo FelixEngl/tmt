@@ -10,6 +10,7 @@ use num::{Float, FromPrimitive};
 use num::traits::NumAssignOps;
 use thiserror::Error;
 use ldatranslate_topicmodel::dictionary::metadata::{MetadataReference};
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex};
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataManagerEx;
 use ldatranslate_topicmodel::dictionary::SearchableDictionaryWithMetadata;
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
@@ -147,7 +148,22 @@ pub enum CosineDistanceError<A> {
 
 
 
+pub trait Smoothing {
+    fn alpha(&self) -> f64;
 
+    fn smooth_factor(&self, key: &DictMetaTagIndex) -> f64;
+}
+
+impl<'a> Smoothing for (f64, &'a ClassCoocurrenceMatrix) {
+    fn alpha(&self) -> f64 {
+        self.0
+    }
+
+    fn smooth_factor(&self, key: &DictMetaTagIndex) -> f64
+    {
+        *self.1.get(key).and_then(|value| value.get((*key).as_index())).unwrap()
+    }
+}
 
 pub fn calculate_cross_language_topic_association<'a, Q: ?Sized + 'a, T, V, D, P: ?Sized, A>(
     dictionary: &D,
@@ -156,8 +172,8 @@ pub fn calculate_cross_language_topic_association<'a, Q: ?Sized + 'a, T, V, D, P
     factory: &SparseVectorFactory,
     pattern: &P,
     algorithm: &A,
-    vectors: Option<&ClassCoocurrenceMatrix>
-) -> Result<Option<Vec<f64>>, A::Error<f64>>
+    vectors: Option<(f64, &ClassCoocurrenceMatrix)>
+) -> Result<Option<Array1<f64>>, A::Error<f64>>
 where
     D: SearchableDictionaryWithMetadata<T, V, MetadataManagerEx>,
     V: AnonymousVocabulary + BasicVocabulary<T> + SearchableVocabulary<T>,
@@ -183,36 +199,44 @@ where
     }
     algorithm.preprocess(&mut counts_a)?;
 
+    // 0.0 -> mittel, vollst annahme
+    // 2. Nicht vollst -> Annahme smoothing über coocurrence über kollektion verrechnen für alle
+    // via faktor alpha -> 10-15% für hintergrundwarsch.
+
+
 
     metas_b.into_iter().map(|meta_b| {
         if let Some(meta_b) = meta_b {
             let mut counts_b = pattern.iter().map(
                 |&value| meta_b.raw().get_count_for(value) as f64
             ).collect::<Array1<f64>>();
+            counts_b.var(1.0);
             algorithm.preprocess(&mut counts_b)?;
             algorithm.preprocess_b(&counts_a, &mut counts_b)
                 .and_then(|_| {
-                    println!("{counts_a:#?} :: {counts_b:#?}");
+                    // println!("{counts_a:#?} :: {counts_b:#?}");
                     algorithm.calculate(&counts_b, &counts_a)
                 })
         } else {
             Ok(0.0)
         }
-    }).collect::<Result<Array1<f64>, A::Error<f64>>>()
+    }).collect::<Result<Array1<f64>, A::Error<f64>>>().map(Some)
 }
 
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, DictionaryWithMeta};
+    use ldatranslate_topicmodel::dictionary::metadata::coocurrence_matrix::co_occurences_direct_a_to_b;
     use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
     use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataManagerEx;
     use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
-    use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
-    use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes, NormalizeMode};
+    use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel, TopicModelWithVocabulary};
+    use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes, co_occurence_with_other_classes_a_to_b, NormalizeMode};
     use crate::translate::dictionary_meta::dictionary_association::{calculate_cross_language_topic_association, CosineSime};
-    use crate::translate::dictionary_meta::SparseVectorFactory;
+    use crate::translate::dictionary_meta::{MetaTagTemplate, MetaVectorRaw, SparseMetaVector, SparseVectorFactory};
     use crate::translate::dictionary_meta::topic_associated::ScoreModifierCalculator;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
     use crate::translate::test::create_test_data;
@@ -277,6 +301,30 @@ mod test {
 
         println!("{value}");
 
+        let value2 = co_occurence_with_other_classes_a_to_b(
+            dict.metadata().meta_a().into_iter().zip(
+                dict.metadata().meta_b().into_iter()
+            ),
+            &DictMetaTagIndex::all(),
+            &sparse,
+            NormalizeMode::Sum
+        ).unwrap();
+
+        println!("{value2}");
+
+        let direct_coocurrences = co_occurences_direct_a_to_b(
+            dict.metadata().meta_a().into_iter().zip(
+                dict.metadata().meta_b().into_iter()
+            )
+        );
+
+
+
+
+        let direct_coocurrences = SparseMetaVector::normalize_count(&direct_coocurrences);
+
+        println!("Cont: {direct_coocurrences}");
+
         let alt = calculate_cross_language_topic_association(
             &dict,
             "plane",
@@ -291,7 +339,7 @@ mod test {
                 "Bremsberg",
                 "Berg",
                 "Fläche",
-                "Flieger"
+                "Flieger",
             ],
             &sparse,
             &vec![
@@ -306,8 +354,28 @@ mod test {
                 None,
                 ScoreModifierCalculator::WeightedSum
             ),
-            Some(&value)
-        ).expect("This should work");
+            None
+        ).expect("This should work").unwrap();
+
+        let value = [
+            "Flugzeug",
+            "Flieger",
+            "Tragfläche",
+            "Ebene",
+            "Planum",
+            "Platane",
+            "Maschine",
+            "Bremsberg",
+            "Berg",
+            "Fläche",
+            "Flieger"
+        ].iter().zip(alt.iter()).collect_vec();
+
+
+
+
+        println!("{value:#?}");
+        println!("{model_a}");
 
         // model_a.topics().iter().zip_eq(alt.iter()).enumerate().for_each(
         //     |(topic_id, (old, new))| {

@@ -7,6 +7,7 @@ use itertools::{Itertools};
 use ndarray::Ix1;
 use thiserror::Error;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex, META_DICT_ARRAY_LENTH};
+use ldatranslate_topicmodel::dictionary::metadata::ex::DictMetaCount;
 use crate::translate::dictionary_meta::iter::{Iter, IterSorted};
 
 
@@ -209,6 +210,22 @@ pub struct SparseMetaVector {
 
 
 impl SparseMetaVector {
+    pub fn new(inner: MetaVectorRaw<f64>, template: MetaTagTemplate) -> Self {
+        assert_eq!(inner.len(), template.len());
+        Self {
+            inner,
+            template
+        }
+    }
+
+    pub fn normalize_count(count: &DictMetaCount) -> SparseMetaVector {
+        let sum = count.sum() as f64;
+        SparseMetaVector::new(
+            count.iter().map(|&v| v as f64 / sum ).collect(),
+            MetaTagTemplate::all()
+        )
+    }
+
     pub fn iter(&self) -> Iter {
         Iter::new(self)
     }
@@ -228,10 +245,10 @@ impl SparseMetaVector {
 
     #[inline]
     pub fn create_successor(&self, value: MetaVectorRaw<f64>) -> Self {
-        Self {
-            inner: value,
-            template: self.template.clone()
-        }
+        Self::new(
+            value,
+            self.template.clone()
+        )
     }
 }
 
@@ -397,6 +414,7 @@ mod test {
     use arcstr::ArcStr;
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, DictionaryMut, DictionaryWithMeta};
     use ldatranslate_topicmodel::dictionary::direction::DirectedElement;
+    use ldatranslate_topicmodel::dictionary::metadata::coocurrence_matrix::co_occurences_direct_a_to_b;
     use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
     use ldatranslate_topicmodel::dictionary::metadata::ex::{MetaField, MetadataCollectionBuilder};
     use ldatranslate_topicmodel::dictionary::metadata::MetadataMutReference;
@@ -499,6 +517,8 @@ mod test {
         }
 
         let domains =  d.metadata().dict_meta_counts();
+
+
 
         const PATTERN: &[DictMetaTagIndex] = &[
             DictMetaTagIndex::new_by_domain(Domain::Acad),
