@@ -815,6 +815,10 @@ class PyArticle:
         ...
 
 
+class PyBasicBoostConfig:
+    def __new__(cls,divergence,alpha = ...,target_fields = ...,invert_target_fields = ...,score_modifier_calculator = ...): ...
+    ...
+
 class PyClassifierOption:
     stop_words: typing.Optional[PyStopWords]
     separators: typing.Optional[list[str]]
@@ -1123,6 +1127,10 @@ class PyDictionary:
         ...
 
 
+class PyHorizontalBoostConfig:
+    def __new__(cls,divergence,mode = ...,alpha = ...,normalize_to_one = ...): ...
+    ...
+
 class PyMetaIter:
     def __iter__(self) -> PyMetaIter:
         ...
@@ -1359,7 +1367,7 @@ class PyTopicModelBuilder:
 
 
 class PyTranslationConfig:
-    def __new__(cls,epsilon = ...,threshold = ...,keep_original_word = ...,top_candidate_limit = ...,f_divergence = ...,alpha = ...,target_fields = ...,invert_target_fields = ...,score_modifier_calculator = ...): ...
+    def __new__(cls,epsilon = ...,threshold = ...,keep_original_word = ...,top_candidate_limit = ...,vertical_config = ...,horizontal_config = ...): ...
     ...
 
 class PyVariableProvider:
@@ -1382,6 +1390,10 @@ class PyVariableProvider:
     def add_for_word_in_topic_b(self, topic_id:int, word:str, key:str, value:str | float | int | bool | None | list[PyExprValueSingle] | list[str | float | int | bool | None | list[PyExprValueSingle]]) -> None:
         ...
 
+
+class PyVerticalBoostConfig:
+    def __new__(cls,divergence,normalized = ...): ...
+    ...
 
 class PyVocIter:
     def __iter__(self) -> PyVocIter:
@@ -1773,6 +1785,10 @@ class MetaField(Enum):
     ContextualInformations = auto()
     Unclassified = auto()
     Synonyms = auto()
+
+class NormalizeMode(Enum):
+    Max = auto()
+    Sum = auto()
 
 class PartOfSpeech(Enum):
     Noun = auto()
