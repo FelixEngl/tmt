@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
 use byte_unit::rust_decimal::prelude::Zero;
-use ndarray::{ArrayBase, DataMut, Ix1, Zip};
+use ndarray::Zip;
 use ndarray_stats::errors::MinMaxError;
-use ndarray_stats::QuantileExt;
 use num::{Float, FromPrimitive};
 use num::traits::NumAssignOps;
 use thiserror::Error;
@@ -64,6 +63,9 @@ impl Display for ClassCoocurrenceMatrix {
     }
 }
 
+// register_python!(enum NormalizeMode;);
+
+
 #[derive(Debug, Copy, Clone)]
 pub enum NormalizeMode {
     Max,
@@ -118,7 +120,7 @@ impl NormalizeMode {
             return Ok(())
         }
         coocurrence.inner.values_mut().for_each(|v| {
-            Zip::from(v.deref_mut()).for_each(|a| {
+            Zip::from(v.inner_mut_ref()).for_each(|a| {
                 *a /= value;
             });
         });
@@ -203,6 +205,7 @@ where
     normalize_mode.normalize_matrix(&mut result)?;
     Ok(result)
 }
+
 
 pub fn co_occurence_with_other_classes_a_to_b_count<'a, I, P>(
     m: I,

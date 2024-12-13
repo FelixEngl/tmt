@@ -28,7 +28,7 @@ use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
-use crate::translate::{KeepOriginalWord, TranslateConfig};
+use crate::translate::{FieldConfig, KeepOriginalWord, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
@@ -37,7 +37,7 @@ use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
 use crate::tools::memory::MemoryReporter;
-use crate::translate::dictionary_meta::topic_associated::{ScoreModifierCalculator, VerticalScoreCalculator};
+use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator, VerticalScoreBoostConfig};
 use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
 // /// The config for a translation
 // #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
@@ -186,16 +186,20 @@ impl PyTranslationConfig {
                 self.keep_original_word,
                 self.top_candidate_limit,
                 self.f_divergence.map(|value| {
-                    VerticalScoreCalculator::new(
-                        self.target_fields,
-                        self.invert_target_fields,
+                    VerticalScoreBoostConfig::new(
+                        FieldConfig::new(
+                            self.target_fields,
+                            self.invert_target_fields,
+                        ),
                         FDivergenceCalculator::new(
                             value,
                             self.alpha,
                             self.score_modifier_calculator
-                        )
+                        ),
+                        true
                     )
                 }),
+                todo!()
             )
         )
     }

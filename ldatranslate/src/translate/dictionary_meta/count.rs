@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::ops::{AddAssign, Deref, DerefMut, DivAssign};
+use std::ops::{AddAssign, DivAssign};
 use std::sync::Arc;
 use ndarray::Zip;
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
@@ -40,8 +40,8 @@ impl ByCount {
                     pattern,
                     value.map(|v| if v != 0 { 1.0 } else { 0.0 })
                 )?;
-                Zip::from(topic_model_count.deref_mut())
-                    .and(value.deref())
+                Zip::from(topic_model_count.inner_mut_ref())
+                    .and(value.inner_ref())
                     .for_each(|targ, &value|{
                         if value > 0.0 {
                             *targ = value;

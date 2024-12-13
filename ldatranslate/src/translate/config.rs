@@ -6,8 +6,11 @@ use pyo3::exceptions::PyValueError;
 use pyo3::{pyclass, pymethods, PyResult};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use itertools::Itertools;
 use strum::{AsRefStr, Display, EnumString, ParseError};
-use crate::translate::dictionary_meta::topic_associated::VerticalScoreCalculator;
+use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
+use crate::translate::dictionary_meta::{MetaTagTemplate, SparseVectorFactory};
+use crate::translate::dictionary_meta::vertical_boost_1::VerticalScoreBoostConfig;
 
 /// Setting if to keep the original word from language A
 #[cfg_attr(
@@ -72,7 +75,50 @@ pub struct TranslateConfig<V: VotingMethodMarker> {
     pub top_candidate_limit: Option<NonZeroUsize>,
     /// The config for a divergence applied to the base score.
     /// Right now we only support calculating on topic level.
-    pub divergence_config: Option<Arc<VerticalScoreCalculator>>,
+    pub divergence_config: Option<Arc<VerticalScoreBoostConfig>>,
+    /// The config for a coocurrence
+    pub vertical_coocurrence: Option<Arc<HorizontalScoreBootConfig>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldConfig {
+    pub target_fields: Option<Vec<DictMetaTagIndex>>,
+    pub invert_target_fields: bool,
+}
+
+impl FieldConfig {
+    pub fn create_with_factory(&self, factory: &SparseVectorFactory) -> MetaTagTemplate {
+        if let Some(targ_fields) = self.target_fields.as_ref() {
+            if self.invert_target_fields {
+                let value = DictMetaTagIndex::all().into_iter().copied().filter(|v| !targ_fields.contains(v)).collect_vec();
+                factory.convert_to_template(&value)
+            } else {
+                factory.convert_to_template(targ_fields)
+            }
+        } else {
+            factory.convert_to_template(&DictMetaTagIndex::all())
+        }
+    }
+
+    pub fn new(target_fields: Option<Vec<DictMetaTagIndex>>, invert_target_fields: bool) -> Self {
+        Self { target_fields, invert_target_fields }
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct HorizontalScoreBootConfig {
+    pub alpha: Option<f64>,
+    pub calculator: FDivergenceCalculator,
+    pub mode: NormalizeMode,
+    pub field_config: FieldConfig,
+    pub normalize_to_one: bool
+}
+
+impl HorizontalScoreBootConfig {
+    pub fn new(alpha: Option<f64>, calculator: FDivergenceCalculator, mode: NormalizeMode, field_config: FieldConfig, normalize_to_one: bool) -> Self {
+        Self { alpha, calculator, mode, field_config, normalize_to_one }
+    }
 }
 
 pub enum BoostScoreBy {
@@ -89,7 +135,8 @@ where
         threshold: Option<f64>,
         keep_original_word: KeepOriginalWord,
         top_candidate_limit: Option<NonZeroUsize>,
-        divergence_config: Option<VerticalScoreCalculator>,
+        divergence_config: Option<VerticalScoreBoostConfig>,
+        vertical_coocurrence: Option<HorizontalScoreBootConfig>,
     ) -> Self {
         Self {
             epsilon,
@@ -98,6 +145,7 @@ where
             keep_original_word,
             top_candidate_limit,
             divergence_config: divergence_config.map(Arc::new),
+            vertical_coocurrence: vertical_coocurrence.map(Arc::new),
         }
     }
 }
@@ -114,6 +162,7 @@ where
             keep_original_word: self.keep_original_word,
             top_candidate_limit: self.top_candidate_limit,
             divergence_config: self.divergence_config.clone(),
+            vertical_coocurrence: self.vertical_coocurrence.clone(),
         }
     }
 }

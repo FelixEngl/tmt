@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Display};
-use crate::translate::dictionary_meta::topic_associated::{CalculateVerticalScore, ScoreModifierCalculator};
+use crate::translate::dictionary_meta::vertical_boost_1::{CalculateVerticalScore, ScoreModifierCalculator};
 use crate::translate::entropies::errors::*;
 use evalexpr::export::evalexpr_num::{Float, FromPrimitive};
 use itertools::Itertools;

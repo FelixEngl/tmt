@@ -133,6 +133,12 @@ pub enum DictMetaTagIndex {
 }
 
 
+impl From<&DictMetaTagIndex> for DictMetaTagIndex {
+    fn from(value: &DictMetaTagIndex) -> Self {
+        value.clone()
+    }
+}
+
 
 impl DictMetaTagIndex {
     pub fn all() -> &'static [DictMetaTagIndex] {

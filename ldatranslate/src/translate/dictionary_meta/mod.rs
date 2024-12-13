@@ -3,9 +3,10 @@ mod count;
 mod dict_meta;
 mod iter;
 mod count_weighted;
-pub mod topic_associated;
-mod dictionary_association;
-mod coocurrence;
+pub mod vertical_boost_1;
+pub mod horizontal_boost_1;
+pub mod coocurrence;
+pub mod booster;
 
 use std::fmt::{Debug, Display};
 use ndarray::{ArrayBase, Data, Dimension};

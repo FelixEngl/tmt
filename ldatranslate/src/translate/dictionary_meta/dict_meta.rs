@@ -50,6 +50,9 @@ impl MetaTagTemplate {
             mapping
         }
     }
+    pub fn get_index<T: Into<DictMetaTagIndex>>(&self, index: T) -> Option<usize> {
+        self.mapping[index.into().as_index()]
+    }
 
     pub fn all() -> Self {
         static ALL: LazyLock<Arc<[Option<usize>; META_DICT_ARRAY_LENTH]>> = LazyLock::new(||
@@ -250,20 +253,34 @@ impl SparseMetaVector {
             self.template.clone()
         )
     }
-}
 
-impl Deref for SparseMetaVector {
-    type Target = MetaVectorRaw<f64>;
-    fn deref(&self) -> &Self::Target {
+    pub fn inner_ref(&self) -> &MetaVectorRaw<f64> {
         &self.inner
     }
-}
 
-impl DerefMut for SparseMetaVector {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    pub fn inner_mut_ref(&mut self) -> &mut MetaVectorRaw<f64> {
         &mut self.inner
     }
+
+    pub fn get<T: Into<DictMetaTagIndex>>(&self, index: T) -> Option<f64> {
+        self.inner.get(self.template.get_index(index)?).copied()
+    }
 }
+
+
+
+// impl Deref for SparseMetaVector {
+//     type Target = MetaVectorRaw<f64>;
+//     fn deref(&self) -> &Self::Target {
+//         &self.inner
+//     }
+// }
+//
+// impl DerefMut for SparseMetaVector {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.inner
+//     }
+// }
 
 impl Display for SparseMetaVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -414,7 +431,6 @@ mod test {
     use arcstr::ArcStr;
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, DictionaryMut, DictionaryWithMeta};
     use ldatranslate_topicmodel::dictionary::direction::DirectedElement;
-    use ldatranslate_topicmodel::dictionary::metadata::coocurrence_matrix::co_occurences_direct_a_to_b;
     use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
     use ldatranslate_topicmodel::dictionary::metadata::ex::{MetaField, MetadataCollectionBuilder};
     use ldatranslate_topicmodel::dictionary::metadata::MetadataMutReference;

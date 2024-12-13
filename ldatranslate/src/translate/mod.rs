@@ -12,7 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-mod config;
+pub mod config;
 mod errors;
 mod language;
 mod phantoms;
@@ -36,8 +36,8 @@ use ldatranslate_toolkit::evalexpr::CombineableContext;
 use ldatranslate_topicmodel::dictionary::*;
 use ldatranslate_topicmodel::dictionary::direction::{AToB, BToA, DirectionMarker, B};
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataManagerEx;
-use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::language_hint::LanguageHint;
+use ldatranslate_topicmodel::model::{Probability};
 use ldatranslate_topicmodel::translate::{create_topic_vocabulary_specific_dictionary, TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, MappableVocabulary, VocabularyMut};
 use ldatranslate_translate::{ContextExtender, TopicLike, TopicMeta, TopicMetas, TopicModelLikeMatrix, VoterInfoProvider, VoterMeta};
@@ -50,8 +50,9 @@ use ldatranslate_voting::traits::VotingMethodMarker;
 use ldatranslate_voting::VotingMethod;
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
-use crate::translate::dictionary_meta::SparseVectorFactory;
-use crate::translate::dictionary_meta::topic_associated::{calculate_modified_model_values_vertical};
+use crate::translate::dictionary_meta::booster::{Booster, TopicSpecificBooster};
+use crate::translate::dictionary_meta::horizontal_boost_1::HorizontalScoreBoost;
+use crate::translate::dictionary_meta::vertical_boost_1::{VerticalBoostedScores};
 use crate::variable_provider::AsVariableProvider;
 
 
@@ -123,25 +124,23 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     );
     log::info!("After cration of topic specific dict. {}", reporter.create_report_now());
 
-    let alternative_scores = if let Some(divergence) = translate_config.divergence_config.clone() {
-        let sparse = SparseVectorFactory::new();
-        let metas = translation_dictionary.voc_a().iter().map(|word| {
-            original_dictionary.voc_a().get_id(word).map(|id| {
-                unsafe{original_dictionary.metadata().meta_a().get_unchecked(id)}
-            })
-        }).collect_vec();
-        let new = calculate_modified_model_values_vertical(
-            &metas,
-            &sparse,
-            &divergence,
-            target,
-            true
-        )?;
-        // todo!("need improv");
-        Some(new)
-    } else {
-        None
-    };
+    let booster = Booster::new(
+        translate_config.divergence_config.clone().map(|divergence| {
+            VerticalBoostedScores::new(
+                divergence,
+                &translation_dictionary,
+                original_dictionary,
+                target
+            )
+        }).transpose()?,
+        translate_config.vertical_coocurrence.clone().map(|vert| {
+            HorizontalScoreBoost::new(
+                vert,
+                &translation_dictionary,
+                original_dictionary,
+            )
+        }).transpose()?,
+    );
 
     if translation_dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
@@ -191,7 +190,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         .zip_eq(target.matrix_meta().par_iter())
         .enumerate()
         .map(|(topic_id, (topic, meta))| {
-            let alternative_scores_topic = alternative_scores.as_ref().map(|value| unsafe{value.get_unchecked(topic_id)});
+            let topic_boost = booster.provide_for_topic(topic_id);
             let mut topic_context_2 = context_map! {
                 TOPIC_MAX_PROBABILITY => float meta.max_score(),
                 TOPIC_MIN_PROBABILITY => float meta.min_score(),
@@ -213,7 +212,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                             topic_context_2,
                             &translate_config,
                             Some(provider),
-                            alternative_scores_topic
+                            topic_boost
                         ).map_err(TranslateError::WithOrigin)
                     }
                     Err(err) => {
@@ -231,13 +230,13 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                     topic_context_2,
                     &translate_config,
                     None::<&VariableProvider>,
-                    alternative_scores_topic
+                    topic_boost
                 ).map_err(TranslateError::WithOrigin)
             }
         }).collect::<Result<Vec<_>, _>>()?;
 
 
-    drop(alternative_scores);
+    drop(booster);
 
 
     let voc_b_col = result.par_iter().flatten().map(|value| {
@@ -298,7 +297,6 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
 }
 
 
-
 fn translate_topic<Target, T, V, Voc, P, C>(
     target: &Target,
     dictionary: &impl DictionaryWithVocabulary<T, Voc>,
@@ -307,7 +305,7 @@ fn translate_topic<Target, T, V, Voc, P, C>(
     topic_context: C,
     config: &TranslateConfig<V>,
     provider: Option<&P>,
-    alternative_topic_probabilities: Option<&Vec<f64>>
+    booster: TopicSpecificBooster
 ) -> Result<Vec<Candidate>, TranslateErrorWithOrigin>
 where
     V: VotingMethodMarker,
@@ -320,11 +318,7 @@ where
         .par_iter()
         .enumerate()
         .filter_map(|(original_word_id, probability)| {
-            let probability = if let Some(alternative_topic_probabilities) = alternative_topic_probabilities {
-                unsafe{*alternative_topic_probabilities.get_unchecked(original_word_id)}
-            } else {
-                *probability
-            };
+            let probability = *probability;
             if let Some(provider) = provider {
                 let mut context = HashMapContext::new();
                 match provider.provide_for_word_a(original_word_id, &mut context) {
@@ -341,7 +335,7 @@ where
                                     original_word_id,
                                     probability,
                                     Some(provider),
-                                    alternative_topic_probabilities
+                                    &booster
                                 )
                             }
                             Err(err) => {Some(Err(TranslateErrorWithOrigin::new(
@@ -367,7 +361,7 @@ where
                     original_word_id,
                     probability,
                     provider,
-                    alternative_topic_probabilities
+                    &booster
                 )
             }
         }).collect::<Result<Vec<_>, _>>().map(|value| {
@@ -387,7 +381,7 @@ fn translate_single_candidate<Target, T, V, Voc, P, C>(
     original_voter_id: usize,
     probability: f64,
     provider: Option<&P>,
-    alternative_topic_probabilities: Option<&Vec<f64>>,
+    booster: &TopicSpecificBooster,
 ) -> Option<Result<Vec<Candidate>, TranslateErrorWithOrigin>>
 where
     V: VotingMethodMarker,
@@ -420,7 +414,11 @@ where
                             COUNT_OF_VOTERS => as int mapped.len(),
                             HAS_TRANSLATION => true,
                             IS_ORIGIN_WORD => false,
-                            SCORE_CANDIDATE => as float probability,
+                            SCORE_CANDIDATE => as float booster.boost_score(
+                                probability,
+                                original_voter_id,
+                                candidate,
+                            ),
                             CANDIDATE_ID => as int candidate
                         }.unwrap();
 
@@ -430,11 +428,10 @@ where
                             .iter()
                             .map(|voter_a| {
 
-                                let probability_of_voter = alternative_topic_probabilities.map_or(
-                                    voter_a.score(),
-                                    |value| {
-                                        unsafe{ *value.get_unchecked(voter_a.voter_id()) }
-                                    }
+                                let probability_of_voter = booster.boost_score(
+                                    probability,
+                                    voter_a.voter_id(),
+                                    candidate,
                                 );
 
                                 let mut context_voter_a = context_map! {
@@ -509,7 +506,7 @@ where
         voter_id: usize,
         probability: f64,
         voting: &V,
-        alternative_topic_probabilities: Option<&Vec<f64>>,
+        booster: &TopicSpecificBooster,
     ) -> Result<Candidate, TranslateErrorWithOrigin>
     where
         C: Context<NumericTypes=TMTNumericTypes> + Send + Sync + IterateVariablesContext,
@@ -530,12 +527,8 @@ where
 
         assert_eq!(original_meta.voter_id(), voter_id, "The voter ids differ!");
 
-        let probability_of_voter = alternative_topic_probabilities.map_or(
-            original_meta.score(),
-            |value| {
-                unsafe{ *value.get_unchecked(original_meta.voter_id()) }
-            }
-        );
+        let probability_of_voter =
+            booster.boost_vertical(original_meta.score(), original_meta.voter_id());
 
         let mut voters = vec![
             context_map! {
@@ -572,7 +565,7 @@ where
                     original_voter_id,
                     probability,
                     &config.voting,
-                    alternative_topic_probabilities
+                    booster
                 ) {
                     Ok(value) => {
                         candidates.push(value);
@@ -589,7 +582,7 @@ where
                     original_voter_id,
                     probability,
                     &config.voting,
-                    alternative_topic_probabilities
+                    booster
                 ) {
                     Ok(value) => {
                         Ok(vec![value])
@@ -611,7 +604,7 @@ where
                         original_voter_id,
                         probability,
                         &config.voting,
-                        alternative_topic_probabilities
+                        booster
                     ) {
                         Ok(value) => {
                             Ok(vec![value])
@@ -762,6 +755,7 @@ pub(crate) mod test {
             keep_original_word: Never,
             top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
             divergence_config: None,
+            vertical_coocurrence: None
         };
 
         let model_b = translate_topic_model_without_provider(
