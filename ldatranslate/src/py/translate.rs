@@ -28,7 +28,7 @@ use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
-use crate::translate::{FieldConfig, KeepOriginalWord, TranslateConfig};
+use crate::translate::{KeepOriginalWord, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
@@ -37,73 +37,98 @@ use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
 use crate::tools::memory::MemoryReporter;
-use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator, VerticalScoreBoostConfig};
-use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
-// /// The config for a translation
-// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
-// #[pyclass]
-// #[derive(Debug, Clone)]
-// pub struct PyVoteConfig {
-//     /// The epsilon to be used, if it is none it is determined heuristically.
-//     pub epsilon: Option<f64>,
-//     /// The threshold of the probabilities allowed to be used as voters
-//     pub threshold: Option<f64>,
-//     /// Limits the number of accepted candidates to N. If not set keep all.
-//     pub top_candidate_limit: Option<NonZeroUsize>,
-//     /// Declares a field that boosts the score iff present.
-//     pub boost_with: Option<Value>
-// }
-//
-// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
-// #[pymethods]
-// impl PyVoteConfig {
-//     #[new]
-//     #[pyo3(signature = (epsilon=None, threshold=None, top_candidate_limit=None, boost_with=None))]
-//     pub fn new(epsilon: Option<f64>, threshold: Option<f64>, top_candidate_limit: Option<usize>, boost_with: Option<PyExprValue>) -> Self {
-//         Self {
-//             epsilon,
-//             threshold,
-//             top_candidate_limit: top_candidate_limit.and_then(|x| NonZeroUsize::new(x)),
-//             boost_with: boost_with.map(|v| v.into())
-//         }
-//     }
-// }
-//
-// impl PyVoteConfig {
-//     fn to_vote_config(self, voting: VotingArg, voting_registry: Option<PyVotingRegistry>) -> PyResult<VoteConfig<Wrapper>> {
-//         let voting = match voting {
-//             VotingArg::Voting(voting) => {
-//                 Wrapper::Internal(voting)
-//             }
-//             VotingArg::Parseable(voting) => {
-//                 match parse::<nom::error::Error<_>>(ParserInput::new(&voting, voting_registry.unwrap_or_default().registry())) {
-//                     Ok((_, value)) => {
-//                         Wrapper::Internal(value.into())
-//                     }
-//                     Err(err) => {
-//                         return Err(PyValueError::new_err(err.to_string()))
-//                     }
-//                 }
-//             }
-//             VotingArg::BuildIn(build_in) => {
-//                 Wrapper::Internal(build_in.into())
-//             }
-//             VotingArg::PyCallable(def) => {
-//                 Wrapper::External(def)
-//             }
-//         };
-//
-//         Ok(
-//             VoteConfig::new(
-//                 voting,
-//                 self.epsilon,
-//                 self.threshold,
-//                 self.top_candidate_limit,
-//                 self.boost_with,
-//             )
-//         )
-//     }
-// }
+use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
+use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator};
+use crate::translate::entropies::{FDivergence};
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyBasicBoostConfig {
+    pub divergence: FDivergence,
+    pub alpha: Option<f64>,
+    pub target_fields: Option<Vec<DictMetaTagIndex>>,
+    pub invert_target_fields: bool,
+    pub score_modifier_calculator: ScoreModifierCalculator,
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyBasicBoostConfig {
+    #[new]
+    #[pyo3(signature = (divergence, alpha=None, target_fields=None, invert_target_fields=None, score_modifier_calculator=None))]
+    pub fn new(
+        divergence: FDivergence,
+        alpha: Option<f64>,
+        target_fields: Option<Vec<DictMetaTagIndex>>,
+        invert_target_fields: Option<bool>,
+        score_modifier_calculator: Option<ScoreModifierCalculator>,
+    ) -> PyResult<Self> {
+        Ok(Self{
+            divergence,
+            alpha,
+            target_fields,
+            invert_target_fields: invert_target_fields.unwrap_or(false),
+            score_modifier_calculator: score_modifier_calculator.unwrap_or(ScoreModifierCalculator::WeightedSum),
+        })
+    }
+}
+
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyVerticalBoostConfig {
+    pub divergence: PyBasicBoostConfig,
+    pub normalized: bool
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyVerticalBoostConfig {
+    #[new]
+    #[pyo3(signature = (divergence, normalized=None))]
+    pub fn new(
+        divergence: PyBasicBoostConfig,
+        normalized: Option<bool>
+    ) -> PyResult<Self> {
+        Ok(Self{
+            divergence,
+            normalized: normalized.unwrap_or(true),
+        })
+    }
+}
+
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyHorizontalBoostConfig {
+    pub divergence: PyBasicBoostConfig,
+    pub mode: NormalizeMode,
+    pub alpha: Option<f64>,
+    pub normalize_to_one: bool
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyHorizontalBoostConfig {
+    #[new]
+    #[pyo3(signature = (divergence, mode=None, alpha=None::<Option<f64>>, normalize_to_one=None))]
+    pub fn new(
+        divergence: PyBasicBoostConfig,
+        mode: Option<NormalizeMode>,
+        alpha: Option<Option<f64>>,
+        normalize_to_one: Option<bool>
+    ) -> PyResult<Self> {
+        Ok(Self{
+            divergence,
+            mode: mode.unwrap_or(NormalizeMode::Sum),
+            alpha: alpha.unwrap_or(Some(0.15)),
+            normalize_to_one: normalize_to_one.unwrap_or(false),
+        })
+    }
+}
 
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
@@ -114,28 +139,23 @@ pub struct PyTranslationConfig {
     threshold: Option<f64>,
     keep_original_word: KeepOriginalWord,
     top_candidate_limit: Option<NonZeroUsize>,
-    f_divergence: Option<FDivergence>,
-    alpha: Option<f64>,
-    target_fields: Option<Vec<DictMetaTagIndex>>,
-    invert_target_fields: bool,
-    score_modifier_calculator: ScoreModifierCalculator
+    vertical_config: Option<PyVerticalBoostConfig>,
+    horizontal_config: Option<PyHorizontalBoostConfig>
 }
+
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTranslationConfig {
     #[new]
-    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None, f_divergence=None, alpha=None, target_fields=None, invert_target_fields=None, score_modifier_calculator=None))]
+    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None, vertical_config=None, horizontal_config=None))]
     pub fn new(
         epsilon: Option<f64>,
         threshold: Option<f64>,
         keep_original_word: Option<KeepOriginalWordArg>,
         top_candidate_limit: Option<usize>,
-        f_divergence: Option<FDivergence>,
-        alpha: Option<f64>,
-        target_fields: Option<Vec<DictMetaTagIndex>>,
-        invert_target_fields: Option<bool>,
-        score_modifier_calculator: Option<ScoreModifierCalculator>
+        vertical_config: Option<PyVerticalBoostConfig>,
+        horizontal_config: Option<PyHorizontalBoostConfig>,
     ) -> PyResult<Self> {
         Ok(Self{
             epsilon,
@@ -145,11 +165,8 @@ impl PyTranslationConfig {
                 .try_into()
                 .map_err(|value: <KeepOriginalWordArg as TryInto<KeepOriginalWord>>::Error| PyValueError::new_err(value.to_string()))?,
             top_candidate_limit: top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten(),
-            f_divergence,
-            alpha,
-            target_fields,
-            invert_target_fields: invert_target_fields.unwrap_or_default(),
-            score_modifier_calculator: score_modifier_calculator.unwrap_or(ScoreModifierCalculator::Max)
+            vertical_config,
+            horizontal_config,
         })
     }
 }
@@ -185,21 +202,8 @@ impl PyTranslationConfig {
                 self.threshold,
                 self.keep_original_word,
                 self.top_candidate_limit,
-                self.f_divergence.map(|value| {
-                    VerticalScoreBoostConfig::new(
-                        FieldConfig::new(
-                            self.target_fields,
-                            self.invert_target_fields,
-                        ),
-                        FDivergenceCalculator::new(
-                            value,
-                            self.alpha,
-                            self.score_modifier_calculator
-                        ),
-                        true
-                    )
-                }),
-                todo!()
+                self.vertical_config.map(Into::into),
+                self.horizontal_config.map(Into::into),
             )
         )
     }
@@ -318,6 +322,9 @@ pub fn load_ratings(
 
 register_python! {
     struct PyTranslationConfig;
+    struct PyVerticalBoostConfig;
+    struct PyHorizontalBoostConfig;
+    struct PyBasicBoostConfig;
     fn translate_topic_model;
     fn save_ratings;
     fn load_ratings;

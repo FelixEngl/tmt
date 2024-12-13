@@ -1,21 +1,21 @@
-use ndarray::{Data, Dimension};
+// use ndarray::{Data, Dimension};
 
-pub trait Norm<A, S, D>
-where
-    S: Data<Elem = A>,
-    D: Dimension,
-{
-    /// rename of `norm_l2`
-    fn norm(&self) -> A {
-        self.norm_l2()
-    }
-    /// L-1 norm
-    fn norm_l1(&self) -> A;
-    /// L-2 norm
-    fn norm_l2(&self) -> A;
-    /// maximum norm
-    fn norm_max(&self) -> A;
-}
+// pub trait Norm<A, S, D>
+// where
+//     S: Data<Elem = A>,
+//     D: Dimension,
+// {
+//     /// rename of `norm_l2`
+//     fn norm(&self) -> A {
+//         self.norm_l2()
+//     }
+//     /// L-1 norm
+//     fn norm_l1(&self) -> A;
+//     /// L-2 norm
+//     fn norm_l2(&self) -> A;
+//     /// maximum norm
+//     fn norm_max(&self) -> A;
+// }
 
 // impl<A, S, D> Norm<A, S, D> for ArrayBase<S, D>
 // where

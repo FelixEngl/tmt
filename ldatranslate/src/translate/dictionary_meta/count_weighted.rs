@@ -13,6 +13,7 @@ pub struct ByCountWeigthed {
     word_per_topic: Arc<Vec<Vec<SparseMetaVector>>>,
 }
 
+#[allow(unused)]
 #[derive(Debug, Copy, Clone, EnumIs)]
 pub enum FitTo {
     Model,

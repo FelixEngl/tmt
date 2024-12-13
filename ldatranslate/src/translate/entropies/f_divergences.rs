@@ -658,7 +658,7 @@ mod test {
         let a: Array1<f64> = array![1.0, 0.0];
         let b: Array1<f64> = array![0.0, 1.0];
 
-        const MAX_DIST_UNOPT: f64 = std::f64::consts::SQRT_2;
+        // const MAX_DIST_UNOPT: f64 = std::f64::consts::SQRT_2;
 
         println!("{}", x.hellinger_distance(&y).unwrap());
 

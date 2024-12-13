@@ -37,7 +37,6 @@ use ldatranslate_topicmodel::dictionary::*;
 use ldatranslate_topicmodel::dictionary::direction::{AToB, BToA, DirectionMarker, B};
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataManagerEx;
 use ldatranslate_topicmodel::language_hint::LanguageHint;
-use ldatranslate_topicmodel::model::{Probability};
 use ldatranslate_topicmodel::translate::{create_topic_vocabulary_specific_dictionary, TranslatableTopicMatrix, TranslatableTopicMatrixWithCreate};
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, MappableVocabulary, VocabularyMut};
 use ldatranslate_translate::{ContextExtender, TopicLike, TopicMeta, TopicMetas, TopicModelLikeMatrix, VoterInfoProvider, VoterMeta};
@@ -125,7 +124,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     log::info!("After cration of topic specific dict. {}", reporter.create_report_now());
 
     let booster = Booster::new(
-        translate_config.divergence_config.clone().map(|divergence| {
+        translate_config.vertical_config.clone().map(|divergence| {
             VerticalBoostedScores::new(
                 divergence,
                 &translation_dictionary,
@@ -133,7 +132,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                 target
             )
         }).transpose()?,
-        translate_config.vertical_coocurrence.clone().map(|vert| {
+        translate_config.horizontal_config.clone().map(|vert| {
             HorizontalScoreBoost::new(
                 vert,
                 &translation_dictionary,
@@ -754,8 +753,8 @@ pub(crate) mod test {
             epsilon: None,
             keep_original_word: Never,
             top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
-            divergence_config: None,
-            vertical_coocurrence: None
+            vertical_config: None,
+            horizontal_config: None
         };
 
         let model_b = translate_topic_model_without_provider(
@@ -764,8 +763,10 @@ pub(crate) mod test {
             &config,
         ).unwrap();
 
+        // println!("{:?}", model_b.vocabulary());
+
         model_a.show_10().unwrap();
         println!("----");
-        model_b.show_10().unwrap();
+        model_b.show_10().unwrap()
     }
 }

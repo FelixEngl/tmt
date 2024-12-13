@@ -8,6 +8,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use itertools::Itertools;
 use strum::{AsRefStr, Display, EnumString, ParseError};
+use crate::py::translate::PyHorizontalBoostConfig;
 use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
 use crate::translate::dictionary_meta::{MetaTagTemplate, SparseVectorFactory};
 use crate::translate::dictionary_meta::vertical_boost_1::VerticalScoreBoostConfig;
@@ -75,9 +76,9 @@ pub struct TranslateConfig<V: VotingMethodMarker> {
     pub top_candidate_limit: Option<NonZeroUsize>,
     /// The config for a divergence applied to the base score.
     /// Right now we only support calculating on topic level.
-    pub divergence_config: Option<Arc<VerticalScoreBoostConfig>>,
+    pub vertical_config: Option<Arc<VerticalScoreBoostConfig>>,
     /// The config for a coocurrence
-    pub vertical_coocurrence: Option<Arc<HorizontalScoreBootConfig>>,
+    pub horizontal_config: Option<Arc<HorizontalScoreBootConfig>>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,9 +111,28 @@ impl FieldConfig {
 pub struct HorizontalScoreBootConfig {
     pub alpha: Option<f64>,
     pub calculator: FDivergenceCalculator,
-    pub mode: NormalizeMode,
     pub field_config: FieldConfig,
+    pub mode: NormalizeMode,
     pub normalize_to_one: bool
+}
+
+impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
+    fn from(config: PyHorizontalBoostConfig) -> Self {
+        Self::new(
+            config.alpha,
+            FDivergenceCalculator::new(
+                config.divergence.divergence,
+                config.divergence.alpha,
+                config.divergence.score_modifier_calculator
+            ),
+            config.mode,
+            FieldConfig::new(
+                config.divergence.target_fields,
+                config.divergence.invert_target_fields,
+            ),
+            config.normalize_to_one
+        )
+    }
 }
 
 impl HorizontalScoreBootConfig {
@@ -144,8 +164,8 @@ where
             threshold,
             keep_original_word,
             top_candidate_limit,
-            divergence_config: divergence_config.map(Arc::new),
-            vertical_coocurrence: vertical_coocurrence.map(Arc::new),
+            vertical_config: divergence_config.map(Arc::new),
+            horizontal_config: vertical_coocurrence.map(Arc::new),
         }
     }
 }
@@ -161,8 +181,8 @@ where
             threshold: self.threshold,
             keep_original_word: self.keep_original_word,
             top_candidate_limit: self.top_candidate_limit,
-            divergence_config: self.divergence_config.clone(),
-            vertical_coocurrence: self.vertical_coocurrence.clone(),
+            vertical_config: self.vertical_config.clone(),
+            horizontal_config: self.horizontal_config.clone(),
         }
     }
 }

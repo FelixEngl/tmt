@@ -8,6 +8,7 @@ use num::{Float, FromPrimitive};
 use num::traits::NumAssignOps;
 use thiserror::Error;
 use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
+use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::coocurrence_matrix::{co_occurences_a_to_b, co_occurrence_count_for};
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex, META_DICT_ARRAY_LENTH};
 use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataEx;
@@ -66,11 +67,15 @@ impl Display for ClassCoocurrenceMatrix {
 // register_python!(enum NormalizeMode;);
 
 
-#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyo3::pyclass(eq, eq_int, hash, frozen)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum NormalizeMode {
     Max,
     Sum
 }
+
+register_python!(enum NormalizeMode;);
 
 #[derive(Debug, Error)]
 pub enum NormalizeError {

@@ -1,13 +1,12 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::sync::Arc;
 use itertools::Itertools;
 use ndarray::{Array1, ArrayBase, Data, DataMut, Dimension, Ix1, Zip};
 use ndarray_stats::errors::{EmptyInput, MultiInputError, QuantileError, ShapeMismatch};
-use ndarray_stats::{Quantile1dExt, SummaryStatisticsExt};
+use ndarray_stats::{Quantile1dExt};
 use ndarray_stats::interpolate::Linear;
 use num::{Float, FromPrimitive};
 use num::traits::NumAssignOps;
@@ -16,14 +15,12 @@ use rstats::Stats;
 use thiserror::Error;
 use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
 use ldatranslate_topicmodel::dictionary::metadata::{MetadataManager, MetadataReference};
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex};
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex};
 use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx, MetadataRefEx};
-use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, SearchableDictionaryWithMetadata};
+use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithVocabulary, SearchableDictionaryWithMetadata};
 use ldatranslate_topicmodel::model::Probability;
-use ldatranslate_topicmodel::translate::TranslatableTopicMatrixWithCreate;
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
-use ldatranslate_translate::TopicLike;
-use crate::translate::dictionary_meta::{DictMetaFieldPattern, MetaTagTemplate, Similarity, SparseVectorFactory};
+use crate::translate::dictionary_meta::{MetaTagTemplate, Similarity, SparseVectorFactory};
 use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes_a_to_b, ClassCoocurrenceMatrix};
 use crate::translate::dictionary_meta::vertical_boost_1::MetaFieldCountProvider;
 use crate::translate::entropies::FDivergenceCalculator;
@@ -207,7 +204,7 @@ impl HorizontalScoreBoost
                 config.normalize_to_one
             ).map(|possible_arr| possible_arr.map(
                 |arr| {
-                    let mut x = words_b.into_iter().map(|((p, _))| p).zip(arr.into_iter()).collect::<HashMap<_,_>>();
+                    let mut x = words_b.into_iter().map(|(p, _)| p).zip(arr.into_iter()).collect::<HashMap<_,_>>();
                     x.shrink_to_fit();
                     x
                 }
@@ -413,16 +410,15 @@ mod test {
     use std::sync::Arc;
     use itertools::Itertools;
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithMutMeta, BasicDictionaryWithVocabulary, DictionaryWithMeta};
-    use ldatranslate_topicmodel::dictionary::metadata::coocurrence_matrix::co_occurences_direct_a_to_b;
     use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
     use ldatranslate_topicmodel::dictionary::metadata::ex::MetadataManagerEx;
     use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::SearchableVocabulary;
-    use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes, co_occurence_with_other_classes_a_to_b, NormalizeMode};
+    use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes_a_to_b, NormalizeMode};
     use crate::translate::dictionary_meta::horizontal_boost_1::calculate_horizontal_boost;
-    use crate::translate::dictionary_meta::{SparseMetaVector, SparseVectorFactory};
+    use crate::translate::dictionary_meta::{SparseVectorFactory};
     use crate::translate::dictionary_meta::vertical_boost_1::ScoreModifierCalculator;
     use crate::translate::dictionary_meta::voting::HorizontalScoreBoost;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
@@ -483,14 +479,14 @@ mod test {
 
         let sparse = SparseVectorFactory::new();
 
-        let value = co_occurence_with_other_classes(
-            dict.metadata().meta_a().into_iter().chain(
-                dict.metadata().meta_b().into_iter()
-            ),
-            &DictMetaTagIndex::all(),
-            &sparse,
-            NormalizeMode::Max
-        ).unwrap();
+        // let value = co_occurence_with_other_classes(
+        //     dict.metadata().meta_a().into_iter().chain(
+        //         dict.metadata().meta_b().into_iter()
+        //     ),
+        //     &DictMetaTagIndex::all(),
+        //     &sparse,
+        //     NormalizeMode::Max
+        // ).unwrap();
 
         // println!("Coocurrence:\n{value}\n\n");
 
@@ -505,16 +501,16 @@ mod test {
 
         // println!("A to B:\n{value2}\n\n");
 
-        let direct_coocurrences = co_occurences_direct_a_to_b(
-            dict.metadata().meta_a().into_iter().zip(
-                dict.metadata().meta_b().into_iter()
-            )
-        );
+        // let direct_coocurrences = co_occurences_direct_a_to_b(
+        //     dict.metadata().meta_a().into_iter().zip(
+        //         dict.metadata().meta_b().into_iter()
+        //     )
+        // );
 
 
 
 
-        let direct_coocurrences = SparseMetaVector::normalize_count(&direct_coocurrences);
+        // let direct_coocurrences = SparseMetaVector::normalize_count(&direct_coocurrences);
 
         // println!("Cont:\n{direct_coocurrences}");
         // println!("\n\n");

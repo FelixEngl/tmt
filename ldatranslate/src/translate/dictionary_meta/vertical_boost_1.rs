@@ -13,11 +13,13 @@ use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::translate::TranslatableTopicMatrixWithCreate;
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
 use ldatranslate_translate::{TopicLike, TopicModelLikeMatrix};
+use crate::py::translate::PyVerticalBoostConfig;
 use crate::translate::dictionary_meta::dict_meta::MetaTagTemplate;
 use crate::translate::dictionary_meta::{Similarity, SparseVectorFactory};
 use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
 use crate::translate::FieldConfig;
 
+#[allow(unused_imports)]
 pub struct VerticalCountDictionaryMetaVector {
     topic_model: [Option<ArcArray<f64, Ix1>>; META_DICT_ARRAY_LENTH],
     template: MetaTagTemplate,
@@ -107,6 +109,23 @@ pub struct VerticalScoreBoostConfig {
     pub field_config: FieldConfig,
     pub calculator: FDivergenceCalculator,
     pub normalized: bool
+}
+
+impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
+    fn from(value: PyVerticalBoostConfig) -> Self {
+        Self::new(
+            FieldConfig::new(
+                value.divergence.target_fields,
+                value.divergence.invert_target_fields,
+            ),
+            FDivergenceCalculator::new(
+                value.divergence.divergence,
+                value.divergence.alpha,
+                value.divergence.score_modifier_calculator
+            ),
+            value.normalized
+        )
+    }
 }
 
 impl VerticalScoreBoostConfig {

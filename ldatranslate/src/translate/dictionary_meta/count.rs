@@ -22,7 +22,7 @@ pub enum CountKind {
 pub struct ByCount {
     topic_model_count: Arc<SparseMetaVector>,
     word_count: Arc<Vec<SparseMetaVector>>,
-    cfg: CountConfig
+    _cfg: CountConfig
 }
 
 impl ByCount {
@@ -70,7 +70,7 @@ impl ByCount {
             Self {
                 word_count: Arc::new(word_count),
                 topic_model_count: Arc::new(topic_model_count),
-                cfg: config
+                _cfg: config
             }
         )
     }

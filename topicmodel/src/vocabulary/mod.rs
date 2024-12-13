@@ -82,7 +82,7 @@ pub struct Vocabulary<T = ArcStr> {
 impl <T> Vocabulary<T> {
 
     /// Create a new vocabulary with the default sizes
-    pub fn new(language: Option<LanguageHint>, id2entry: Vec<T>, entry2id: HashMap<T, usize>) -> Self {
+    fn new(language: Option<LanguageHint>, id2entry: Vec<T>, entry2id: HashMap<T, usize>) -> Self {
         Self {
             language,
             id2entry,
@@ -177,7 +177,7 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
 
 
     fn create_from(language: Option<LanguageHint>, voc: Vec<T>) -> Self where Self: Sized, T: Eq + Hash + Clone {
-        let id2entry = voc;
+        let id2entry = voc.into_iter().unique().collect::<Vec<_>>();
         let entry2id = id2entry.iter().cloned().enumerate().map(|(a, b)| (b, a)).collect();
         Self::new(
             language,

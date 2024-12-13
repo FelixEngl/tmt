@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use byte_unit::UnitType;
 use sysinfo::{MemoryRefreshKind, RefreshKind};
 
+#[allow(unused)]
 pub struct MemoryReporter {
     sys: Arc<Mutex<sysinfo::System>>,
     interval: Duration,
