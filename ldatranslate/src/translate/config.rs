@@ -119,24 +119,24 @@ pub struct HorizontalScoreBootConfig {
 impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
     fn from(config: PyHorizontalBoostConfig) -> Self {
         Self::new(
-            config.alpha,
+            FieldConfig::new(
+                config.divergence.target_fields,
+                config.divergence.invert_target_fields,
+            ),
             FDivergenceCalculator::new(
                 config.divergence.divergence,
                 config.divergence.alpha,
                 config.divergence.score_modifier_calculator
             ),
             config.mode,
-            FieldConfig::new(
-                config.divergence.target_fields,
-                config.divergence.invert_target_fields,
-            ),
+            config.alpha,
             config.normalize_to_one
         )
     }
 }
 
 impl HorizontalScoreBootConfig {
-    pub fn new(alpha: Option<f64>, calculator: FDivergenceCalculator, mode: NormalizeMode, field_config: FieldConfig, normalize_to_one: bool) -> Self {
+    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, mode: NormalizeMode, alpha: Option<f64>, normalize_to_one: bool) -> Self {
         Self { alpha, calculator, mode, field_config, normalize_to_one }
     }
 }

@@ -141,6 +141,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }).transpose()?,
     );
 
+    println!("{:#?}", booster);
+
     if translation_dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
     }
@@ -647,17 +649,23 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::direction::Invariant;
-    use ldatranslate_topicmodel::dictionary::{Dictionary, DictionaryMutGen, DictionaryWithMeta};
+    use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMutMeta, Dictionary, DictionaryMutGen, DictionaryWithMeta};
     use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
-    use crate::translate::translate_topic_model_without_provider;
+    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::TranslateConfig;
     use ldatranslate_voting::spy::IntoSpy;
     use ldatranslate_voting::BuildInVoting;
     use std::num::NonZeroUsize;
     use Extend;
+    use std::sync::Arc;
     use arcstr::ArcStr;
+    use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
+    use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator, VerticalScoreBoostConfig};
+    use ldatranslate_topicmodel::dictionary::metadata::ex::*;
+    use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
+    use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
 
     pub fn create_test_data() -> (Vocabulary<ArcStr>, Vocabulary<ArcStr>, Dictionary<ArcStr, Vocabulary<ArcStr>>){
         let mut voc_a = Vocabulary::<ArcStr>::default();
@@ -728,9 +736,37 @@ pub(crate) mod test {
     fn test_complete_translation(){
         let (voc_a, _, dict) = create_test_data();
 
-        let dict = DictionaryWithMeta::from(dict);
+        let mut dict: DictionaryWithMeta<_, _, MetadataManagerEx> = DictionaryWithMeta::from(dict);
+        dict.get_or_create_meta_a(0)
+            .add_all_to_domains_default([Domain::Aviat, Domain::Engin])
+            .add_all_to_domains("dict1", [Domain::Aviat, Domain::Engin])
+            .add_all_to_domains("dict2", [Domain::Engin])
+            .add_all_to_registers_default([Register::Techn]);
 
-        let model_a = TopicModel::new(
+        dict.get_or_create_meta_a(1)
+            .add_all_to_domains_default([Domain::Aviat, Domain::Engin])
+            .add_all_to_domains("dict1", [Domain::Engin])
+            .add_all_to_domains("dict2", [Domain::Engin]);
+
+
+        dict.get_or_create_meta_b(0)
+            .add_all_to_domains_default([Domain::Aviat, Domain::Engin])
+            .add_all_to_domains("dict1", [Domain::Engin])
+            .add_all_to_domains("dict2", [Domain::Aviat, Domain::Engin]);
+
+        dict.get_or_create_meta_b(3)
+            .add_all_to_domains_default([Domain::Aviat, Domain::Engin, Domain::Comm])
+            .add_all_to_domains("dict2", [Domain::Aviat, Domain::Engin]);
+
+        dict.get_or_create_meta_b(3)
+            .add_all_to_domains_default([Domain::Admin, Domain::Engin])
+            .add_all_to_domains("dict2", [Domain::Aviat, Domain::Engin])
+            .add_all_to_domains("dict1", [Domain::Film]);
+
+
+
+
+        let mut model_a = TopicModel::new(
             vec![
                 vec![0.019, 0.018, 0.012, 0.009, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008],
                 vec![0.002, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.02, 0.0001],
@@ -747,7 +783,9 @@ pub(crate) mod test {
             ]
         );
 
-        let config = TranslateConfig {
+        model_a.normalize_in_place();
+
+        let config1 = TranslateConfig {
             threshold: None,
             voting: BuildInVoting::PCombSum.spy(),
             epsilon: None,
@@ -757,16 +795,158 @@ pub(crate) mod test {
             horizontal_config: None
         };
 
+        let config2 = TranslateConfig {
+            threshold: None,
+            voting: BuildInVoting::PCombSum.spy(),
+            epsilon: None,
+            keep_original_word: Never,
+            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
+            vertical_config: Some(
+                Arc::new(
+                    VerticalScoreBoostConfig::new(
+                        FieldConfig::new(
+                            Some(vec![
+                                Domain::Aviat.into(),
+                                Domain::Engin.into(),
+                                Domain::Film.into(),
+                                Register::Techn.into(),
+                                Register::Archaic.into(),
+                            ]),
+                            false,
+                        ),
+                        FDivergenceCalculator::new(
+                            FDivergence::KL,
+                            None,
+                            ScoreModifierCalculator::WeightedSum
+                        ),
+                        true
+                    ),
+                )
+            ),
+            horizontal_config: None
+        };
+
+        let config3 = TranslateConfig {
+            threshold: None,
+            voting: BuildInVoting::PCombSum.spy(),
+            epsilon: None,
+            keep_original_word: Never,
+            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
+            vertical_config: None,
+            horizontal_config: Some(
+                Arc::new(
+                    HorizontalScoreBootConfig::new(
+                        FieldConfig::new(
+                            Some(vec![
+                                Domain::Aviat.into(),
+                                Domain::Engin.into(),
+                                Domain::Film.into(),
+                                Register::Techn.into(),
+                                Register::Archaic.into(),
+                            ]),
+                            false,
+                        ),
+                        FDivergenceCalculator::new(
+                            FDivergence::KL,
+                            None,
+                            ScoreModifierCalculator::WeightedSum
+                        ),
+                        NormalizeMode::Sum,
+                        Some(0.15),
+                        false
+                    )
+                )
+            )
+        };
+
+        let config4 = TranslateConfig {
+            threshold: None,
+            voting: BuildInVoting::PCombSum.spy(),
+            epsilon: None,
+            keep_original_word: Never,
+            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
+            vertical_config: Some(
+                Arc::new(
+                    VerticalScoreBoostConfig::new(
+                        FieldConfig::new(
+                            Some(vec![
+                                Domain::Aviat.into(),
+                                Domain::Engin.into(),
+                                Domain::Film.into(),
+                                Register::Techn.into(),
+                                Register::Archaic.into(),
+                            ]),
+                            false,
+                        ),
+                        FDivergenceCalculator::new(
+                            FDivergence::KL,
+                            None,
+                            ScoreModifierCalculator::WeightedSum
+                        ),
+                        true
+                    ),
+                )
+            ),
+            horizontal_config: Some(
+                Arc::new(
+                    HorizontalScoreBootConfig::new(
+                        FieldConfig::new(
+                            Some(vec![
+                                Domain::Aviat.into(),
+                                Domain::Engin.into(),
+                                Domain::Film.into(),
+                                Register::Techn.into(),
+                                Register::Archaic.into(),
+                            ]),
+                            false,
+                        ),
+                        FDivergenceCalculator::new(
+                            FDivergence::KL,
+                            None,
+                            ScoreModifierCalculator::WeightedSum
+                        ),
+                        NormalizeMode::Sum,
+                        Some(0.15),
+                        false
+                    )
+                )
+            )
+        };
+
         let model_b = translate_topic_model_without_provider(
             &model_a,
             &dict,
-            &config,
+            &config1,
+        ).unwrap();
+
+        let model_c = translate_topic_model_without_provider(
+            &model_a,
+            &dict,
+            &config2,
+        ).unwrap();
+
+        let model_d = translate_topic_model_without_provider(
+            &model_a,
+            &dict,
+            &config3,
+        ).unwrap();
+
+        let model_e = translate_topic_model_without_provider(
+            &model_a,
+            &dict,
+            &config4,
         ).unwrap();
 
         // println!("{:?}", model_b.vocabulary());
 
         model_a.show_10().unwrap();
         println!("----");
-        model_b.show_10().unwrap()
+        model_b.show_10().unwrap();
+        println!("----");
+        model_c.show_10().unwrap();
+        println!("----");
+        model_d.show_10().unwrap();
+        println!("----");
+        model_e.show_10().unwrap();
     }
 }

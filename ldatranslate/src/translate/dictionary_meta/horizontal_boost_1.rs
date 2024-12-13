@@ -385,11 +385,7 @@ where
                 })
                 .map_err(VerticalError::SimError)
         } else {
-            if let Some((alpha, smoothing_factor)) = precalc {
-                Ok(alpha * smoothing_factor)
-            } else {
-                Ok(0.0)
-            }
+            Ok(0.0)
         }
     }).collect::<Result<Array1<f64>, _>>().map(
         |mut value| {
@@ -571,17 +567,17 @@ mod test {
         let boost = HorizontalScoreBoost::new(
             Arc::new(
                 HorizontalScoreBootConfig::new(
-                    Some(0.15),
+                    FieldConfig::new(
+                        Some(template.to_vec()),
+                        false
+                    ),
                     FDivergenceCalculator::new(
                         FDivergence::KL,
                         None,
                         ScoreModifierCalculator::WeightedSum
                     ),
                     NormalizeMode::Sum,
-                    FieldConfig::new(
-                        Some(template.to_vec()),
-                        false
-                    ),
+                    Some(0.15),
                     false
                 )
             ),

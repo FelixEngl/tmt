@@ -1,8 +1,9 @@
 use ldatranslate_topicmodel::model::Probability;
+use ldatranslate_translate::TopicLike;
 use crate::translate::dictionary_meta::horizontal_boost_1::HorizontalScoreBoost;
 use crate::translate::dictionary_meta::vertical_boost_1::VerticalBoostedScores;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Booster {
     vertical_booster: Option<VerticalBoostedScores>,
     horizontal_booster: Option<HorizontalScoreBoost>
@@ -35,6 +36,7 @@ impl<'a> TopicSpecificBooster<'a> {
 
     pub fn boost_vertical(&self, original_score: Probability, id_a: usize) -> f64 {
         if let Some(vertical_probabilities) = self.vertical_probabilities {
+            // println!("id_a: {id_a} | {}", vertical_probabilities.len());
             unsafe { *vertical_probabilities.get_unchecked(id_a) }
         } else {
             original_score
@@ -54,7 +56,7 @@ impl<'a> TopicSpecificBooster<'a> {
     }
 
     pub fn boost_score(&self, original_score: Probability, id_a: usize, id_b: usize) -> f64 {
-        let vertical_score = self.boost_vertical(original_score, id_b);
+        let vertical_score = self.boost_vertical(original_score, id_a);
         if let Some(booster) = self.horizontal_booster {
             booster.boost_probability_for(
                 id_a,
