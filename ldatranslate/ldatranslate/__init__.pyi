@@ -816,7 +816,7 @@ class PyArticle:
 
 
 class PyBasicBoostConfig:
-    def __new__(cls,divergence,alpha = ...,target_fields = ...,invert_target_fields = ...,score_modifier_calculator = ...): ...
+    def __new__(cls,divergence,alpha = ...,target_fields = ...,invert_target_fields = ...,score_modifier_calculator = ...,skip_empty = ...): ...
     ...
 
 class PyClassifierOption:
@@ -1128,7 +1128,7 @@ class PyDictionary:
 
 
 class PyHorizontalBoostConfig:
-    def __new__(cls,divergence,mode = ...,alpha = ...,normalize_to_one = ...): ...
+    def __new__(cls,divergence,mode = ...,alpha = ...,mean_method = ...,linear_transformed = ...): ...
     ...
 
 class PyMetaIter:
@@ -1764,6 +1764,18 @@ class LanguageMarker(Enum):
     """
     A = auto()
     B = auto()
+
+class MeanMethod(Enum):
+    r"""
+    Setting if to keep the original word from language A
+    """
+    ArithmeticMean = auto()
+    LinearWeightedArithmeticMean = auto()
+    HarmonicMean = auto()
+    LinearWeightedHarmonicMean = auto()
+    GeometricMean = auto()
+    LinearWeightedGeometricMean = auto()
+    Median = auto()
 
 class MetaField(Enum):
     Languages = auto()

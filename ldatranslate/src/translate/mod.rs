@@ -822,9 +822,9 @@ pub(crate) mod test {
                             false,
                         ),
                         FDivergenceCalculator::new(
-                            FDivergence::KL,
+                            FDivergence::Bhattacharyya,
                             None,
-                            ScoreModifierCalculator::WeightedSum
+                            ScoreModifierCalculator::Max
                         ),
                         true
                     ),
@@ -887,9 +887,9 @@ pub(crate) mod test {
                             false,
                         ),
                         FDivergenceCalculator::new(
-                            FDivergence::KL,
+                            FDivergence::Bhattacharyya,
                             None,
-                            ScoreModifierCalculator::WeightedSum
+                            ScoreModifierCalculator::Max
                         ),
                         true
                     ),
