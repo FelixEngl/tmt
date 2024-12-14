@@ -28,7 +28,7 @@ use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
-use crate::translate::{KeepOriginalWord, TranslateConfig};
+use crate::translate::{KeepOriginalWord, MeanMethod, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
@@ -50,19 +50,21 @@ pub struct PyBasicBoostConfig {
     pub target_fields: Option<Vec<DictMetaTagIndex>>,
     pub invert_target_fields: bool,
     pub score_modifier_calculator: ScoreModifierCalculator,
+    pub skip_empty: bool
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyBasicBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, alpha=None, target_fields=None, invert_target_fields=None, score_modifier_calculator=None))]
+    #[pyo3(signature = (divergence, alpha=None, target_fields=None, invert_target_fields=None, score_modifier_calculator=None, skip_empty=None))]
     pub fn new(
         divergence: FDivergence,
         alpha: Option<f64>,
         target_fields: Option<Vec<DictMetaTagIndex>>,
         invert_target_fields: Option<bool>,
         score_modifier_calculator: Option<ScoreModifierCalculator>,
+        skip_empty: Option<bool>
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
@@ -70,6 +72,7 @@ impl PyBasicBoostConfig {
             target_fields,
             invert_target_fields: invert_target_fields.unwrap_or(false),
             score_modifier_calculator: score_modifier_calculator.unwrap_or(ScoreModifierCalculator::WeightedSum),
+            skip_empty: skip_empty.unwrap_or(true),
         })
     }
 }
@@ -107,25 +110,28 @@ pub struct PyHorizontalBoostConfig {
     pub divergence: PyBasicBoostConfig,
     pub mode: NormalizeMode,
     pub alpha: Option<f64>,
-    pub normalize_to_one: bool
+    pub linear_transformed: bool,
+    pub mean_method: MeanMethod
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyHorizontalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, mode=None, alpha=None::<Option<f64>>, normalize_to_one=None))]
+    #[pyo3(signature = (divergence, mode=None, alpha=None::<Option<f64>>, mean_method=None, linear_transformed=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
         mode: Option<NormalizeMode>,
         alpha: Option<Option<f64>>,
-        normalize_to_one: Option<bool>
+        mean_method: Option<MeanMethod>,
+        linear_transformed: Option<bool>,
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
             mode: mode.unwrap_or(NormalizeMode::Sum),
             alpha: alpha.unwrap_or(Some(0.15)),
-            normalize_to_one: normalize_to_one.unwrap_or(false),
+            linear_transformed: linear_transformed.unwrap_or(false),
+            mean_method: mean_method.unwrap_or(MeanMethod::default())
         })
     }
 }

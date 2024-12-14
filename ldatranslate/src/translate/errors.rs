@@ -4,7 +4,7 @@ use ldatranslate_topicmodel::dictionary::direction::DirectionMarker;
 use ldatranslate_voting::variable_provider::VariableProviderError;
 use ldatranslate_voting::{VotingExpressionError, VotingResult};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
-use crate::translate::dictionary_meta::horizontal_boost_1::VerticalError;
+use crate::translate::dictionary_meta::horizontal_boost_1::HorizontalError;
 use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
 use crate::variable_provider::{AsVariableProviderError};
 
@@ -32,7 +32,7 @@ pub enum TranslateError<'a> {
     #[error(transparent)]
     EntropyError(#[from] EntropyWithAlphaError<f64, f64>),
     #[error(transparent)]
-    VerticalError(#[from] VerticalError<FDivergenceCalculator>)
+    VerticalError(#[from] HorizontalError<FDivergenceCalculator>)
 }
 
 #[derive(Debug, Error)]

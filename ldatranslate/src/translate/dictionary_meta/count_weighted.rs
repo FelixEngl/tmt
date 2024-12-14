@@ -21,6 +21,7 @@ pub enum FitTo {
 }
 
 impl ByCountWeigthed {
+    #[allow(unused)]
     pub fn new<P>(topic_model: &[Vec<f64>], meta: &[MetadataEx], factory: &SparseVectorFactory, pattern: &P, fit_to_topic: Option<FitTo>) -> Result<Self, IllegalValueCount>
     where
         P: DictMetaFieldPattern + ?Sized

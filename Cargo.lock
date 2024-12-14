@@ -1303,6 +1303,7 @@ dependencies = [
  "evalexpr",
  "file-format",
  "fst",
+ "indxvec",
  "inventory",
  "itertools",
  "ldatranslate-tokenizer",

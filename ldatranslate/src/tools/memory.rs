@@ -64,6 +64,7 @@ impl MemoryReporter {
         value
     }
 
+    #[allow(unused)]
     pub fn create_report(&self) -> Option<String> {
         let now = Instant::now();
         {

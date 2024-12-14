@@ -1,3 +1,4 @@
+use std::cmp::Ordering::Equal;
 use crate::translate::entropies::{FDivergenceCalculator};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
@@ -7,11 +8,11 @@ use pyo3::{pyclass, pymethods, PyResult};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use itertools::Itertools;
+use rstats::{Median, Stats, RE};
 use strum::{AsRefStr, Display, EnumString, ParseError};
-use crate::py::translate::PyHorizontalBoostConfig;
+use crate::py::translate::{PyHorizontalBoostConfig, PyVerticalBoostConfig};
 use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
 use crate::translate::dictionary_meta::{MetaTagTemplate, SparseVectorFactory};
-use crate::translate::dictionary_meta::vertical_boost_1::VerticalScoreBoostConfig;
 
 /// Setting if to keep the original word from language A
 #[cfg_attr(
@@ -61,6 +62,7 @@ register_python! {
     enum KeepOriginalWord;
 }
 
+
 /// The config for a translation
 #[derive(Debug)]
 pub struct TranslateConfig<V: VotingMethodMarker> {
@@ -107,13 +109,123 @@ impl FieldConfig {
 }
 
 
+
+#[derive(Clone, Debug)]
+pub struct VerticalScoreBoostConfig {
+    pub field_config: FieldConfig,
+    pub calculator: FDivergenceCalculator,
+    pub normalized: bool
+}
+
+impl VerticalScoreBoostConfig {
+    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, normalized: bool) -> Self {
+        Self { field_config, calculator, normalized }
+    }
+}
+
+
+impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
+    fn from(value: PyVerticalBoostConfig) -> Self {
+        Self::new(
+            FieldConfig::new(
+                value.divergence.target_fields,
+                value.divergence.invert_target_fields,
+            ),
+            FDivergenceCalculator::new(
+                value.divergence.divergence,
+                value.divergence.alpha,
+                value.divergence.score_modifier_calculator
+            ),
+            value.normalized
+        )
+    }
+}
+
+/// Setting if to keep the original word from language A
+#[cfg_attr(
+    feature = "gen_python_api",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum
+)]
+#[pyclass(eq, eq_int, hash, frozen)]
+#[derive(
+    Debug, Default, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString,
+)]
+pub enum MeanMethod {
+    ArithmeticMean,
+    LinearWeightedArithmeticMean,
+    HarmonicMean,
+    LinearWeightedHarmonicMean,
+    GeometricMean,
+    LinearWeightedGeometricMean,
+    #[default]
+    Median
+}
+
+register_python!(enum MeanMethod;);
+
+impl MeanMethod {
+    pub fn fails_on_empty(&self) -> bool {
+        matches!(self,
+            MeanMethod::GeometricMean | MeanMethod::LinearWeightedGeometricMean
+            | MeanMethod::HarmonicMean | MeanMethod::LinearWeightedHarmonicMean
+        )
+    }
+
+    pub fn apply<'a, S, T>(&self, value: S) -> Result<f64, RE>
+    where
+        S: Stats + Median<'a, T> + 'a,
+        T: Into<f64> + PartialOrd + Copy
+    {
+        match self {
+            MeanMethod::ArithmeticMean => {
+                value.amean()
+            }
+            MeanMethod::LinearWeightedArithmeticMean => {
+                value.awmean()
+            }
+            MeanMethod::HarmonicMean => {
+                value.hmean()
+            }
+            MeanMethod::LinearWeightedHarmonicMean => {
+                value.hwmean()
+            }
+            MeanMethod::GeometricMean => {
+                value.gmean()
+            }
+            MeanMethod::LinearWeightedGeometricMean => {
+                value.gwmean()
+            }
+            MeanMethod::Median => {
+                Ok(value.qmedian_by(
+                    &mut |a, b| a.partial_cmp(b).unwrap_or(Equal),
+                    |v| v.clone().into()
+                )?)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HorizontalScoreBootConfig {
     pub alpha: Option<f64>,
     pub calculator: FDivergenceCalculator,
     pub field_config: FieldConfig,
     pub mode: NormalizeMode,
-    pub normalize_to_one: bool
+    pub linear_transformed: bool,
+    pub mean_method: MeanMethod,
+}
+
+impl HorizontalScoreBootConfig {
+    pub fn new(
+        field_config: FieldConfig,
+        calculator: FDivergenceCalculator,
+        mode: NormalizeMode,
+        alpha: Option<f64>,
+        linear_transformed: bool,
+        mean_method: MeanMethod,
+    ) -> Self {
+        Self { alpha, calculator, mode, field_config, linear_transformed, mean_method }
+    }
 }
 
 impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
@@ -130,14 +242,9 @@ impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
             ),
             config.mode,
             config.alpha,
-            config.normalize_to_one
+            config.linear_transformed,
+            config.mean_method
         )
-    }
-}
-
-impl HorizontalScoreBootConfig {
-    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, mode: NormalizeMode, alpha: Option<f64>, normalize_to_one: bool) -> Self {
-        Self { alpha, calculator, mode, field_config, normalize_to_one }
     }
 }
 

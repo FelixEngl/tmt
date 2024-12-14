@@ -1,14 +1,7 @@
 use std::error::Error;
-use std::hash::Hash;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use evalexpr::{Value};
 use thiserror::Error;
-use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary, DictionaryWithMeta};
-use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx};
-use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
-use ldatranslate_topicmodel::language_hint::LanguageHint;
-use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
 use ldatranslate_voting::variable_provider::{VariableProviderError};
 use ldatranslate_voting::traits::VotingMethodMarker;
 pub use crate::translate::*;
@@ -32,6 +25,7 @@ pub struct VoteConfig<V: VotingMethodMarker> {
 
 impl<V> VoteConfig<V>
 where V: VotingMethodMarker {
+    #[allow(unused)]
     pub fn new(voting: V, epsilon: Option<f64>, threshold: Option<f64>, top_candidate_limit: Option<NonZeroUsize>, boost_with: Option<Value>) -> Self {
         Self { epsilon, voting, threshold, top_candidate_limit, boost_with }
     }
@@ -53,13 +47,13 @@ where V: VotingMethodMarker + Clone {
 
 
 #[derive(Debug, Error)]
-pub enum VoteError<'a> {
-    #[error("The dictionary has a translation direction from {lang_a} to {lang_b}, but the topic is in {lang_b}!")]
-    IncompatibleLanguages {
-        lang_a: &'a LanguageHint,
-        lang_b: LanguageHint,
-        lang_model: &'a LanguageHint,
-    },
+pub enum VoteError {
+    // #[error("The dictionary has a translation direction from {lang_a} to {lang_b}, but the topic is in {lang_b}!")]
+    // IncompatibleLanguages {
+    //     lang_a: &'a LanguageHint,
+    //     lang_b: LanguageHint,
+    //     lang_model: &'a LanguageHint,
+    // },
     #[error(transparent)]
     AsVariableProviderFailed(#[from] AsVariableProviderError),
     #[error(transparent)]
@@ -78,44 +72,44 @@ pub struct VoteErrorWithOrigin {
     pub source: Box<dyn Error + Send + Sync>
 }
 
-#[derive(Clone)]
-struct DictBridge<'a, T, V> {
-    pub dictionary: &'a DictionaryWithMeta<T, V, MetadataManagerEx>,
-    voc_to_dict: Arc<Vec<Option<usize>>>,
-    dict_to_voc: Arc<Vec<Option<usize>>>,
-}
-
-unsafe impl<'a, T, V> Send for DictBridge<'a, T, V>{}
-unsafe impl<'a, T, V> Sync for DictBridge<'a, T, V>{}
-impl<'a, T, V> DictBridge<'a, T, V> where V: SearchableVocabulary<T> + AnonymousVocabulary, T: Eq + Hash {
-    pub fn new<Voc>(dictionary: &'a DictionaryWithMeta<T, V, MetadataManagerEx>, voc: &Voc) -> Self
-    where
-        Voc: SearchableVocabulary<T>
-    {
-        let mut dict_to_voc = vec![None; dictionary.voc_a().len()];
-        for (id, value) in dictionary.voc_a().iter_entries() {
-            dict_to_voc[id] = voc.get_id(value);
-        }
-        let mut voc_to_dict = vec![None; voc.len()];
-        for (id, value) in voc.iter_entries() {
-            voc_to_dict[id] = dictionary.voc_a().get_id(value);
-        }
-
-        Self {
-            dictionary,
-            dict_to_voc: dict_to_voc.into(),
-            voc_to_dict: voc_to_dict.into(),
-        }
-    }
-}
-
-impl<'a, T, V> DictBridge<'a, T, V> where V: BasicVocabulary<T> + AnonymousVocabulary {
-    pub fn get_meta_for_voc_id(&self, voc_id: usize) -> Option<<MetadataManagerEx as MetadataManager>::Reference<'a>> {
-        unsafe{self.voc_to_dict.get_unchecked(voc_id)}.as_ref().and_then(|value| {
-            self.dictionary.get_meta_for_a(*value)
-        })
-    }
-}
+// #[derive(Clone)]
+// struct DictBridge<'a, T, V> {
+//     pub dictionary: &'a DictionaryWithMeta<T, V, MetadataManagerEx>,
+//     voc_to_dict: Arc<Vec<Option<usize>>>,
+//     dict_to_voc: Arc<Vec<Option<usize>>>,
+// }
+//
+// unsafe impl<'a, T, V> Send for DictBridge<'a, T, V>{}
+// unsafe impl<'a, T, V> Sync for DictBridge<'a, T, V>{}
+// impl<'a, T, V> DictBridge<'a, T, V> where V: SearchableVocabulary<T> + AnonymousVocabulary, T: Eq + Hash {
+//     pub fn new<Voc>(dictionary: &'a DictionaryWithMeta<T, V, MetadataManagerEx>, voc: &Voc) -> Self
+//     where
+//         Voc: SearchableVocabulary<T>
+//     {
+//         let mut dict_to_voc = vec![None; dictionary.voc_a().len()];
+//         for (id, value) in dictionary.voc_a().iter_entries() {
+//             dict_to_voc[id] = voc.get_id(value);
+//         }
+//         let mut voc_to_dict = vec![None; voc.len()];
+//         for (id, value) in voc.iter_entries() {
+//             voc_to_dict[id] = dictionary.voc_a().get_id(value);
+//         }
+//
+//         Self {
+//             dictionary,
+//             dict_to_voc: dict_to_voc.into(),
+//             voc_to_dict: voc_to_dict.into(),
+//         }
+//     }
+// }
+//
+// impl<'a, T, V> DictBridge<'a, T, V> where V: BasicVocabulary<T> + AnonymousVocabulary {
+//     pub fn get_meta_for_voc_id(&self, voc_id: usize) -> Option<<MetadataManagerEx as MetadataManager>::Reference<'a>> {
+//         unsafe{self.voc_to_dict.get_unchecked(voc_id)}.as_ref().and_then(|value| {
+//             self.dictionary.get_meta_for_a(*value)
+//         })
+//     }
+// }
 
 // pub fn meta_to_topic_association_voting<'a, Target, T, V, Voc, P>(
 //     target: &'a Target,

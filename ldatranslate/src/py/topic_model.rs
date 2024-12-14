@@ -455,7 +455,7 @@ impl TopicModelWithVocabulary<UnderlyingPyWord, UnderlyingPyVocabulary> for PyTo
             fn get_word_meta_by_word<Q: ?Sized>(&self, topic_id: TopicId, word: &Q) -> Option<Self::WordMeta<'_>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq;
 
             /// Get the [WordMetaWithWord] of `word` for all topics.
-            fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq, UnderlyingPyVocabulary: 'a;
+            fn get_word_metas_with_word_by_word<'a, 'b: 'a, Q: ?Sized>(&'a self, word: &'b Q) -> Option<TopicTo<WordMetaWithWord<'a, UnderlyingPyWord, <Self as BasicTopicModel>::WordMeta<'a>>>> where UnderlyingPyWord: Borrow<Q>, Q: Hash + Eq, UnderlyingPyVocabulary: 'a;
 
             /// Get all [WordMeta] values with a similar importance in `topic_id` than `word`.
             /// (including the `word_id`)

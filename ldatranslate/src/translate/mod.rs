@@ -141,8 +141,6 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }).transpose()?,
     );
 
-    println!("{:#?}", booster);
-
     if translation_dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
     }
@@ -161,12 +159,21 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     let epsilon = if let Some(value) = translate_config.epsilon {
         value
     } else {
-        target.matrix().iter().flat_map(|value| value.iter()).fold(
-            f64::MAX,
-            |old, other| {
-                old.min(*other)
-            }
-        ) - f64::EPSILON
+        if let Some(vert) = booster.vertical_booster().map(|value| value.alternative_scores()) {
+            TopicModelLikeMatrix::iter(vert).flat_map(|value| value.iter()).fold(
+                f64::MAX,
+                |old, &other| {
+                    old.min(other)
+                }
+            ) - f64::EPSILON
+        } else {
+            target.matrix().iter().flat_map(|value| value.iter()).fold(
+                f64::MAX,
+                |old, &other| {
+                    old.min(other)
+                }
+            ) - f64::EPSILON
+        }
     };
 
     let mut topic_context: HashMapContext<TMTNumericTypes> = context_map! {
@@ -652,7 +659,7 @@ pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMutMeta, Dictionary, DictionaryMutGen, DictionaryWithMeta};
     use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
-    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig};
+    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, MeanMethod, VerticalScoreBoostConfig};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::TranslateConfig;
     use ldatranslate_voting::spy::IntoSpy;
@@ -662,7 +669,7 @@ pub(crate) mod test {
     use std::sync::Arc;
     use arcstr::ArcStr;
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
-    use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator, VerticalScoreBoostConfig};
+    use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator};
     use ldatranslate_topicmodel::dictionary::metadata::ex::*;
     use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
@@ -853,7 +860,8 @@ pub(crate) mod test {
                         ),
                         NormalizeMode::Sum,
                         Some(0.15),
-                        false
+                        false,
+                        MeanMethod::GeometricMean
                     )
                 )
             )
@@ -907,7 +915,8 @@ pub(crate) mod test {
                         ),
                         NormalizeMode::Sum,
                         Some(0.15),
-                        false
+                        false,
+                        MeanMethod::GeometricMean
                     )
                 )
             )

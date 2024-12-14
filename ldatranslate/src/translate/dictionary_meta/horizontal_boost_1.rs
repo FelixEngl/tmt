@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::sync::Arc;
+use indxvec::Vecops;
 use itertools::Itertools;
 use ndarray::{Array1, ArrayBase, Data, DataMut, Dimension, Ix1, Zip};
 use ndarray_stats::errors::{EmptyInput, MultiInputError, QuantileError, ShapeMismatch};
@@ -11,9 +12,8 @@ use ndarray_stats::interpolate::Linear;
 use num::{Float, FromPrimitive};
 use num::traits::NumAssignOps;
 use ordered_float::NotNan;
-use rstats::Stats;
+use rstats::{MutVecg, Stats, RE};
 use thiserror::Error;
-use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
 use ldatranslate_topicmodel::dictionary::metadata::{MetadataManager, MetadataReference};
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex};
 use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx, MetadataRefEx};
@@ -24,7 +24,7 @@ use crate::translate::dictionary_meta::{MetaTagTemplate, Similarity, SparseVecto
 use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes_a_to_b, ClassCoocurrenceMatrix};
 use crate::translate::dictionary_meta::vertical_boost_1::MetaFieldCountProvider;
 use crate::translate::entropies::FDivergenceCalculator;
-use crate::translate::HorizontalScoreBootConfig;
+use crate::translate::{HorizontalScoreBootConfig, MeanMethod};
 
 pub trait Preprocessor: Similarity {
     fn preprocess<S, A>(&self, value: &mut ArrayBase<S, Ix1>) -> Result<(), Self::Error<A>>
@@ -151,11 +151,13 @@ pub enum CosineDistanceError<A> {
 
 
 #[derive(Debug, Error)]
-pub enum VerticalError<A: Similarity> {
+pub enum HorizontalError<A: Similarity> {
     #[error(transparent)]
     SimError(A::Error<f64>),
     #[error(transparent)]
     QuantError(#[from] QuantileError),
+    #[error(transparent)]
+    StatisticError(#[from] RE),
 }
 
 
@@ -173,7 +175,7 @@ impl HorizontalScoreBoost
         config: Arc<HorizontalScoreBootConfig>,
         translation_dictionary: &D,
         original_dictionary: &D2,
-    ) -> Result<Self,  VerticalError<FDivergenceCalculator>>
+    ) -> Result<Self,  HorizontalError<FDivergenceCalculator>>
     where
         D2: SearchableDictionaryWithMetadata<T, Voc, MetadataManagerEx>,
         Voc: BasicVocabulary<T> + AnonymousVocabulary + SearchableVocabulary<T>,
@@ -182,7 +184,10 @@ impl HorizontalScoreBoost
         T: Eq + Hash + Debug,
     {
         let factory = SparseVectorFactory::new();
-        let pattern = config.field_config.create_with_factory(&factory);
+
+        let pattern = config.field_config.create_with_factory(
+            &factory
+        );
         let coocurrence = co_occurence_with_other_classes_a_to_b(
             original_dictionary.metadata().meta_a().into_iter().zip(
                 original_dictionary.metadata().meta_b().into_iter()
@@ -201,7 +206,8 @@ impl HorizontalScoreBoost
                 &pattern,
                 &config.calculator,
                 config.alpha.map(|a| (a, &coocurrence)),
-                config.normalize_to_one
+                config.mean_method,
+                config.linear_transformed
             ).map(|possible_arr| possible_arr.map(
                 |arr| {
                     let mut x = words_b.into_iter().map(|(p, _)| p).zip(arr.into_iter()).collect::<HashMap<_,_>>();
@@ -225,7 +231,7 @@ impl HorizontalScoreBoost
 
     pub fn boost_probability_for(&self, id_a: usize, id_b: usize, probability: Probability) -> f64 {
         if let Some(boost) = self.get_boost_for(id_a, id_b) {
-            if self.config.normalize_to_one {
+            if self.config.linear_transformed {
                 probability + probability * boost
             } else {
                 (boost + probability).max(0.0)
@@ -244,8 +250,9 @@ pub fn calculate_horizontal_boost<'a, Q: ?Sized + 'a, T, V, D, A>(
     pattern: &MetaTagTemplate,
     algorithm: &A,
     coocurrence_config: Option<(f64, &ClassCoocurrenceMatrix)>,
-    normalize_to_one: bool
-) -> Result<Option<Array1<f64>>, VerticalError<A>>
+    mean_method: MeanMethod,
+    linear_transformed: bool
+) -> Result<Option<Array1<f64>>, HorizontalError<A>>
 where
     D: SearchableDictionaryWithMetadata<T, V, MetadataManagerEx>,
     V: AnonymousVocabulary + BasicVocabulary<T> + SearchableVocabulary<T>,
@@ -265,9 +272,12 @@ where
         pattern,
         algorithm,
         coocurrence_config,
-        normalize_to_one
+        mean_method,
+        linear_transformed
     )
 }
+
+
 
 
 pub fn calculate_horizontal_boost_impl<'a, A>(
@@ -276,8 +286,9 @@ pub fn calculate_horizontal_boost_impl<'a, A>(
     pattern: &MetaTagTemplate,
     algorithm: &A,
     coocurrence_config: Option<(f64, &ClassCoocurrenceMatrix)>,
-    normalize_to_one: bool
-) -> Result<Option<Array1<f64>>, VerticalError<A>>
+    mean_method: MeanMethod,
+    linear_transformed: bool
+) -> Result<Option<Array1<f64>>, HorizontalError<A>>
 where
     A: Similarity + Preprocessor
 {
@@ -317,7 +328,7 @@ where
         );
         return Ok(None)
     }
-    algorithm.preprocess(&mut counts_a).map_err(VerticalError::SimError)?;
+    algorithm.preprocess(&mut counts_a).map_err(HorizontalError::SimError)?;
 
     let metas_b = metas_b.into_iter().map(|meta_b| {
         meta_b.map(|meta| {
@@ -329,7 +340,7 @@ where
                 (contained_tags_b, counts_b)
             })
         }).transpose()
-    }).collect::<Result<Vec<_>, _>>().map_err(VerticalError::SimError)?;
+    }).collect::<Result<Vec<_>, _>>().map_err(HorizontalError::SimError)?;
 
     if metas_b.iter().all(Option::is_none) {
         return Ok(None)
@@ -347,20 +358,26 @@ where
                             fitting_assocs.quantile_mut(
                                 0.5.try_into().unwrap(),
                                 &Linear
-                            )
+                            ).map_err(HorizontalError::QuantError)
                         })
                     } else {
                         None
                     }
                 })
-            }).collect::<Result<Vec<_>, _>>().map(|value| {
-                if value.is_empty() {
-                    0.0
+            }).filter(|v| {
+                if let Ok(v) = v {
+                    !mean_method.fails_on_empty() || v.is_normal()
                 } else {
-                    value.gmean().unwrap()
+                    true
+                }
+            }).collect::<Result<Vec<_>, _>>().and_then(|value| {
+                if value.is_empty() {
+                    Ok(0.0)
+                } else {
+                    mean_method.apply(value.as_slice()).map_err(HorizontalError::StatisticError)
                 }
             })
-        }).collect::<Result<Vec<_>, _>>()?.hmean().unwrap();
+        }).collect::<Result<Vec<_>, _>>()?.amean()?;
         Some((alpha, x))
     } else {
         None
@@ -383,19 +400,19 @@ where
                         }
                     })
                 })
-                .map_err(VerticalError::SimError)
+                .map_err(HorizontalError::SimError)
         } else {
             Ok(0.0)
         }
-    }).collect::<Result<Array1<f64>, _>>().map(
+    }).collect::<Result<Vec<f64>, _>>().map(
         |mut value| {
-            if normalize_to_one {
-                let max = value.iter().map(|&value| value.abs()).max_partial_filtered().unwrap();
-                if max != 0.0 {
-                    value /= max;
+            if linear_transformed {
+                let min_max = value.minmax();
+                if min_max.max - min_max.min > 0.0 {
+                    value.mlintrans();
                 }
             }
-            Some(value)
+            Some(Array1::from(value))
         }
     )
 }
@@ -418,7 +435,7 @@ mod test {
     use crate::translate::dictionary_meta::vertical_boost_1::ScoreModifierCalculator;
     use crate::translate::dictionary_meta::voting::HorizontalScoreBoost;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
-    use crate::translate::{FieldConfig, HorizontalScoreBootConfig};
+    use crate::translate::{FieldConfig, HorizontalScoreBootConfig, MeanMethod};
     use crate::translate::test::create_test_data;
 
     #[test]
@@ -546,6 +563,7 @@ mod test {
                 ScoreModifierCalculator::WeightedSum
             ),
             Some((0.15, &value2)),
+            MeanMethod::GeometricMean,
             false
         ).expect("This should work").unwrap();
 
@@ -569,7 +587,7 @@ mod test {
                 HorizontalScoreBootConfig::new(
                     FieldConfig::new(
                         Some(template.to_vec()),
-                        false
+                        false,
                     ),
                     FDivergenceCalculator::new(
                         FDivergence::KL,
@@ -578,7 +596,8 @@ mod test {
                     ),
                     NormalizeMode::Sum,
                     Some(0.15),
-                    false
+                    false,
+                    MeanMethod::GeometricMean,
                 )
             ),
             &dict,

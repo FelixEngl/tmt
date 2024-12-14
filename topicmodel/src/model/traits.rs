@@ -173,7 +173,7 @@ pub trait TopicModelWithVocabulary<T, Voc>: BasicTopicModelWithVocabulary<T, Voc
 
     /// Get the [WordMetaWithWord] of `word` for all topics.
     #[inline]
-    fn get_word_metas_with_word_by_word<'a, Q: ?Sized>(&'a self, word: &Q) -> Option<TopicTo<WordMetaWithWord<'a, T, <Self as BasicTopicModel>::WordMeta<'a>>>> where T: Borrow<Q>, Q: Hash + Eq, Voc: 'a {
+    fn get_word_metas_with_word_by_word<'a, 'b: 'a, Q: ?Sized>(&'a self, word: &'b Q) -> Option<TopicTo<WordMetaWithWord<'a, T, <Self as BasicTopicModel>::WordMeta<'a>>>> where T: Borrow<Q>, Q: Hash + Eq, Voc: 'a {
         self.get_word_metas_with_word(self.get_id(word)?)
     }
 

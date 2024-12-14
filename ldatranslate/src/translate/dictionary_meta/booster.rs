@@ -1,5 +1,4 @@
 use ldatranslate_topicmodel::model::Probability;
-use ldatranslate_translate::TopicLike;
 use crate::translate::dictionary_meta::horizontal_boost_1::HorizontalScoreBoost;
 use crate::translate::dictionary_meta::vertical_boost_1::VerticalBoostedScores;
 
@@ -23,6 +22,14 @@ impl Booster {
 
     pub fn new(vertical_booster: Option<VerticalBoostedScores>, horizontal_booster: Option<HorizontalScoreBoost>) -> Self {
         Self { vertical_booster, horizontal_booster }
+    }
+
+    pub fn vertical_booster(&self) -> Option<&VerticalBoostedScores> {
+        self.vertical_booster.as_ref()
+    }
+
+    pub fn horizontal_booster(&self) -> Option<&HorizontalScoreBoost> {
+        self.horizontal_booster.as_ref()
     }
 }
 

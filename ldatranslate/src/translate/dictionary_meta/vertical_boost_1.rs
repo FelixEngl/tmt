@@ -1,9 +1,8 @@
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug};
 use std::hash::Hash;
 use std::sync::Arc;
 use itertools::Itertools;
-use ndarray::{ArcArray, Array1, ArrayBase, Data, Dimension, Ix1};
-use num::{Float, FromPrimitive};
+use ndarray::{ArcArray, Array1, ArrayBase, Data, Ix1};
 use rayon::prelude::*;
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary};
@@ -13,13 +12,12 @@ use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::translate::TranslatableTopicMatrixWithCreate;
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
 use ldatranslate_translate::{TopicLike, TopicModelLikeMatrix};
-use crate::py::translate::PyVerticalBoostConfig;
 use crate::translate::dictionary_meta::dict_meta::MetaTagTemplate;
 use crate::translate::dictionary_meta::{Similarity, SparseVectorFactory};
 use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
-use crate::translate::FieldConfig;
+use crate::translate::{VerticalScoreBoostConfig};
 
-#[allow(unused_imports)]
+#[allow(unused)]
 pub struct VerticalCountDictionaryMetaVector {
     topic_model: [Option<ArcArray<f64, Ix1>>; META_DICT_ARRAY_LENTH],
     template: MetaTagTemplate,
@@ -104,69 +102,6 @@ pub trait CalculateVerticalScore {
     ) -> Vec<f64>;
 }
 
-#[derive(Clone, Debug)]
-pub struct VerticalScoreBoostConfig {
-    pub field_config: FieldConfig,
-    pub calculator: FDivergenceCalculator,
-    pub normalized: bool
-}
-
-impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
-    fn from(value: PyVerticalBoostConfig) -> Self {
-        Self::new(
-            FieldConfig::new(
-                value.divergence.target_fields,
-                value.divergence.invert_target_fields,
-            ),
-            FDivergenceCalculator::new(
-                value.divergence.divergence,
-                value.divergence.alpha,
-                value.divergence.score_modifier_calculator
-            ),
-            value.normalized
-        )
-    }
-}
-
-impl VerticalScoreBoostConfig {
-    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, normalized: bool) -> Self {
-        Self { field_config, calculator, normalized }
-    }
-}
-
-impl CalculateVerticalScore for VerticalScoreBoostConfig {
-    delegate::delegate! {
-        to self.calculator {
-            fn calculate_score<T: TopicLike>(
-                &self,
-                topic: &T,
-                counts: &[(DictMetaTagIndex, Array1<u32>)],
-                counts_as_probs: &[(DictMetaTagIndex, Array1<f64>)],
-                topic_assoc: [f64; META_DICT_ARRAY_LENTH],
-            ) -> Vec<f64>;
-        }
-    }
-}
-
-impl Similarity for VerticalScoreBoostConfig {
-    type Error<A: Debug + Display> = EntropyWithAlphaError<A, f64>;
-
-    delegate::delegate! {
-        to self.calculator {
-            fn calculate<S1, S2, A, D>(
-                &self,
-                p: &ArrayBase<S1, D>,
-                q: &ArrayBase<S2, D>,
-            ) -> Result<A, EntropyWithAlphaError<A, f64>>
-            where
-                S1: Data<Elem = A>,
-                S2: Data<Elem = A>,
-                A: Float + FromPrimitive + Debug + Display,
-                D: Dimension;
-        }
-    }
-}
-
 
 #[derive(Clone, Debug)]
 pub struct VerticalBoostedScores {
@@ -212,6 +147,10 @@ impl VerticalBoostedScores {
         unsafe {
             self.alternative_scores.get_unchecked(topic_id).as_slice()
         }
+    }
+
+    pub fn alternative_scores(&self) -> &Vec<Vec<f64>> {
+        &self.alternative_scores
     }
 }
 
@@ -263,13 +202,15 @@ where
         "Number of availables metas: {}",
         word_id_to_meta.iter().filter(|v| v.is_some()).count()
     );
-    let template = calculator.field_config.create_with_factory(factory);
+    let template = calculator.field_config.create_with_factory(
+        factory
+    );
 
     let counts: Vec<_> = template.iter().par_bridge().map(|&target| {
         (target, matrix.vocabulary().ids().map(|id| {
             word_id_to_meta.get(id)
                 .and_then(|value| value.as_ref())
-                .map_or(0, |meta| { meta.get_count_for(target) })
+                .map_or(0, |meta| meta.get_count_for(target))
         }).collect::<Array1<u32>>())
     }).collect();
 
