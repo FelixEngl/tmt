@@ -46,7 +46,7 @@ use ldatranslate_voting::variable_provider::variable_names::*;
 use ldatranslate_voting::variable_provider::{VariableProvider, VariableProviderOut};
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::traits::VotingMethodMarker;
-use ldatranslate_voting::VotingMethod;
+use ldatranslate_voting::{VotingContext, VotingMethod};
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
 use crate::translate::dictionary_meta::booster::{Booster, TopicSpecificBooster};
@@ -141,6 +141,17 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }).transpose()?,
     );
 
+    if let Some(vert_boost) = booster.vertical_booster() {
+        for (idx, (ta, tb)) in target.matrix().iter().into_iter().zip_eq(vert_boost.alternative_scores().as_slice().into_iter()).enumerate() {
+            println!("Topic {idx}:");
+            for (a, b) in ta.iter().zip_eq(tb.iter()) {
+                println!("    {a} - {b}");
+            }
+            println!("----");
+        }
+    }
+
+
     if translation_dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
     }
@@ -175,6 +186,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
             ) - f64::EPSILON
         }
     };
+
+    println!("Epsilon: {}", epsilon);
 
     let mut topic_context: HashMapContext<TMTNumericTypes> = context_map! {
         EPSILON => as float epsilon,
@@ -417,16 +430,30 @@ where
                             mapped.collect_vec()
                         };
 
+                        let boosted_score = booster.boost_score(
+                            probability,
+                            original_voter_id,
+                            candidate,
+                        );
+
+                        // use std::fmt::Write;
+                        // let mut report = String::new();
+                        // writeln!(
+                        //     &mut report,
+                        //     "CANDIDATE: Boosted score: {} (probability: {}, id_a: {}, id_b: {}) => vert: {}, horiz: {:?}",
+                        //     boosted_score,
+                        //     probability,
+                        //     original_voter_id,
+                        //     candidate,
+                        //     booster.boost_vertical(probability, original_voter_id),
+                        //     booster.horizontal_booster().and_then(|value| value.get_boost_for(original_voter_id, candidate))
+                        // );
 
                         let mut context = context_map! {
                             COUNT_OF_VOTERS => as int mapped.len(),
                             HAS_TRANSLATION => true,
                             IS_ORIGIN_WORD => false,
-                            SCORE_CANDIDATE => as float booster.boost_score(
-                                probability,
-                                original_voter_id,
-                                candidate,
-                            ),
+                            SCORE_CANDIDATE => as float boosted_score,
                             CANDIDATE_ID => as int candidate
                         }.unwrap();
 
@@ -437,10 +464,21 @@ where
                             .map(|voter_a| {
 
                                 let probability_of_voter = booster.boost_score(
-                                    probability,
+                                    voter_a.score(),
                                     voter_a.voter_id(),
                                     candidate,
                                 );
+
+                                // writeln!(
+                                //     &mut report,
+                                //     "    VOTER: Boosted score: {} (probability: {}, id_a: {}, id_b: {}) => vert: {}, horiz: {:?}",
+                                //     probability_of_voter,
+                                //     voter_a.score(),
+                                //     voter_a.voter_id(),
+                                //     candidate,
+                                //     booster.boost_vertical(voter_a.score(), voter_a.voter_id()),
+                                //     booster.horizontal_booster().and_then(|value| value.get_boost_for(voter_a.voter_id(), candidate))
+                                // );
 
                                 let mut context_voter_a = context_map! {
                                     RECIPROCAL_RANK => float 1./ voter_a.importance() as f64,
@@ -471,6 +509,9 @@ where
                             })
                             .collect::<Result<Vec<_>, _>>();
 
+
+                        // println!("Topic {topic_id}, Candidate {candidate}: {:?}", voters.as_ref().map(|value| value.iter().map(|a| a.get_vote_value(SCORE).unwrap()).collect_vec()));
+
                         Some(
                             match voters {
                                 Ok(mut voters) => {
@@ -495,7 +536,6 @@ where
                                     ))
                                 }
                             }
-
                         )
                     }
                 }
@@ -657,9 +697,9 @@ where
 pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::direction::Invariant;
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMutMeta, Dictionary, DictionaryMutGen, DictionaryWithMeta};
-    use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
+    use ldatranslate_topicmodel::model::{BasicTopicModel, FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
-    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, MeanMethod, VerticalScoreBoostConfig};
+    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, MeanMethod, Transform, VerticalScoreBoostConfig};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::TranslateConfig;
     use ldatranslate_voting::spy::IntoSpy;
@@ -826,7 +866,7 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        true
+                        Some(Transform::Normalized)
                     ),
                 )
             ),
@@ -891,7 +931,7 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        true
+                        Some(Transform::Normalized)
                     ),
                 )
             ),
@@ -922,24 +962,28 @@ pub(crate) mod test {
             )
         };
 
+        println!("model_b:");
         let model_b = translate_topic_model_without_provider(
             &model_a,
             &dict,
             &config1,
         ).unwrap();
 
+        println!("model_c:");
         let model_c = translate_topic_model_without_provider(
             &model_a,
             &dict,
             &config2,
         ).unwrap();
 
+        println!("model_d:");
         let model_d = translate_topic_model_without_provider(
             &model_a,
             &dict,
             &config3,
         ).unwrap();
 
+        println!("model_e:");
         let model_e = translate_topic_model_without_provider(
             &model_a,
             &dict,

@@ -34,6 +34,7 @@ where
 
     type TopicMetas<'a>: TopicMetas + 'a where Self: 'a;
 
+    /// The number of topics
     fn len(&self) -> usize;
 
     /// The vocabulary associated to this translatable matrix.

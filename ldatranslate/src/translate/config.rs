@@ -8,7 +8,7 @@ use pyo3::{pyclass, pymethods, PyResult};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use itertools::Itertools;
-use rstats::{Median, Stats, RE};
+use rstats::{Median, MutVecg, Stats, RE};
 use strum::{AsRefStr, Display, EnumString, ParseError};
 use crate::py::translate::{PyHorizontalBoostConfig, PyVerticalBoostConfig};
 use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
@@ -109,17 +109,56 @@ impl FieldConfig {
 }
 
 
+#[cfg_attr(
+    feature = "gen_python_api",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum
+)]
+#[pyclass(eq, eq_int, hash, frozen)]
+#[derive(
+    Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString,
+)]
+pub enum Transform {
+    Linear,
+    Normalized,
+}
+
+impl Transform {
+    pub fn transform(&self, arr: &mut [f64]) {
+        match self {
+            Transform::Linear => {
+                // rstats::MutVecg::mlintrans()
+                let mm = indxvec::Vecops::minmax(arr.as_ref());
+                let range = mm.max - mm.min + f64::EPSILON;
+                for c in arr.iter_mut() {
+                    *c = (*c - mm.min + f64::EPSILON) / range
+                }
+            }
+            Transform::Normalized => {
+                let sum: f64 = arr.iter().sum();
+                if sum <= 0.0 {
+                    return;
+                }
+                arr.iter_mut().for_each(|value| {
+                    *value /= sum
+                });
+            }
+        }
+    }
+}
+
+register_python!(enum Transform;);
+
 
 #[derive(Clone, Debug)]
 pub struct VerticalScoreBoostConfig {
     pub field_config: FieldConfig,
     pub calculator: FDivergenceCalculator,
-    pub normalized: bool
+    pub transformer: Option<Transform>
 }
 
 impl VerticalScoreBoostConfig {
-    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, normalized: bool) -> Self {
-        Self { field_config, calculator, normalized }
+    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: Option<Transform>) -> Self {
+        Self { field_config, calculator, transformer }
     }
 }
 
@@ -136,7 +175,7 @@ impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
                 value.divergence.alpha,
                 value.divergence.score_modifier_calculator
             ),
-            value.normalized
+            value.transformer
         )
     }
 }

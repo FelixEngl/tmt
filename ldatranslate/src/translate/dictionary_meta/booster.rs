@@ -41,6 +41,8 @@ pub struct TopicSpecificBooster<'a> {
 
 impl<'a> TopicSpecificBooster<'a> {
 
+
+
     pub fn boost_vertical(&self, original_score: Probability, id_a: usize) -> f64 {
         if let Some(vertical_probabilities) = self.vertical_probabilities {
             // println!("id_a: {id_a} | {}", vertical_probabilities.len());
@@ -63,15 +65,18 @@ impl<'a> TopicSpecificBooster<'a> {
     }
 
     pub fn boost_score(&self, original_score: Probability, id_a: usize, id_b: usize) -> f64 {
-        let vertical_score = self.boost_vertical(original_score, id_a);
-        if let Some(booster) = self.horizontal_booster {
-            booster.boost_probability_for(
-                id_a,
-                id_b,
-                vertical_score,
-            )
-        } else {
-            vertical_score
-        }
+        self.boost_horizontal(
+            self.boost_vertical(original_score, id_a),
+            id_a,
+            id_b
+        )
+    }
+
+    pub fn vertical_probabilities(&self) -> Option<&'a [f64]> {
+        self.vertical_probabilities
+    }
+
+    pub fn horizontal_booster(&self) -> Option<&'a HorizontalScoreBoost> {
+        self.horizontal_booster
     }
 }

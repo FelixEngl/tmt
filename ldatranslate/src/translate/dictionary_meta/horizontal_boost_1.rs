@@ -234,7 +234,12 @@ impl HorizontalScoreBoost
             if self.config.linear_transformed {
                 probability + probability * boost
             } else {
-                (boost + probability).max(0.0)
+                let boosted = boost + probability;
+                if boosted <= 0.0 {
+                    f64::EPSILON
+                } else {
+                    boosted
+                }
             }
         } else {
             probability

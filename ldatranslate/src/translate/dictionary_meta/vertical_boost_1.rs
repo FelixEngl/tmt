@@ -134,7 +134,6 @@ impl VerticalBoostedScores {
             &sparse,
             &config,
             target,
-            config.normalized
         )?;
         Ok(
             Self {
@@ -186,9 +185,8 @@ impl VerticalBoostedScores {
 pub fn calculate_vertical_boost_matrice<Target, C, T, Voc>(
     word_id_to_meta: &[Option<C>],
     factory: &SparseVectorFactory,
-    calculator: &VerticalScoreBoostConfig,
+    config: &VerticalScoreBoostConfig,
     matrix: &Target,
-    normalized: bool
 ) -> Result<Vec<Vec<f64>>, EntropyWithAlphaError<f64, f64>>
 where
     Target: TranslatableTopicMatrixWithCreate<T, Voc>,
@@ -202,7 +200,7 @@ where
         "Number of availables metas: {}",
         word_id_to_meta.iter().filter(|v| v.is_some()).count()
     );
-    let template = calculator.field_config.create_with_factory(
+    let template = config.field_config.create_with_factory(
         factory
     );
 
@@ -228,10 +226,10 @@ where
     let mut result = matrix.matrix().iter().map(|topic| {
         calculate_for_topic_model(
             topic,
-            &calculator.calculator,
+            &config.calculator,
             encounter_probabilities.iter(),
         ).map(|topic_assoc| {
-            let end_result = calculator.calculator.calculate_score(
+            let end_result = config.calculator.calculate_score(
                 topic,
                 &counts,
                 &encounter_probabilities,
@@ -246,12 +244,9 @@ where
         })
     }).collect::<Result<Vec<_>, _>>()?;
 
-    if normalized {
+    if let Some(transformer) = config.transformer.as_ref()  {
         for topic in result.iter_mut() {
-            let sum: f64 = topic.iter().sum();
-            topic.iter_mut().for_each(|value| {
-                *value /= sum
-            });
+            transformer.transform(topic);
         }
     }
 
@@ -286,7 +281,7 @@ mod test {
     use crate::translate::dictionary_meta::vertical_boost_1::{calculate_vertical_boost_matrice, ScoreModifierCalculator, VerticalScoreBoostConfig};
     use crate::translate::dictionary_meta::voting::VerticalBoostedScores;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
-    use crate::translate::FieldConfig;
+    use crate::translate::{FieldConfig, Transform};
     use crate::translate::test::create_test_data;
 
     #[test]
@@ -347,10 +342,9 @@ mod test {
                     None,
                     ScoreModifierCalculator::WeightedSum
                 ),
-                true
+                Some(Transform::Linear)
             ),
             &model_a,
-            true
         ).expect("This should work");
 
         model_a.topics().iter().zip_eq(alt.iter()).enumerate().for_each(
@@ -382,7 +376,7 @@ mod test {
                         None,
                         ScoreModifierCalculator::WeightedSum
                     ),
-                    true
+                    Some(Transform::Linear)
                 )
             ),
             &dict,
