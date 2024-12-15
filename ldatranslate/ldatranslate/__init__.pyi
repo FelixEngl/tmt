@@ -1128,7 +1128,7 @@ class PyDictionary:
 
 
 class PyHorizontalBoostConfig:
-    def __new__(cls,divergence,mode = ...,alpha = ...,mean_method = ...,linear_transformed = ...): ...
+    def __new__(cls,divergence,mean_method = ...,normalize_mode = ...,alpha = ...,linear_transformed = ...): ...
     ...
 
 class PyMetaIter:
@@ -2192,6 +2192,7 @@ class SearchType(Enum):
     CommonPrefix = auto()
 
 class Transform(Enum):
+    Off = auto()
     Linear = auto()
     Normalized = auto()
 

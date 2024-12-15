@@ -69,10 +69,11 @@ impl Display for ClassCoocurrenceMatrix {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash)]
 pub enum NormalizeMode {
     Max,
-    Sum
+    #[default]
+    Sum,
 }
 
 register_python!(enum NormalizeMode;);

@@ -69,7 +69,7 @@ impl PyBasicBoostConfig {
             alpha,
             target_fields,
             invert_target_fields: invert_target_fields.unwrap_or(false),
-            score_modifier_calculator: score_modifier_calculator.unwrap_or(ScoreModifierCalculator::WeightedSum),
+            score_modifier_calculator: score_modifier_calculator.unwrap_or_default(),
         })
     }
 }
@@ -115,20 +115,20 @@ pub struct PyHorizontalBoostConfig {
 #[pymethods]
 impl PyHorizontalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, mode=None, alpha=None::<Option<f64>>, mean_method=None, linear_transformed=None))]
+    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
-        mode: Option<NormalizeMode>,
-        alpha: Option<Option<f64>>,
         mean_method: Option<MeanMethod>,
+        normalize_mode: Option<NormalizeMode>,
+        alpha: Option<Option<f64>>,
         linear_transformed: Option<bool>,
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
-            mode: mode.unwrap_or(NormalizeMode::Sum),
+            mode: normalize_mode.unwrap_or_default(),
             alpha: alpha.unwrap_or(Some(0.15)),
             linear_transformed: linear_transformed.unwrap_or(true),
-            mean_method: mean_method.unwrap_or(MeanMethod::default())
+            mean_method: mean_method.unwrap_or_default()
         })
     }
 }

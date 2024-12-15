@@ -141,17 +141,6 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }).transpose()?,
     );
 
-    if let Some(vert_boost) = booster.vertical_booster() {
-        for (idx, (ta, tb)) in target.matrix().iter().into_iter().zip_eq(vert_boost.alternative_scores().as_slice().into_iter()).enumerate() {
-            println!("Topic {idx}:");
-            for (a, b) in ta.iter().zip_eq(tb.iter()) {
-                println!("    {a} - {b}");
-            }
-            println!("----");
-        }
-    }
-
-
     if translation_dictionary.map_a_to_b().is_empty() {
         return Err(TranslateError::OptimizedDictionaryEmpty(DirectionMarker::AToB))
     }
