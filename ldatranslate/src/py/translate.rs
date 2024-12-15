@@ -80,7 +80,7 @@ impl PyBasicBoostConfig {
 #[derive(Debug, Clone)]
 pub struct PyVerticalBoostConfig {
     pub divergence: PyBasicBoostConfig,
-    pub transformer: Option<Transform>
+    pub transformer: Transform
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -94,7 +94,7 @@ impl PyVerticalBoostConfig {
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
-            transformer,
+            transformer: transformer.unwrap_or_default(),
         })
     }
 }
@@ -127,7 +127,7 @@ impl PyHorizontalBoostConfig {
             divergence,
             mode: mode.unwrap_or(NormalizeMode::Sum),
             alpha: alpha.unwrap_or(Some(0.15)),
-            linear_transformed: linear_transformed.unwrap_or(false),
+            linear_transformed: linear_transformed.unwrap_or(true),
             mean_method: mean_method.unwrap_or(MeanMethod::default())
         })
     }

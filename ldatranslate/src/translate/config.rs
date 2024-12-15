@@ -9,7 +9,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use itertools::Itertools;
 use rstats::{Median, MutVecg, Stats, RE};
-use strum::{AsRefStr, Display, EnumString, ParseError};
+use strum::{AsRefStr, Display, EnumIs, EnumString, ParseError};
 use crate::py::translate::{PyHorizontalBoostConfig, PyVerticalBoostConfig};
 use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
 use crate::translate::dictionary_meta::{MetaTagTemplate, SparseVectorFactory};
@@ -115,9 +115,11 @@ impl FieldConfig {
 )]
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(
-    Debug, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString,
+    Debug, Copy, Default, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString, EnumIs
 )]
 pub enum Transform {
+    Off,
+    #[default]
     Linear,
     Normalized,
 }
@@ -125,6 +127,7 @@ pub enum Transform {
 impl Transform {
     pub fn transform(&self, arr: &mut [f64]) {
         match self {
+            Transform::Off => {}
             Transform::Linear => {
                 // rstats::MutVecg::mlintrans()
                 let mm = indxvec::Vecops::minmax(arr.as_ref());
@@ -153,11 +156,11 @@ register_python!(enum Transform;);
 pub struct VerticalScoreBoostConfig {
     pub field_config: FieldConfig,
     pub calculator: FDivergenceCalculator,
-    pub transformer: Option<Transform>
+    pub transformer: Transform
 }
 
 impl VerticalScoreBoostConfig {
-    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: Option<Transform>) -> Self {
+    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: Transform) -> Self {
         Self { field_config, calculator, transformer }
     }
 }

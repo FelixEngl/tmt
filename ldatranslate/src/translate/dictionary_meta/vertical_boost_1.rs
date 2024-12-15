@@ -244,12 +244,11 @@ where
         })
     }).collect::<Result<Vec<_>, _>>()?;
 
-    if let Some(transformer) = config.transformer.as_ref()  {
+    if !config.transformer.is_off() {
         for topic in result.iter_mut() {
-            transformer.transform(topic);
+            config.transformer.transform(topic);
         }
     }
-
     Ok(result)
 }
 
@@ -376,7 +375,7 @@ mod test {
                         None,
                         ScoreModifierCalculator::WeightedSum
                     ),
-                    Some(Transform::Linear)
+                    Transform::Linear
                 )
             ),
             &dict,

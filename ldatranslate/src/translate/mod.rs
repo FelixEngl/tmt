@@ -866,7 +866,7 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        Some(Transform::Normalized)
+                        Transform::Linear
                     ),
                 )
             ),
@@ -900,7 +900,7 @@ pub(crate) mod test {
                         ),
                         NormalizeMode::Sum,
                         Some(0.15),
-                        false,
+                        true,
                         MeanMethod::GeometricMean
                     )
                 )
@@ -931,7 +931,7 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        Some(Transform::Normalized)
+                        Transform::Linear
                     ),
                 )
             ),
@@ -955,7 +955,7 @@ pub(crate) mod test {
                         ),
                         NormalizeMode::Sum,
                         Some(0.15),
-                        false,
+                        true,
                         MeanMethod::GeometricMean
                     )
                 )

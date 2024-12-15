@@ -1392,7 +1392,7 @@ class PyVariableProvider:
 
 
 class PyVerticalBoostConfig:
-    def __new__(cls,divergence,normalized = ...): ...
+    def __new__(cls,divergence,transformer = ...): ...
     ...
 
 class PyVocIter:
@@ -2190,6 +2190,10 @@ class SearchType(Enum):
     JaroWinkler = auto()
     SorensenDice = auto()
     CommonPrefix = auto()
+
+class Transform(Enum):
+    Linear = auto()
+    Normalized = auto()
 
 def create_topic_model_specific_dictionary(dictionary:PyDictionary,vocabulary:PyVocabulary) -> PyDictionary:
     ...
