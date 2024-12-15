@@ -176,7 +176,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }
     };
 
-    println!("Epsilon: {}", epsilon);
+    log::debug!("Epsilon: {}", epsilon);
 
     let mut topic_context: HashMapContext<TMTNumericTypes> = context_map! {
         EPSILON => as float epsilon,
