@@ -458,17 +458,6 @@ where
                                     candidate,
                                 );
 
-                                // writeln!(
-                                //     &mut report,
-                                //     "    VOTER: Boosted score: {} (probability: {}, id_a: {}, id_b: {}) => vert: {}, horiz: {:?}",
-                                //     probability_of_voter,
-                                //     voter_a.score(),
-                                //     voter_a.voter_id(),
-                                //     candidate,
-                                //     booster.boost_vertical(voter_a.score(), voter_a.voter_id()),
-                                //     booster.horizontal_booster().and_then(|value| value.get_boost_for(voter_a.voter_id(), candidate))
-                                // );
-
                                 let mut context_voter_a = context_map! {
                                     RECIPROCAL_RANK => float 1./ voter_a.importance() as f64,
                                     REAL_RECIPROCAL_RANK => float 1./ voter_a.rank() as f64,
@@ -497,9 +486,6 @@ where
                                 }
                             })
                             .collect::<Result<Vec<_>, _>>();
-
-
-                        // println!("Topic {topic_id}, Candidate {candidate}: {:?}", voters.as_ref().map(|value| value.iter().map(|a| a.get_vote_value(SCORE).unwrap()).collect_vec()));
 
                         Some(
                             match voters {
