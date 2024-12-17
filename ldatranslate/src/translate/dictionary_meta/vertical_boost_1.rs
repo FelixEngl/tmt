@@ -229,6 +229,7 @@ where
             topic,
             &config.calculator,
             encounter_probabilities.iter(),
+            config.factor
         ).map(|topic_assoc| {
             let end_result = config.calculator.calculate_score(
                 topic,
@@ -253,13 +254,13 @@ where
     Ok(result)
 }
 
-fn calculate_for_topic_model<'a, T, I, S>(topic: &T, calculator: &FDivergenceCalculator, topic_model_meta: I) -> Result<[f64; META_DICT_ARRAY_LENTH], EntropyWithAlphaError<f64, f64>>
+fn calculate_for_topic_model<'a, T, I, S>(topic: &T, calculator: &FDivergenceCalculator, topic_model_meta: I, factor: f64) -> Result<[f64; META_DICT_ARRAY_LENTH], EntropyWithAlphaError<f64, f64>>
 where
     T: TopicLike,
     I: IntoIterator<Item = &'a (DictMetaTagIndex, ArrayBase<S, Ix1>)> + 'a,
     S: Data<Elem=f64> + 'a,
 {
-    let topic = Array1::from(topic.iter().copied().collect::<Vec<_>>());
+    let topic = Array1::from(topic.iter().map(|&value| value * factor).collect::<Vec<_>>());
     let mut result = [0.0; META_DICT_ARRAY_LENTH];
     for (idx, counts) in topic_model_meta.into_iter() {
         let div = calculator.calculate(counts, &topic)?;
@@ -342,7 +343,8 @@ mod test {
                     None,
                     ScoreModifierCalculator::WeightedSum
                 ),
-                Some(Transform::Linear)
+                Transform::Linear,
+                None
             ),
             &model_a,
         ).expect("This should work");
@@ -376,7 +378,8 @@ mod test {
                         None,
                         ScoreModifierCalculator::WeightedSum
                     ),
-                    Transform::Linear
+                    Transform::Linear,
+                    None
                 )
             ),
             &dict,

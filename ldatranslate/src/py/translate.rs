@@ -80,21 +80,24 @@ impl PyBasicBoostConfig {
 #[derive(Debug, Clone)]
 pub struct PyVerticalBoostConfig {
     pub divergence: PyBasicBoostConfig,
-    pub transformer: Transform
+    pub transformer: Transform,
+    pub factor: Option<f64>
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyVerticalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, transformer=None))]
+    #[pyo3(signature = (divergence, transformer=None, factor=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
-        transformer: Option<Transform>
+        transformer: Option<Transform>,
+        factor: Option<f64>
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
             transformer: transformer.unwrap_or_default(),
+            factor
         })
     }
 }
@@ -108,27 +111,30 @@ pub struct PyHorizontalBoostConfig {
     pub mode: NormalizeMode,
     pub alpha: Option<f64>,
     pub linear_transformed: bool,
-    pub mean_method: MeanMethod
+    pub mean_method: MeanMethod,
+    pub factor: Option<f64>
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyHorizontalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None))]
+    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None, factor=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
         mean_method: Option<MeanMethod>,
         normalize_mode: Option<NormalizeMode>,
         alpha: Option<Option<f64>>,
         linear_transformed: Option<bool>,
+        factor: Option<f64>
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
             mode: normalize_mode.unwrap_or_default(),
             alpha: alpha.unwrap_or(Some(0.15)),
             linear_transformed: linear_transformed.unwrap_or(true),
-            mean_method: mean_method.unwrap_or_default()
+            mean_method: mean_method.unwrap_or_default(),
+            factor
         })
     }
 }

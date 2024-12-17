@@ -156,12 +156,13 @@ register_python!(enum Transform;);
 pub struct VerticalScoreBoostConfig {
     pub field_config: FieldConfig,
     pub calculator: FDivergenceCalculator,
-    pub transformer: Transform
+    pub transformer: Transform,
+    pub factor: f64
 }
 
 impl VerticalScoreBoostConfig {
-    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: Transform) -> Self {
-        Self { field_config, calculator, transformer }
+    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: Transform, factor: Option<f64>) -> Self {
+        Self { field_config, calculator, transformer, factor: factor.unwrap_or(1.0) }
     }
 }
 
@@ -178,7 +179,8 @@ impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
                 value.divergence.alpha,
                 value.divergence.score_modifier_calculator
             ),
-            value.transformer
+            value.transformer,
+            value.factor
         )
     }
 }
@@ -255,6 +257,7 @@ pub struct HorizontalScoreBootConfig {
     pub mode: NormalizeMode,
     pub linear_transformed: bool,
     pub mean_method: MeanMethod,
+    pub factor: f64
 }
 
 impl HorizontalScoreBootConfig {
@@ -265,8 +268,9 @@ impl HorizontalScoreBootConfig {
         alpha: Option<f64>,
         linear_transformed: bool,
         mean_method: MeanMethod,
+        factor: Option<f64>
     ) -> Self {
-        Self { alpha, calculator, mode, field_config, linear_transformed, mean_method }
+        Self { alpha, calculator, mode, field_config, linear_transformed, mean_method, factor: factor.unwrap_or(1.0) }
     }
 }
 
@@ -285,7 +289,8 @@ impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
             config.mode,
             config.alpha,
             config.linear_transformed,
-            config.mean_method
+            config.mean_method,
+            config.factor
         )
     }
 }

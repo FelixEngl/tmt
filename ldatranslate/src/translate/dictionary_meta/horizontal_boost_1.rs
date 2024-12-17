@@ -232,9 +232,9 @@ impl HorizontalScoreBoost
     pub fn boost_probability_for(&self, id_a: usize, id_b: usize, probability: Probability) -> f64 {
         if let Some(boost) = self.get_boost_for(id_a, id_b) {
             if self.config.linear_transformed {
-                probability + probability * boost
+                probability + probability * boost * self.config.factor
             } else {
-                let boosted = boost + probability;
+                let boosted = boost * self.config.factor + probability;
                 if boosted <= 0.0 {
                     f64::EPSILON
                 } else {
