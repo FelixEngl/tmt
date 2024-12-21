@@ -10,6 +10,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use rstats::{Median, MutVecg, Stats, RE};
 use strum::{AsRefStr, Display, EnumIs, EnumString, ParseError};
+use ldatranslate_topicmodel::model::Probability;
 use crate::py::translate::{PyHorizontalBoostConfig, PyVerticalBoostConfig};
 use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
 use crate::translate::dictionary_meta::{MetaTagTemplate, SparseVectorFactory};
@@ -205,7 +206,6 @@ pub enum MeanMethod {
     Median
 }
 
-register_python!(enum MeanMethod;);
 
 impl MeanMethod {
     pub fn fails_on_empty(&self) -> bool {
@@ -249,16 +249,64 @@ impl MeanMethod {
     }
 }
 
+
+/// Setting if to keep the original word from language A
+#[cfg_attr(
+    feature = "gen_python_api",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum
+)]
+#[pyclass(eq, eq_int, hash, frozen)]
+#[derive(
+    Debug, Default, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString,
+)]
+pub enum TransformMethod {
+    #[default]
+    Linear,
+    Sum,
+    MultPow,
+    Pipe,
+}
+
+impl TransformMethod {
+    pub fn boost(&self, probability: Probability, boost: f64, factor: f64) -> f64 {
+        let boosted = match self {
+            TransformMethod::Linear => {
+                probability + probability * boost * factor
+            }
+            TransformMethod::Sum => {
+                boost * factor + probability
+            }
+            TransformMethod::MultPow => {
+                probability * boost.powf(factor)
+            }
+            TransformMethod::Pipe => {
+                return probability
+            }
+        };
+        if boosted <= 0.0 {
+            f64::EPSILON
+        } else {
+            boosted
+        }
+    }
+}
+
+
+
+register_python!(enum MeanMethod; enum TransformMethod;);
+
 #[derive(Debug, Clone)]
 pub struct HorizontalScoreBootConfig {
     pub alpha: Option<f64>,
     pub calculator: FDivergenceCalculator,
     pub field_config: FieldConfig,
     pub mode: NormalizeMode,
-    pub linear_transformed: bool,
+    pub linear_transformed: TransformMethod,
     pub mean_method: MeanMethod,
     pub factor: f64
 }
+
+
 
 impl HorizontalScoreBootConfig {
     pub fn new(
@@ -266,7 +314,7 @@ impl HorizontalScoreBootConfig {
         calculator: FDivergenceCalculator,
         mode: NormalizeMode,
         alpha: Option<f64>,
-        linear_transformed: bool,
+        linear_transformed: TransformMethod,
         mean_method: MeanMethod,
         factor: Option<f64>
     ) -> Self {

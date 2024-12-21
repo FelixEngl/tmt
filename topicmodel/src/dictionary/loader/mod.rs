@@ -38,6 +38,7 @@ mod ms_terms_reader;
 mod toolkit;
 mod muse;
 mod wiktionary_reader;
+mod google_ngram;
 
 pub trait Preprocessor {
     fn preprocess_word<'a, D: DirLang>(&self, origin: &'static str, word: &'a str) -> Option<Either<Cow<'a, str>, (Cow<'a, str>, Cow<'a, str>)>>;

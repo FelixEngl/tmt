@@ -28,7 +28,7 @@ use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
-use crate::translate::{KeepOriginalWord, MeanMethod, Transform, TranslateConfig};
+use crate::translate::{KeepOriginalWord, MeanMethod, Transform, TransformMethod, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
@@ -110,7 +110,7 @@ pub struct PyHorizontalBoostConfig {
     pub divergence: PyBasicBoostConfig,
     pub mode: NormalizeMode,
     pub alpha: Option<f64>,
-    pub linear_transformed: bool,
+    pub linear_transformed: TransformMethod,
     pub mean_method: MeanMethod,
     pub factor: Option<f64>
 }
@@ -132,7 +132,7 @@ impl PyHorizontalBoostConfig {
             divergence,
             mode: normalize_mode.unwrap_or_default(),
             alpha: alpha.unwrap_or(Some(0.15)),
-            linear_transformed: linear_transformed.unwrap_or(true),
+            linear_transformed: linear_transformed.unwrap_or_default(),
             mean_method: mean_method.unwrap_or_default(),
             factor
         })

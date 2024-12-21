@@ -1381,6 +1381,7 @@ dependencies = [
  "camino",
  "const-str",
  "convert_case",
+ "csv",
  "delegate",
  "deranged",
  "derive_builder",

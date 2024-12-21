@@ -33,6 +33,7 @@ pub enum PartOfSpeech {
     #[strum(serialize = "noun form")]
     #[strum(serialize = "ideophone")]
     #[strum(serialize = "noum")]
+    #[strum(serialize = "NOUN")]
     #[strum(serialize = "verbal noun")]
     Noun = 0,
 
@@ -64,12 +65,14 @@ pub enum PartOfSpeech {
     #[strum(serialize = "instransitive verb")]
     #[strum(serialize = "perfect participle")]
     #[strum(serialize = "transitive verb")]
+    #[strum(serialize = "VERB")]
     Verb = 1,
 
     #[strum(to_string = "adv", serialize = "Adv")]
     #[strum(serialize = "adverb")]
     #[strum(serialize = "adv.")]
     #[strum(serialize = "adverbs")]
+    #[strum(serialize = "ADV")]
     Adv = 2,
 
     /// Associated Tags:
@@ -87,6 +90,7 @@ pub enum PartOfSpeech {
     #[strum(serialize = "prepositional pronoun")]
     #[strum(serialize = "personal pronoun")]
     #[strum(serialize = "pronoun")]
+    #[strum(serialize = "PRON")]
     Pron = 3,
 
     /// Associated Tags:
@@ -97,6 +101,7 @@ pub enum PartOfSpeech {
     #[strum(serialize = "relative")]
     #[strum(serialize = "conjuntion")]
     #[strum(serialize = "conjunction")]
+    #[strum(serialize = "CONJ")]
     Conj = 4,
 
     #[strum(to_string = "prep", serialize = "Prep")]
@@ -115,6 +120,7 @@ pub enum PartOfSpeech {
     #[strum(serialize = "possessive determiner")]
     #[strum(serialize = "possessive pronoun")]
     #[strum(serialize = "determiner")]
+    #[strum(serialize = "DET")]
     Det = 6,
 
     #[strum(to_string = "intj", serialize = "Intj")]
@@ -130,6 +136,7 @@ pub enum PartOfSpeech {
     #[strum(to_string = "num", serialize = "Num")]
     #[strum(serialize = "number")]
     #[strum(serialize = "numeral")]
+    #[strum(serialize = "NUM")]
     Num = 8,
 
     /// Associated Tags:
@@ -146,6 +153,7 @@ pub enum PartOfSpeech {
     #[strum(serialize = "proper noun")]
     #[strum(serialize = "pnoun")]
     #[strum(serialize = "proper oun")]
+    #[strum(serialize = "PROPN")]
     Name = 10,
 
     /// Associated Tags:
@@ -193,6 +201,7 @@ pub enum PartOfSpeech {
     #[strum(to_string = "particle", serialize = "Particle")]
     #[strum(serialize = "Partikel")]
     #[strum(serialize = "ptcl")]
+    #[strum(serialize = "PRT")]
     Particle = 14,
 
     #[strum(to_string = "other", serialize = "Other")]
@@ -223,6 +232,7 @@ pub enum PartOfSpeech {
     #[strum(serialize = "predicative")]
     #[strum(serialize = "comparative")]
     #[strum(serialize = "adjectives")]
+    #[strum(serialize = "ADJ")]
     Adj = 17,
 
     #[strum(to_string = "adj_noun", serialize = "Adj_noun")]
@@ -244,7 +254,9 @@ pub enum PartOfSpeech {
     #[strum(to_string = "affix", serialize = "Affix")]
     Affix = 22,
 
+    /// ADP => An adposition: either a preposition or a postposition
     #[strum(to_string = "ambiposition", serialize = "Ambiposition")]
+    #[strum(serialize = "ADP")]
     Ambiposition = 23,
 
     /// Associated Tags:
