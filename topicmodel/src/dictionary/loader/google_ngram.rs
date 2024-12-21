@@ -7,11 +7,13 @@ use std::iter::Enumerate;
 use std::num::{NonZero, NonZeroUsize, ParseIntError};
 use std::path::PathBuf;
 use camino::{Utf8Path, Utf8PathBuf};
+use either::Either;
 use flate2::bufread::MultiGzDecoder;
 use itertools::{ExactlyOneError, Itertools};
 use rayon::iter::{IterBridge, Map};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 use thiserror::Error;
 use trie_rs::map::TrieBuilder;
 use ldatranslate_toolkit::create_interned_typesafe_symbol;
@@ -265,25 +267,52 @@ fn read_to_file(inp: impl AsRef<Utf8Path>, outp_dir: impl AsRef<Utf8Path>, prefi
     let targ_name = inp.file_name().expect("Input file name missing!");
     let output = outp_dir.as_ref().join(targ_name);
     if output.exists() && output.is_file() {
-        log::info!("Already finished {inp} -> {output}!");
+        log::info!("{targ_name}: Already finished {inp} -> {output}!");
         return Ok(output);
     }
+
+    let temp_copy =  outp_dir.as_ref().join(format!("{targ_name}_temp"));
+
+    struct FreeOnDrop {
+        dir: Utf8PathBuf
+    }
+
+    impl Drop for FreeOnDrop {
+        fn drop(&mut self) {
+            std::fs::remove_file(&self.dir).unwrap()
+        }
+    }
+
+    log::info!("{targ_name}: Copy to temp: {inp} -> {temp_copy}");
+
+    std::fs::copy(
+        &inp,
+        &temp_copy,
+    )?;
+
+    let temp_copy = FreeOnDrop {
+        dir: temp_copy
+    };
 
     let mut reader = read_google_ngram_file(
         inp,
         true
     )?;
 
-    let outp =  File::options().write(true).create(true).open(&output)?;
 
     let mut collection: Vec<(String, (usize, usize))> = Vec::new();
-
     let mut last = 0usize;
+    let mut skipped_because_not_alphabetic = 0usize;
+    log::info!("{targ_name}: Start processing!");
     for (line_no, value) in reader.enumerate() {
         if line_no % 1000 == 0 {
             log::info!("{targ_name}: {}", line_no);
         }
         let (word, _, _) = value?;
+        if !word.starts_with(|c: char| c.is_alphabetic()) {
+            skipped_because_not_alphabetic += 1;
+            continue;
+        }
         let prefix =  if let Some((pos, _)) = word.char_indices().skip(prefix_len.get()).next() {
             &word[..pos]
         } else {
@@ -298,7 +327,12 @@ fn read_to_file(inp: impl AsRef<Utf8Path>, outp_dir: impl AsRef<Utf8Path>, prefi
         collection.push((prefix.to_string(), (last, line_no)));
         last = line_no;
     }
+    log::info!("{targ_name}: Finished processing: Skipped:{skipped_because_not_alphabetic}");
 
+    drop(temp_copy);
+
+    log::info!("{targ_name}: Write to {output}");
+    let outp =  File::options().write(true).create(true).open(&output)?;
     bincode::serialize_into(
         BufWriter::new(outp),
         &(targ_name, prefix_len, collection)
@@ -338,34 +372,75 @@ fn reconstruct_from_files<I: IntoIterator<Item=P>, P: AsRef<Utf8Path>>(paths: I)
     )
 }
 
-fn read_filed(target: &str, n_gram_size: u8, file_max: usize, prefix_len: usize) -> Result<Vec<Utf8PathBuf>, GoogleNGramError> {
-    (0..file_max).into_par_iter().map(|i|{
-        let file = format!(r#"Z:\NGrams\{n_gram_size}-{i:0>5}-of-{file_max:0>5}.gz"#);
-        log::info!("Process: {file}");
+fn read_filed(inp_root: impl AsRef<Utf8Path>, out_root: impl AsRef<Utf8Path>, target: &str, n_gram_size: u8, file_max: usize, prefix_len: usize) -> Result<(), GoogleNGramError> {
+    let inp_root = inp_root.as_ref();
+    let out_root = out_root.as_ref();
+    let files = (0..file_max).into_par_iter().map(|i|{
+        let inp_file = inp_root.join(format!("{n_gram_size}-{i:0>5}-of-{file_max:0>5}.gz"));
+        let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
+        log::info!("Process: {inp_file} into {outp_dir}");
         read_to_file(
-            file,
-            format!(r#"E:\tmp\google_ngams\{target}_{n_gram_size}"#),
+            inp_file,
+            outp_dir,
             unsafe{NonZeroUsize::new_unchecked(prefix_len)}
         )
-    }).collect::<Result<Vec<_>, _>>()
+    }).collect::<Result<Vec<_>, _>>()?;
+    let idx_file = out_root.join(format!("ngram_index_{target}_{n_gram_size}.idx"));
+    if idx_file.exists() {
+        log::info!("{idx_file} exists!");
+        return Ok(())
+    }
+    let idx = reconstruct_from_files(files)?;
+    bincode::serialize_into(
+        BufWriter::new(File::options().write(true).create(true).truncate(true).open(idx_file).unwrap()),
+        &idx
+    )?;
+    Ok(())
 }
 
 
 #[cfg(test)]
 mod test {
-    use std::fs::File;
-    use std::io::BufWriter;
     use log::LevelFilter;
-    use crate::dictionary::loader::google_ngram::{read_filed, reconstruct_from_files};
+    use crate::dictionary::loader::google_ngram::{read_filed};
 
     #[test]
     fn can_read(){
         env_logger::builder().filter_level(LevelFilter::Info).init();
-        let data = read_filed("de", 1, 8, 4).unwrap();
-        let idx = reconstruct_from_files(data).unwrap();
-        bincode::serialize_into(
-            BufWriter::new(File::options().write(true).create(true).truncate(true).open("ngram_index_en_1.idx").unwrap()),
-            &idx
+        read_filed(
+            r#"Z:\NGrams"#,
+            r#"E:\tmp\google_ngams"#,
+            "de",
+            1,
+            8,
+            4
+        ).unwrap();
+
+        read_filed(
+            r#"Z:\NGrams"#,
+            r#"E:\tmp\google_ngams"#,
+            "en",
+            1,
+            24,
+            4
+        ).unwrap();
+
+        read_filed(
+            r#"Z:\NGrams"#,
+            r#"E:\tmp\google_ngams"#,
+            "de",
+            2,
+            181,
+            4
+        ).unwrap();
+
+        read_filed(
+            r#"Z:\NGrams"#,
+            r#"E:\tmp\google_ngams"#,
+            "en",
+            2,
+            589,
+            4
         ).unwrap();
     }
 }
