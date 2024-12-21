@@ -372,9 +372,18 @@ fn reconstruct_from_files<I: IntoIterator<Item=P>, P: AsRef<Utf8Path>>(paths: I)
     )
 }
 
-fn read_filed(inp_root: impl AsRef<Utf8Path>, out_root: impl AsRef<Utf8Path>, target: &str, n_gram_size: u8, file_max: usize, prefix_len: usize) -> Result<(), GoogleNGramError> {
+fn generate_index_for(inp_root: impl AsRef<Utf8Path>, out_root: impl AsRef<Utf8Path>, target: &str, n_gram_size: u8, file_max: usize, prefix_len: usize) -> Result<(), GoogleNGramError> {
     let inp_root = inp_root.as_ref();
     let out_root = out_root.as_ref();
+
+    log::info!("Start processing for {target}_{ngram_size}!");
+
+    let idx_file = out_root.join(format!("ngram_index_{target}_{n_gram_size}.idx"));
+    if idx_file.exists() {
+        log::info!("{idx_file} exists!");
+        return Ok(())
+    }
+
     let files = (0..file_max).into_par_iter().map(|i|{
         let inp_file = inp_root.join(format!("{n_gram_size}-{i:0>5}-of-{file_max:0>5}.gz"));
         let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
@@ -385,11 +394,8 @@ fn read_filed(inp_root: impl AsRef<Utf8Path>, out_root: impl AsRef<Utf8Path>, ta
             unsafe{NonZeroUsize::new_unchecked(prefix_len)}
         )
     }).collect::<Result<Vec<_>, _>>()?;
-    let idx_file = out_root.join(format!("ngram_index_{target}_{n_gram_size}.idx"));
-    if idx_file.exists() {
-        log::info!("{idx_file} exists!");
-        return Ok(())
-    }
+
+    log::info!("Start reconstruction!");
     let idx = reconstruct_from_files(files)?;
     bincode::serialize_into(
         BufWriter::new(File::options().write(true).create(true).truncate(true).open(idx_file).unwrap()),
@@ -402,12 +408,12 @@ fn read_filed(inp_root: impl AsRef<Utf8Path>, out_root: impl AsRef<Utf8Path>, ta
 #[cfg(test)]
 mod test {
     use log::LevelFilter;
-    use crate::dictionary::loader::google_ngram::{read_filed};
+    use crate::dictionary::loader::google_ngram::{generate_index_for};
 
     #[test]
     fn can_read(){
         env_logger::builder().filter_level(LevelFilter::Info).init();
-        read_filed(
+        generate_index_for(
             r#"Z:\NGrams"#,
             r#"E:\tmp\google_ngams"#,
             "de",
@@ -416,7 +422,7 @@ mod test {
             4
         ).unwrap();
 
-        read_filed(
+        generate_index_for(
             r#"Z:\NGrams"#,
             r#"E:\tmp\google_ngams"#,
             "en",
@@ -425,7 +431,7 @@ mod test {
             4
         ).unwrap();
 
-        read_filed(
+        generate_index_for(
             r#"Z:\NGrams"#,
             r#"E:\tmp\google_ngams"#,
             "de",
@@ -434,7 +440,7 @@ mod test {
             4
         ).unwrap();
 
-        read_filed(
+        generate_index_for(
             r#"Z:\NGrams"#,
             r#"E:\tmp\google_ngams"#,
             "en",
