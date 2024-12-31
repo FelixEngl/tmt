@@ -213,7 +213,7 @@ fn parse_line(line: &str) -> Result<(String, Option<PartOfSpeech>, CompactNGramC
 
 pub struct NGramIter {
     line_iter: Lines<BufReader<MultiGzDecoder<BufReader<Box<dyn Read>>>>>,
-    line_count: u64
+    line_count: u128
 }
 
 impl NGramIter {
@@ -225,7 +225,7 @@ impl NGramIter {
         }
     }
 
-    pub fn line_count(&self) -> u64 {
+    pub fn line_count(&self) -> u128 {
         self.line_count
     }
 }
@@ -329,7 +329,7 @@ where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
         value
     })?;
 
-    Ok((iter.line_count() as u128, result))
+    Ok((iter.line_count(), result))
 }
 
 /// Returns the number of unique words
