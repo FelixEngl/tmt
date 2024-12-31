@@ -10,12 +10,15 @@ use ldatranslate_topicmodel::language_hint::LanguageHint;
 use ldatranslate_topicmodel::vocabulary::BasicVocabulary;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::cmp::max;
+use std::cmp::{max, Ordering};
 use std::collections::HashMap;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, BufWriter};
+use std::path::PathBuf;
 use std::sync::Arc;
+use pyo3::{pyclass, pymethods, PyErr, PyResult};
+use ldatranslate_toolkit::register_python;
 
 pub fn normalize_ngram_counts<T1, T2>(
     word_count: HashMap<T1, HashMap<T2, NGramCount>>,
@@ -45,13 +48,16 @@ pub fn create_word_freqs<T, K1, K2>(
     voc: &impl BasicVocabulary<T>,
     n_gram_size: u8,
     word_count: &HashMap<K1, HashMap<K2, NGramCount>>,
-) -> HashMap<T, u128> where
+) -> HashMap<T, NGramCount> where
     T: AsRef<str> + Clone + Eq + Hash,
     K1: Eq + Hash + Borrow<str>,
     K2: AsRef<str>,
 {
-    let min = word_count.values().flat_map(|v| v.values().map(|v| v.frequency)).min().unwrap_or(0);
-    let min = min.saturating_sub(1);
+    let min = word_count.values().flat_map(|v| v.values().map(|v| v)).min().unwrap_or(NGramCount::ZERO);
+    let min = NGramCount::new(
+        min.frequency.saturating_sub(1),
+        min.volumes.saturating_sub(1),
+    );
     voc.iter().filter(|&value| {
         value.as_ref().chars().filter(|v| ' '.eq(v)).count() + 1 == n_gram_size as usize
     }).map(|value| {
@@ -59,43 +65,53 @@ pub fn create_word_freqs<T, K1, K2>(
             found.iter().filter_map(|(k, v)| {
                 let correct_count = k.as_ref().chars().filter(|v| ' '.eq(v)).count() + 1 == n_gram_size as usize;
                 if correct_count {
-                    Some(v.frequency)
+                    Some(v)
                 } else {
                     None
                 }
-            }).max().map(|a| (value.clone(), a))
+            }).max().map(|a| (value.clone(), a.clone()))
         }).unwrap_or_else(|| (value.clone(), min))
     }).collect::<HashMap<_, _>>()
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct WordCountEntry {
-    counts: HashMap<String, u128>,
+    counts: HashMap<String, NGramCount>,
     total_count_1: TotalCount,
     total_count_2: TotalCount,
-    min_counts: u128
+    min_counts: NGramCount,
+    unique_1: u128,
+    unique_2: u128,
 }
 
 impl WordCountEntry {
     pub fn new(
-        counts: HashMap<String, u128>,
+        counts: HashMap<String, NGramCount>,
         total_count_1: TotalCount,
-        total_count_2: TotalCount
+        total_count_2: TotalCount,
+        unique_1: u128,
+        unique_2: u128,
     ) -> Self {
-        let min = counts.values().min().cloned().unwrap_or(0);
-        Self::with_min(counts, total_count_1, total_count_2, min)
+        let min = counts.values().min().cloned().unwrap_or(NGramCount::ZERO);
+        Self::with_min(counts, total_count_1, total_count_2, min, unique_1, unique_2)
     }
 
     pub fn with_min(
-        counts: HashMap<String, u128>,
+        counts: HashMap<String, NGramCount>,
         total_count_1: TotalCount,
         total_count_2: TotalCount,
-        min_counts: u128
+        min_counts: NGramCount,
+        unique_1: u128,
+        unique_2: u128,
     ) -> Self {
-        Self { counts, total_count_1, total_count_2, min_counts }
+        Self { counts, total_count_1, total_count_2, min_counts, unique_1, unique_2 }
     }
 }
 
+register_python!(struct WordCounts;);
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct WordCounts {
     inner: Arc<HashMap<String, WordCountEntry>>
@@ -106,6 +122,19 @@ impl WordCounts {
         Self { inner: Arc::new(inner) }
     }
 }
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl WordCounts {
+    #[staticmethod]
+    pub fn load(path: PathBuf) -> PyResult<WordCounts> {
+        bincode::deserialize_from(BufReader::new(File::open(path)?)).map_err(|err| {
+            PyErr::new(err.to_string())
+        })
+    }
+}
+
+
 
 fn generate_complete_data(
     inp_root: impl AsRef<Utf8Path>,
@@ -180,8 +209,10 @@ fn generate_complete_data(
             let save_path = base_path.as_ref().join(provider.is_some().to_string());
             std::fs::create_dir_all(&save_path).unwrap();
 
-            let mut overall_en: HashMap<ArcStr, u128> = HashMap::new();
-            let mut overall_de: HashMap<ArcStr, u128> = HashMap::new();
+            let mut overall_en: HashMap<ArcStr, NGramCount> = HashMap::new();
+            let mut overall_de: HashMap<ArcStr, NGramCount> = HashMap::new();
+
+            let mut unique_word_counts = HashMap::new();
 
             for (n, name, lang) in [
                 (2, "word_counts_en_2", "en"),
@@ -189,8 +220,10 @@ fn generate_complete_data(
                 (1, "word_counts_en_1", "en"),
                 (1, "word_counts_de_1", "de"),
             ] {
+                let (unique_ct, content) = bincode::deserialize_from::<_, (u128, _)>(BufReader::new(File::open(base_path.as_ref().join(format!(r#"{name}.bin"#))).unwrap())).unwrap();
+                unique_word_counts.insert(format!("{lang}_{n}"), unique_ct);
                 let normalized: HashMap<String, HashMap<String, NGramCount>> = normalize_ngram_counts::<String, String>(
-                    bincode::deserialize_from(BufReader::new(File::open(base_path.as_ref().join(format!(r#"{name}.bin"#))).unwrap())).unwrap(),
+                    content,
                     provider.as_ref().and_then(|v| v.get_tokenizers_for(&LanguageHint::new(lang))).as_ref()
                 );
 
@@ -238,7 +271,16 @@ fn generate_complete_data(
             bincode::serialize_into(
                 BufWriter::new(
                     File::options().write(true).create(true).open(
-                        save_path.join(format!("en_counts_for_voc.bin"))
+                        save_path.join("unique_word_counts.bin")
+                    ).unwrap()
+                ),
+                &unique_word_counts
+            ).unwrap();
+
+            bincode::serialize_into(
+                BufWriter::new(
+                    File::options().write(true).create(true).open(
+                        save_path.join("en_counts_for_voc.bin")
                     ).unwrap()
                 ),
                 &overall_en
@@ -247,7 +289,7 @@ fn generate_complete_data(
             bincode::serialize_into(
                 BufWriter::new(
                     File::options().write(true).create(true).open(
-                        save_path.join(format!("de_counts_for_voc.bin"))
+                        save_path.join("de_counts_for_voc.bin")
                     ).unwrap()
                 ),
                 &overall_de
@@ -256,7 +298,7 @@ fn generate_complete_data(
             serde_json::to_writer_pretty(
                 BufWriter::new(
                     File::options().write(true).create(true).open(
-                        save_path.join(format!("en_counts_for_voc.json"))
+                        save_path.join("en_counts_for_voc.json")
                     ).unwrap()
                 ),
                 &overall_en
@@ -305,75 +347,96 @@ fn generate_complete_data(
 
 
 
-        let base_p_t= base_path.as_ref().join("true");
-        let en_dat_t = bincode::deserialize_from(BufReader::new(File::open(base_p_t.join("en_counts_for_voc.bin")).unwrap())).unwrap();
-        let de_dat_t = bincode::deserialize_from(BufReader::new(File::open(base_p_t.join("de_counts_for_voc.bin")).unwrap())).unwrap();
+        {
+            let base_p_t= base_path.as_ref().join("true");
+            let unique: HashMap<String, u128> = bincode::deserialize_from(BufReader::new(File::open(base_p_t.join("unique_word_counts.bin")).unwrap())).unwrap();
+            let en_dat_t = bincode::deserialize_from(BufReader::new(File::open(base_p_t.join("en_counts_for_voc.bin")).unwrap())).unwrap();
+            let de_dat_t = bincode::deserialize_from(BufReader::new(File::open(base_p_t.join("de_counts_for_voc.bin")).unwrap())).unwrap();
+
+            let unique_en_1 = *unique.get("en_1").unwrap();
+            let unique_en_2 = *unique.get("en_1").unwrap();
+            let unique_de_1 = *unique.get("de_1").unwrap();
+            let unique_de_2 = *unique.get("de_1").unwrap();
+
+            let en_entry_t = WordCountEntry::new(
+                en_dat_t,
+                en_ct_1,
+                en_ct_2,
+                unique_en_1,
+                unique_en_2
+            );
+            let de_entry_t = WordCountEntry::new(
+                de_dat_t,
+                de_ct_1,
+                de_ct_2,
+                unique_de_1,
+                unique_de_2
+            );
 
 
-        let en_entry_t = WordCountEntry::new(
-            en_dat_t,
-            en_ct_1,
-            en_ct_2
-        );
-        let de_entry_t = WordCountEntry::new(
-            de_dat_t,
-            de_ct_1,
-            de_ct_2
-        );
+            let wc_t = WordCounts::new(
+                {
+                    let mut hm = HashMap::new();
+                    hm.insert("en".to_string(), en_entry_t);
+                    hm.insert("de".to_string(), de_entry_t);
+                    hm
+                }
+            );
+
+            bincode::serialize_into(
+                BufWriter::new(
+                    File::options().write(true).create(true).open(
+                        base_path.as_ref().join("en_de_counts_t.bin")
+                    ).unwrap()
+                ),
+                &wc_t
+            ).unwrap();
+        }
 
 
-        let wc_t = WordCounts::new(
-            {
-                let mut hm = HashMap::new();
-                hm.insert("en".to_string(), en_entry_t);
-                hm.insert("de".to_string(), de_entry_t);
-                hm
-            }
-        );
+        {
+            let base_p_f= base_path.as_ref().join("false");
+            let unique: HashMap<String, u128> = bincode::deserialize_from(BufReader::new(File::open(base_p_f.join("unique_word_counts.bin")).unwrap())).unwrap();
+            let en_dat_f = bincode::deserialize_from(BufReader::new(File::open(base_p_f.join("en_counts_for_voc.bin")).unwrap())).unwrap();
+            let de_dat_f = bincode::deserialize_from(BufReader::new(File::open(base_p_f.join("de_counts_for_voc.bin")).unwrap())).unwrap();
+            let unique_en_1 = *unique.get("en_1").unwrap();
+            let unique_en_2 = *unique.get("en_1").unwrap();
+            let unique_de_1 = *unique.get("de_1").unwrap();
+            let unique_de_2 = *unique.get("de_1").unwrap();
 
-        bincode::serialize_into(
-            BufWriter::new(
-                File::options().write(true).create(true).open(
-                    base_path.as_ref().join(format!("en_de_counts_t.bin"))
-                ).unwrap()
-            ),
-            &wc_t
-        ).unwrap();
+            let en_entry_f = WordCountEntry::new(
+                en_dat_f,
+                en_ct_1,
+                en_ct_2,
+                unique_en_1,
+                unique_en_2
+            );
+            let de_entry_f = WordCountEntry::new(
+                de_dat_f,
+                de_ct_1,
+                de_ct_2,
+                unique_de_1,
+                unique_de_2
+            );
 
-        drop(wc_t);
+            let wc_f = WordCounts::new(
+                {
+                    let mut hm = HashMap::new();
+                    hm.insert("en".to_string(), en_entry_f);
+                    hm.insert("de".to_string(), de_entry_f);
+                    hm
+                }
+            );
 
-        let base_p_f= base_path.as_ref().join("false");
-        let en_dat_f = bincode::deserialize_from(BufReader::new(File::open(base_p_f.join("en_counts_for_voc.bin")).unwrap())).unwrap();
-        let de_dat_f = bincode::deserialize_from(BufReader::new(File::open(base_p_f.join("de_counts_for_voc.bin")).unwrap())).unwrap();
-
-        let en_entry_f = WordCountEntry::new(
-            en_dat_f,
-            en_ct_1,
-            en_ct_2
-        );
-        let de_entry_f = WordCountEntry::new(
-            de_dat_f,
-            de_ct_1,
-            de_ct_2
-        );
-
-        let wc_f = WordCounts::new(
-            {
-                let mut hm = HashMap::new();
-                hm.insert("en".to_string(), en_entry_f);
-                hm.insert("de".to_string(), de_entry_f);
-                hm
-            }
-        );
-
-        bincode::serialize_into(
-            BufWriter::new(
-                File::options().write(true).create(true).open(
-                    base_path.as_ref().join(format!("en_de_counts_f.bin"))
-                ).unwrap()
-            ),
-            &wc_f
-        ).unwrap();
+            bincode::serialize_into(
+                BufWriter::new(
+                    File::options().write(true).create(true).open(
+                        base_path.as_ref().join("en_de_counts_f.bin")
+                    ).unwrap()
+                ),
+                &wc_f
+            ).unwrap();
+        }
     }
 
     generate_final(

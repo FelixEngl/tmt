@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -72,7 +73,7 @@ impl Display for CompactNGramCounts {
 }
 
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Ord)]
 pub struct NGramCount<T = u128> {
     pub frequency: T,
     pub volumes: T
@@ -81,6 +82,17 @@ pub struct NGramCount<T = u128> {
 impl<T> NGramCount<T> {
     pub const fn new(frequency: T, volumes: T) -> Self {
         Self { frequency, volumes }
+    }
+}
+
+impl<T> PartialOrd for NGramCount<T> where T: PartialOrd {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self.frequency.partial_cmp(&other.frequency) {
+            Some(Ordering::Equal) | None => {
+                self.volumes.cmp(&other.volumes)
+            }
+            other => other
+        }
     }
 }
 
@@ -97,6 +109,8 @@ impl<T> NGramCount<T> {
         }
     }
 }
+
+
 
 
 impl<T> NGramCount<T> where T: ConstZero {
@@ -189,15 +203,21 @@ fn parse_line(line: &str) -> Result<(String, Option<PartOfSpeech>, CompactNGramC
 }
 
 pub struct NGramIter {
-    line_iter: Lines<BufReader<MultiGzDecoder<BufReader<Box<dyn Read>>>>>
+    line_iter: Lines<BufReader<MultiGzDecoder<BufReader<Box<dyn Read>>>>>,
+    line_count: u64
 }
 
 impl NGramIter {
     pub fn new(reader: impl Read + Sized + 'static) -> Self {
         let read: Box<dyn Read> = Box::new(reader);
         Self {
-            line_iter: BufReader::new(MultiGzDecoder::new(BufReader::new(read))).lines()
+            line_iter: BufReader::new(MultiGzDecoder::new(BufReader::new(read))).lines(),
+            line_count: 0
         }
+    }
+
+    pub fn line_count(&self) -> u64 {
+        self.line_count
     }
 }
 
@@ -207,6 +227,7 @@ impl Iterator for NGramIter {
         let next = self.line_iter.next()?;
         match next {
             Ok(value) => {
+                self.line_count += 1;
                 Some(parse_line(&value))
             }
             Err(err) => {
@@ -234,14 +255,15 @@ pub fn read_google_ngram_file(file: impl AsRef<Utf8Path>, load_into_memory: bool
 }
 
 
-fn process_data<T>(par_iter: impl ParallelIterator<Item=Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>>) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+fn process_data<T>(par_iter: impl ParallelIterator<Item=Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>>) -> Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
 where T: AsRef<str> + Eq + Hash + Clone + Send + Borrow<str>
 {
-    par_iter.fold(|| Ok(HashMap::new()), |acc, value| {
-        value.and_then(|other| {
+    par_iter.fold(|| Ok((0, HashMap::new())), |acc, value| {
+        value.and_then(|(ct, other)| {
             acc.map(|mut acc| {
+                acc.0 += ct;
                 for (k, v) in other {
-                    match acc.entry(k) {
+                    match acc.1.entry(k) {
                         Entry::Occupied(mut value) => {
                             let inner: &mut HashMap<String, NGramCount<u128>> = value.get_mut();
                             for (k, v) in v {
@@ -256,11 +278,12 @@ where T: AsRef<str> + Eq + Hash + Clone + Send + Borrow<str>
                 acc
             })
         })
-    }).reduce(|| Ok(HashMap::new()), |acc, value| {
-        value.and_then(|other| {
+    }).reduce(|| Ok((0, HashMap::new())), |acc, value| {
+        value.and_then(|(ct, other)| {
             acc.map(|mut acc| {
+                acc.0 += ct;
                 for (k, v) in other {
-                    match acc.entry(k) {
+                    match acc.1.entry(k) {
                         Entry::Occupied(mut value) => {
                             let inner: &mut HashMap<String, NGramCount<u128>> = value.get_mut();
                             for (k, v) in v {
@@ -280,10 +303,10 @@ where T: AsRef<str> + Eq + Hash + Clone + Send + Borrow<str>
 
 
 
-fn process_ngram_iter<T>(iter: NGramIter, voc: &Vocabulary<T>, tokenizer: &Tokenizer) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+fn process_ngram_iter<T>(mut iter: NGramIter, voc: &Vocabulary<T>, tokenizer: &Tokenizer) -> Result<(u64, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
 where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
 {
-    iter.filter_map(|ngram| {
+    let result = (&mut iter).filter_map(|ngram| {
         ngram.map(|(word, _, ct)| {
             let word_proc = tokenizer.process_and_join_word_lemma(&word);
             if let Some(k) = voc.get_value(&word_proc) {
@@ -295,9 +318,12 @@ where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
     }).fold_ok(HashMap::<T, HashMap<String, NGramCount<u128>>>::new(), |mut value, (k, word, v)|{
         value.entry(k).or_insert(HashMap::new()).entry(word).and_modify(|t| *t += v).or_insert(v);
         value
-    })
+    })?;
+
+    Ok((iter.line_count(), result))
 }
 
+/// Returns the number of unique words
 pub fn scan_for_voc<T>(
     inp_root: impl AsRef<Utf8Path>,
     out_root: impl AsRef<Utf8Path>,
@@ -306,7 +332,7 @@ pub fn scan_for_voc<T>(
     file_max: usize,
     voc: &Vocabulary<T>,
     tokenizer: &Tokenizer
-) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+) -> Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
 where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + Borrow<str>
 {
 
@@ -318,7 +344,7 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
     let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
     if idx_file.exists() {
         log::info!("{idx_file} exists!");
-        return bincode::deserialize_from::<_, HashMap<T, HashMap<String, NGramCount<u128>>>>(BufReader::new(File::open(idx_file)?)).map_err(Into::into)
+        return bincode::deserialize_from::<_, (u128, HashMap<T, HashMap<String, NGramCount<u128>>>)>(BufReader::new(File::open(idx_file)?)).map_err(Into::into)
     }
 
     fn scan_single_for_voc<T>(
@@ -326,7 +352,7 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
         outp_dir: impl AsRef<Utf8Path>,
         voc: &Vocabulary<T>,
         tokenizer: &Tokenizer
-    ) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+    ) -> Result<(u64, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
     where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
     {
         let inp = inp.as_ref();
@@ -345,14 +371,14 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
         })
     }
 
-
+    let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
+    std::fs::create_dir_all(&outp_dir).map_err(GoogleNGramError::IoError)?;
     let result = process_data((0..file_max).into_par_iter().map(|i|{
         let inp_file = inp_root.join(format!("{n_gram_size}-{i:0>5}-of-{file_max:0>5}.gz"));
-        let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
-        log::info!("Process: {inp_file} into {outp_dir}");
+        log::info!("Process: {inp_file}");
         scan_single_for_voc(
             inp_file,
-            outp_dir,
+            outp_dir.as_path(),
             voc,
             tokenizer
         )
@@ -374,7 +400,7 @@ pub fn scan_for_voc_online<T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned 
     voc: &Vocabulary<T>,
     tokenizer: &Tokenizer,
     id_filter: fn(usize) -> bool
-) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError> {
+) -> Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError> {
 
     let out_root = out_root.as_ref();
 
@@ -383,7 +409,7 @@ pub fn scan_for_voc_online<T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned 
     let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
     if idx_file.exists() {
         log::info!("{idx_file} exists!");
-        return bincode::deserialize_from::<_, HashMap<T, HashMap<String, NGramCount<u128>>>>(BufReader::new(File::open(idx_file)?)).map_err(Into::into)
+        return bincode::deserialize_from::<_, (u128, HashMap<T, HashMap<String, NGramCount<u128>>>)>(BufReader::new(File::open(idx_file)?)).map_err(Into::into)
     }
 
     struct Collector<W: Write> {
@@ -402,7 +428,7 @@ pub fn scan_for_voc_online<T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned 
         outp_dir: impl AsRef<Utf8Path>,
         voc: &Vocabulary<T>,
         tokenizer: &Tokenizer
-    ) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+    ) -> Result<(u64, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
     where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
     {
         let outp_dir = outp_dir.as_ref();
@@ -421,15 +447,15 @@ pub fn scan_for_voc_online<T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned 
             process_ngram_iter(NGramIter::new(temp_file), voc, tokenizer)
         })
     }
-
+    let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
+    std::fs::create_dir_all(&outp_dir).map_err(GoogleNGramError::IoError)?;
     let result = process_data((0..file_max).into_par_iter().filter(|&x| id_filter(x)).map(|i|{
         let file_name = format!("{n_gram_size}-{i:0>5}-of-{file_max:0>5}.gz");
-        let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
-        log::info!("Process: {outp_dir} after DL");
+        log::info!("Process: {outp_dir} -> {file_name} after DL");
         scan_single_for_voc(
             base_url,
             &file_name,
-            outp_dir,
+            outp_dir.as_path(),
             voc,
             tokenizer
         )
