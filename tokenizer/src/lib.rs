@@ -23,6 +23,7 @@ use charabia::{Language, Script, Tokenizer as CTokenizer, TokenizerBuilder as CT
 use charabia::normalizer::{ClassifierOption, NormalizedTokenIter, NormalizerOption};
 use charabia::segmenter::{SegmentedStrIter, SegmentedTokenIter};
 use fst::Set;
+use itertools::Itertools;
 use rust_stemmers::{Algorithm};
 use trie_rs::map::Trie;
 use crate::phrase_recognizer::{PhraseRecognizerIter};
@@ -156,6 +157,10 @@ pub struct Tokenizer<'tb> {
 impl<'tb> Tokenizer<'tb> {
     pub fn new(unicode: bool, tokenizer: CTokenizer<'tb>, normalizer_option: Cow<'tb, NormalizerOption<'tb>>, stemmer: Option<SmartStemmer>, trie: Option<Cow<'tb, Trie<u8, usize>>>) -> Self {
         Self { unicode, tokenizer, stemmer, trie, normalizer_option }
+    }
+
+    pub fn process_and_join_word_lemma(&self, original: &str) -> String {
+        self.process(original).filter(|value| !value.1.lemma.is_empty() && value.1.is_word()).map(|value| value.1.lemma().to_string()).join(" ")
     }
 
     /// Runs the tokenizer in phrase mode

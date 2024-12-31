@@ -46,7 +46,7 @@ use ldatranslate_voting::variable_provider::variable_names::*;
 use ldatranslate_voting::variable_provider::{VariableProvider, VariableProviderOut};
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::traits::VotingMethodMarker;
-use ldatranslate_voting::{VotingContext, VotingMethod};
+use ldatranslate_voting::{VotingMethod};
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
 use crate::translate::dictionary_meta::booster::{Booster, TopicSpecificBooster};
@@ -672,9 +672,9 @@ where
 pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::direction::Invariant;
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMutMeta, Dictionary, DictionaryMutGen, DictionaryWithMeta};
-    use ldatranslate_topicmodel::model::{BasicTopicModel, FullTopicModel, TopicModel};
+    use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
-    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, MeanMethod, Transform, VerticalScoreBoostConfig};
+    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, MeanMethod, Transform, TransformMethod, VerticalScoreBoostConfig};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::TranslateConfig;
     use ldatranslate_voting::spy::IntoSpy;
@@ -841,7 +841,8 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        Transform::Linear
+                        Transform::Linear,
+                        None
                     ),
                 )
             ),
@@ -875,8 +876,10 @@ pub(crate) mod test {
                         ),
                         NormalizeMode::Sum,
                         Some(0.15),
-                        true,
-                        MeanMethod::GeometricMean
+                        false,
+                        TransformMethod::Pipe,
+                        MeanMethod::GeometricMean,
+                        None
                     )
                 )
             )
@@ -906,7 +909,8 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        Transform::Linear
+                        Transform::Linear,
+                        None
                     ),
                 )
             ),
@@ -930,8 +934,10 @@ pub(crate) mod test {
                         ),
                         NormalizeMode::Sum,
                         Some(0.15),
-                        true,
-                        MeanMethod::GeometricMean
+                        false,
+                        TransformMethod::Pipe,
+                        MeanMethod::GeometricMean,
+                        None
                     )
                 )
             )

@@ -12,39 +12,39 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::collections::{HashMap, HashSet};
+use crate::py::aliases::{UnderlyingPyVocabulary, UnderlyingPyWord};
 use crate::py::helpers::LanguageHintValue;
+use crate::py::tokenizer::PyAlignedArticleProcessor;
 use crate::py::vocabulary::PyVocabulary;
-use ldatranslate_topicmodel::dictionary::direction::{DirectionMarker, DirectedElement, LanguageMarker};
-use ldatranslate_topicmodel::dictionary::iterators::{DictionaryWithMetaIterator};
-use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx, LoadedMetadataEx, MetaField, DictMetaCounts};
-use ldatranslate_topicmodel::dictionary::metadata::{MetaIterOwned, MetadataManager};
-use ldatranslate_topicmodel::dictionary::*;
-use ldatranslate_topicmodel::language_hint::LanguageHint;
-use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, SearchableVocabulary, Vocabulary};
-use itertools::{EitherOrBoth, Itertools};
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::{pyclass, pymethods, Bound, PyRef, PyResult};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use arcstr::ArcStr;
 use camino::Utf8PathBuf;
 use either::Either;
-use pyo3::prelude::PyAnyMethods;
-use pyo3::types::PyTuple;
-use strum::{EnumCount, IntoEnumIterator};
-use crate::py::tokenizer::PyAlignedArticleProcessor;
-use ldatranslate_toolkit::{define_py_method, register_python, type_def_wrapper};
-use crate::py::aliases::{UnderlyingPyVocabulary, UnderlyingPyWord};
+use itertools::{EitherOrBoth, Itertools};
 use ldatranslate_tokenizer::Tokenizer;
 use ldatranslate_toolkit::from_str_ex::ParseEx;
 use ldatranslate_toolkit::special_python_values::{PyEither, PyEitherOrBoth};
+use ldatranslate_toolkit::{define_py_method, register_python, type_def_wrapper};
+use ldatranslate_topicmodel::dictionary::direction::{DirectedElement, DirectionMarker, LanguageMarker};
 use ldatranslate_topicmodel::dictionary::io::{ReadableDictionary, WriteModeLiteral, WriteableDictionary};
+use ldatranslate_topicmodel::dictionary::iterators::DictionaryWithMetaIterator;
 use ldatranslate_topicmodel::dictionary::len::Len;
-use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{PyDictMetaVector};
+use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::PyDictMetaVector;
+use ldatranslate_topicmodel::dictionary::metadata::ex::{DictMetaCounts, LoadedMetadataEx, MetaField, MetadataManagerEx};
+use ldatranslate_topicmodel::dictionary::metadata::{MetaIterOwned, MetadataManager};
 use ldatranslate_topicmodel::dictionary::search::{SearchInput, SearchType, SearchTypeLiteral};
+use ldatranslate_topicmodel::dictionary::*;
+use ldatranslate_topicmodel::language_hint::LanguageHint;
+use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, SearchableVocabulary, Vocabulary};
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::prelude::PyAnyMethods;
+use pyo3::types::PyTuple;
+use pyo3::{pyclass, pymethods, Bound, PyRef, PyResult};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use strum::{EnumCount, IntoEnumIterator};
 
 pub type DefaultDict = EfficientDictWithMetaDefault;
 
@@ -843,16 +843,16 @@ register_python! {
 
 #[cfg(test)]
 mod test  {
-    use std::collections::HashSet;
+    use crate::py::dictionary::PyDictionary;
+    use crate::py::tokenizer::PyAlignedArticleProcessor;
     use camino::Utf8PathBuf;
-    use strum::IntoEnumIterator;
-    use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryFilterable, DictionaryWithVocabulary};
     use ldatranslate_topicmodel::dictionary::direction::DirectionMarker;
     use ldatranslate_topicmodel::dictionary::io::WriteableDictionary;
     use ldatranslate_topicmodel::dictionary::metadata::ex::MetaField;
     use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
-    use crate::py::dictionary::PyDictionary;
-    use crate::py::tokenizer::PyAlignedArticleProcessor;
+    use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, DictionaryFilterable, DictionaryWithVocabulary};
+    use std::collections::HashSet;
+    use strum::IntoEnumIterator;
 
     #[test]
     fn see(){
@@ -862,6 +862,7 @@ mod test  {
             assert!(set.insert((value.a.0, value.b.0)))
         }
     }
+
 
     #[test]
     fn test_processing(){

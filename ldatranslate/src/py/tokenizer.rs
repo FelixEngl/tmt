@@ -1359,6 +1359,10 @@ impl PyAlignedArticleProcessor {
     pub fn get_tokenizers_for(&self, hint: &LanguageHint) -> Option<Tokenizer> {
         Some(self.builders.get(hint)?.build_tokenizer())
     }
+
+    pub fn get_builder(&self, hint: &LanguageHint) -> Option<&PyTokenizerBuilder> {
+        self.builders.get(hint)
+    }
 }
 
 

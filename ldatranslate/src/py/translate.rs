@@ -110,8 +110,9 @@ pub struct PyHorizontalBoostConfig {
     pub divergence: PyBasicBoostConfig,
     pub mode: NormalizeMode,
     pub alpha: Option<f64>,
-    pub linear_transformed: TransformMethod,
+    pub linear_transformed: bool,
     pub mean_method: MeanMethod,
+    pub transform: TransformMethod,
     pub factor: Option<f64>
 }
 
@@ -119,13 +120,14 @@ pub struct PyHorizontalBoostConfig {
 #[pymethods]
 impl PyHorizontalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None, factor=None))]
+    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None, transform=None, factor=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
         mean_method: Option<MeanMethod>,
         normalize_mode: Option<NormalizeMode>,
         alpha: Option<Option<f64>>,
         linear_transformed: Option<bool>,
+        transform: Option<TransformMethod>,
         factor: Option<f64>
     ) -> PyResult<Self> {
         Ok(Self{
@@ -133,6 +135,7 @@ impl PyHorizontalBoostConfig {
             mode: normalize_mode.unwrap_or_default(),
             alpha: alpha.unwrap_or(Some(0.15)),
             linear_transformed: linear_transformed.unwrap_or_default(),
+            transform: transform.unwrap_or_default(),
             mean_method: mean_method.unwrap_or_default(),
             factor
         })

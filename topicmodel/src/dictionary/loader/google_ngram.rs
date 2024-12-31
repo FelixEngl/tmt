@@ -1,25 +1,32 @@
-use std::cmp::max;
+use std::borrow::Borrow;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Lines, Read};
-use std::iter::Enumerate;
-use std::num::{NonZero, NonZeroUsize, ParseIntError};
-use std::path::PathBuf;
-use camino::{Utf8Path, Utf8PathBuf};
-use either::Either;
+use std::hash::Hash;
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Lines, Read, Write};
+use std::iter::Sum;
+use std::num::{ParseIntError};
+use std::ops::{Add, AddAssign};
+use std::path::{Path};
+use camino::{Utf8Path};
+use curl::easy::{Handler, List, WriteError};
 use flate2::bufread::MultiGzDecoder;
-use itertools::{ExactlyOneError, Itertools};
-use rayon::iter::{IterBridge, Map};
+use itertools::{Itertools};
+use num::cast::AsPrimitive;
+use num::traits::ConstZero;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
-use trie_rs::map::TrieBuilder;
-use ldatranslate_toolkit::create_interned_typesafe_symbol;
+use ldatranslate_tokenizer::Tokenizer;
 use ldatranslate_toolkit::from_str_ex::{ParseErrorEx, ParseEx};
+use ldatranslate_toolkit::fs::retry_copy;
 use crate::dictionary::word_infos::PartOfSpeech;
-use crate::vocabulary::{Vocabulary, VocabularyMut};
+use crate::vocabulary::{SearchableVocabulary, Vocabulary};
+
+
+// Google NGrams: https://storage.googleapis.com/books/ngrams/books/datasetsv3.html
 
 #[derive(Debug, Error)]
 pub enum GoogleNGramError {
@@ -38,40 +45,104 @@ pub enum GoogleNGramError {
 }
 
 
-type MatchCountType = u64;
-type ValueCountType = u64;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompactNGramCount {
-    match_count_sum: u128,
-    value_count_sum: u128,
-    raw: HashMap<u16, (MatchCountType, ValueCountType)>
+pub struct CompactNGramCounts {
+    sum: NGramCount<u128>,
+    raw: HashMap<u16, NGramCount<u64>>
 }
 
-impl CompactNGramCount {
-    fn new(raw: Vec<(u16, MatchCountType, ValueCountType)>) -> CompactNGramCount {
-        let mut match_count_sum = 0;
-        let mut value_count_sum = 0;
-        for (_, m, v) in raw.iter().copied() {
-            match_count_sum += m as u128;
-            value_count_sum += v as u128;
-        }
+
+
+impl CompactNGramCounts {
+    fn new(raw: HashMap<u16, NGramCount<u64>>) -> CompactNGramCounts {
         Self {
-            match_count_sum,
-            value_count_sum,
-            raw: raw.into_iter().map(|(a, b, c)| (a, (b, c))).collect()
+            sum: raw.values().copied().sum::<NGramCount<u128>>(),
+            raw: raw.into_iter().collect()
         }
     }
 }
 
-impl Display for CompactNGramCount {
+
+impl Display for CompactNGramCounts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(match_counts:{}, value_counts:{}, years:{})", self.match_count_sum, self.value_count_sum, self.raw.values().len())
+        write!(f, "(sum:{}, years:{})", self.sum, self.raw.values().len())
     }
 }
 
-fn parse_line(line: &str) -> Result<(String, Option<PartOfSpeech>, CompactNGramCount), GoogleNGramError> {
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct NGramCount<T = u128> {
+    pub frequency: T,
+    pub volumes: T
+}
+
+impl<T> NGramCount<T> {
+    pub const fn new(frequency: T, volumes: T) -> Self {
+        Self { frequency, volumes }
+    }
+}
+
+impl<T> NGramCount<T> {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn as_<O>(self) -> NGramCount<O>
+        where
+            T: AsPrimitive<O>,
+            O: Copy + 'static
+    {
+        NGramCount {
+            frequency: self.frequency.as_(),
+            volumes: self.volumes.as_(),
+        }
+    }
+}
+
+
+impl<T> NGramCount<T> where T: ConstZero {
+    pub const ZERO: NGramCount<T> = NGramCount::new(T::ZERO, T::ZERO);
+}
+
+impl<T> Add for NGramCount<T> where T: Add<Output=T> {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            frequency: self.frequency + rhs.frequency,
+            volumes: self.volumes + rhs.volumes,
+        }
+    }
+}
+
+impl<T> AddAssign for NGramCount<T> where T: AddAssign<T> {
+    fn add_assign(&mut self, rhs: Self) {
+        self.frequency += rhs.frequency;
+        self.volumes += rhs.volumes;
+    }
+}
+
+impl<T, O> Sum<NGramCount<O>> for NGramCount<T>
+where
+    T: Add<Output=T> + ConstZero + Copy + 'static,
+    O: AsPrimitive<T>
+{
+    fn sum<I: Iterator<Item=NGramCount<O>>>(iter: I) -> Self {
+        iter.fold(Self::ZERO, |acc, x| acc + x.as_::<T>())
+    }
+}
+
+impl<T> Display for NGramCount<T> where T: Display {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(frequency:{}, volume number:{})", self.frequency, self.volumes)
+    }
+}
+
+fn parse_line(line: &str) -> Result<(String, Option<PartOfSpeech>, CompactNGramCounts), GoogleNGramError> {
+    // v3: https://github.com/orgtre/google-books-words/blob/main/src/google-books-words.py
+
+    // split line by tab
     let mut contents = line.split('\t');
+
+    //  first element is always the ngram
     let (word, tag) = if let Some(word_and_tag) = contents.next() {
         if word_and_tag.len() > 1 && word_and_tag.contains('_') {
             let (word, tag) = word_and_tag.rsplit_once("_").ok_or_else(|| GoogleNGramError::NotSplittable(word_and_tag.to_string(), "_"))?;
@@ -87,30 +158,34 @@ fn parse_line(line: &str) -> Result<(String, Option<PartOfSpeech>, CompactNGramC
                     }
                 }.ok();
                 if tag.is_some() {
-                    (word.to_string(), tag)
+                    (word.trim().to_string(), tag)
                 } else {
-                    (word_and_tag.to_string(), None)
+                    (word_and_tag.trim().to_string(), None)
                 }
             }
         } else {
-            (word_and_tag.to_string(), None)
+            (word_and_tag.trim().to_string(), None)
         }
     } else {
         return Err(GoogleNGramError::NotSplittable(line.to_string(), "\t"));
     };
+
+    // remainder is always a list with elements of form
+    // "year,frequency,number_of_volumes"
+    // sorted increasingly by year but with gaps
     let years_and_values = contents.map(|value| {
-        value.split(',').collect_tuple().ok_or(GoogleNGramError::NotSplittable(value.to_string(), ",")).and_then(|(year, match_count, volume_count)| {
-            year.parse_ex::<u16>().and_then(|year| {
-                match_count.parse_ex::<MatchCountType>().and_then(|match_count| {
-                    volume_count.parse_ex::<ValueCountType>().map(|volume_count| {
-                        (year, match_count, volume_count)
+        value.split(',').collect_tuple().ok_or(GoogleNGramError::NotSplittable(value.to_string(), ",")).and_then(|(year, frequency, number_of_volumes)| {
+            year.parse_ex_tagged::<u16>("year").and_then(|year| {
+                frequency.parse_ex_tagged::<u64>("frequency").and_then(|frequency| {
+                    number_of_volumes.parse_ex_tagged::<u64>("number_of_volumes").map(|number_of_volumes| {
+                        (year, NGramCount::new(frequency, number_of_volumes))
                     })
                 })
             }).map_err(Into::into)
         })
-    }).collect::<Result<Vec<_>, _>>()?;
+    }).collect::<Result<HashMap<_, _>, _>>()?;
 
-    Ok((word, tag, CompactNGramCount::new(years_and_values)))
+    Ok((word, tag, CompactNGramCounts::new(years_and_values)))
 }
 
 pub struct NGramIter {
@@ -124,34 +199,10 @@ impl NGramIter {
             line_iter: BufReader::new(MultiGzDecoder::new(BufReader::new(read))).lines()
         }
     }
-
-    pub fn skip_n(&mut self, n: usize) -> Result<(), NonZero<usize>> {
-        // advance_by
-        /*
-        Advances the iterator by n elements.
-
-        This method will eagerly skip n elements by calling next up to n times until None is encountered.
-        advance_by(n) will return Ok(()) if the iterator successfully advances by n elements, or a
-        Err(NonZero<usize>) with value k if None is encountered, where k is remaining number of
-        steps that could not be advanced because the iterator ran out. If self is empty and n is
-        non-zero, then this returns Err(n). Otherwise, k is always less than n.
-
-        Calling advance_by(0) can do meaningful work, for example Flatten can advance its outer
-        iterator until it finds an inner iterator that is not empty, which then often allows it
-        to return a more accurate size_hint() than in its initial state.
-         */
-        for i in 0..n {
-            if self.line_iter.next().is_none() {
-                // SAFETY: `i` is always less than `n`.
-                return Err(unsafe { NonZero::new_unchecked(n - i) });
-            }
-        }
-        Ok(())
-    }
 }
 
 impl Iterator for NGramIter {
-    type Item = Result<(String, Option<PartOfSpeech>, CompactNGramCount), GoogleNGramError>;
+    type Item = Result<(String, Option<PartOfSpeech>, CompactNGramCounts), GoogleNGramError>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.line_iter.next()?;
         match next {
@@ -182,271 +233,289 @@ pub fn read_google_ngram_file(file: impl AsRef<Utf8Path>, load_into_memory: bool
     }
 }
 
-create_interned_typesafe_symbol! {
-    FileName
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NGramIndex {
-    trie: trie_rs::map::Trie<u8, (FileNameSymbol, usize, usize)>,
-    path_interner: FileNameStringInterner,
-    prefix_len: NonZeroUsize
-}
-
-impl NGramIndex {
-    pub fn builder(prefix_len: NonZeroUsize) -> NGramIndexBuilder {
-        NGramIndexBuilder::new(prefix_len)
-    }
-}
-
-#[derive(Debug)]
-pub struct NGramIndexBuilder {
-    registry: Vec<(String, (FileNameSymbol, usize, usize))>,
-    interner: FileNameStringInterner,
-    prefix_len: NonZeroUsize
-}
-
-impl NGramIndexBuilder {
-    pub fn new(prefix_len: NonZeroUsize) -> Self {
-        Self {
-            registry: Vec::new(),
-            interner: FileNameStringInterner::new(),
-            prefix_len
-        }
-    }
-
-    pub fn register_file(&mut self, file: impl AsRef<Utf8Path>) -> Result<(usize, usize), GoogleNGramError> {
-        let path_id = self.interner.get_or_intern(file.as_ref().file_name().expect("Expected a file name!").to_string());
-        let mut reader = read_google_ngram_file(
-            file,
-            true
-        )?;
-
-        let mut ct_all = 0usize;
-        let mut ct_added = 0usize;
-        let mut last = 0usize;
-        for (line_no, value) in reader.enumerate() {
-            ct_all += 1;
-            let (word, _, _) = value?;
-            let prefix =  if let Some((pos, _)) = word.char_indices().skip(self.prefix_len.get()).next() {
-                &word[..pos]
-            } else {
-                word.as_str()
-            };
-            if let Some(last) = self.registry.last() {
-                if prefix == last.0 {
-                    continue;
+fn process_data<T>(par_iter: impl ParallelIterator<Item=Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>>) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+where T: AsRef<str> + Eq + Hash + Clone + Send + Borrow<str>
+{
+    par_iter.fold(|| Ok(HashMap::new()), |acc, value| {
+        value.and_then(|other| {
+            acc.map(|mut acc| {
+                for (k, v) in other {
+                    match acc.entry(k) {
+                        Entry::Occupied(mut value) => {
+                            let inner: &mut HashMap<String, NGramCount<u128>> = value.get_mut();
+                            for (k, v) in v {
+                                inner.entry(k).and_modify(|e| *e += v).or_insert(v);
+                            }
+                        }
+                        Entry::Vacant(value) => {
+                            value.insert(v);
+                        }
+                    }
                 }
-            }
-            ct_added += 1;
-            self.registry.push((prefix.to_string(), (path_id, last, line_no)));
-            last = line_no;
-        }
-
-        Ok((ct_all, ct_added))
-    }
-
-    pub fn build(mut self) -> NGramIndex {
-        self.registry.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut new: TrieBuilder<u8, (FileNameSymbol, usize, usize)> = TrieBuilder::new();
-        for (prefix, entry) in self.registry {
-            new.push(prefix, entry);
-        }
-        NGramIndex {
-            path_interner: self.interner,
-            prefix_len: self.prefix_len,
-            trie: new.build()
-        }
-    }
-}
-
-fn read_to_file(inp: impl AsRef<Utf8Path>, outp_dir: impl AsRef<Utf8Path>, prefix_len: NonZeroUsize) -> Result<Utf8PathBuf, GoogleNGramError> {
-    let inp = inp.as_ref();
-    std::fs::create_dir_all(outp_dir.as_ref())?;
-
-    let targ_name = inp.file_name().expect("Input file name missing!");
-    let output = outp_dir.as_ref().join(targ_name);
-    if output.exists() && output.is_file() {
-        log::info!("{targ_name}: Already finished {inp} -> {output}!");
-        return Ok(output);
-    }
-
-    let temp_copy =  outp_dir.as_ref().join(format!("{targ_name}_temp"));
-
-    struct FreeOnDrop {
-        dir: Utf8PathBuf
-    }
-
-    impl Drop for FreeOnDrop {
-        fn drop(&mut self) {
-            std::fs::remove_file(&self.dir).unwrap()
-        }
-    }
-
-    log::info!("{targ_name}: Copy to temp: {inp} -> {temp_copy}");
-
-    std::fs::copy(
-        &inp,
-        &temp_copy,
-    )?;
-
-    let temp_copy = FreeOnDrop {
-        dir: temp_copy
-    };
-
-    let mut reader = read_google_ngram_file(
-        inp,
-        true
-    )?;
-
-
-    let mut collection: Vec<(String, (usize, usize))> = Vec::new();
-    let mut last = 0usize;
-    let mut skipped_because_not_alphabetic = 0usize;
-    log::info!("{targ_name}: Start processing!");
-    for (line_no, value) in reader.enumerate() {
-        if line_no % 1000 == 0 {
-            log::info!("{targ_name}: {}", line_no);
-        }
-        let (word, _, _) = value?;
-        if !word.starts_with(|c: char| c.is_alphabetic()) {
-            skipped_because_not_alphabetic += 1;
-            continue;
-        }
-        let prefix =  if let Some((pos, _)) = word.char_indices().skip(prefix_len.get()).next() {
-            &word[..pos]
-        } else {
-            word.as_str()
-        };
-        if let Some(last) = collection.last() {
-            if prefix == last.0 {
-                continue;
-            }
-        }
-
-        collection.push((prefix.to_string(), (last, line_no)));
-        last = line_no;
-    }
-    log::info!("{targ_name}: Finished processing: Skipped:{skipped_because_not_alphabetic}");
-
-    drop(temp_copy);
-
-    log::info!("{targ_name}: Write to {output}");
-    let outp =  File::options().write(true).create(true).open(&output)?;
-    bincode::serialize_into(
-        BufWriter::new(outp),
-        &(targ_name, prefix_len, collection)
-    )?;
-
-    Ok(output)
-}
-
-fn reconstruct_from_files<I: IntoIterator<Item=P>, P: AsRef<Utf8Path>>(paths: I) -> Result<NGramIndex, GoogleNGramError> {
-    let mut interner = FileNameStringInterner::new();
-    let data = paths.into_iter().map(|path| {
-        let path = path.as_ref();
-        File::open(path).and_then(|mut file| {
-            let mut buf: Vec<u8> = Vec::with_capacity(file.metadata().expect("Needs to be a file!").len() as usize);
-            file.read_to_end(&mut buf).expect("Was not able to read!");
-            let (file, prefix_len, values): (String, NonZeroUsize, Vec<(String, (usize, usize))>) = bincode::deserialize(&buf).expect("Was not able to deserialize!");
-            Ok((prefix_len, values.into_iter().filter(|value| value.0.starts_with(|a:char| a.is_alphabetic())).map(|(mut a, b)| {
-                a.shrink_to_fit();
-                (a, (interner.get_or_intern(&file), b.0, b.1))
-            }).collect_vec()))
+                acc
+            })
         })
-    }).collect::<Result<Vec<_>, _>>()?;
-
-    let prefix = data.iter().map(|v| v.0.clone()).unique().exactly_one().map_err(|_| GoogleNGramError::NotUnifiable)?;
-    let mut data = data.into_iter().flat_map(|value| value.1).collect_vec();
-    data.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut trie_builder = TrieBuilder::new();
-    for (k, v) in data.into_iter() {
-        trie_builder.push(k, v)
-    }
-    Ok(
-        NGramIndex {
-            prefix_len: prefix,
-            trie: trie_builder.build(),
-            path_interner: interner
-        }
-    )
+    }).reduce(|| Ok(HashMap::new()), |acc, value| {
+        value.and_then(|other| {
+            acc.map(|mut acc| {
+                for (k, v) in other {
+                    match acc.entry(k) {
+                        Entry::Occupied(mut value) => {
+                            let inner: &mut HashMap<String, NGramCount<u128>> = value.get_mut();
+                            for (k, v) in v {
+                                inner.entry(k).and_modify(|e| *e += v).or_insert(v);
+                            }
+                        }
+                        Entry::Vacant(value) => {
+                            value.insert(v);
+                        }
+                    }
+                }
+                acc
+            })
+        })
+    })
 }
 
-fn generate_index_for(inp_root: impl AsRef<Utf8Path>, out_root: impl AsRef<Utf8Path>, target: &str, n_gram_size: u8, file_max: usize, prefix_len: usize) -> Result<(), GoogleNGramError> {
+
+
+fn process_ngram_iter<T>(iter: NGramIter, voc: &Vocabulary<T>, tokenizer: &Tokenizer) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
+{
+    iter.filter_map(|ngram| {
+        ngram.map(|(word, _, ct)| {
+            let word_proc = tokenizer.process_and_join_word_lemma(&word);
+            if let Some(k) = voc.get_value(&word_proc) {
+                Some((k.clone(), word, ct.sum))
+            } else {
+                None
+            }
+        }).transpose()
+    }).fold_ok(HashMap::<T, HashMap<String, NGramCount<u128>>>::new(), |mut value, (k, word, v)|{
+        value.entry(k).or_insert(HashMap::new()).entry(word).and_modify(|t| *t += v).or_insert(v);
+        value
+    })
+}
+
+pub fn scan_for_voc<T>(
+    inp_root: impl AsRef<Utf8Path>,
+    out_root: impl AsRef<Utf8Path>,
+    target: &str,
+    n_gram_size: u8,
+    file_max: usize,
+    voc: &Vocabulary<T>,
+    tokenizer: &Tokenizer
+) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + Borrow<str>
+{
+
     let inp_root = inp_root.as_ref();
     let out_root = out_root.as_ref();
 
-    log::info!("Start processing for {target}_{ngram_size}!");
+    log::info!("Start processing for {target}_{n_gram_size}!");
 
-    let idx_file = out_root.join(format!("ngram_index_{target}_{n_gram_size}.idx"));
+    let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
     if idx_file.exists() {
         log::info!("{idx_file} exists!");
-        return Ok(())
+        return bincode::deserialize_from::<_, HashMap<T, HashMap<String, NGramCount<u128>>>>(BufReader::new(File::open(idx_file)?)).map_err(Into::into)
     }
 
-    let files = (0..file_max).into_par_iter().map(|i|{
+    fn scan_single_for_voc<T>(
+        inp: impl AsRef<Utf8Path>,
+        outp_dir: impl AsRef<Utf8Path>,
+        voc: &Vocabulary<T>,
+        tokenizer: &Tokenizer
+    ) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+    where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
+    {
+        let inp = inp.as_ref();
+        let outp_dir = outp_dir.as_ref();
+        let file_name = inp.file_name().expect("Input file name missing!");
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(file_name);
+        builder.tempfile_in(&outp_dir).map_err(GoogleNGramError::IoError).and_then(|temp_file| {
+            retry_copy(
+                inp,
+                &temp_file,
+                10
+            ).map_err(Into::into).and_then(|_| {
+                process_ngram_iter(NGramIter::new(temp_file), voc, tokenizer)
+            })
+        })
+    }
+
+
+    let result = process_data((0..file_max).into_par_iter().map(|i|{
         let inp_file = inp_root.join(format!("{n_gram_size}-{i:0>5}-of-{file_max:0>5}.gz"));
         let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
         log::info!("Process: {inp_file} into {outp_dir}");
-        read_to_file(
+        scan_single_for_voc(
             inp_file,
             outp_dir,
-            unsafe{NonZeroUsize::new_unchecked(prefix_len)}
+            voc,
+            tokenizer
         )
-    }).collect::<Result<Vec<_>, _>>()?;
+    }))?;
 
-    log::info!("Start reconstruction!");
-    let idx = reconstruct_from_files(files)?;
-    bincode::serialize_into(
-        BufWriter::new(File::options().write(true).create(true).truncate(true).open(idx_file).unwrap()),
-        &idx
-    )?;
-    Ok(())
+    let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
+    log::info!("Write: {idx_file}");
+    bincode::serialize_into(BufWriter::new(File::options().write(true).truncate(true).create(true).open(idx_file)?), &result)?;
+    Ok(result)
 }
 
 
-#[cfg(test)]
-mod test {
-    use log::LevelFilter;
-    use crate::dictionary::loader::google_ngram::{generate_index_for};
+pub fn scan_for_voc_online<T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + Borrow<str>>(
+    out_root: impl AsRef<Utf8Path>,
+    base_url: &str,
+    target: &str,
+    n_gram_size: u8,
+    file_max: usize,
+    voc: &Vocabulary<T>,
+    tokenizer: &Tokenizer,
+    id_filter: fn(usize) -> bool
+) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError> {
 
-    #[test]
-    fn can_read(){
-        env_logger::builder().filter_level(LevelFilter::Info).init();
-        generate_index_for(
-            r#"Z:\NGrams"#,
-            r#"E:\tmp\google_ngams"#,
-            "de",
-            1,
-            8,
-            4
-        ).unwrap();
+    let out_root = out_root.as_ref();
 
-        generate_index_for(
-            r#"Z:\NGrams"#,
-            r#"E:\tmp\google_ngams"#,
-            "en",
-            1,
-            24,
-            4
-        ).unwrap();
+    log::info!("Start processing for {target}_{n_gram_size}!");
 
-        generate_index_for(
-            r#"Z:\NGrams"#,
-            r#"E:\tmp\google_ngams"#,
-            "de",
-            2,
-            181,
-            4
-        ).unwrap();
-
-        generate_index_for(
-            r#"Z:\NGrams"#,
-            r#"E:\tmp\google_ngams"#,
-            "en",
-            2,
-            589,
-            4
-        ).unwrap();
+    let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
+    if idx_file.exists() {
+        log::info!("{idx_file} exists!");
+        return bincode::deserialize_from::<_, HashMap<T, HashMap<String, NGramCount<u128>>>>(BufReader::new(File::open(idx_file)?)).map_err(Into::into)
     }
+
+    struct Collector<W: Write> {
+        writer: BufWriter<W>
+    }
+
+    impl<W> Handler for Collector<W> where W: Write {
+        fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
+            Ok(self.writer.write(data).unwrap())
+        }
+    }
+
+    fn scan_single_for_voc<T>(
+        base_url: &str,
+        file_name: &str,
+        outp_dir: impl AsRef<Utf8Path>,
+        voc: &Vocabulary<T>,
+        tokenizer: &Tokenizer
+    ) -> Result<HashMap<T, HashMap<String, NGramCount<u128>>>, GoogleNGramError>
+    where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
+    {
+        let outp_dir = outp_dir.as_ref();
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(file_name);
+        builder.tempfile_in(&outp_dir).map_err(GoogleNGramError::IoError).and_then(|temp_file| {
+            let mut dl = curl::easy::Easy2::new(Collector {
+                writer: BufWriter::new(&temp_file)
+            });
+            let mut x = List::new();
+            x.append("User-Agent: NGram-API-Downloader").unwrap();
+            dl.http_headers(x).unwrap();
+            dl.url(&format!("{base_url}/{file_name}")).unwrap();
+            dl.perform().unwrap();
+            drop(dl);
+            process_ngram_iter(NGramIter::new(temp_file), voc, tokenizer)
+        })
+    }
+
+    let result = process_data((0..file_max).into_par_iter().filter(|&x| id_filter(x)).map(|i|{
+        let file_name = format!("{n_gram_size}-{i:0>5}-of-{file_max:0>5}.gz");
+        let outp_dir = out_root.join(format!("{target}_{n_gram_size}"));
+        log::info!("Process: {outp_dir} after DL");
+        scan_single_for_voc(
+            base_url,
+            &file_name,
+            outp_dir,
+            voc,
+            tokenizer
+        )
+    }))?;
+
+    let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
+    log::info!("Write: {idx_file}");
+    bincode::serialize_into(BufWriter::new(File::options().write(true).truncate(true).create(true).open(idx_file)?), &result)?;
+    Ok(result)
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct TotalCount {
+    pub match_count: u128,
+    pub page_count: u128,
+    pub volume_count: u128
+}
+
+impl TotalCount {
+    pub const ZERO: TotalCount = TotalCount {
+        page_count: 0, match_count: 0, volume_count: 0
+    };
+
+    pub const fn new(match_count: u128, page_count: u128, volume_count: u128) -> Self {
+        Self {
+            page_count,
+            volume_count,
+            match_count
+        }
+    }
+
+    pub const fn overflowing_add(self, other: Self) -> (Self, bool) {
+        let (match_count, match_count_overflow) = self.match_count.overflowing_add(other.match_count);
+        let (page_count, page_count_overflow) = self.page_count.overflowing_add(other.page_count);
+        let (volume_count, volume_count_overflow) = self.volume_count.overflowing_add(other.volume_count);
+        (
+            Self {
+                match_count,
+                page_count,
+                volume_count
+            },
+            match_count_overflow || page_count_overflow || volume_count_overflow
+        )
+    }
+}
+
+impl Add for TotalCount {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self {
+            match_count: self.match_count + other.match_count,
+            page_count: self.page_count + other.page_count,
+            volume_count: self.volume_count + other.volume_count,
+        }
+    }
+}
+
+impl Sum for TotalCount {
+    fn sum<I: Iterator<Item=Self>>(iter: I) -> Self {
+        iter.fold(TotalCount::ZERO, |a, b| a + b)
+    }
+}
+
+impl<'a> Sum<&'a TotalCount> for TotalCount {
+    fn sum<I: Iterator<Item=&'a TotalCount>>(iter: I) -> Self {
+        iter.copied().fold(TotalCount::ZERO, |a, b| a + b)
+    }
+}
+
+pub fn load_total_counts<P: AsRef<Path>>(file: P) -> Result<HashMap<u16, TotalCount>, GoogleNGramError> {
+    let mut s = String::new();
+    BufReader::new(File::open(file)?).read_to_string(&mut s)?;
+    s.split('\t').map(|value| {
+        let (year, match_count, page_count, volume_count) = value.split(' ').collect_tuple().expect("This should never fail");
+        year.parse_ex_tagged::<u16>("year").and_then(|year| {
+            match_count.parse_ex_tagged::<u128>("match_count").and_then(|match_count| {
+                page_count.parse_ex_tagged::<u128>("page_count").and_then(|page_count| {
+                    volume_count.parse_ex_tagged::<u128>("volume_count").map(|volume_count| {
+                        (year, TotalCount::new(
+                            match_count,
+                            page_count,
+                            volume_count,
+                        ))
+                    })
+                })
+            })
+        }).map_err(Into::into)
+    }).collect::<Result<HashMap<u16, TotalCount>, _>>()
 }

@@ -8,7 +8,7 @@ use pyo3::{pyclass, pymethods, PyResult};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use itertools::Itertools;
-use rstats::{Median, MutVecg, Stats, RE};
+use rstats::{Median, Stats, RE};
 use strum::{AsRefStr, Display, EnumIs, EnumString, ParseError};
 use ldatranslate_topicmodel::model::Probability;
 use crate::py::translate::{PyHorizontalBoostConfig, PyVerticalBoostConfig};
@@ -301,7 +301,8 @@ pub struct HorizontalScoreBootConfig {
     pub calculator: FDivergenceCalculator,
     pub field_config: FieldConfig,
     pub mode: NormalizeMode,
-    pub linear_transformed: TransformMethod,
+    pub linear_transformed: bool,
+    pub transform: TransformMethod,
     pub mean_method: MeanMethod,
     pub factor: f64
 }
@@ -314,11 +315,12 @@ impl HorizontalScoreBootConfig {
         calculator: FDivergenceCalculator,
         mode: NormalizeMode,
         alpha: Option<f64>,
-        linear_transformed: TransformMethod,
+        linear_transformed: bool,
+        transform: TransformMethod,
         mean_method: MeanMethod,
         factor: Option<f64>
     ) -> Self {
-        Self { alpha, calculator, mode, field_config, linear_transformed, mean_method, factor: factor.unwrap_or(1.0) }
+        Self { alpha, calculator, mode, field_config, linear_transformed, transform, mean_method, factor: factor.unwrap_or(1.0) }
     }
 }
 
@@ -337,6 +339,7 @@ impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
             config.mode,
             config.alpha,
             config.linear_transformed,
+            config.transform,
             config.mean_method,
             config.factor
         )

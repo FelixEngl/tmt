@@ -57,9 +57,11 @@ enum-map.workspace = true
 const-str.workspace = true
 float-cmp.workspace = true
 num.workspace = true
-csv.workspace = true
+#csv.workspace = true
 tempfile.workspace = true
-suppaftp.workspace = true
+#suppaftp.workspace = true
+quick_cache.workspace = true
+curl.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true

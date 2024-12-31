@@ -24,6 +24,8 @@ pub mod len;
 pub mod hacks;
 pub mod search;
 
+pub use loader::google_ngram;
+
 use std::borrow::Borrow;
 pub use loader::*;
 pub use traits::*;

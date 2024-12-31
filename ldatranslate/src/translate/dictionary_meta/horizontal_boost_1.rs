@@ -231,16 +231,11 @@ impl HorizontalScoreBoost
 
     pub fn boost_probability_for(&self, id_a: usize, id_b: usize, probability: Probability) -> f64 {
         if let Some(boost) = self.get_boost_for(id_a, id_b) {
-            if self.config.linear_transformed {
-                probability + probability * boost * self.config.factor
-            } else {
-                let boosted = boost * self.config.factor + probability;
-                if boosted <= 0.0 {
-                    f64::EPSILON
-                } else {
-                    boosted
-                }
-            }
+            self.config.transform.boost(
+                probability,
+                boost,
+                self.config.factor
+            )
         } else {
             probability
         }
@@ -440,7 +435,7 @@ mod test {
     use crate::translate::dictionary_meta::vertical_boost_1::ScoreModifierCalculator;
     use crate::translate::dictionary_meta::voting::HorizontalScoreBoost;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
-    use crate::translate::{FieldConfig, HorizontalScoreBootConfig, MeanMethod};
+    use crate::translate::{FieldConfig, HorizontalScoreBootConfig, MeanMethod, TransformMethod};
     use crate::translate::test::create_test_data;
 
     #[test]
@@ -602,7 +597,9 @@ mod test {
                     NormalizeMode::Sum,
                     Some(0.15),
                     false,
+                    TransformMethod::Pipe,
                     MeanMethod::GeometricMean,
+                    None
                 )
             ),
             &dict,
