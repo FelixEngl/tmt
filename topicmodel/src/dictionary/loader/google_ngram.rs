@@ -73,7 +73,7 @@ impl Display for CompactNGramCounts {
 }
 
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Ord)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct NGramCount<T = u128> {
     pub frequency: T,
     pub volumes: T
@@ -85,11 +85,20 @@ impl<T> NGramCount<T> {
     }
 }
 
+impl<T> Ord for NGramCount<T> where T: Ord {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.frequency.cmp(&other.frequency) {
+            Ordering::Equal => self.volumes.cmp(&other.volumes),
+            other => other
+        }
+    }
+}
+
 impl<T> PartialOrd for NGramCount<T> where T: PartialOrd {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.frequency.partial_cmp(&other.frequency) {
             Some(Ordering::Equal) | None => {
-                self.volumes.cmp(&other.volumes)
+                self.volumes.partial_cmp(&other.volumes)
             }
             other => other
         }
@@ -303,7 +312,7 @@ where T: AsRef<str> + Eq + Hash + Clone + Send + Borrow<str>
 
 
 
-fn process_ngram_iter<T>(mut iter: NGramIter, voc: &Vocabulary<T>, tokenizer: &Tokenizer) -> Result<(u64, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
+fn process_ngram_iter<T>(mut iter: NGramIter, voc: &Vocabulary<T>, tokenizer: &Tokenizer) -> Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
 where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
 {
     let result = (&mut iter).filter_map(|ngram| {
@@ -320,7 +329,7 @@ where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
         value
     })?;
 
-    Ok((iter.line_count(), result))
+    Ok((iter.line_count() as u128, result))
 }
 
 /// Returns the number of unique words
@@ -352,7 +361,7 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
         outp_dir: impl AsRef<Utf8Path>,
         voc: &Vocabulary<T>,
         tokenizer: &Tokenizer
-    ) -> Result<(u64, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
+    ) -> Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
     where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
     {
         let inp = inp.as_ref();
@@ -428,7 +437,7 @@ pub fn scan_for_voc_online<T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned 
         outp_dir: impl AsRef<Utf8Path>,
         voc: &Vocabulary<T>,
         tokenizer: &Tokenizer
-    ) -> Result<(u64, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
+    ) -> Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
     where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
     {
         let outp_dir = outp_dir.as_ref();

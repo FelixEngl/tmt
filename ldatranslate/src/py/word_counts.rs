@@ -53,7 +53,7 @@ pub fn create_word_freqs<T, K1, K2>(
     K1: Eq + Hash + Borrow<str>,
     K2: AsRef<str>,
 {
-    let min = word_count.values().flat_map(|v| v.values().map(|v| v)).min().unwrap_or(NGramCount::ZERO);
+    let min = word_count.values().flat_map(|v| v.values().map(|v| v)).min().copied().unwrap_or(NGramCount::ZERO);
     let min = NGramCount::new(
         min.frequency.saturating_sub(1),
         min.volumes.saturating_sub(1),
@@ -128,9 +128,10 @@ impl WordCounts {
 impl WordCounts {
     #[staticmethod]
     pub fn load(path: PathBuf) -> PyResult<WordCounts> {
-        bincode::deserialize_from(BufReader::new(File::open(path)?)).map_err(|err| {
-            PyErr::new(err.to_string())
-        })
+        todo!()
+        // bincode::deserialize_from(BufReader::new(File::open(path)?)).map_err(|err| {
+        //     PyErr::new(err.to_string())
+        // })
     }
 }
 
