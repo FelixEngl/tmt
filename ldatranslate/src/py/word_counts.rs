@@ -20,7 +20,7 @@ use std::sync::Arc;
 use pyo3::{pyclass, pymethods, PyResult};
 use rayon::prelude::*;
 use ldatranslate_toolkit::register_python;
-// use crate::tools::tf_idf::{CorpusDocumentStatistics, IdfAlgorithm, TfAlgorithm, TfIdf};
+use crate::tools::tf_idf::{CorpusDocumentStatistics, IdfAlgorithm};
 
 pub fn normalize_ngram_counts<T1, T2, T3>(
     word_count: HashMap<T1, HashMap<T2, NGramCount>>,
@@ -73,8 +73,8 @@ pub fn create_word_freqs<T, K1, K2>(
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct WordCountEntry {
-    counts: HashMap<String, NGramCount>,
+pub struct WordCountEntry<T> where T: Eq + Hash {
+    counts: HashMap<T, NGramCount>,
     total_count_1: TotalCount,
     total_count_2: TotalCount,
     min_counts: NGramCount,
@@ -82,9 +82,9 @@ pub struct WordCountEntry {
     unique_2: u128,
 }
 
-impl WordCountEntry {
+impl<T> WordCountEntry<T> where T: Eq + Hash {
     pub fn new(
-        counts: HashMap<String, NGramCount>,
+        counts: HashMap<T, NGramCount>,
         total_count_1: TotalCount,
         total_count_2: TotalCount,
         unique_1: u128,
@@ -95,7 +95,7 @@ impl WordCountEntry {
     }
 
     pub fn with_min(
-        counts: HashMap<String, NGramCount>,
+        counts: HashMap<T, NGramCount>,
         total_count_1: TotalCount,
         total_count_2: TotalCount,
         min_counts: NGramCount,
@@ -104,44 +104,89 @@ impl WordCountEntry {
     ) -> Self {
         Self { counts, total_count_1, total_count_2, min_counts, unique_1, unique_2 }
     }
-
-    // pub fn tf_idf<Tf, Idf>(&self, tf_idf: TfIdf<Tf, Idf>, word: &str)
-    // where
-    //     Tf: TfAlgorithm,
-    //     Idf: IdfAlgorithm,
-    // {
-    //
-    // }
 }
 
-// impl CorpusDocumentStatistics for WordCountEntry {
-//     type Word = String;
-//
-//     fn document_count(&self) -> u128 {
-//         debug_assert_eq!(self.total_count_1.volume_count, self.total_count_2.volume_count);
-//         self.total_count_1.volume_count
-//     }
-//
-//     fn word_count(&self) -> u128 {
-//         todo!()
-//     }
-//
-//     fn unique_word_count(&self) -> usize {
-//         todo!()
-//     }
-//
-//     fn word_frequency<Q>(&self, word: &Q) -> Option<u128>
-//     where
-//         Q: Hash + Eq + ?Sized,
-//         Self::Word: Borrow<Q>
-//     {
-//         self.counts.get(word).and_then(|counts| {*counts.frequency})
-//     }
-//
-//     fn iter(&self) -> impl Iterator<Item=(&Self::Word, u128)> {
-//         self.counts.iter().map(|(k, v)| {(k, v.frequency)})
-//     }
-// }
+impl<T> WordCountEntry<T> where T: Clone + Eq + Hash
+{
+    pub fn idf<Q, Idf>(&self, idf: Idf, word: &Q, adjusted: bool) -> Result<Option<f64>, <Idf as IdfAlgorithm>::Error>
+    where
+        Idf: IdfAlgorithm,
+        Q: Hash + Eq + ?Sized,
+        T: Borrow<Q>,
+    {
+        idf.calculate_idf(
+            self,
+            word,
+            adjusted
+        )
+    }
+
+    pub fn all_idf<Idf>(&self, idf: Idf, adjusted: bool) -> Result<HashMap<T, f64>, <Idf as IdfAlgorithm>::Error>
+    where
+        Idf: IdfAlgorithm,
+    {
+        self.counts.iter().map(|(k, v)| {
+            idf.calculate_idf_with_word_frequency(
+                self,
+                k,
+                v.volumes,
+                adjusted
+            ).map(|v| {
+                (k.clone(), v)
+            })
+        }).collect::<Result<HashMap<_, _>, _>>()
+    }
+
+    #[cfg(test)]
+    pub fn all_idf_with_freq<Idf>(&self, idf: Idf, adjusted: bool) -> Result<HashMap<T, (f64, NGramCount)>, <Idf as IdfAlgorithm>::Error>
+    where
+        Idf: IdfAlgorithm,
+    {
+        self.counts.iter().map(|(k, v)| {
+            idf.calculate_idf_with_word_frequency(
+                self,
+                k,
+                v.volumes,
+                adjusted
+            ).map(|p| {
+                (k.clone(), (p, v.clone()))
+            })
+        }).collect::<Result<HashMap<_, _>, _>>()
+    }
+}
+
+impl<T> CorpusDocumentStatistics for WordCountEntry<T> where T: Eq + Hash {
+    type Word = T;
+
+    fn document_count(&self) -> u128 {
+        // debug_assert_eq!(self.total_count_1.volume_count, self.total_count_2.volume_count);
+        max(self.total_count_1.volume_count, self.total_count_2.volume_count)
+    }
+
+    fn word_frequency<Q>(&self, word: &Q) -> Option<u128>
+    where
+        Q: Hash + Eq + ?Sized,
+        Self::Word: Borrow<Q>
+    {
+        self.counts.get(word).map(|counts| counts.frequency)
+    }
+
+    fn word_document_count<Q>(&self, word: &Q) -> Option<u128>
+    where
+        Q: Hash + Eq + ?Sized,
+        Self::Word: Borrow<Q>
+    {
+        self.counts.get(word).map(|counts| counts.volumes)
+    }
+
+    fn iter_document_count(&self) -> impl Iterator<Item=(&Self::Word, u128)> {
+        self.counts.iter().map(|(k, v)| (k, v.volumes))
+    }
+
+    fn iter_frequency(&self) -> impl Iterator<Item=(&Self::Word, u128)> {
+        self.counts.iter().map(|(k, v)| (k, v.frequency))
+    }
+}
 
 register_python!(struct WordCounts;);
 
@@ -149,11 +194,11 @@ register_python!(struct WordCounts;);
 #[pyclass]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct WordCounts {
-    inner: Arc<HashMap<String, WordCountEntry>>
+    inner: Arc<HashMap<String, WordCountEntry<ArcStr>>>
 }
 
 impl WordCounts {
-    pub fn new(inner: HashMap<String, WordCountEntry>) -> Self {
+    pub fn new(inner: HashMap<String, WordCountEntry<ArcStr>>) -> Self {
         Self { inner: Arc::new(inner) }
     }
 }
@@ -258,6 +303,11 @@ fn generate_complete_data(
             log::info!("Execute{}", provider.is_some().then(|| " with provider").unwrap_or(" without provider"));
 
             let save_path = base_path.as_ref().join(provider.is_some().to_string());
+            if save_path.join("finished").exists() {
+                log::info!("Already finished!");
+                continue;
+            }
+
             std::fs::create_dir_all(&save_path).unwrap();
 
             let mut overall_en: HashMap<ArcStr, NGramCount> = HashMap::new();
@@ -364,6 +414,17 @@ fn generate_complete_data(
                 &overall_de
             ).unwrap();
 
+            log::info!("Save json views");
+
+            serde_json::to_writer_pretty(
+                BufWriter::new(
+                    File::options().write(true).create(true).open(
+                        save_path.join("unique_word_counts.json")
+                    ).unwrap()
+                ),
+                &unique_word_counts
+            ).unwrap();
+
             serde_json::to_writer_pretty(
                 BufWriter::new(
                     File::options().write(true).create(true).open(
@@ -381,6 +442,8 @@ fn generate_complete_data(
                 ),
                 &overall_de
             ).unwrap();
+
+            File::options().create_new(true).open(save_path.join("finished")).unwrap();
         }
     }
 
@@ -516,13 +579,16 @@ fn generate_complete_data(
 mod test {
     use crate::py::dictionary::PyDictionary;
     use crate::py::tokenizer::PyAlignedArticleProcessor;
-    use crate::py::word_counts::generate_complete_data;
+    use crate::py::word_counts::{generate_complete_data, WordCounts};
     use log::LevelFilter;
     use std::collections::HashMap;
     use std::fs::File;
-    use std::io::BufReader;
+    use std::io::{BufReader, BufWriter};
     use std::path::PathBuf;
-
+    use arcstr::ArcStr;
+    use indexmap::IndexMap;
+    use itertools::Itertools;
+    use crate::tools::tf_idf::Idf;
 
     #[test]
     fn make_counts(){
@@ -542,6 +608,35 @@ mod test {
             &proc,
             &v1
         )
+    }
+
+    #[test]
+    fn see_idf(){
+        let x: WordCounts = bincode::deserialize_from(
+            BufReader::new(
+                File::options().read(true).open(r#"E:\tmp\google_ngrams2\gen\en_de_counts_t.bin"#).unwrap()
+            )
+        ).unwrap();
+
+        x.inner.iter().for_each(|x| {
+            serde_json::to_writer_pretty(
+                BufWriter::new(File::options().write(true).create(true).truncate(true).open(format!(r#"E:\tmp\google_ngrams2\gen\t_{}.json"#, x.0)).unwrap()),
+                &x.1.all_idf_with_freq(Idf::InverseDocumentFrequency, false).unwrap().into_iter().sorted_by_key(|(k, v)| k.clone()).collect::<IndexMap<ArcStr, _>>()
+            ).unwrap()
+        });
+
+        let x: WordCounts = bincode::deserialize_from(
+            BufReader::new(
+                File::options().read(true).open(r#"E:\tmp\google_ngrams2\gen\en_de_counts_f.bin"#).unwrap()
+            )
+        ).unwrap();
+
+        x.inner.iter().for_each(|x| {
+            serde_json::to_writer_pretty(
+                BufWriter::new(File::options().write(true).create(true).truncate(true).open(format!(r#"E:\tmp\google_ngrams2\gen\f_{}.json"#, x.0)).unwrap()),
+                &x.1.all_idf_with_freq(Idf::InverseDocumentFrequency, false).unwrap().into_iter().sorted_by_key(|(k, v)| k.clone()).collect::<IndexMap<ArcStr, _>>()
+            ).unwrap()
+        });
     }
 
     #[test]

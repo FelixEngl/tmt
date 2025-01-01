@@ -559,21 +559,25 @@ impl<'a> Sum<&'a TotalCount> for TotalCount {
 pub fn load_total_counts<P: AsRef<Path>>(file: P) -> Result<HashMap<u16, TotalCount>, GoogleNGramError> {
     let mut s = String::new();
     BufReader::new(File::open(file)?).read_to_string(&mut s)?;
-    s.split('\t').map(|value| {
-
-        let (year, match_count, page_count, volume_count) = value.split(' ').collect_tuple().expect("This should never fail");
-        year.parse_ex_tagged::<u16>("year").and_then(|year| {
-            match_count.parse_ex_tagged::<u128>("match_count").and_then(|match_count| {
-                page_count.parse_ex_tagged::<u128>("page_count").and_then(|page_count| {
-                    volume_count.parse_ex_tagged::<u128>("volume_count").map(|volume_count| {
-                        (year, TotalCount::new(
-                            match_count,
-                            page_count,
-                            volume_count,
-                        ))
+    s.split('\t').filter_map(|value| {
+        let result = value.split(',').collect_tuple().map(|(year, match_count, page_count, volume_count)| {
+            year.parse_ex_tagged::<u16>("year").and_then(|year| {
+                match_count.parse_ex_tagged::<u128>("match_count").and_then(|match_count| {
+                    page_count.parse_ex_tagged::<u128>("page_count").and_then(|page_count| {
+                        volume_count.parse_ex_tagged::<u128>("volume_count").map(|volume_count| {
+                            (year, TotalCount::new(
+                                match_count,
+                                page_count,
+                                volume_count,
+                            ))
+                        })
                     })
                 })
-            })
-        }).map_err(Into::into)
+            }).map_err(Into::into)
+        });
+        if result.is_none() {
+            log::info!("Drop: {value:#?}");
+        }
+        result
     }).collect::<Result<HashMap<u16, TotalCount>, _>>()
 }
