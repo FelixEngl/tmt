@@ -10,25 +10,28 @@ use ldatranslate_topicmodel::language_hint::LanguageHint;
 use ldatranslate_topicmodel::vocabulary::BasicVocabulary;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::cmp::{max, Ordering};
+use std::cmp::{max};
 use std::collections::HashMap;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use std::sync::Arc;
-use pyo3::{pyclass, pymethods, PyErr, PyResult};
+use pyo3::{pyclass, pymethods, PyResult};
+use rayon::prelude::*;
 use ldatranslate_toolkit::register_python;
+// use crate::tools::tf_idf::{CorpusDocumentStatistics, IdfAlgorithm, TfAlgorithm, TfIdf};
 
-pub fn normalize_ngram_counts<T1, T2>(
+pub fn normalize_ngram_counts<T1, T2, T3>(
     word_count: HashMap<T1, HashMap<T2, NGramCount>>,
     tokenizer: Option<&Tokenizer>
-) -> HashMap<T1, HashMap<String, NGramCount>>
+) -> HashMap<T1, HashMap<T3, NGramCount>>
 where
-    T1: AsRef<str> + Eq + Hash,
-    T2: AsRef<str>,
+    T1: AsRef<str> + Eq + Hash + Send,
+    T2: AsRef<str> + Send,
+    T3: for<'a> From<&'a str> + Eq + Hash + Clone + Send,
 {
-    word_count.into_iter().map(|(k1, v1)| {
+    word_count.into_par_iter().map(|(k1, v1)| {
         (
             k1,
             v1.into_iter().into_group_map_by(|(k, _)| {
@@ -38,7 +41,7 @@ where
                     k.as_ref().to_lowercase()
                 }
             }).into_iter().map(|(k, v)| {
-                (k, v.into_iter().map(|(_, v)| v).sum())
+                (k.as_str().into(), v.into_iter().map(|(_, v)| v).sum())
             }).collect()
         )
     }).collect()
@@ -49,16 +52,11 @@ pub fn create_word_freqs<T, K1, K2>(
     n_gram_size: u8,
     word_count: &HashMap<K1, HashMap<K2, NGramCount>>,
 ) -> HashMap<T, NGramCount> where
-    T: AsRef<str> + Clone + Eq + Hash,
-    K1: Eq + Hash + Borrow<str>,
-    K2: AsRef<str>,
+    T: AsRef<str> + Clone + Eq + Hash + Send + Sync,
+    K1: Eq + Hash + Borrow<str> + Send + Sync,
+    K2: AsRef<str> + Send + Sync,
 {
-    let min = word_count.values().flat_map(|v| v.values().map(|v| v)).min().copied().unwrap_or(NGramCount::ZERO);
-    let min = NGramCount::new(
-        min.frequency.saturating_sub(1),
-        min.volumes.saturating_sub(1),
-    );
-    voc.iter().filter(|&value| {
+    voc.par_iter().filter(|&value| {
         value.as_ref().chars().filter(|v| ' '.eq(v)).count() + 1 == n_gram_size as usize
     }).map(|value| {
         word_count.get(value.as_ref()).and_then(|found| {
@@ -70,7 +68,7 @@ pub fn create_word_freqs<T, K1, K2>(
                     None
                 }
             }).max().map(|a| (value.clone(), a.clone()))
-        }).unwrap_or_else(|| (value.clone(), min))
+        }).unwrap_or_else(|| (value.clone(), NGramCount::ZERO))
     }).collect::<HashMap<_, _>>()
 }
 
@@ -106,7 +104,44 @@ impl WordCountEntry {
     ) -> Self {
         Self { counts, total_count_1, total_count_2, min_counts, unique_1, unique_2 }
     }
+
+    // pub fn tf_idf<Tf, Idf>(&self, tf_idf: TfIdf<Tf, Idf>, word: &str)
+    // where
+    //     Tf: TfAlgorithm,
+    //     Idf: IdfAlgorithm,
+    // {
+    //
+    // }
 }
+
+// impl CorpusDocumentStatistics for WordCountEntry {
+//     type Word = String;
+//
+//     fn document_count(&self) -> u128 {
+//         debug_assert_eq!(self.total_count_1.volume_count, self.total_count_2.volume_count);
+//         self.total_count_1.volume_count
+//     }
+//
+//     fn word_count(&self) -> u128 {
+//         todo!()
+//     }
+//
+//     fn unique_word_count(&self) -> usize {
+//         todo!()
+//     }
+//
+//     fn word_frequency<Q>(&self, word: &Q) -> Option<u128>
+//     where
+//         Q: Hash + Eq + ?Sized,
+//         Self::Word: Borrow<Q>
+//     {
+//         self.counts.get(word).and_then(|counts| {*counts.frequency})
+//     }
+//
+//     fn iter(&self) -> impl Iterator<Item=(&Self::Word, u128)> {
+//         self.counts.iter().map(|(k, v)| {(k, v.frequency)})
+//     }
+// }
 
 register_python!(struct WordCounts;);
 
@@ -149,7 +184,11 @@ fn generate_complete_data(
         proc: &PyAlignedArticleProcessor,
         v1: &PyDictionary
     ){
+        log::info!("Generate base");
+
         let inner1 = v1.get();
+        let tokenizer_de = proc.get_tokenizers_for(&LanguageHint::new("de")).unwrap();
+        let tokenizer_en = proc.get_tokenizers_for(&LanguageHint::new("en")).unwrap();
 
         log::info!("Start de 1!");
         scan_for_voc(
@@ -159,7 +198,7 @@ fn generate_complete_data(
             1,
             8,
             inner1.voc_b(),
-            &proc.get_tokenizers_for(&LanguageHint::new("de")).unwrap()
+            &tokenizer_de
         ).unwrap();
 
         log::info!("Start en 1!");
@@ -170,7 +209,7 @@ fn generate_complete_data(
             1,
             24,
             inner1.voc_a(),
-            &proc.get_tokenizers_for(&LanguageHint::new("en")).unwrap()
+            &tokenizer_en
         ).unwrap();
 
         log::info!("Start de 2!");
@@ -181,7 +220,7 @@ fn generate_complete_data(
             2,
             181,
             inner1.voc_b(),
-            &proc.get_tokenizers_for(&LanguageHint::new("de")).unwrap()
+            &tokenizer_de
         ).unwrap();
 
         log::info!("Start en 2!");
@@ -192,20 +231,31 @@ fn generate_complete_data(
             2,
             589,
             inner1.voc_a(),
-            &proc.get_tokenizers_for(&LanguageHint::new("en")).unwrap()
+            &tokenizer_en
         ).unwrap();
     }
 
+    generate_base(
+        inp_root.as_ref(),
+        out_root.as_ref(),
+        proc,
+        v1
+    );
+
 
     fn normalize(
+        root: impl AsRef<Utf8Path>,
         base_path: impl AsRef<Utf8Path>,
         proc: &PyAlignedArticleProcessor,
         v1: &PyDictionary
     ){
+        log::info!("Normalize on base path: {}", base_path.as_ref());
         for provider in [
             Some(proc),
             None
         ] {
+
+            log::info!("Execute{}", provider.is_some().then(|| " with provider").unwrap_or(" without provider"));
 
             let save_path = base_path.as_ref().join(provider.is_some().to_string());
             std::fs::create_dir_all(&save_path).unwrap();
@@ -215,18 +265,33 @@ fn generate_complete_data(
 
             let mut unique_word_counts = HashMap::new();
 
-            for (n, name, lang) in [
-                (2, "word_counts_en_2", "en"),
-                (2, "word_counts_de_2", "de"),
-                (1, "word_counts_en_1", "en"),
-                (1, "word_counts_de_1", "de"),
+            for (n, lang) in [
+                (2, "en"),
+                (2, "de"),
+                (1, "en"),
+                (1, "de"),
             ] {
-                let (unique_ct, content) = bincode::deserialize_from::<_, (u128, _)>(BufReader::new(File::open(base_path.as_ref().join(format!(r#"{name}.bin"#))).unwrap())).unwrap();
-                unique_word_counts.insert(format!("{lang}_{n}"), unique_ct);
-                let normalized: HashMap<String, HashMap<String, NGramCount>> = normalize_ngram_counts::<String, String>(
+                let name = format!("word_counts_{lang}_{n}");
+                log::info!("Normalize: {}{}", name, provider.is_some().then(|| " with provider").unwrap_or(""));
+                let (unique_ct, content) = bincode::deserialize_from::<_, (u128, HashMap<ArcStr, HashMap<ArcStr, NGramCount>>)>(BufReader::new(File::open(root.as_ref().join(format!(r#"{name}.bin"#))).unwrap())).unwrap();
+                log::info!("Uniques: {}", unique_ct);
+                let uniques_old = content.values().flat_map(|v| {
+                    v.keys()
+                }).unique().count();
+                log::info!("Uniques old: {}", uniques_old);
+
+                let normalized: HashMap<ArcStr, HashMap<ArcStr, NGramCount>> = normalize_ngram_counts::<ArcStr, ArcStr, ArcStr>(
                     content,
                     provider.as_ref().and_then(|v| v.get_tokenizers_for(&LanguageHint::new(lang))).as_ref()
                 );
+
+                let uniques_new = normalized.values().flat_map(|v| {
+                    v.keys()
+                }).unique().count();
+                log::info!("Uniques new: {}", uniques_new);
+                let unique_ct = unique_ct - uniques_old as u128 + uniques_new as u128;
+                log::info!("Uniques: {}", unique_ct);
+                unique_word_counts.insert(format!("{lang}_{n}"), unique_ct);
 
                 bincode::serialize_into(
                     BufWriter::new(
@@ -246,6 +311,7 @@ fn generate_complete_data(
                     &normalized
                 ).unwrap();
 
+                log::info!("Generate word freqs");
                 let (targ, other) = match lang {
                     "en" => {
                         (&mut overall_en, create_word_freqs(
@@ -264,11 +330,13 @@ fn generate_complete_data(
                     _ => unreachable!()
                 };
 
+                log::info!("Collect word freqs");
                 other.into_iter().for_each(|(k, v)| {
                     targ.entry(k).and_modify(|count| *count = max(*count, v)).or_insert(v);
                 })
             }
 
+            log::info!("Save processed content");
             bincode::serialize_into(
                 BufWriter::new(
                     File::options().write(true).create(true).open(
@@ -308,7 +376,7 @@ fn generate_complete_data(
             serde_json::to_writer_pretty(
                 BufWriter::new(
                     File::options().write(true).create(true).open(
-                        save_path.join(format!("de_counts_for_voc.json"))
+                        save_path.join("de_counts_for_voc.json")
                     ).unwrap()
                 ),
                 &overall_de
@@ -316,22 +384,19 @@ fn generate_complete_data(
         }
     }
 
-    generate_base(
-        inp_root.as_ref(),
-        out_root.as_ref(),
-        proc,
-        v1
-    );
+
 
     let base_path = out_root.as_ref().join("gen");
 
-    normalize(base_path.as_path(), proc, v1);
+    normalize(out_root.as_ref(), base_path.as_path(), proc, v1);
 
 
     fn generate_final(
         inp_root: impl AsRef<Utf8Path>,
         base_path: impl AsRef<Utf8Path>
     ){
+        log::info!("Generate final data!");
+
         let en_ct_1 = load_total_counts(
             inp_root.as_ref().join("en-totalcounts-1")
         ).unwrap().values().sum::<TotalCount>();
@@ -346,7 +411,7 @@ fn generate_complete_data(
             inp_root.as_ref().join("de-totalcounts-2")
         ).unwrap().values().sum::<TotalCount>();
 
-
+        log::info!("Finalize for processed");
 
         {
             let base_p_t= base_path.as_ref().join("true");
@@ -355,9 +420,9 @@ fn generate_complete_data(
             let de_dat_t = bincode::deserialize_from(BufReader::new(File::open(base_p_t.join("de_counts_for_voc.bin")).unwrap())).unwrap();
 
             let unique_en_1 = *unique.get("en_1").unwrap();
-            let unique_en_2 = *unique.get("en_1").unwrap();
+            let unique_en_2 = *unique.get("en_2").unwrap();
             let unique_de_1 = *unique.get("de_1").unwrap();
-            let unique_de_2 = *unique.get("de_1").unwrap();
+            let unique_de_2 = *unique.get("de_2").unwrap();
 
             let en_entry_t = WordCountEntry::new(
                 en_dat_t,
@@ -394,7 +459,7 @@ fn generate_complete_data(
             ).unwrap();
         }
 
-
+        log::info!("Finalize for unprocessed");
         {
             let base_p_f= base_path.as_ref().join("false");
             let unique: HashMap<String, u128> = bincode::deserialize_from(BufReader::new(File::open(base_p_f.join("unique_word_counts.bin")).unwrap())).unwrap();

@@ -147,6 +147,11 @@ impl <T> BasicVocabulary<T> for Vocabulary<T> {
         self.id2entry.iter()
     }
 
+    fn par_iter(&self) -> rayon::slice::Iter<T> where T: Send + Sync {
+        use rayon::prelude::*;
+        self.id2entry.par_iter()
+    }
+
     fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a T)> + 'a  where T: 'a {
         self.id2entry.iter().enumerate()
     }

@@ -34,6 +34,8 @@ pub trait BasicVocabulary<T>: AsRef<[T]> + IntoIterator<Item=T> {
     /// To get the ids use .enumerate()
     fn iter(&self) -> Iter<T>;
 
+    fn par_iter(&self) -> rayon::slice::Iter<T> where T: Send + Sync;
+
     /// Iterates over the ids and associated words.
     /// Usually only a shortcut for [iter] followed by an [enumerate]
     fn iter_entries<'a>(&'a self) -> impl Iterator<Item=(usize, &'a T)> + 'a where T: 'a;

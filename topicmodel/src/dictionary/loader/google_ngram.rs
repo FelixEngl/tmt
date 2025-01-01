@@ -10,6 +10,7 @@ use std::iter::Sum;
 use std::num::{ParseIntError};
 use std::ops::{Add, AddAssign};
 use std::path::{Path};
+use arcstr::ArcStr;
 use camino::{Utf8Path};
 use curl::easy::{Handler, List, WriteError};
 use flate2::bufread::MultiGzDecoder;
@@ -332,6 +333,27 @@ where T: AsRef<str> + Eq + Hash + Clone + Borrow<str>
     Ok((iter.line_count(), result))
 }
 
+pub fn load_scan_for_voc(
+    out_root: impl AsRef<Utf8Path>,
+    target: &str,
+    n_gram_size: u8,
+) -> Result<Option<(u128, HashMap<ArcStr, HashMap<String, NGramCount<u128>>>)>, GoogleNGramError> {
+    let idx_file = out_root.as_ref().join(format!("word_counts_{target}_{n_gram_size}.bin"));
+    if idx_file.exists() {
+        log::info!("{idx_file} exists!");
+        match bincode::deserialize_from::<_, (u128, HashMap<ArcStr, HashMap<String, NGramCount<u128>>>)>(BufReader::new(File::open(idx_file)?)) {
+            Ok(value) => {
+                Ok(Some(value))
+            }
+            Err(err) => {
+                Err(err.into())
+            }
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 /// Returns the number of unique words
 pub fn scan_for_voc<T>(
     inp_root: impl AsRef<Utf8Path>,
@@ -341,7 +363,7 @@ pub fn scan_for_voc<T>(
     file_max: usize,
     voc: &Vocabulary<T>,
     tokenizer: &Tokenizer
-) -> Result<(u128, HashMap<T, HashMap<String, NGramCount<u128>>>), GoogleNGramError>
+) -> Result<(), GoogleNGramError>
 where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + Borrow<str>
 {
 
@@ -353,7 +375,7 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
     let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
     if idx_file.exists() {
         log::info!("{idx_file} exists!");
-        return bincode::deserialize_from::<_, (u128, HashMap<T, HashMap<String, NGramCount<u128>>>)>(BufReader::new(File::open(idx_file)?)).map_err(Into::into)
+        return Ok(())
     }
 
     fn scan_single_for_voc<T>(
@@ -396,7 +418,7 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
     let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
     log::info!("Write: {idx_file}");
     bincode::serialize_into(BufWriter::new(File::options().write(true).truncate(true).create(true).open(idx_file)?), &result)?;
-    Ok(result)
+    Ok(())
 }
 
 
@@ -538,6 +560,7 @@ pub fn load_total_counts<P: AsRef<Path>>(file: P) -> Result<HashMap<u16, TotalCo
     let mut s = String::new();
     BufReader::new(File::open(file)?).read_to_string(&mut s)?;
     s.split('\t').map(|value| {
+
         let (year, match_count, page_count, volume_count) = value.split(' ').collect_tuple().expect("This should never fail");
         year.parse_ex_tagged::<u16>("year").and_then(|year| {
             match_count.parse_ex_tagged::<u128>("match_count").and_then(|match_count| {
