@@ -18,6 +18,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{Deref};
 use std::str::FromStr;
+use arcstr::ArcStr;
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 use ldatranslate_toolkit::register_python;
@@ -29,17 +30,28 @@ use ldatranslate_toolkit::register_python;
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct LanguageHint {
-    inner: String
+    inner: ArcStr
 }
 
 impl LanguageHint {
 
     pub fn new(language: impl AsRef<str>) -> Self {
-        unsafe {std::mem::transmute(language.as_ref().to_lowercase())}
+        Self {
+            inner: ArcStr::from(language.as_ref().to_lowercase())
+        }
     }
 
     pub fn as_str(&self) -> &str {
         self.inner.as_str()
+    }
+
+    pub fn is<Q>(&self, value: &Q) -> bool
+    where
+        Q: ?Sized + PartialEq<Q>,
+        LanguageHint: Borrow<Q>,
+    {
+        let q: &Q = self.borrow();
+        q.eq(value)
     }
 }
 

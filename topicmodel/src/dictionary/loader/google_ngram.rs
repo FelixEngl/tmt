@@ -362,7 +362,8 @@ pub fn scan_for_voc<T>(
     n_gram_size: u8,
     file_max: usize,
     voc: &Vocabulary<T>,
-    tokenizer: &Tokenizer
+    tokenizer: &Tokenizer,
+    file_name: &str
 ) -> Result<(), GoogleNGramError>
 where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + Borrow<str>
 {
@@ -370,9 +371,9 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
     let inp_root = inp_root.as_ref();
     let out_root = out_root.as_ref();
 
-    log::info!("Start processing for {target}_{n_gram_size}!");
+    log::info!("Start processing for {file_name}!");
 
-    let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
+    let idx_file = out_root.join(file_name);
     if idx_file.exists() {
         log::info!("{idx_file} exists!");
         return Ok(())
@@ -415,7 +416,6 @@ where T: AsRef<str> + Eq + Hash + Clone + DeserializeOwned + Serialize + Send + 
         )
     }))?;
 
-    let idx_file = out_root.join(format!("word_counts_{target}_{n_gram_size}.bin"));
     log::info!("Write: {idx_file}");
     bincode::serialize_into(BufWriter::new(File::options().write(true).truncate(true).create(true).open(idx_file)?), &result)?;
     Ok(())

@@ -114,6 +114,7 @@ where
 }
 
 impl<Idf> TfIdf<(), Idf> {
+    #[allow(dead_code)]
     pub const fn new_idf_only(idf: Idf) -> Self {
         Self::new((), idf)
     }
@@ -124,6 +125,7 @@ impl<Tf, Idf> TfIdf<Tf, Idf> {
         Self { tf, idf }
     }
 
+    #[allow(dead_code)]
     pub fn to_idf_only(self) -> TfIdf<(), Idf> {
         TfIdf::<(), Idf>::new_idf_only(self.idf)
     }

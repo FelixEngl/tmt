@@ -79,6 +79,27 @@ pub trait DictionaryWithVocabulary<T, V>: BasicDictionaryWithVocabulary<V> where
         }
     }
 
+    /// Returns the voc associated with the specific language
+    fn voc_by_hint<Q>(&self, language_hint: &Q) -> Option<&V>
+    where
+        Q: ?Sized + PartialEq<Q>,
+        LanguageHint: Borrow<Q>,
+    {
+        if let Some(a) = self.voc_a().language() {
+            if a.is(language_hint) {
+                return Some(self.voc_a());
+            }
+        }
+
+        if let Some(b) = self.voc_b().language() {
+            if b.is(language_hint) {
+                return Some(self.voc_b());
+            }
+        }
+
+        None
+    }
+
 
     /// The typed access based on the language
     fn language_a<'a>(&'a self) -> Option<&'a LanguageHint> where V: 'a {
