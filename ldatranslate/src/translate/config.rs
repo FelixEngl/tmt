@@ -1,4 +1,3 @@
-use std::cmp::Ordering::Equal;
 use crate::translate::entropies::{FDivergenceCalculator};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
@@ -7,11 +6,14 @@ use pyo3::exceptions::PyValueError;
 use pyo3::{pyclass, pymethods, PyResult};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use itertools::Itertools;
-use rstats::{Median, Stats, RE};
-use strum::{AsRefStr, Display, EnumIs, EnumString, ParseError};
-use ldatranslate_topicmodel::model::Probability;
-use crate::py::translate::{PyHorizontalBoostConfig, PyVerticalBoostConfig};
+use itertools::{Itertools};
+use strum::{AsRefStr, Display, EnumString, ParseError};
+use ldatranslate_topicmodel::language_hint::LanguageHint;
+use crate::py::translate::{PyHorizontalBoostConfig, PyNGramBoostConfig, PyNGramLanguageBoost, PyVerticalBoostConfig};
+use crate::tools::boosting::BoostMethod;
+use crate::tools::mean::MeanMethod;
+use crate::tools::boost_norms::BoostNorm;
+use crate::tools::tf_idf::Idf;
 use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
 use crate::translate::dictionary_meta::{MetaTagTemplate, SparseVectorFactory};
 
@@ -82,6 +84,8 @@ pub struct TranslateConfig<V: VotingMethodMarker> {
     pub vertical_config: Option<Arc<VerticalScoreBoostConfig>>,
     /// The config for a coocurrence
     pub horizontal_config: Option<Arc<HorizontalScoreBootConfig>>,
+    /// Word count boost config
+    pub ngram_boost_config: Option<Arc<NGramBoostConfig>>
 }
 
 #[derive(Debug, Clone)]
@@ -110,59 +114,54 @@ impl FieldConfig {
 }
 
 
-#[cfg_attr(
-    feature = "gen_python_api",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum
-)]
-#[pyclass(eq, eq_int, hash, frozen)]
-#[derive(
-    Debug, Copy, Default, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString, EnumIs
-)]
-pub enum Transform {
-    Off,
-    #[default]
-    Linear,
-    Normalized,
+#[derive(Debug, Clone)]
+pub struct NGramBoostConfig {
+    pub boost_a: Option<NGramLanguageBoostConfig>,
+    pub boost_b: Option<NGramLanguageBoostConfig>
 }
 
-impl Transform {
-    pub fn transform(&self, arr: &mut [f64]) {
-        match self {
-            Transform::Off => {}
-            Transform::Linear => {
-                // rstats::MutVecg::mlintrans()
-                let mm = indxvec::Vecops::minmax(arr.as_ref());
-                let range = mm.max - mm.min + f64::EPSILON;
-                for c in arr.iter_mut() {
-                    *c = (*c - mm.min + f64::EPSILON) / range
-                }
-            }
-            Transform::Normalized => {
-                let sum: f64 = arr.iter().sum();
-                if sum <= 0.0 {
-                    return;
-                }
-                arr.iter_mut().for_each(|value| {
-                    *value /= sum
-                });
-            }
+
+impl From<PyNGramBoostConfig> for NGramBoostConfig {
+    fn from(value: PyNGramBoostConfig) -> Self {
+        Self {
+            boost_a: value.boost_lang_a.map(Into::into),
+            boost_b: value.boost_lang_b.map(Into::into),
         }
     }
 }
 
-register_python!(enum Transform;);
+#[derive(Debug, Clone)]
+pub struct NGramLanguageBoostConfig {
+    pub idf: Idf,
+    pub boosting: BoostMethod,
+    pub norm: BoostNorm,
+    pub factor: f64,
+    pub fallback_language: Option<LanguageHint>
+}
+
+impl From<PyNGramLanguageBoost> for NGramLanguageBoostConfig {
+    fn from(value: PyNGramLanguageBoost) -> Self {
+        Self {
+            idf: value.idf,
+            boosting: value.boosting,
+            norm: value.norm,
+            factor: value.factor.unwrap_or(1.0),
+            fallback_language: value.fallback_language
+        }
+    }
+}
 
 
 #[derive(Clone, Debug)]
 pub struct VerticalScoreBoostConfig {
     pub field_config: FieldConfig,
     pub calculator: FDivergenceCalculator,
-    pub transformer: Transform,
+    pub transformer: BoostNorm,
     pub factor: f64
 }
 
 impl VerticalScoreBoostConfig {
-    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: Transform, factor: Option<f64>) -> Self {
+    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: BoostNorm, factor: Option<f64>) -> Self {
         Self { field_config, calculator, transformer, factor: factor.unwrap_or(1.0) }
     }
 }
@@ -186,114 +185,7 @@ impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
     }
 }
 
-/// Setting if to keep the original word from language A
-#[cfg_attr(
-    feature = "gen_python_api",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum
-)]
-#[pyclass(eq, eq_int, hash, frozen)]
-#[derive(
-    Debug, Default, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString,
-)]
-pub enum MeanMethod {
-    ArithmeticMean,
-    LinearWeightedArithmeticMean,
-    HarmonicMean,
-    LinearWeightedHarmonicMean,
-    GeometricMean,
-    LinearWeightedGeometricMean,
-    #[default]
-    Median
-}
 
-
-impl MeanMethod {
-    pub fn fails_on_empty(&self) -> bool {
-        matches!(self,
-            MeanMethod::GeometricMean | MeanMethod::LinearWeightedGeometricMean
-            | MeanMethod::HarmonicMean | MeanMethod::LinearWeightedHarmonicMean
-        )
-    }
-
-    pub fn apply<'a, S, T>(&self, value: S) -> Result<f64, RE>
-    where
-        S: Stats + Median<'a, T> + 'a,
-        T: Into<f64> + PartialOrd + Copy
-    {
-        match self {
-            MeanMethod::ArithmeticMean => {
-                value.amean()
-            }
-            MeanMethod::LinearWeightedArithmeticMean => {
-                value.awmean()
-            }
-            MeanMethod::HarmonicMean => {
-                value.hmean()
-            }
-            MeanMethod::LinearWeightedHarmonicMean => {
-                value.hwmean()
-            }
-            MeanMethod::GeometricMean => {
-                value.gmean()
-            }
-            MeanMethod::LinearWeightedGeometricMean => {
-                value.gwmean()
-            }
-            MeanMethod::Median => {
-                Ok(value.qmedian_by(
-                    &mut |a, b| a.partial_cmp(b).unwrap_or(Equal),
-                    |v| v.clone().into()
-                )?)
-            }
-        }
-    }
-}
-
-
-/// Setting if to keep the original word from language A
-#[cfg_attr(
-    feature = "gen_python_api",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum
-)]
-#[pyclass(eq, eq_int, hash, frozen)]
-#[derive(
-    Debug, Default, Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, AsRefStr, Display, EnumString,
-)]
-pub enum TransformMethod {
-    #[default]
-    Linear,
-    Sum,
-    MultPow,
-    Pipe,
-}
-
-impl TransformMethod {
-    pub fn boost(&self, probability: Probability, boost: f64, factor: f64) -> f64 {
-        let boosted = match self {
-            TransformMethod::Linear => {
-                probability + probability * boost * factor
-            }
-            TransformMethod::Sum => {
-                boost * factor + probability
-            }
-            TransformMethod::MultPow => {
-                probability * boost.powf(factor)
-            }
-            TransformMethod::Pipe => {
-                return probability
-            }
-        };
-        if boosted <= 0.0 {
-            f64::EPSILON
-        } else {
-            boosted
-        }
-    }
-}
-
-
-
-register_python!(enum MeanMethod; enum TransformMethod;);
 
 #[derive(Debug, Clone)]
 pub struct HorizontalScoreBootConfig {
@@ -302,11 +194,10 @@ pub struct HorizontalScoreBootConfig {
     pub field_config: FieldConfig,
     pub mode: NormalizeMode,
     pub linear_transformed: bool,
-    pub transform: TransformMethod,
+    pub transform: BoostMethod,
     pub mean_method: MeanMethod,
     pub factor: f64
 }
-
 
 
 impl HorizontalScoreBootConfig {
@@ -316,7 +207,7 @@ impl HorizontalScoreBootConfig {
         mode: NormalizeMode,
         alpha: Option<f64>,
         linear_transformed: bool,
-        transform: TransformMethod,
+        transform: BoostMethod,
         mean_method: MeanMethod,
         factor: Option<f64>
     ) -> Self {
@@ -346,9 +237,6 @@ impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
     }
 }
 
-pub enum BoostScoreBy {
-    Domains(Vec<DictMetaTagIndex>),
-}
 
 impl<V> TranslateConfig<V>
 where
@@ -362,6 +250,7 @@ where
         top_candidate_limit: Option<NonZeroUsize>,
         divergence_config: Option<VerticalScoreBoostConfig>,
         vertical_coocurrence: Option<HorizontalScoreBootConfig>,
+        ngram_boost_config: Option<NGramBoostConfig>,
     ) -> Self {
         Self {
             epsilon,
@@ -371,6 +260,7 @@ where
             top_candidate_limit,
             vertical_config: divergence_config.map(Arc::new),
             horizontal_config: vertical_coocurrence.map(Arc::new),
+            ngram_boost_config: ngram_boost_config.map(Arc::new)
         }
     }
 }
@@ -388,6 +278,7 @@ where
             top_candidate_limit: self.top_candidate_limit,
             vertical_config: self.vertical_config.clone(),
             horizontal_config: self.horizontal_config.clone(),
+            ngram_boost_config: self.ngram_boost_config.clone(),
         }
     }
 }

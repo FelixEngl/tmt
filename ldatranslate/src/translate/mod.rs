@@ -47,10 +47,12 @@ use ldatranslate_voting::variable_provider::{VariableProvider, VariableProviderO
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::traits::VotingMethodMarker;
 use ldatranslate_voting::{VotingMethod};
+use crate::py::word_counts::{NGramStatistics};
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
 use crate::translate::dictionary_meta::booster::{Booster, TopicSpecificBooster};
 use crate::translate::dictionary_meta::horizontal_boost_1::HorizontalScoreBoost;
+use crate::translate::dictionary_meta::ngram_score_boost::NGramScoreBooster;
 use crate::translate::dictionary_meta::vertical_boost_1::{VerticalBoostedScores};
 use crate::variable_provider::AsVariableProvider;
 
@@ -60,6 +62,7 @@ pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V>(
     target: &'a Target,
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
+    idf_source: Option<NGramStatistics>
 ) -> Result<Target, TranslateError<'a>>
 where
     T: Hash + Eq + Ord + Clone + Sync + Send + 'a + Debug,
@@ -72,7 +75,8 @@ where
         target,
         dictionary,
         translate_config,
-        None::<&DummyAsVariableProvider<T>>
+        None::<&DummyAsVariableProvider<T>>,
+        idf_source
     )
 }
 
@@ -81,7 +85,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     target: &'a Target,
     original_dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
-    provider: Option<&P>
+    provider: Option<&P>,
+    idf_source: Option<NGramStatistics>
 ) -> Result<Target, TranslateError<'a>> where
     T: Hash + Eq + Ord + Clone + Send + Sync + 'a + Debug,
     V: VotingMethodMarker,
@@ -123,6 +128,63 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     );
     log::info!("After cration of topic specific dict. {}", reporter.create_report_now());
 
+    let (a, b) = {
+        if let Some(idf_source) = idf_source {
+            let (hint_a, hint_b) = translation_dictionary.language_direction_a_to_b();
+
+            let for_a = match translate_config.ngram_boost_config.as_ref().and_then(|a| a.boost_a.as_ref()) {
+                None => {
+                    None
+                }
+                Some(lang_a) => {
+                    let hint = hint_a.or_else(|| lang_a.fallback_language.as_ref()).ok_or(TranslateError::LanguageHintForIdfBoostMissing("a"))?;
+                    match idf_source.get(hint) {
+                        None => {
+                            None
+                        }
+                        Some(source) => {
+                            Some(
+                                NGramScoreBooster::new(
+                                    lang_a,
+                                    source,
+                                    &translation_dictionary
+                                )?
+                            )
+                        }
+                    }
+
+                }
+            };
+
+            let for_b = match translate_config.ngram_boost_config.as_ref().and_then(|a| a.boost_b.as_ref()) {
+                None => {
+                    None
+                }
+                Some(lang_b) => {
+                    let hint = hint_b.or_else(|| lang_b.fallback_language.as_ref()).ok_or(TranslateError::LanguageHintForIdfBoostMissing("b"))?;
+                    match idf_source.get(hint) {
+                        None => {
+                            None
+                        }
+                        Some(source) => {
+                            Some(
+                                NGramScoreBooster::new(
+                                    lang_b,
+                                    source,
+                                    &translation_dictionary
+                                )?
+                            )
+                        }
+                    }
+                }
+            };
+
+            (for_a, for_b)
+        } else {
+            (None, None)
+        }
+    };
+
     let booster = Booster::new(
         translate_config.vertical_config.clone().map(|divergence| {
             VerticalBoostedScores::new(
@@ -139,6 +201,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                 original_dictionary,
             )
         }).transpose()?,
+        a,
+        b
     );
 
     if translation_dictionary.map_a_to_b().is_empty() {
@@ -496,6 +560,7 @@ where
                                     ).expect("This should not fail!");
                                     match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
                                         Ok(result) => {
+                                            let result = booster.boost_score_result(candidate, result);
                                             Ok(Candidate::new(LanguageOrigin::Target(candidate), result, original_voter_id))
                                         }
                                         Err(err) => {
@@ -569,6 +634,7 @@ where
 
         match voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
             Ok(result) => {
+                // No boost because we can not properly translate it.
                 Ok(Candidate::new(LanguageOrigin::Origin(voter_id), result, voter_id))
             }
             Err(err) => {
@@ -674,7 +740,7 @@ pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMutMeta, Dictionary, DictionaryMutGen, DictionaryWithMeta};
     use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
-    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, MeanMethod, Transform, TransformMethod, VerticalScoreBoostConfig};
+    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, VerticalScoreBoostConfig};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::TranslateConfig;
     use ldatranslate_voting::spy::IntoSpy;
@@ -686,6 +752,9 @@ pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator};
     use ldatranslate_topicmodel::dictionary::metadata::ex::*;
+    use crate::tools::boost_norms::BoostNorm;
+    use crate::tools::boosting::BoostMethod;
+    use crate::tools::mean::MeanMethod;
     use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
 
@@ -814,7 +883,8 @@ pub(crate) mod test {
             keep_original_word: Never,
             top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
             vertical_config: None,
-            horizontal_config: None
+            horizontal_config: None,
+            ngram_boost_config: None
         };
 
         let config2 = TranslateConfig {
@@ -841,12 +911,13 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        Transform::Linear,
+                        BoostNorm::Linear,
                         None
                     ),
                 )
             ),
-            horizontal_config: None
+            horizontal_config: None,
+            ngram_boost_config: None
         };
 
         let config3 = TranslateConfig {
@@ -877,12 +948,13 @@ pub(crate) mod test {
                         NormalizeMode::Sum,
                         Some(0.15),
                         false,
-                        TransformMethod::Pipe,
+                        BoostMethod::Pipe,
                         MeanMethod::GeometricMean,
                         None
                     )
                 )
-            )
+            ),
+            ngram_boost_config: None
         };
 
         let config4 = TranslateConfig {
@@ -909,7 +981,7 @@ pub(crate) mod test {
                             None,
                             ScoreModifierCalculator::Max
                         ),
-                        Transform::Linear,
+                        BoostNorm::Linear,
                         None
                     ),
                 )
@@ -935,12 +1007,13 @@ pub(crate) mod test {
                         NormalizeMode::Sum,
                         Some(0.15),
                         false,
-                        TransformMethod::Pipe,
+                        BoostMethod::Pipe,
                         MeanMethod::GeometricMean,
                         None
                     )
                 )
-            )
+            ),
+            ngram_boost_config: None
         };
 
         println!("model_b:");
@@ -948,6 +1021,7 @@ pub(crate) mod test {
             &model_a,
             &dict,
             &config1,
+            None,
         ).unwrap();
 
         println!("model_c:");
@@ -955,6 +1029,7 @@ pub(crate) mod test {
             &model_a,
             &dict,
             &config2,
+            None,
         ).unwrap();
 
         println!("model_d:");
@@ -962,6 +1037,7 @@ pub(crate) mod test {
             &model_a,
             &dict,
             &config3,
+            None,
         ).unwrap();
 
         println!("model_e:");
@@ -969,6 +1045,7 @@ pub(crate) mod test {
             &model_a,
             &dict,
             &config4,
+            None,
         ).unwrap();
 
         // println!("{:?}", model_b.vocabulary());

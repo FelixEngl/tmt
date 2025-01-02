@@ -5,6 +5,7 @@ use ldatranslate_voting::variable_provider::VariableProviderError;
 use ldatranslate_voting::{VotingExpressionError, VotingResult};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
 use crate::translate::dictionary_meta::horizontal_boost_1::HorizontalError;
+use crate::translate::dictionary_meta::ngram_score_boost::NGramScoreBoosterError;
 use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
 use crate::variable_provider::{AsVariableProviderError};
 
@@ -32,7 +33,13 @@ pub enum TranslateError<'a> {
     #[error(transparent)]
     EntropyError(#[from] EntropyWithAlphaError<f64, f64>),
     #[error(transparent)]
-    VerticalError(#[from] HorizontalError<FDivergenceCalculator>)
+    VerticalError(#[from] HorizontalError<FDivergenceCalculator>),
+    #[error("The language hint for {0} is missing!")]
+    LanguageHintForIdfBoostMissing(&'static str),
+    #[error("The language hint {0} did not result in an idf provider!")]
+    NoValuesForIdfBoostFound(&'static str),
+    #[error(transparent)]
+    NGramBooster(#[from] NGramScoreBoosterError),
 }
 
 #[derive(Debug, Error)]

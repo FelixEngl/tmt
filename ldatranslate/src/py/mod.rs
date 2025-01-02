@@ -22,4 +22,4 @@ pub mod topic_model_builder;
 pub mod tokenizer;
 pub mod enum_mapping;
 mod aliases;
-mod word_counts;
+pub mod word_counts;

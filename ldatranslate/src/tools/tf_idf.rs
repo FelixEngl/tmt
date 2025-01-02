@@ -100,7 +100,6 @@ where
             fn calculate_idf_with_word_frequency<Q, S>(
                 &self,
                 statistics: &S,
-                word: &Q,
                 word_frequency: u128,
                 adjusted: bool,
             ) -> Result<f64, Idf::Error>
@@ -157,22 +156,44 @@ pub trait IdfAlgorithm {
     /// [number_of_words] denote the number of distinct words in the whole corpus
     /// [word_frequency] denotes the frequency of a specific word in a corpus
     #[inline]
-    #[allow(dead_code)]
     fn calculate_idf<Q, S>(
         &self,
         statistics: &S,
         word: &Q,
         adjusted: bool
-    ) -> Result<Option<f64>, Self::Error>
+    ) -> Result<f64, Self::Error>
     where
         S: CorpusDocumentStatistics,
         Q: Hash + Eq + ?Sized,
         S::Word: Borrow<Q>,
     {
-        statistics
-            .word_document_count(word)
-            .map(|value| self.calculate_idf_with_word_frequency(statistics, word, value, adjusted))
-            .transpose()
+        let word_doc = if adjusted {
+            statistics.word_document_count(word).unwrap_or(0)
+        } else {
+            match statistics.word_document_count(word) {
+                None => {
+                    return Ok(f64::NAN);
+                }
+                Some(value) => {
+                    value
+                }
+            }
+        };
+
+        self.calculate_idf_with_word_frequency(statistics, word_doc, adjusted)
+    }
+
+    /// Returns the max value of the idf for a word that is in 0 docs.
+    #[inline]
+    fn max<S>(&self, statistics: &S, adjusted: bool) -> Result<f64, Self::Error> {
+        if !adjusted {
+            return Ok(f64::NAN);
+        }
+        self.calculate_idf_with_word_frequency(
+            statistics,
+            0,
+            adjusted
+        )
     }
 
     /// Calculates the IDF value for a single word based on the provided statistics.
@@ -182,7 +203,6 @@ pub trait IdfAlgorithm {
     fn calculate_idf_with_word_frequency<Q, S>(
         &self,
         statistics: &S,
-        word: &Q,
         word_frequency: u128,
         adjusted: bool
     ) -> Result<f64, Self::Error>
@@ -234,7 +254,7 @@ impl IdfAlgorithm for Idf {
             Idf::Unary => Ok(Some(1.0)),
             other => statistics
                 .word_document_count(word)
-                .map(|value| other.calculate_idf_with_word_frequency(statistics, word, value, adjusted))
+                .map(|value| other.calculate_idf_with_word_frequency(statistics, value, adjusted))
                 .transpose(),
         }
     }
@@ -246,7 +266,6 @@ impl IdfAlgorithm for Idf {
     fn calculate_idf_with_word_frequency<Q, S>(
         &self,
         statistics: &S,
-        _: &Q,
         mut word_frequency: u128,
         adjusted: bool
     ) -> Result<f64, Self::Error>

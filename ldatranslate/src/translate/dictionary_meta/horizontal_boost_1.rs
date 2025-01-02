@@ -20,11 +20,12 @@ use ldatranslate_topicmodel::dictionary::metadata::ex::{MetadataManagerEx, Metad
 use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithVocabulary, SearchableDictionaryWithMetadata};
 use ldatranslate_topicmodel::model::Probability;
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
+use crate::tools::mean::MeanMethod;
 use crate::translate::dictionary_meta::{MetaTagTemplate, Similarity, SparseVectorFactory};
 use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes_a_to_b, ClassCoocurrenceMatrix};
 use crate::translate::dictionary_meta::vertical_boost_1::MetaFieldCountProvider;
 use crate::translate::entropies::FDivergenceCalculator;
-use crate::translate::{HorizontalScoreBootConfig, MeanMethod};
+use crate::translate::{HorizontalScoreBootConfig};
 
 pub trait Preprocessor: Similarity {
     fn preprocess<S, A>(&self, value: &mut ArrayBase<S, Ix1>) -> Result<(), Self::Error<A>>
@@ -429,13 +430,15 @@ mod test {
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::SearchableVocabulary;
+    use crate::tools::boosting::BoostMethod;
+    use crate::tools::mean::MeanMethod;
     use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes_a_to_b, NormalizeMode};
     use crate::translate::dictionary_meta::horizontal_boost_1::calculate_horizontal_boost;
     use crate::translate::dictionary_meta::{SparseVectorFactory};
     use crate::translate::dictionary_meta::vertical_boost_1::ScoreModifierCalculator;
     use crate::translate::dictionary_meta::voting::HorizontalScoreBoost;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
-    use crate::translate::{FieldConfig, HorizontalScoreBootConfig, MeanMethod, TransformMethod};
+    use crate::translate::{FieldConfig, HorizontalScoreBootConfig};
     use crate::translate::test::create_test_data;
 
     #[test]
@@ -597,7 +600,7 @@ mod test {
                     NormalizeMode::Sum,
                     Some(0.15),
                     false,
-                    TransformMethod::Pipe,
+                    BoostMethod::Pipe,
                     MeanMethod::GeometricMean,
                     None
                 )

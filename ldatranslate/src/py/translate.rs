@@ -22,13 +22,14 @@ use evalexpr::{Value};
 use pyo3::{pyclass, pyfunction, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
 use crate::py::dictionary::PyDictionary;
-use crate::py::helpers::{KeepOriginalWordArg, VotingArg};
+use crate::py::helpers::{KeepOriginalWordArg, LanguageHintValue, VotingArg};
 use crate::py::topic_model::PyTopicModel;
 use crate::py::variable_provider::PyVariableProvider;
 use ldatranslate_voting::py::{PyVoting, PyVotingRegistry};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::DictMetaTagIndex;
-use crate::translate::{KeepOriginalWord, MeanMethod, Transform, TransformMethod, TranslateConfig};
+use ldatranslate_topicmodel::language_hint::LanguageHint;
+use crate::translate::{KeepOriginalWord, TranslateConfig};
 use ldatranslate_voting::parser::input::ParserInput;
 use ldatranslate_voting::parser::{parse};
 use crate::translate::translate_topic_model as translate;
@@ -36,7 +37,12 @@ use ldatranslate_voting::{VotingMethod, VotingMethodContext, VotingResult};
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
+use crate::py::word_counts::NGramStatistics;
+use crate::tools::boosting::BoostMethod;
+use crate::tools::mean::MeanMethod;
 use crate::tools::memory::MemoryReporter;
+use crate::tools::boost_norms::BoostNorm;
+use crate::tools::tf_idf::Idf;
 use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
 use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator};
 use crate::translate::entropies::{FDivergence};
@@ -80,7 +86,7 @@ impl PyBasicBoostConfig {
 #[derive(Debug, Clone)]
 pub struct PyVerticalBoostConfig {
     pub divergence: PyBasicBoostConfig,
-    pub transformer: Transform,
+    pub transformer: BoostNorm,
     pub factor: Option<f64>
 }
 
@@ -91,7 +97,7 @@ impl PyVerticalBoostConfig {
     #[pyo3(signature = (divergence, transformer=None, factor=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
-        transformer: Option<Transform>,
+        transformer: Option<BoostNorm>,
         factor: Option<f64>
     ) -> PyResult<Self> {
         Ok(Self{
@@ -112,7 +118,7 @@ pub struct PyHorizontalBoostConfig {
     pub alpha: Option<f64>,
     pub linear_transformed: bool,
     pub mean_method: MeanMethod,
-    pub transform: TransformMethod,
+    pub transform: BoostMethod,
     pub factor: Option<f64>
 }
 
@@ -127,7 +133,7 @@ impl PyHorizontalBoostConfig {
         normalize_mode: Option<NormalizeMode>,
         alpha: Option<Option<f64>>,
         linear_transformed: Option<bool>,
-        transform: Option<TransformMethod>,
+        transform: Option<BoostMethod>,
         factor: Option<f64>
     ) -> PyResult<Self> {
         Ok(Self{
@@ -142,6 +148,75 @@ impl PyHorizontalBoostConfig {
     }
 }
 
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyNGramBoostConfig {
+    pub boost_lang_a: Option<PyNGramLanguageBoost>,
+    pub boost_lang_b: Option<PyNGramLanguageBoost>,
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyNGramBoostConfig {
+    #[new]
+    #[pyo3(signature = (boost_lang_a=None, boost_lang_b=None))]
+    pub fn new(
+        boost_lang_a: Option<PyNGramLanguageBoost>,
+        boost_lang_b: Option<PyNGramLanguageBoost>,
+    ) -> PyResult<Self> {
+        let boost_lang_a = boost_lang_a.or_else(|| if boost_lang_b.is_some() {None} else {Some(Default::default())});
+        Ok(Self{
+            boost_lang_a,
+            boost_lang_b
+        })
+    }
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyNGramLanguageBoost {
+    pub idf: Idf,
+    pub boosting: BoostMethod,
+    pub norm: BoostNorm,
+    pub factor: Option<f64>,
+    pub fallback_language: Option<LanguageHint>
+}
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
+#[pymethods]
+impl PyNGramLanguageBoost {
+    #[new]
+    #[pyo3(signature = (idf=None, boosting=None, norm=None, factor=None, fallback_language=None))]
+    pub fn new(
+        idf: Option<Idf>,
+        boosting: Option<BoostMethod>,
+        norm: Option<BoostNorm>,
+        factor: Option<f64>,
+        fallback_language: Option<LanguageHintValue>
+    ) -> PyResult<Self> {
+        Ok(Self{
+            idf: idf.unwrap_or(Idf::InverseDocumentFrequency),
+            boosting: boosting.unwrap_or(BoostMethod::Mult),
+            norm: norm.unwrap_or(BoostNorm::Off),
+            factor,
+            fallback_language: fallback_language.map(|v| v.into())
+        })
+    }
+}
+
+impl Default for PyNGramLanguageBoost {
+    fn default() -> Self {
+        Self {
+            idf: Idf::InverseDocumentFrequency,
+            boosting: BoostMethod::Mult,
+            norm: BoostNorm::Off,
+            factor: None
+        }
+    }
+}
+
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
@@ -152,7 +227,8 @@ pub struct PyTranslationConfig {
     keep_original_word: KeepOriginalWord,
     top_candidate_limit: Option<NonZeroUsize>,
     vertical_config: Option<PyVerticalBoostConfig>,
-    horizontal_config: Option<PyHorizontalBoostConfig>
+    horizontal_config: Option<PyHorizontalBoostConfig>,
+    ngram_config: Option<PyNGramBoostConfig>,
 }
 
 
@@ -160,7 +236,7 @@ pub struct PyTranslationConfig {
 #[pymethods]
 impl PyTranslationConfig {
     #[new]
-    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None, vertical_config=None, horizontal_config=None))]
+    #[pyo3(signature = (epsilon=None, threshold=None, keep_original_word=None, top_candidate_limit=None, vertical_config=None, horizontal_config=None, ngram_config=None))]
     pub fn new(
         epsilon: Option<f64>,
         threshold: Option<f64>,
@@ -168,6 +244,7 @@ impl PyTranslationConfig {
         top_candidate_limit: Option<usize>,
         vertical_config: Option<PyVerticalBoostConfig>,
         horizontal_config: Option<PyHorizontalBoostConfig>,
+        ngram_config: Option<PyNGramBoostConfig>,
     ) -> PyResult<Self> {
         Ok(Self{
             epsilon,
@@ -179,6 +256,7 @@ impl PyTranslationConfig {
             top_candidate_limit: top_candidate_limit.map(|value| NonZeroUsize::new(value)).flatten(),
             vertical_config,
             horizontal_config,
+            ngram_config
         })
     }
 }
@@ -216,6 +294,7 @@ impl PyTranslationConfig {
                 self.top_candidate_limit,
                 self.vertical_config.map(Into::into),
                 self.horizontal_config.map(Into::into),
+                self.ngram_config.map(Into::into),
             )
         )
     }
@@ -250,7 +329,7 @@ impl VotingMethodMarker for Wrapper<'_> {}
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-#[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
+#[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None, idf_source=None))]
 pub fn translate_topic_model<'a>(
     topic_model: &PyTopicModel,
     dictionary: &PyDictionary,
@@ -258,12 +337,13 @@ pub fn translate_topic_model<'a>(
     voting: VotingArg<'a>,
     config: PyTranslationConfig,
     provider: Option<&PyVariableProvider>,
-    voting_registry: Option<PyVotingRegistry>
+    voting_registry: Option<PyVotingRegistry>,
+    idf_source: Option<NGramStatistics>
 ) -> PyResult<PyTopicModel> {
     let cfg =config.to_translation_config(voting, voting_registry)?;
     let read = dictionary.get();
     log::info!("Start with translation.");
-    match translate(topic_model, read.deref(), &cfg, provider) {
+    match translate(topic_model, read.deref(), &cfg, provider, idf_source) {
         Ok(result) => {
             log::info!("Memory usage: {}", MemoryReporter::instant_report());
             Ok(result)
@@ -307,36 +387,13 @@ pub fn load_ratings(
 }
 
 
-// #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
-// #[pyfunction]
-// #[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None))]
-// pub fn vote_for_domains<'a>(
-//     topic_model: &PyTopicModel,
-//     dictionary: &PyDictionary,
-//     // VotingArg<'a>
-//     voting: VotingArg<'a>,
-//     config: PyVoteConfig,
-//     provider: Option<&PyVariableProvider>,
-//     voting_registry: Option<PyVotingRegistry>
-// ) -> PyResult<Vec<Vec<f64>>> {
-//     let cfg = config.to_vote_config(voting, voting_registry)?;
-//     let read = dictionary.get();
-//     match meta_to_topic_association_voting(topic_model, read.deref(), &cfg, provider) {
-//         Ok(result) => {
-//             Ok(result)
-//         }
-//         Err(err) => {
-//             Err(PyValueError::new_err(err.to_string()))
-//         }
-//     }
-// }
-
-
 register_python! {
     struct PyTranslationConfig;
     struct PyVerticalBoostConfig;
     struct PyHorizontalBoostConfig;
     struct PyBasicBoostConfig;
+    struct PyNGramBoostConfig;
+    struct PyNGramLanguageBoost;
     fn translate_topic_model;
     fn save_ratings;
     fn load_ratings;

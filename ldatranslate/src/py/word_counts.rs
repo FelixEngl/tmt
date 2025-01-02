@@ -77,36 +77,50 @@ pub fn create_word_freqs<T, K1, K2>(
     }).collect::<HashMap<_, _>>()
 }
 
+
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct WordCountEntry<T> where T: Eq + Hash {
+pub struct NGramStatisticsLangSpecific<T> where T: Eq + Hash {
+    language: LanguageHint,
     counts: HashMap<T, NGramCount>,
     meta: HashMap<u8, (u128, TotalCount)>,
     min_counts: NGramCount,
     max_total_counts: u128
 }
 
-impl<T> WordCountEntry<T> where T: Eq + Hash {
+impl<T> NGramStatisticsLangSpecific<T> where T: Eq + Hash {
     pub fn new(
+        language: LanguageHint,
         counts: HashMap<T, NGramCount>,
         meta: HashMap<u8, (u128, TotalCount)>,
     ) -> Self {
         let min = counts.values().min().cloned().unwrap_or(NGramCount::ZERO);
-        Self::with_min(counts, meta, min)
+        Self::with_min(language, counts, meta, min)
     }
 
     pub fn with_min(
+        language: LanguageHint,
         counts: HashMap<T, NGramCount>,
         meta: HashMap<u8, (u128, TotalCount)>,
         min_counts: NGramCount,
     ) -> Self {
         let max_total_counts = meta.values().map(|v| v.0).max().unwrap_or(0);
-        Self { counts, meta, min_counts, max_total_counts }
+        Self { language, counts, meta, min_counts, max_total_counts }
     }
 }
 
-impl<T> WordCountEntry<T> where T: Clone + Eq + Hash
+#[derive(Debug, Error)]
+pub enum IdfProviderError<Idf: IdfAlgorithm> {
+    #[error("Expected voc for {0} but none was supplied from dict.")]
+    NoLanguageInDictFound(LanguageHint),
+    #[error(transparent)]
+    Idf(#[from] Idf::Error)
+}
+
+impl<T> NGramStatisticsLangSpecific<T> where T: Clone + Eq + Hash
 {
-    pub fn idf<Q, Idf>(&self, idf: Idf, word: &Q, adjusted: bool) -> Result<Option<f64>, <Idf as IdfAlgorithm>::Error>
+    #[inline(always)]
+    pub fn idf<Q, Idf>(&self, idf: &Idf, word: &Q, adjusted: bool) -> Result<f64, <Idf as IdfAlgorithm>::Error>
     where
         Idf: IdfAlgorithm,
         Q: Hash + Eq + ?Sized,
@@ -119,14 +133,34 @@ impl<T> WordCountEntry<T> where T: Clone + Eq + Hash
         )
     }
 
-    pub fn all_idf<Idf>(&self, idf: Idf, adjusted: bool) -> Result<HashMap<T, f64>, <Idf as IdfAlgorithm>::Error>
+    /// Returns
+    pub fn create_idf_mapping<Idf, D, V>(&self, idf_alg: &Idf, d: &D) -> Result<Option<(usize, Vec<f64>)>, IdfProviderError<Idf>>
+    where
+        D: DictionaryWithVocabulary<T, V>,
+        V: BasicVocabulary<T>,
+        Idf: IdfAlgorithm,
+        T: Send + Sync
+    {
+        let voc = d.voc_by_hint(&self.language).ok_or_else(|| IdfProviderError::NoLanguageInDictFound(self.language.clone()))?;
+        let overlap = voc.iter().filter(|&v| self.counts.contains_key(v)).count();
+        if overlap == 0 {
+            return Ok(None);
+        }
+        let empty_replacement = idf_alg.max(self, true)?;
+        let idf = self.all_idf(idf_alg, true)?;
+
+        let idf_of_voc = voc.iter().map(|value| idf.get(value).copied().unwrap_or(empty_replacement)).collect::<Vec<_>>();
+
+        Ok(Some((overlap, idf_of_voc)))
+    }
+
+    pub fn all_idf<Idf>(&self, idf: &Idf, adjusted: bool) -> Result<HashMap<T, f64>, <Idf as IdfAlgorithm>::Error>
     where
         Idf: IdfAlgorithm,
     {
-        self.counts.iter().map(|(k, v)| {
+        self.counts.par_iter().map(|(k, v)| {
             idf.calculate_idf_with_word_frequency(
                 self,
-                k,
                 v.volumes,
                 adjusted
             ).map(|v| {
@@ -136,14 +170,13 @@ impl<T> WordCountEntry<T> where T: Clone + Eq + Hash
     }
 
     #[cfg(test)]
-    pub fn all_idf_with_freq<Idf>(&self, idf: Idf, adjusted: bool) -> Result<HashMap<T, (f64, NGramCount)>, <Idf as IdfAlgorithm>::Error>
+    pub fn all_idf_with_freq<Idf>(&self, idf: &Idf, adjusted: bool) -> Result<HashMap<T, (f64, NGramCount)>, <Idf as IdfAlgorithm>::Error>
     where
         Idf: IdfAlgorithm,
     {
         self.counts.iter().map(|(k, v)| {
             idf.calculate_idf_with_word_frequency(
                 self,
-                k,
                 v.volumes,
                 adjusted
             ).map(|p| {
@@ -153,7 +186,7 @@ impl<T> WordCountEntry<T> where T: Clone + Eq + Hash
     }
 }
 
-impl<T> CorpusDocumentStatistics for WordCountEntry<T> where T: Eq + Hash {
+impl<T> CorpusDocumentStatistics for NGramStatisticsLangSpecific<T> where T: Eq + Hash {
     type Word = T;
 
     fn document_count(&self) -> u128 {
@@ -185,26 +218,45 @@ impl<T> CorpusDocumentStatistics for WordCountEntry<T> where T: Eq + Hash {
     }
 }
 
-register_python!(struct WordCounts;);
+register_python!(struct NGramStatistics;);
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct WordCounts {
-    inner: Arc<HashMap<LanguageHint, WordCountEntry<ArcStr>>>
+pub struct NGramStatistics {
+    inner: Arc<HashMap<LanguageHint, NGramStatisticsLangSpecific<ArcStr>>>
 }
 
-impl WordCounts {
-    pub fn new(inner: HashMap<LanguageHint, WordCountEntry<ArcStr>>) -> Self {
+impl NGramStatistics {
+    pub fn new(inner: HashMap<LanguageHint, NGramStatisticsLangSpecific<ArcStr>>) -> Self {
         Self { inner: Arc::new(inner) }
+    }
+
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&NGramStatisticsLangSpecific<ArcStr>>
+    where
+        LanguageHint: Borrow<Q>,
+        Q: Hash + Eq
+    {
+        self.inner.get(key)
+    }
+
+    pub fn get_idf_voc<Idf, D, V>(&self, idf: &Idf, dict: &D) -> Result<HashMap<LanguageHint, (usize, Vec<f64>)>, IdfProviderError<Idf>>
+    where
+        D: DictionaryWithVocabulary<ArcStr, V>,
+        V: BasicVocabulary<ArcStr>,
+        Idf: IdfAlgorithm,
+    {
+        self.inner.iter().filter_map(|(k, v)| {
+            v.create_idf_mapping(idf, dict).transpose().map(|v| v.map(|v| (k.clone(), v)))
+        }).collect::<Result<HashMap<_, _>, _>>()
     }
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl WordCounts {
+impl NGramStatistics {
     #[staticmethod]
-    pub fn load(path: PathBuf) -> PyResult<WordCounts> {
+    pub fn load(path: PathBuf) -> PyResult<NGramStatistics> {
         bincode::deserialize_from(BufReader::new(File::open(path)?)).map_err(|err| {
             PyValueError::new_err(err.to_string())
         })
@@ -274,7 +326,7 @@ pub fn generate_word_counts(
     proc: PyAlignedArticleProcessor,
     v1: PyDictionary,
     ngrams: Vec<NGramDefinition>,
-) -> PyResult<Vec<(PathBuf, WordCounts)>> {
+) -> PyResult<Vec<(PathBuf, NGramStatistics)>> {
     Ok(
         generate_complete_idf_provider(
             Utf8PathBuf::from_path_buf(inp_root).map_err(|p| PyValueError::new_err(format!("Illegal inp path {p:?} (only utf-8)")))?,
@@ -294,7 +346,7 @@ fn generate_complete_idf_provider(
     proc: &PyAlignedArticleProcessor,
     v1: &PyDictionary,
     ngrams: &[NGramDefinition],
-) -> Result<Vec<(Utf8PathBuf, WordCounts)>, GenerateIdfProviderError> {
+) -> Result<Vec<(Utf8PathBuf, NGramStatistics)>, GenerateIdfProviderError> {
 
     fn save_bin_and_json<V: Serialize>(
         save_path: impl AsRef<Utf8Path>,
@@ -473,7 +525,7 @@ fn generate_complete_idf_provider(
         inp_root: impl AsRef<Utf8Path>,
         base_path: impl AsRef<Utf8Path>,
         ngrams: &[NGramDefinition],
-    ) -> Result<Vec<(Utf8PathBuf, WordCounts)>, GenerateIdfProviderError> {
+    ) -> Result<Vec<(Utf8PathBuf, NGramStatistics)>, GenerateIdfProviderError> {
         log::info!("Generate final data!");
         let targets = ngrams.into_iter().into_group_map_by(|v| v.language.clone());
         log::info!("Targets: {:?}", targets);
@@ -506,7 +558,8 @@ fn generate_complete_idf_provider(
                     match File::open(base_path_with_t_value.join(format!("{k}_counts_for_voc.bin"))) {
                         Ok(file) => {
                             bincode::deserialize_from(BufReader::new(file)).map_err(Into::into).map(|dat| {
-                                (k.clone(), WordCountEntry::new(
+                                (k.clone(), NGramStatisticsLangSpecific::new(
+                                    k.clone(),
                                     dat,
                                     total,
                                 ))
@@ -517,23 +570,13 @@ fn generate_complete_idf_provider(
                         }
                     }
                 })
-            }).collect::<Result<HashMap<_, _>, _>>().map(WordCounts::new).and_then(|word_counts| {
+            }).collect::<Result<HashMap<_, _>, _>>().map(NGramStatistics::new).and_then(|word_counts| {
                 let path = base_path.as_ref().join(format!("counts_{proc}.bin"));
-                match File::options().write(true).create(true).open(&path) {
-                    Ok(file) => {
-                        match bincode::serialize_into(BufWriter::new(file), &word_counts) {
-                            Ok(_) => {
-                                Ok((path, word_counts))
-                            }
-                            Err(err) => {
-                                Err(err.into())
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        Err(err.into())
-                    }
-                }
+                save_bin_and_json(
+                    base_path.as_ref(),
+                    format!("counts_{proc}"),
+                    &word_counts
+                ).and_then(|_| Ok((path, word_counts)))
             })?;
             result.push(r);
         }
@@ -552,7 +595,7 @@ fn generate_complete_idf_provider(
 mod test {
     use crate::py::dictionary::PyDictionary;
     use crate::py::tokenizer::PyAlignedArticleProcessor;
-    use crate::py::word_counts::{generate_complete_idf_provider, NGramDefinition, WordCounts};
+    use crate::py::word_counts::{generate_complete_idf_provider, NGramDefinition, NGramStatistics};
     use log::LevelFilter;
     use std::collections::HashMap;
     use std::fs::File;
@@ -611,7 +654,7 @@ mod test {
             "with_proc",
             "without_proc",
         ] {
-            bincode::deserialize_from::<_, WordCounts>(
+            bincode::deserialize_from::<_, NGramStatistics>(
                 BufReader::new(
                     File::options().read(true).open(format!(r#"E:\tmp\google_ngrams2\gen\counts_{k}.bin"#)).unwrap()
                 )

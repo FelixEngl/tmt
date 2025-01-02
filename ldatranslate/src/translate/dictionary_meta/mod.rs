@@ -7,6 +7,7 @@ pub mod vertical_boost_1;
 pub mod horizontal_boost_1;
 pub mod coocurrence;
 pub mod booster;
+pub mod ngram_score_boost;
 
 use std::fmt::{Debug, Display};
 use ndarray::{ArrayBase, Data, Dimension};

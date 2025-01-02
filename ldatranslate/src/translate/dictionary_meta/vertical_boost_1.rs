@@ -248,7 +248,7 @@ where
 
     if !config.transformer.is_off() {
         for topic in result.iter_mut() {
-            config.transformer.transform(topic);
+            config.transformer.norm(topic);
         }
     }
     Ok(result)
@@ -278,11 +278,12 @@ mod test {
     use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use ldatranslate_topicmodel::model::{BasicTopicModel, FullTopicModel, TopicModel};
+    use crate::tools::boost_norms::BoostNorm;
     use crate::translate::dictionary_meta::SparseVectorFactory;
     use crate::translate::dictionary_meta::vertical_boost_1::{calculate_vertical_boost_matrice, ScoreModifierCalculator, VerticalScoreBoostConfig};
     use crate::translate::dictionary_meta::voting::VerticalBoostedScores;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
-    use crate::translate::{FieldConfig, Transform};
+    use crate::translate::{FieldConfig};
     use crate::translate::test::create_test_data;
 
     #[test]
@@ -343,7 +344,7 @@ mod test {
                     None,
                     ScoreModifierCalculator::WeightedSum
                 ),
-                Transform::Linear,
+                BoostNorm::Linear,
                 None
             ),
             &model_a,
@@ -378,7 +379,7 @@ mod test {
                         None,
                         ScoreModifierCalculator::WeightedSum
                     ),
-                    Transform::Linear,
+                    BoostNorm::Linear,
                     None
                 )
             ),
