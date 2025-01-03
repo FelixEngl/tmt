@@ -355,6 +355,10 @@ class LoadedMetadataEx:
         ...
 
 
+class NGramDefinition:
+    def __new__(cls,language:LanguageHint, ngram_size:int, file_max:int): ...
+    ...
+
 class PyAhoCorasick:
     r"""
     An automaton for searching multiple strings in linear time.
@@ -934,6 +938,12 @@ class PyDictionary:
         """
         ...
 
+    def set_lang_a(self, value) -> None:
+        ...
+
+    def set_lang_b(self, value) -> None:
+        ...
+
     def topic_vector_a(self, word:str) -> typing.Optional[PyDictMetaVector]:
         r"""
         Returns the topic vetor vor a specific word. Can be None if the word does not exist or
@@ -1128,7 +1138,7 @@ class PyDictionary:
 
 
 class PyHorizontalBoostConfig:
-    def __new__(cls,divergence,mean_method = ...,normalize_mode = ...,alpha = ...,linear_transformed = ...,factor = ...): ...
+    def __new__(cls,divergence,mean_method = ...,normalize_mode = ...,alpha = ...,linear_transformed = ...,transform = ...,factor = ...,only_positive_boost = ...): ...
     ...
 
 class PyMetaIter:
@@ -1136,6 +1146,20 @@ class PyMetaIter:
         ...
 
     def __next__(self) -> typing.Optional[tuple[int, str, typing.Optional[LoadedMetadataEx]]]:
+        ...
+
+
+class PyNGramBoostConfig:
+    def __new__(cls,boost_lang_a = ...,boost_lang_b = ...): ...
+    ...
+
+class PyNGramLanguageBoost:
+    def __new__(cls,idf = ...,boosting = ...,norm = ...,factor = ...,fallback_language = ...,only_positive_boost = ...): ...
+    ...
+
+class PyNGramStatistics:
+    @staticmethod
+    def load(path:str | os.PathLike | pathlib.Path) -> PyNGramStatistics:
         ...
 
 
@@ -1367,7 +1391,7 @@ class PyTopicModelBuilder:
 
 
 class PyTranslationConfig:
-    def __new__(cls,epsilon = ...,threshold = ...,keep_original_word = ...,top_candidate_limit = ...,vertical_config = ...,horizontal_config = ...): ...
+    def __new__(cls,epsilon = ...,threshold = ...,keep_original_word = ...,top_candidate_limit = ...,vertical_config = ...,horizontal_config = ...,ngram_config = ...): ...
     ...
 
 class PyVariableProvider:
@@ -1392,7 +1416,7 @@ class PyVariableProvider:
 
 
 class PyVerticalBoostConfig:
-    def __new__(cls,divergence,transformer = ...,factor = ...): ...
+    def __new__(cls,divergence,transformer = ...,factor = ...,only_positive_boost = ...): ...
     ...
 
 class PyVocIter:
@@ -1521,6 +1545,21 @@ class TokenCountFilter:
     def __contains__(self, value:int) -> bool:
         ...
 
+
+class BoostMethod(Enum):
+    r"""
+    Setting if to keep the original word from language A
+    """
+    Linear = auto()
+    Sum = auto()
+    Mult = auto()
+    MultPow = auto()
+    Pipe = auto()
+
+class BoostNorm(Enum):
+    Off = auto()
+    Linear = auto()
+    Normalized = auto()
 
 class BuildInVoting(Enum):
     r"""
@@ -1749,6 +1788,17 @@ class GrammaticalNumber(Enum):
     UsuallyPlural = auto()
     SingularOnly = auto()
     PluralOnly = auto()
+
+class Idf(Enum):
+    r"""
+    Default IDF Algorithms
+    From https://en.wikipedia.org/wiki/Tf%E2%80%93idf
+    """
+    Unary = auto()
+    InverseDocumentFrequency = auto()
+    InverseDocumentFrequencySmooth = auto()
+    InverseDocumentFrequencyMax = auto()
+    ProbabilisticInverseDocumentFrequency = auto()
 
 class KeepOriginalWord(Enum):
     r"""
@@ -2191,12 +2241,10 @@ class SearchType(Enum):
     SorensenDice = auto()
     CommonPrefix = auto()
 
-class Transform(Enum):
-    Off = auto()
-    Linear = auto()
-    Normalized = auto()
-
 def create_topic_model_specific_dictionary(dictionary:PyDictionary,vocabulary:PyVocabulary) -> PyDictionary:
+    ...
+
+def generate_word_counts(inp_root:str | os.PathLike | pathlib.Path,out_root:str | os.PathLike | pathlib.Path,proc:PyAlignedArticleProcessor,v1:PyDictionary,ngrams:typing.Sequence[NGramDefinition]) -> list[tuple[str, PyNGramStatistics]]:
     ...
 
 def load_ratings(path:str | os.PathLike | pathlib.Path) -> list[tuple[int, list[tuple[int, float]]]]:
@@ -2223,6 +2271,6 @@ def save_ratings(path:str | os.PathLike | pathlib.Path,ratings:typing.Sequence[t
     """
     ...
 
-def translate_topic_model(topic_model,dictionary,voting,config,provider = ...,voting_registry = ...) -> PyTopicModel:
+def translate_topic_model(topic_model,dictionary,voting,config,provider = ...,voting_registry = ...,ngram_statistics = ...) -> PyTopicModel:
     ...
 
