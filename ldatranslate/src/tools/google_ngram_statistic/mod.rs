@@ -316,11 +316,13 @@ fn normalize(
         }).collect::<Result<(), GenerateNGramStatisticsError>>()?;
 
 
-        File::options().create_new(true).open(save_path.join("finished"))?;
+        File::options().create(true).write(true).open(save_path.join("finished"))?;
     }
 
     Ok(())
 }
+
+
 
 fn generate_final(
     inp_root: impl AsRef<Utf8Path>,
@@ -336,7 +338,7 @@ fn generate_final(
     for t_value in [true, false] {
         let proc = if t_value {"with_proc"} else {"without_proc"};
         let base_path_with_t_value = base_path.as_ref().join(t_value.to_string());
-        let unique: HashMap<String, u128> = bincode::deserialize_from(BufReader::new(File::open(base_path_with_t_value.join("unique_word_counts.bin"))?))?;
+        let unique_word_counts: HashMap<String, u128> = bincode::deserialize_from(BufReader::new(File::open(base_path_with_t_value.join("unique_word_counts.bin"))?))?;
 
         let r = targets.iter().map(|(k, v)| {
             log::info!("Finalize for processed for {k} {proc}");
@@ -347,8 +349,8 @@ fn generate_final(
                 ) {
                     Ok(to_sum) => {
                         let sum = to_sum.values().sum::<TotalCount>();
-                        unique.get(&ngram.identifier()).map(|&value| {
-                            (ngram.ngram_size, (value, sum))
+                        unique_word_counts.get(&ngram.identifier()).map(|&value| {
+                            (ngram.ngram_size, NGramStatisticMeta::new(value, sum))
                         }).ok_or_else(|| GenerateNGramStatisticsError::NoUnique(ngram.clone()))
                     }
                     Err(err) => {

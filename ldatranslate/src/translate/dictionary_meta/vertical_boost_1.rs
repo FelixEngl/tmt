@@ -131,17 +131,13 @@ impl VerticalBoostedScores {
                 original_dictionary.metadata().meta_a().get(id)
             })
         }).collect_vec();
-        let mut new = calculate_vertical_boost_matrice(
+        let new = calculate_vertical_boost_matrice(
             &metas,
             &sparse,
             &config,
             target,
         )?;
-        if config.only_positive_boost {
-            for value in new.iter_mut() {
-                make_positive_only(value.as_mut_slice())
-            }
-        }
+
         Ok(
             Self {
                 alternative_scores: Arc::new(new),
@@ -257,6 +253,13 @@ where
             config.transformer.norm(topic);
         }
     }
+
+    if config.only_positive_boost {
+        for value in result.iter_mut() {
+            make_positive_only(value.as_mut_slice())
+        }
+    }
+
     Ok(result)
 }
 

@@ -55,6 +55,7 @@ impl PyTopicModel {
     }
 }
 
+
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyTopicModel {
@@ -101,9 +102,9 @@ impl PyTopicModel {
     #[pyo3(signature = (n=None))]
     fn show_top(&self, n: Option<usize>) -> PyResult<()> {
         if let Some(n) = n {
-            self.inner.show(n)?
+            self.inner.show(n).map_err(|v| PyValueError::new_err(v.to_string()))?
         } else {
-            self.inner.show_10()?
+            self.inner.show_10().map_err(|v| PyValueError::new_err(v.to_string()))?
         };
         Ok(())
     }

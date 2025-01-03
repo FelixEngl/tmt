@@ -220,27 +220,30 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         None
     }.transpose()?;
 
-    let epsilon = if let Some(value) = translate_config.epsilon {
-        value
-    } else {
-        if let Some(vert) = booster.vertical_booster().map(|value| value.alternative_scores()) {
-            TopicModelLikeMatrix::iter(vert).flat_map(|value| value.iter()).fold(
-                f64::MAX,
-                |old, &other| {
-                    old.min(other)
-                }
-            ) - f64::EPSILON
+    let epsilon = f64::max(
+        if let Some(value) = translate_config.epsilon {
+            value
         } else {
-            target.matrix().iter().flat_map(|value| value.iter()).fold(
-                f64::MAX,
-                |old, &other| {
-                    old.min(other)
-                }
-            ) - f64::EPSILON
-        }
-    };
+            if let Some(vert) = booster.vertical_booster().map(|value| value.alternative_scores()) {
+                TopicModelLikeMatrix::iter(vert).flat_map(|value| value.iter()).fold(
+                    f64::MAX,
+                    |old, &other| {
+                        old.min(other)
+                    }
+                ) - f64::EPSILON
+            } else {
+                target.matrix().iter().flat_map(|value| value.iter()).fold(
+                    f64::MAX,
+                    |old, &other| {
+                        old.min(other)
+                    }
+                ) - f64::EPSILON
+            }
+        },
+        f64::EPSILON
+    );
 
-    log::debug!("Epsilon: {}", epsilon);
+    log::info!("Epsilon: {} || f64::EPSILON {}", epsilon, f64::EPSILON);
 
     let mut topic_context: HashMapContext<TMTNumericTypes> = context_map! {
         EPSILON => as float epsilon,
@@ -336,6 +339,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
         }
     }
 
+    // log::info!("Has neg 2: {}", result.iter().flatten().any(|v| v.relative_score.is_sign_negative()));
+
     let inner_topic_model = result.into_par_iter().map(|topic_content| {
         let mut topic = topic_content.into_par_iter().map(|candidate| {
             let word = match candidate.candidate_word_id {
@@ -346,9 +351,11 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                     translation_dictionary.voc_b().get_value_by_id(word_id).unwrap()
                 }
             };
+            if candidate.relative_score.is_sign_negative() {
+                log::warn!("Negative probability for {:?}: {}", word, candidate.relative_score)
+            }
             (voc_b.get_id(word).unwrap(), candidate.relative_score)
         }).collect::<HashMap<_, _>>();
-
         voc_b.ids().for_each(|value| {
             match topic.entry(value) {
                 Entry::Vacant(entry) => {
@@ -362,6 +369,8 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     }).collect::<Vec<_>>();
 
     log::info!("Memory usage when finished: {}", reporter.create_report_now());
+
+
     Ok(Target::create_new_from(
         inner_topic_model,
         voc_b,
@@ -489,19 +498,6 @@ where
                             candidate,
                         );
 
-                        // use std::fmt::Write;
-                        // let mut report = String::new();
-                        // writeln!(
-                        //     &mut report,
-                        //     "CANDIDATE: Boosted score: {} (probability: {}, id_a: {}, id_b: {}) => vert: {}, horiz: {:?}",
-                        //     boosted_score,
-                        //     probability,
-                        //     original_voter_id,
-                        //     candidate,
-                        //     booster.boost_vertical(probability, original_voter_id),
-                        //     booster.horizontal_booster().and_then(|value| value.get_boost_for(original_voter_id, candidate))
-                        // );
-
                         let mut context = context_map! {
                             COUNT_OF_VOTERS => as int mapped.len(),
                             HAS_TRANSLATION => true,
@@ -560,8 +556,11 @@ where
                                     ).expect("This should not fail!");
                                     match config.voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
                                         Ok(result) => {
-                                            let result = booster.boost_score_result(candidate, result);
-                                            Ok(Candidate::new(LanguageOrigin::Target(candidate), result, original_voter_id))
+                                            let result_boosted = booster.boost_score_result(candidate, result);
+                                            if result_boosted.is_sign_negative() {
+                                                log::warn!("Negative probability after boost: {result} -> {result_boosted}")
+                                            }
+                                            Ok(Candidate::new(LanguageOrigin::Target(candidate), result_boosted, original_voter_id))
                                         }
                                         Err(err) => {
                                             Err(err.originates_at(topic_id, original_voter_id))
@@ -634,6 +633,9 @@ where
 
         match voting.execute_to_f64(&mut context, voters.as_mut_slice()) {
             Ok(result) => {
+                if result.is_sign_negative() {
+                    log::warn!("Negative probability for kept: {result}")
+                }
                 // No boost because we can not properly translate it.
                 Ok(Candidate::new(LanguageOrigin::Origin(voter_id), result, voter_id))
             }
@@ -737,10 +739,10 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use ldatranslate_topicmodel::dictionary::direction::Invariant;
-    use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMutMeta, Dictionary, DictionaryMutGen, DictionaryWithMeta};
+    use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMutMeta, Dictionary, DictionaryMut, DictionaryMutGen, DictionaryWithMeta};
     use ldatranslate_topicmodel::model::{FullTopicModel, TopicModel};
     use ldatranslate_topicmodel::vocabulary::{SearchableVocabulary, Vocabulary};
-    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, VerticalScoreBoostConfig};
+    use crate::translate::{translate_topic_model_without_provider, FieldConfig, HorizontalScoreBootConfig, NGramBoostConfig, NGramLanguageBoostConfig, VerticalScoreBoostConfig};
     use crate::translate::KeepOriginalWord::Never;
     use crate::translate::TranslateConfig;
     use ldatranslate_voting::spy::IntoSpy;
@@ -749,11 +751,16 @@ pub(crate) mod test {
     use Extend;
     use std::sync::Arc;
     use arcstr::ArcStr;
+    use log::LevelFilter;
+    use ldatranslate_topicmodel::dictionary::google_ngram::TotalCount;
     use ldatranslate_topicmodel::dictionary::word_infos::{Domain, Register};
     use crate::translate::dictionary_meta::vertical_boost_1::{ScoreModifierCalculator};
     use ldatranslate_topicmodel::dictionary::metadata::ex::*;
+    use ldatranslate_topicmodel::language_hint::LanguageHint;
+    use ldatranslate_voting::traits::VotingMethodMarker;
     use crate::tools::boost_norms::BoostNorm;
     use crate::tools::boosting::BoostMethod;
+    use crate::tools::google_ngram_statistic::NGramStatistics;
     use crate::tools::mean::MeanMethod;
     use crate::translate::dictionary_meta::coocurrence::NormalizeMode;
     use crate::translate::entropies::{FDivergence, FDivergenceCalculator};
@@ -792,6 +799,8 @@ pub(crate) mod test {
         ]);
 
         let mut dict = Dictionary::default();
+        dict.set_language_a(Some(LanguageHint::new("en")));
+        dict.set_language_b(Some(LanguageHint::new("de")));
         dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flugzeug").unwrap().clone(),);
         dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Flieger").unwrap().clone(),);
         dict.insert_value::<Invariant>(voc_a.get_value("plane").unwrap().clone(), voc_b.get_value("Tragfläche").unwrap().clone(),);
@@ -825,6 +834,9 @@ pub(crate) mod test {
 
     #[test]
     fn test_complete_translation(){
+
+        let _ = env_logger::builder().filter_level(LevelFilter::Info).try_init();
+
         let (voc_a, _, dict) = create_test_data();
 
         let mut dict: DictionaryWithMeta<_, _, MetadataManagerEx> = DictionaryWithMeta::from(dict);
@@ -876,192 +888,232 @@ pub(crate) mod test {
 
         model_a.normalize_in_place();
 
-        let config1 = TranslateConfig {
-            threshold: None,
-            voting: BuildInVoting::PCombSum.spy(),
-            epsilon: None,
-            keep_original_word: Never,
-            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
-            vertical_config: None,
-            horizontal_config: None,
-            ngram_boost_config: None
-        };
+        let n = NGramStatistics::<ArcStr>::builder()
+            .add("en", |builder| {
+                builder.add("plane", 225107166, 25593868);
+                builder.add("aircraft", 175037536, 9623597);
+                builder.add("airplane", 0, 0);
+                builder.add("flyer", 6906331, 2824936);
+                builder.add("airman", 2775732, 811375);
+                builder.add("airfoil", 4573493, 537395);
+                builder.add("wing", 193273831, 33631481);
+                builder.add("deck", 78511505, 14845731);
+                builder.add("hydrofoil", 1159755, 312562);
+                builder.add("foil", 23778332, 7839896);
+                builder.add("bearing surface", 1837433, 641102);
+                builder.register_meta(
+                    1,
+                    76995455,
+                    TotalCount::new(1997515570677, 8391455252, 16641290)
+                );
+                builder.register_meta(
+                    2,
+                    1915682870,
+                    TotalCount::new(2099454261013, 8391460270, 16641310)
+                );
+            })
+            .add("de", |builder| {
+                builder.add("Flugzeug", 6566665, 1675572);
+                builder.add("Flieger", 88719, 41298);
+                builder.add("Tragfläche", 0, 0);
+                builder.add("Ebene", 0, 0);
+                builder.add("Planum", 294136, 100356);
+                builder.add("Platane", 415433, 215378);
+                builder.add("Maschine", 32025685, 3780940);
+                builder.add("Bremsberg", 108839, 26786);
+                builder.add("Berg", 49242998, 11381505);
+                builder.add("Fläche", 63063566, 12205689);
+                builder.add("Luftfahrzeug", 636453, 155152);
+                builder.add("Fluggerät", 137766, 67134);
+                builder.add("Flugsystem", 1579, 1087);
+                builder.add("Motorflugzeug", 24910, 14710);
+                builder.register_meta(
+                    1,
+                    37932722,
+                    TotalCount::new(286463423242, 1493057981, 3843962)
+                );
+                builder.register_meta(
+                    2,
+                    839877735,
+                    TotalCount::new(300614249992, 1493060560, 3843992)
+                );
+            })
+            .build();
 
-        let config2 = TranslateConfig {
-            threshold: None,
-            voting: BuildInVoting::PCombSum.spy(),
-            epsilon: None,
-            keep_original_word: Never,
-            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
-            vertical_config: Some(
-                Arc::new(
-                    VerticalScoreBoostConfig::new(
-                        FieldConfig::new(
-                            Some(vec![
-                                Domain::Aviat.into(),
-                                Domain::Engin.into(),
-                                Domain::Film.into(),
-                                Register::Techn.into(),
-                                Register::Archaic.into(),
-                            ]),
-                            false,
-                        ),
-                        FDivergenceCalculator::new(
-                            FDivergence::Bhattacharyya,
-                            None,
-                            ScoreModifierCalculator::Max
-                        ),
-                        BoostNorm::Linear,
-                        None,
-                        None
-                    ),
-                )
+        let v_config1 = Arc::new(
+            VerticalScoreBoostConfig::new(
+                FieldConfig::new(
+                    Some(vec![
+                        Domain::Aviat.into(),
+                        Domain::Engin.into(),
+                        Domain::Film.into(),
+                        Register::Techn.into(),
+                        Register::Archaic.into(),
+                    ]),
+                    false,
+                ),
+                FDivergenceCalculator::new(
+                    FDivergence::Bhattacharyya,
+                    None,
+                    ScoreModifierCalculator::Max
+                ),
+                BoostNorm::Linear,
+                None,
+                None
             ),
-            horizontal_config: None,
-            ngram_boost_config: None
-        };
+        );
 
-        let config3 = TranslateConfig {
-            threshold: None,
-            voting: BuildInVoting::PCombSum.spy(),
-            epsilon: None,
-            keep_original_word: Never,
-            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
-            vertical_config: None,
-            horizontal_config: Some(
-                Arc::new(
-                    HorizontalScoreBootConfig::new(
-                        FieldConfig::new(
-                            Some(vec![
-                                Domain::Aviat.into(),
-                                Domain::Engin.into(),
-                                Domain::Film.into(),
-                                Register::Techn.into(),
-                                Register::Archaic.into(),
-                            ]),
-                            false,
-                        ),
-                        FDivergenceCalculator::new(
-                            FDivergence::KL,
-                            None,
-                            ScoreModifierCalculator::WeightedSum
-                        ),
-                        NormalizeMode::Sum,
-                        Some(0.15),
-                        false,
-                        BoostMethod::Pipe,
-                        MeanMethod::GeometricMean,
-                        None,
-                        None
-                    )
-                )
-            ),
-            ngram_boost_config: None
-        };
 
-        let config4 = TranslateConfig {
-            threshold: None,
-            voting: BuildInVoting::PCombSum.spy(),
-            epsilon: None,
-            keep_original_word: Never,
-            top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
-            vertical_config: Some(
-                Arc::new(
-                    VerticalScoreBoostConfig::new(
-                        FieldConfig::new(
-                            Some(vec![
-                                Domain::Aviat.into(),
-                                Domain::Engin.into(),
-                                Domain::Film.into(),
-                                Register::Techn.into(),
-                                Register::Archaic.into(),
-                            ]),
-                            false,
-                        ),
-                        FDivergenceCalculator::new(
-                            FDivergence::Bhattacharyya,
-                            None,
-                            ScoreModifierCalculator::Max
-                        ),
-                        BoostNorm::Linear,
-                        None,
-                        None
-                    ),
-                )
-            ),
-            horizontal_config: Some(
-                Arc::new(
-                    HorizontalScoreBootConfig::new(
-                        FieldConfig::new(
-                            Some(vec![
-                                Domain::Aviat.into(),
-                                Domain::Engin.into(),
-                                Domain::Film.into(),
-                                Register::Techn.into(),
-                                Register::Archaic.into(),
-                            ]),
-                            false,
-                        ),
-                        FDivergenceCalculator::new(
-                            FDivergence::KL,
-                            None,
-                            ScoreModifierCalculator::WeightedSum
-                        ),
-                        NormalizeMode::Sum,
-                        Some(0.15),
-                        false,
-                        BoostMethod::Pipe,
-                        MeanMethod::GeometricMean,
-                        None,
-                        None
-                    )
-                )
-            ),
-            ngram_boost_config: None
-        };
+        let h_config1 = Arc::new(
+            HorizontalScoreBootConfig::new(
+                FieldConfig::new(
+                    Some(vec![
+                        Domain::Aviat.into(),
+                        Domain::Engin.into(),
+                        Domain::Film.into(),
+                        Register::Techn.into(),
+                        Register::Archaic.into(),
+                    ]),
+                    false,
+                ),
+                FDivergenceCalculator::new(
+                    FDivergence::KL,
+                    None,
+                    ScoreModifierCalculator::WeightedSum
+                ),
+                NormalizeMode::Sum,
+                Some(0.15),
+                false,
+                BoostMethod::Pipe,
+                MeanMethod::GeometricMean,
+                None,
+                None
+            )
+        );
 
-        println!("model_b:");
-        let model_b = translate_topic_model_without_provider(
-            &model_a,
-            &dict,
-            &config1,
-            None,
-        ).unwrap();
+        let ngram_config1 = Arc::new(
+            NGramBoostConfig::new(
+                Some(NGramLanguageBoostConfig::new(
+                    Default::default(),
+                    BoostMethod::Mult,
+                    BoostNorm::Off,
+                    Some(true),
+                    None,
+                    None
+                )),
+                None
+            )
+        );
 
-        println!("model_c:");
-        let model_c = translate_topic_model_without_provider(
-            &model_a,
-            &dict,
-            &config2,
-            None,
-        ).unwrap();
+        let ngram_config2 = Arc::new(
+            NGramBoostConfig::new(
+                Some(NGramLanguageBoostConfig::new(
+                    Default::default(),
+                    BoostMethod::Linear,
+                    BoostNorm::Off,
+                    Some(true),
+                    None,
+                    None
+                )),
+                None
+            )
+        );
 
-        println!("model_d:");
-        let model_d = translate_topic_model_without_provider(
-            &model_a,
-            &dict,
-            &config3,
-            None,
-        ).unwrap();
+        let ngram_config3 = Arc::new(
+            NGramBoostConfig::new(
+                Some(NGramLanguageBoostConfig::new(
+                    Default::default(),
+                    BoostMethod::Sum,
+                    BoostNorm::Linear,
+                    Some(true),
+                    None,
+                    None
+                )),
+                None
+            )
+        );
 
-        println!("model_e:");
-        let model_e = translate_topic_model_without_provider(
-            &model_a,
-            &dict,
-            &config4,
-            None,
-        ).unwrap();
+        let ngram_config4 = Arc::new(
+            NGramBoostConfig::new(
+                Some(NGramLanguageBoostConfig::new(
+                    Default::default(),
+                    BoostMethod::Linear,
+                    BoostNorm::Off,
+                    Some(true),
+                    None,
+                    None
+                )),
+                Some(NGramLanguageBoostConfig::new(
+                    Default::default(),
+                    BoostMethod::Linear,
+                    BoostNorm::Linear,
+                    Some(true),
+                    Some(1.0),
+                    None
+                )),
+            )
+        );
 
-        // println!("{:?}", model_b.vocabulary());
+        let ngram_config5 = Arc::new(
+            NGramBoostConfig::new(
+                Some(NGramLanguageBoostConfig::new(
+                    Default::default(),
+                    BoostMethod::Linear,
+                    BoostNorm::Off,
+                    Some(true),
+                    None,
+                    None
+                )),
+                Some(NGramLanguageBoostConfig::new(
+                    Default::default(),
+                    BoostMethod::Linear,
+                    BoostNorm::Linear,
+                    Some(true),
+                    Some(0.5),
+                    None
+                )),
+            )
+        );
 
-        model_a.show_10().unwrap();
-        println!("----");
-        model_b.show_10().unwrap();
-        println!("----");
-        model_c.show_10().unwrap();
-        println!("----");
-        model_d.show_10().unwrap();
-        println!("----");
-        model_e.show_10().unwrap();
+        fn create_default_config(
+            vertical_config: Option<Arc<VerticalScoreBoostConfig>>,
+            horizontal_config: Option<Arc<HorizontalScoreBootConfig>>,
+            ngram_boost_config: Option<Arc<NGramBoostConfig>>,
+        ) -> TranslateConfig<impl VotingMethodMarker> {
+            TranslateConfig {
+                threshold: None,
+                voting: BuildInVoting::PCombSum.spy(),
+                epsilon: None,
+                keep_original_word: Never,
+                top_candidate_limit: Some(NonZeroUsize::new(3).unwrap()),
+                vertical_config,
+                horizontal_config,
+                ngram_boost_config
+            }
+        }
+        log::info!("##### Original #####");
+        log::info!("{}", model_a.show_str(10).unwrap());
+        for (name, cfg) in [
+            ("cfg1", create_default_config(None, None, None)),
+            ("cfg2", create_default_config(Some(v_config1.clone()), None, None)),
+            ("cfg3", create_default_config(None, Some(h_config1.clone()), None)),
+            ("cfg4", create_default_config(Some(v_config1.clone()), Some(h_config1.clone()), None)),
+            ("cfg5", create_default_config(None, None, Some(ngram_config1.clone()))),
+            ("cfg6", create_default_config(None, None, Some(ngram_config2.clone()))),
+            ("cfg7", create_default_config(None, None, Some(ngram_config3.clone()))),
+            ("cfg8", create_default_config(None, None, Some(ngram_config4.clone()))),
+            ("cfg9", create_default_config(None, None, Some(ngram_config5.clone()))),
+        ] {
+
+            log::info!("----");
+            log::info!("##### model_{name} #####");
+            let model = translate_topic_model_without_provider(
+                &model_a,
+                &dict,
+                &cfg,
+                Some(&n),
+            ).expect(&format!("Failed for {name}"));
+            log::info!("Content:\n{}", model.show_str(10).unwrap());
+        }
     }
 }

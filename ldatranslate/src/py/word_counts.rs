@@ -20,7 +20,6 @@ use crate::tools::google_ngram_statistic::{generate_google_ngram_statistic, IdfP
 use crate::tools::tf_idf::{IdfAlgorithm};
 
 
-
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone)]

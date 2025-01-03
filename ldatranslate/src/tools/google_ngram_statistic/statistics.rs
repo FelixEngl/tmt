@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
+use num::traits::AsPrimitive;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -18,6 +19,10 @@ pub struct NGramStatistics<T> where T: Eq + Hash {
 impl<T> NGramStatistics<T> where T: Eq + Hash {
     pub fn new(inner: HashMap<LanguageHint, NGramStatisticsLangSpecific<T>>) -> Self {
         Self { inner }
+    }
+
+    pub fn builder() -> NGramStatisticsBuilder<T> {
+        NGramStatisticsBuilder::new()
     }
 
     pub fn into_inner(self) -> HashMap<LanguageHint, NGramStatisticsLangSpecific<T>> {
@@ -46,12 +51,88 @@ impl<T> NGramStatistics<T> where T: Eq + Hash {
     }
 }
 
+pub struct NGramStatisticsBuilder<T> where T: Eq + Hash {
+    inner: HashMap<LanguageHint, NGramStatisticsLangSpecificBuilder<T>>,
+}
+
+impl<T> NGramStatisticsBuilder<T> where T: Eq + Hash {
+    pub fn new() -> Self {
+        Self { inner: HashMap::new() }
+    }
+
+    pub fn add<F>(mut self, language_hint: impl Into<LanguageHint>, action: F) -> Self
+    where
+        F: FnOnce(&mut NGramStatisticsLangSpecificBuilder<T>) -> ()
+    {
+        let language_hint = language_hint.into();
+        let value = self.inner.entry(language_hint.clone()).or_insert_with(|| NGramStatisticsLangSpecificBuilder::new(language_hint));
+        action(value);
+        self
+    }
+
+    pub fn build(self) -> NGramStatistics<T> {
+        NGramStatistics::new(
+            self.inner.into_iter().map(|(k, v)| (k, v.build())).collect()
+        )
+    }
+}
+
+pub struct NGramStatisticsLangSpecificBuilder<T> where T: Eq + Hash {
+    language_hint: LanguageHint,
+    counts: HashMap<T, NGramCount>,
+    meta: HashMap<u8, NGramStatisticMeta>,
+}
+
+impl<T> NGramStatisticsLangSpecificBuilder<T> where T: Eq + Hash {
+    pub fn new(language_hint: LanguageHint) -> Self {
+        Self {
+            language_hint,
+            meta: HashMap::new(),
+            counts: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, word: impl Into<T>, frequency: impl AsPrimitive<u128>, volumes: impl AsPrimitive<u128>) -> &mut Self {
+        self.put(word.into(), frequency.as_(), volumes.as_())
+    }
+
+    pub fn put(&mut self, word: T, frequency: u128, volumes: u128) -> &mut Self {
+        self.counts.insert(word, NGramCount::new(frequency, volumes));
+        self
+    }
+
+    pub fn register_meta(&mut self, n_gram_size: u8, unique_word_count: u128, total_counts: TotalCount) -> &mut Self {
+        self.meta.insert(n_gram_size, NGramStatisticMeta::new(unique_word_count, total_counts));
+        self
+    }
+
+    pub fn build(self) -> NGramStatisticsLangSpecific<T> {
+        NGramStatisticsLangSpecific::new(
+            self.language_hint,
+            self.counts,
+            self.meta
+        )
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct NGramStatisticMeta {
+    unique_count: u128,
+    total_count: TotalCount,
+}
+
+impl NGramStatisticMeta {
+    pub fn new(unique_count: u128, total_count: TotalCount) -> Self {
+        Self { unique_count, total_count }
+    }
+}
+
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct NGramStatisticsLangSpecific<T> where T: Eq + Hash {
     language: LanguageHint,
     counts: HashMap<T, NGramCount>,
-    meta: HashMap<u8, (u128, TotalCount)>,
+    meta: HashMap<u8, NGramStatisticMeta>,
     min_counts: NGramCount,
     max_total_counts: u128
 }
@@ -60,7 +141,7 @@ impl<T> NGramStatisticsLangSpecific<T> where T: Eq + Hash {
     pub fn new(
         language: LanguageHint,
         counts: HashMap<T, NGramCount>,
-        meta: HashMap<u8, (u128, TotalCount)>,
+        meta: HashMap<u8, NGramStatisticMeta>,
     ) -> Self {
         let min = counts.values().min().cloned().unwrap_or(NGramCount::ZERO);
         Self::with_min(language, counts, meta, min)
@@ -69,10 +150,10 @@ impl<T> NGramStatisticsLangSpecific<T> where T: Eq + Hash {
     pub fn with_min(
         language: LanguageHint,
         counts: HashMap<T, NGramCount>,
-        meta: HashMap<u8, (u128, TotalCount)>,
+        meta: HashMap<u8, NGramStatisticMeta>,
         min_counts: NGramCount,
     ) -> Self {
-        let max_total_counts = meta.values().map(|v| v.0).max().unwrap_or(0);
+        let max_total_counts = meta.values().map(|v| v.unique_count).max().unwrap_or(0);
         Self { language, counts, meta, min_counts, max_total_counts }
     }
 }

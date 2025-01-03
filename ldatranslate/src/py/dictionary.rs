@@ -301,6 +301,18 @@ impl PyDictionary {
         write.set_language_b(direction.1.map(|value| value.into()));
     }
 
+    #[pyo3(signature = (value))]
+    fn set_lang_a(&mut self, value: Option<LanguageHintValue>) {
+        let mut write = self.get_mut();
+        write.set_language_a(value.map(|value| value.into()));
+    }
+
+    #[pyo3(signature = (value))]
+    fn set_lang_b(&mut self, value: Option<LanguageHintValue>) {
+        let mut write = self.get_mut();
+        write.set_language_b(value.map(|value| value.into()));
+    }
+
     /// Returns the vocabulary a
     #[getter]
     #[pyo3(name = "voc_a")]

@@ -120,6 +120,12 @@ pub struct NGramBoostConfig {
     pub boost_b: Option<NGramLanguageBoostConfig>
 }
 
+impl NGramBoostConfig {
+    pub fn new(boost_a: Option<NGramLanguageBoostConfig>, boost_b: Option<NGramLanguageBoostConfig>) -> Self {
+        Self { boost_a, boost_b }
+    }
+}
+
 
 impl From<PyNGramBoostConfig> for NGramBoostConfig {
     fn from(value: PyNGramBoostConfig) -> Self {
@@ -130,7 +136,7 @@ impl From<PyNGramBoostConfig> for NGramBoostConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NGramLanguageBoostConfig {
     pub idf: Idf,
     pub boosting: BoostMethod,

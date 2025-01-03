@@ -28,8 +28,6 @@ use std::borrow::Borrow;
 use std::cmp::{Ordering, Reverse};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::io;
-use std::io::{Write};
 use std::marker::PhantomData;
 use std::ops::{Range};
 use std::sync::{Arc};
@@ -336,9 +334,26 @@ impl<T, V> FullTopicModel<T, V> for TopicModel<T, V> where
 {
     fn normalize_in_place(&mut self) {
         for topic in self.topics.iter_mut() {
+
+            // for value in topic.iter() {
+            //     if value.is_sign_negative() {
+            //         log::warn!("Negative probability: {value}");
+            //     }
+            //     let value = *value;
+            //     if value.is_sign_negative() {
+            //         log::warn!("Negative probability after copy: {value}");
+            //     }
+            // }
+
             let sum: f64 = topic.iter().sum();
             topic.iter_mut().for_each(|value| {
-                *value /= sum
+                let new_prob = *value / sum;
+                if new_prob.is_sign_negative() {
+                    log::warn!("Normalize of {value} resulted in negative probability: {new_prob}");
+                    *value = 0.0
+                } else {
+                    *value = new_prob;
+                }
             });
         }
 
@@ -628,19 +643,18 @@ impl<T, V> TopicModelWithDocumentStats for TopicModel<T, V> {
 
 impl<T: Display, V> TopicModel<T, V> where V: BasicVocabulary<T> {
 
-    pub fn show_to(&self, n: usize, out: &mut impl Write) -> io::Result<()> {
+    pub fn show_to(&self, n: usize, out: &mut impl std::fmt::Write) -> std::fmt::Result {
         for (topic_id, topic_entries) in self.get_n_best_for_topics(n).iter().enumerate() {
             if topic_id != 0 {
-                out.write(b"\n")?;
+                write!(out, "\n")?;
             }
             let topic = self.get_topic_meta(topic_id).expect("All words should be known!");
             write!(out, "Topic({topic_id}):")?;
             for it in topic_entries.iter() {
                 let word_meta = topic.get_word_meta(*it).expect("All words should be known!");
-                out.write(b"\n")?;
                 write!(
                     out,
-                    "    {}: {} ({})",
+                    "\n    {}: {} ({})",
                     self.vocabulary.get_value_by_id(word_meta.word_id).unwrap(),
                     word_meta.probability,
                     word_meta.rank()
@@ -650,14 +664,18 @@ impl<T: Display, V> TopicModel<T, V> where V: BasicVocabulary<T> {
         Ok(())
     }
 
-    pub fn show(&self, n: usize) -> io::Result<()> {
-        let mut str = Vec::new();
+    pub fn show_str(&self, n: usize) -> Result<String, std::fmt::Error> {
+        let mut str = String::new();
         self.show_to(n, &mut str)?;
-        println!("{}", String::from_utf8(str).unwrap());
+        Ok(str)
+    }
+
+    pub fn show(&self, n: usize) -> std::fmt::Result {
+        println!("{}", self.show_str(n)?);
         Ok(())
     }
 
-    pub fn show_10(&self) -> io::Result<()>{
+    pub fn show_10(&self) -> std::fmt::Result {
         self.show(10)
     }
 }

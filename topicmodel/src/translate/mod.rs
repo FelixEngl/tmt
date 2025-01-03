@@ -56,6 +56,9 @@ where
         dictionary.language_b().cloned()
     );
 
+    new_dict.set_language_a(dictionary.language_a().cloned());
+    new_dict.set_language_b(dictionary.language_b().cloned());
+
     let translations = new_dict.voc_a().as_ref().par_iter()
         .map(|value| (value.clone(), dictionary.translate_word_a_to_words_b(value)))
         .collect::<Vec<_>>();

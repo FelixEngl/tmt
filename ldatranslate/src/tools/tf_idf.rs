@@ -217,9 +217,10 @@ pub trait IdfAlgorithm {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum Idf {
     Unary,
+    #[default]
     InverseDocumentFrequency,
     InverseDocumentFrequencySmooth,
     InverseDocumentFrequencyMax,
