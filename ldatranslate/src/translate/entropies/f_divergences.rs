@@ -10,8 +10,11 @@ use ndarray::{Array, Array1, ArrayBase, Data, Dimension, Zip};
 use ndarray_stats::errors::{EmptyInput, MultiInputError, ShapeMismatch};
 use ndarray_stats::EntropyExt;
 use num::cast;
+use pyo3::pymethods;
 use sealed::sealed;
+use strum::Display;
 use ldatranslate_translate::TopicLike;
+use crate::tools::boost_norms::BoostNorm;
 use crate::translate::dictionary_meta::Similarity;
 
 register_python! {
@@ -100,7 +103,7 @@ impl Similarity for FDivergenceCalculator {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum
 )]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Display)]
 pub enum FDivergence {
     Renyi,
     Total,
@@ -113,6 +116,14 @@ pub enum FDivergence {
     Hellinger,
     PearsonChiSquare,
     NeymanChiSquare,
+}
+
+#[cfg(not(feature = "gen_python_api"))]
+#[pymethods]
+impl FDivergence {
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 }
 
 #[sealed]

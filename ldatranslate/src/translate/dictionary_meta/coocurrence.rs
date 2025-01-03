@@ -6,6 +6,7 @@ use ndarray::Zip;
 use ndarray_stats::errors::MinMaxError;
 use num::{Float, FromPrimitive};
 use num::traits::NumAssignOps;
+use strum::Display;
 use thiserror::Error;
 use ldatranslate_toolkit::partial_ord_iterator::PartialOrderIterator;
 use ldatranslate_toolkit::register_python;
@@ -69,11 +70,19 @@ impl Display for ClassCoocurrenceMatrix {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash, Display)]
 pub enum NormalizeMode {
     Max,
     #[default]
     Sum,
+}
+
+#[cfg(not(feature = "gen_python_api"))]
+#[pyo3::pymethods]
+impl NormalizeMode {
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 }
 
 register_python!(enum NormalizeMode;);

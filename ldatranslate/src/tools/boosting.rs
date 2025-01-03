@@ -1,4 +1,4 @@
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods, PyResult};
 use strum::{AsRefStr, Display, EnumString};
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::model::Probability;
@@ -19,6 +19,14 @@ pub enum BoostMethod {
     Mult,
     MultPow,
     Pipe,
+}
+
+#[cfg(not(feature = "gen_python_api"))]
+#[pymethods]
+impl BoostMethod {
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl BoostMethod {

@@ -3,7 +3,9 @@ use std::hash::Hash;
 use std::sync::Arc;
 use itertools::Itertools;
 use ndarray::{ArcArray, Array1, ArrayBase, Data, Ix1};
+use pyo3::pymethods;
 use rayon::prelude::*;
+use strum::Display;
 use ldatranslate_toolkit::register_python;
 use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithMeta, BasicDictionaryWithVocabulary};
 use ldatranslate_topicmodel::dictionary::metadata::dict_meta_topic_matrix::{DictMetaTagIndex, DictionaryMetaIndex, META_DICT_ARRAY_LENTH};
@@ -15,7 +17,7 @@ use ldatranslate_translate::{TopicLike, TopicModelLikeMatrix};
 use crate::tools::non_zero::make_positive_only;
 use crate::translate::dictionary_meta::dict_meta::MetaTagTemplate;
 use crate::translate::dictionary_meta::{Similarity, SparseVectorFactory};
-use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
+use crate::translate::entropies::{EntropyWithAlphaError, FDivergence, FDivergenceCalculator};
 use crate::translate::{VerticalScoreBoostConfig};
 
 #[allow(unused)]
@@ -47,11 +49,19 @@ register_python! {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
-#[derive(Debug, Copy, Clone, PartialEq, Default, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Default, Eq, Hash, Display)]
 pub enum ScoreModifierCalculator {
     Max,
     #[default]
     WeightedSum
+}
+
+#[cfg(not(feature = "gen_python_api"))]
+#[pymethods]
+impl ScoreModifierCalculator {
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl ScoreModifierCalculator {

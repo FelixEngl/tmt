@@ -20,7 +20,9 @@ use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt::Debug;
 use std::hash::Hash;
+use strum::Display;
 use thiserror::Error;
+use ldatranslate_toolkit::register_python;
 
 /// The statistics over the documents in a corpus
 pub trait CorpusDocumentStatistics {
@@ -217,7 +219,7 @@ pub trait IdfAlgorithm {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyo3::pyclass(eq, eq_int, hash, frozen)]
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Default, Display)]
 pub enum Idf {
     Unary,
     #[default]
@@ -226,6 +228,18 @@ pub enum Idf {
     InverseDocumentFrequencyMax,
     ProbabilisticInverseDocumentFrequency,
 }
+
+
+#[cfg(not(feature = "gen_python_api"))]
+#[pyo3::pymethods]
+impl Idf {
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+}
+
+register_python!(enum Idf;);
+
 
 #[derive(Debug, Error, Copy, Clone)]
 pub enum IdfError {

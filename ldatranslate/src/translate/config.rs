@@ -9,7 +9,7 @@ use std::sync::Arc;
 use itertools::{Itertools};
 use strum::{AsRefStr, Display, EnumString, ParseError};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
-use crate::py::translate::{PyHorizontalBoostConfig, PyNGramBoostConfig, PyNGramLanguageBoost, PyVerticalBoostConfig};
+use crate::py::translate::{PyHorizontalBoostConfig, PyNGramBoostConfig, PyNGramLanguageBoostConfig, PyVerticalBoostConfig};
 use crate::tools::boosting::BoostMethod;
 use crate::tools::mean::MeanMethod;
 use crate::tools::boost_norms::BoostNorm;
@@ -152,8 +152,8 @@ impl NGramLanguageBoostConfig {
     }
 }
 
-impl From<PyNGramLanguageBoost> for NGramLanguageBoostConfig {
-    fn from(value: PyNGramLanguageBoost) -> Self {
+impl From<PyNGramLanguageBoostConfig> for NGramLanguageBoostConfig {
+    fn from(value: PyNGramLanguageBoostConfig) -> Self {
         Self::new(
             value.idf,
             value.boosting,
@@ -194,7 +194,7 @@ impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
                 value.divergence.alpha,
                 value.divergence.score_modifier_calculator
             ),
-            value.transformer,
+            value.norm,
             value.factor,
             value.only_positive_boost
         )
@@ -248,7 +248,7 @@ impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
             config.mode,
             config.alpha,
             config.linear_transformed,
-            config.transform,
+            config.booster,
             config.mean_method,
             config.factor,
             config.only_positive_boost

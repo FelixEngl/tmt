@@ -86,7 +86,7 @@ impl PyBasicBoostConfig {
 #[derive(Debug, Clone)]
 pub struct PyVerticalBoostConfig {
     pub divergence: PyBasicBoostConfig,
-    pub transformer: BoostNorm,
+    pub norm: BoostNorm,
     pub factor: Option<f64>,
     pub only_positive_boost: Option<bool>,
 }
@@ -95,16 +95,16 @@ pub struct PyVerticalBoostConfig {
 #[pymethods]
 impl PyVerticalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, transformer=None, factor=None, only_positive_boost=None))]
+    #[pyo3(signature = (divergence, norm=None, factor=None, only_positive_boost=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
-        transformer: Option<BoostNorm>,
+        norm: Option<BoostNorm>,
         factor: Option<f64>,
         only_positive_boost: Option<bool>
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
-            transformer: transformer.unwrap_or_default(),
+            norm: norm.unwrap_or_default(),
             factor,
             only_positive_boost
         })
@@ -121,7 +121,7 @@ pub struct PyHorizontalBoostConfig {
     pub alpha: Option<f64>,
     pub linear_transformed: bool,
     pub mean_method: MeanMethod,
-    pub transform: BoostMethod,
+    pub booster: BoostMethod,
     pub factor: Option<f64>,
     pub only_positive_boost: Option<bool>
 }
@@ -130,14 +130,14 @@ pub struct PyHorizontalBoostConfig {
 #[pymethods]
 impl PyHorizontalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None, transform=None, factor=None, only_positive_boost=None))]
+    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None, booster=None, factor=None, only_positive_boost=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
         mean_method: Option<MeanMethod>,
         normalize_mode: Option<NormalizeMode>,
         alpha: Option<Option<f64>>,
         linear_transformed: Option<bool>,
-        transform: Option<BoostMethod>,
+        booster: Option<BoostMethod>,
         factor: Option<f64>,
         only_positive_boost: Option<bool>
     ) -> PyResult<Self> {
@@ -146,7 +146,7 @@ impl PyHorizontalBoostConfig {
             mode: normalize_mode.unwrap_or_default(),
             alpha: alpha.unwrap_or(Some(0.15)),
             linear_transformed: linear_transformed.unwrap_or_default(),
-            transform: transform.unwrap_or_default(),
+            booster: booster.unwrap_or_default(),
             mean_method: mean_method.unwrap_or_default(),
             factor,
             only_positive_boost
@@ -158,8 +158,8 @@ impl PyHorizontalBoostConfig {
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyNGramBoostConfig {
-    pub boost_lang_a: Option<PyNGramLanguageBoost>,
-    pub boost_lang_b: Option<PyNGramLanguageBoost>,
+    pub boost_lang_a: Option<PyNGramLanguageBoostConfig>,
+    pub boost_lang_b: Option<PyNGramLanguageBoostConfig>,
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -168,8 +168,8 @@ impl PyNGramBoostConfig {
     #[new]
     #[pyo3(signature = (boost_lang_a=None, boost_lang_b=None))]
     pub fn new(
-        boost_lang_a: Option<PyNGramLanguageBoost>,
-        boost_lang_b: Option<PyNGramLanguageBoost>,
+        boost_lang_a: Option<PyNGramLanguageBoostConfig>,
+        boost_lang_b: Option<PyNGramLanguageBoostConfig>,
     ) -> PyResult<Self> {
         let boost_lang_a = boost_lang_a.or_else(|| if boost_lang_b.is_some() {None} else {Some(Default::default())});
         Ok(Self{
@@ -182,7 +182,7 @@ impl PyNGramBoostConfig {
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
 #[derive(Debug, Clone)]
-pub struct PyNGramLanguageBoost {
+pub struct PyNGramLanguageBoostConfig {
     pub idf: Idf,
     pub boosting: BoostMethod,
     pub norm: BoostNorm,
@@ -193,7 +193,7 @@ pub struct PyNGramLanguageBoost {
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl PyNGramLanguageBoost {
+impl PyNGramLanguageBoostConfig {
     #[new]
     #[pyo3(signature = (idf=None, boosting=None, norm=None, factor=None, fallback_language=None, only_positive_boost=None))]
     pub fn new(
@@ -215,7 +215,7 @@ impl PyNGramLanguageBoost {
     }
 }
 
-impl Default for PyNGramLanguageBoost {
+impl Default for PyNGramLanguageBoostConfig {
     fn default() -> Self {
         Self {
             idf: Idf::InverseDocumentFrequency,
@@ -404,7 +404,7 @@ register_python! {
     struct PyHorizontalBoostConfig;
     struct PyBasicBoostConfig;
     struct PyNGramBoostConfig;
-    struct PyNGramLanguageBoost;
+    struct PyNGramLanguageBoostConfig;
     fn translate_topic_model;
     fn save_ratings;
     fn load_ratings;

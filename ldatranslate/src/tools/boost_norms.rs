@@ -1,4 +1,4 @@
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 use strum::{AsRefStr, Display, EnumIs, EnumString};
 use ldatranslate_toolkit::register_python;
 
@@ -15,6 +15,14 @@ pub enum BoostNorm {
     #[default]
     Linear,
     Normalized,
+}
+
+#[cfg(not(feature = "gen_python_api"))]
+#[pymethods]
+impl BoostNorm {
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl BoostNorm {
