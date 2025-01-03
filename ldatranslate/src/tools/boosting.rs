@@ -16,9 +16,9 @@ pub enum BoostMethod {
     #[default]
     Linear,
     Sum,
+    Mult,
     MultPow,
     Pipe,
-    Mult,
 }
 
 impl BoostMethod {
@@ -41,6 +41,7 @@ impl BoostMethod {
             }
         };
         if boosted <= 0.0 {
+            log::trace!("Boosted was negative. Falling back to epsilon.");
             f64::EPSILON
         } else {
             boosted

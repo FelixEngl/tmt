@@ -1,322 +1,104 @@
 use crate::py::dictionary::PyDictionary;
 use crate::py::tokenizer::PyAlignedArticleProcessor;
 use arcstr::ArcStr;
-use camino::{Utf8Path, Utf8PathBuf};
-use itertools::Itertools;
-use ldatranslate_tokenizer::Tokenizer;
-use ldatranslate_topicmodel::dictionary::google_ngram::{load_total_counts, scan_for_voc, GoogleNGramError, NGramCount, TotalCount};
+use camino::{Utf8PathBuf};
 use ldatranslate_topicmodel::dictionary::{DictionaryWithVocabulary};
 use ldatranslate_topicmodel::language_hint::LanguageHint;
 use ldatranslate_topicmodel::vocabulary::BasicVocabulary;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
-use std::cmp::{max};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader};
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
-use pyo3::{pyclass, pyfunction, pymethods, PyErr, PyResult};
+use pyo3::{pyclass, pyfunction, pymethods, PyResult};
 use pyo3::exceptions::PyValueError;
-use rayon::prelude::*;
-use thiserror::Error;
 use ldatranslate_toolkit::register_python;
-use crate::tools::tf_idf::{CorpusDocumentStatistics, IdfAlgorithm};
-
-pub fn normalize_ngram_counts<T1, T2, T3>(
-    word_count: HashMap<T1, HashMap<T2, NGramCount>>,
-    tokenizer: Option<&Tokenizer>
-) -> HashMap<T1, HashMap<T3, NGramCount>>
-where
-    T1: AsRef<str> + Eq + Hash + Send,
-    T2: AsRef<str> + Send,
-    T3: for<'a> From<&'a str> + Eq + Hash + Clone + Send,
-{
-    word_count.into_par_iter().map(|(k1, v1)| {
-        (
-            k1,
-            v1.into_iter().into_group_map_by(|(k, _)| {
-                if let Some(tokenizer) = tokenizer {
-                    tokenizer.process_and_join_word_lemma(k.as_ref())
-                } else {
-                    k.as_ref().to_lowercase()
-                }
-            }).into_iter().map(|(k, v)| {
-                (k.as_str().into(), v.into_iter().map(|(_, v)| v).sum())
-            }).collect()
-        )
-    }).collect()
-}
-
-pub fn create_word_freqs<T, K1, K2>(
-    voc: &impl BasicVocabulary<T>,
-    n_gram_size: u8,
-    word_count: &HashMap<K1, HashMap<K2, NGramCount>>,
-) -> HashMap<T, NGramCount> where
-    T: AsRef<str> + Clone + Eq + Hash + Send + Sync,
-    K1: Eq + Hash + Borrow<str> + Send + Sync,
-    K2: AsRef<str> + Send + Sync,
-{
-    voc.par_iter().filter(|&value| {
-        value.as_ref().chars().filter(|v| ' '.eq(v)).count() + 1 == n_gram_size as usize
-    }).map(|value| {
-        word_count.get(value.as_ref()).and_then(|found| {
-            found.iter().filter_map(|(k, v)| {
-                let correct_count = k.as_ref().chars().filter(|v| ' '.eq(v)).count() + 1 == n_gram_size as usize;
-                if correct_count {
-                    Some(v)
-                } else {
-                    None
-                }
-            }).max().map(|a| (value.clone(), a.clone()))
-        }).unwrap_or_else(|| (value.clone(), NGramCount::ZERO))
-    }).collect::<HashMap<_, _>>()
-}
+use crate::tools::google_ngram_statistic::{generate_google_ngram_statistic, IdfProviderError, NGramDefinition, NGramStatistics, NGramStatisticsLangSpecific};
+use crate::tools::tf_idf::{IdfAlgorithm};
 
 
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct NGramStatisticsLangSpecific<T> where T: Eq + Hash {
-    language: LanguageHint,
-    counts: HashMap<T, NGramCount>,
-    meta: HashMap<u8, (u128, TotalCount)>,
-    min_counts: NGramCount,
-    max_total_counts: u128
-}
-
-impl<T> NGramStatisticsLangSpecific<T> where T: Eq + Hash {
-    pub fn new(
-        language: LanguageHint,
-        counts: HashMap<T, NGramCount>,
-        meta: HashMap<u8, (u128, TotalCount)>,
-    ) -> Self {
-        let min = counts.values().min().cloned().unwrap_or(NGramCount::ZERO);
-        Self::with_min(language, counts, meta, min)
-    }
-
-    pub fn with_min(
-        language: LanguageHint,
-        counts: HashMap<T, NGramCount>,
-        meta: HashMap<u8, (u128, TotalCount)>,
-        min_counts: NGramCount,
-    ) -> Self {
-        let max_total_counts = meta.values().map(|v| v.0).max().unwrap_or(0);
-        Self { language, counts, meta, min_counts, max_total_counts }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum IdfProviderError<Idf: IdfAlgorithm> {
-    #[error("Expected voc for {0} but none was supplied from dict.")]
-    NoLanguageInDictFound(LanguageHint),
-    #[error(transparent)]
-    Idf(#[from] Idf::Error)
-}
-
-impl<T> NGramStatisticsLangSpecific<T> where T: Clone + Eq + Hash
-{
-    #[inline(always)]
-    pub fn idf<Q, Idf>(&self, idf: &Idf, word: &Q, adjusted: bool) -> Result<f64, <Idf as IdfAlgorithm>::Error>
-    where
-        Idf: IdfAlgorithm,
-        Q: Hash + Eq + ?Sized,
-        T: Borrow<Q>,
-    {
-        idf.calculate_idf(
-            self,
-            word,
-            adjusted
-        )
-    }
-
-    /// Returns
-    pub fn create_idf_mapping<Idf, D, V>(&self, idf_alg: &Idf, d: &D) -> Result<Option<(usize, Vec<f64>)>, IdfProviderError<Idf>>
-    where
-        D: DictionaryWithVocabulary<T, V>,
-        V: BasicVocabulary<T>,
-        Idf: IdfAlgorithm,
-        T: Send + Sync
-    {
-        let voc = d.voc_by_hint(&self.language).ok_or_else(|| IdfProviderError::NoLanguageInDictFound(self.language.clone()))?;
-        let overlap = voc.iter().filter(|&v| self.counts.contains_key(v)).count();
-        if overlap == 0 {
-            return Ok(None);
-        }
-        let empty_replacement = idf_alg.max(self, true)?;
-        let idf = self.all_idf(idf_alg, true)?;
-
-        let idf_of_voc = voc.iter().map(|value| idf.get(value).copied().unwrap_or(empty_replacement)).collect::<Vec<_>>();
-
-        Ok(Some((overlap, idf_of_voc)))
-    }
-
-    pub fn all_idf<Idf>(&self, idf: &Idf, adjusted: bool) -> Result<HashMap<T, f64>, <Idf as IdfAlgorithm>::Error>
-    where
-        Idf: IdfAlgorithm,
-    {
-        self.counts.par_iter().map(|(k, v)| {
-            idf.calculate_idf_with_word_frequency(
-                self,
-                v.volumes,
-                adjusted
-            ).map(|v| {
-                (k.clone(), v)
-            })
-        }).collect::<Result<HashMap<_, _>, _>>()
-    }
-
-    #[cfg(test)]
-    pub fn all_idf_with_freq<Idf>(&self, idf: &Idf, adjusted: bool) -> Result<HashMap<T, (f64, NGramCount)>, <Idf as IdfAlgorithm>::Error>
-    where
-        Idf: IdfAlgorithm,
-    {
-        self.counts.iter().map(|(k, v)| {
-            idf.calculate_idf_with_word_frequency(
-                self,
-                v.volumes,
-                adjusted
-            ).map(|p| {
-                (k.clone(), (p, v.clone()))
-            })
-        }).collect::<Result<HashMap<_, _>, _>>()
-    }
-}
-
-impl<T> CorpusDocumentStatistics for NGramStatisticsLangSpecific<T> where T: Eq + Hash {
-    type Word = T;
-
-    fn document_count(&self) -> u128 {
-        self.max_total_counts
-    }
-
-    fn word_frequency<Q>(&self, word: &Q) -> Option<u128>
-    where
-        Q: Hash + Eq + ?Sized,
-        Self::Word: Borrow<Q>
-    {
-        self.counts.get(word).map(|counts| counts.frequency)
-    }
-
-    fn word_document_count<Q>(&self, word: &Q) -> Option<u128>
-    where
-        Q: Hash + Eq + ?Sized,
-        Self::Word: Borrow<Q>
-    {
-        self.counts.get(word).map(|counts| counts.volumes)
-    }
-
-    fn iter_document_count(&self) -> impl Iterator<Item=(&Self::Word, u128)> {
-        self.counts.iter().map(|(k, v)| (k, v.volumes))
-    }
-
-    fn iter_frequency(&self) -> impl Iterator<Item=(&Self::Word, u128)> {
-        self.counts.iter().map(|(k, v)| (k, v.frequency))
-    }
-}
-
-register_python!(struct NGramStatistics;);
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[pyclass]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct NGramStatistics {
-    inner: Arc<HashMap<LanguageHint, NGramStatisticsLangSpecific<ArcStr>>>
+#[derive(Debug, Clone)]
+pub struct PyNGramStatistics {
+    inner: Arc<NGramStatistics<ArcStr>>
 }
 
-impl NGramStatistics {
+impl PyNGramStatistics {
     pub fn new(inner: HashMap<LanguageHint, NGramStatisticsLangSpecific<ArcStr>>) -> Self {
-        Self { inner: Arc::new(inner) }
+        Self { inner: Arc::new(NGramStatistics::new(inner)) }
     }
 
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&NGramStatisticsLangSpecific<ArcStr>>
-    where
-        LanguageHint: Borrow<Q>,
-        Q: Hash + Eq
-    {
-        self.inner.get(key)
-    }
+    delegate::delegate! {
+        to self.inner {
+            pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&NGramStatisticsLangSpecific<ArcStr>>
+            where
+                LanguageHint: Borrow<Q>,
+                Q: Hash + Eq;
 
-    pub fn get_idf_voc<Idf, D, V>(&self, idf: &Idf, dict: &D) -> Result<HashMap<LanguageHint, (usize, Vec<f64>)>, IdfProviderError<Idf>>
+            pub fn get_idf_voc<Idf, D, V>(&self, idf: &Idf, dict: &D) -> Result<HashMap<LanguageHint, (usize, Vec<f64>)>, IdfProviderError<Idf>>
+            where
+                D: DictionaryWithVocabulary<ArcStr, V>,
+                V: BasicVocabulary<ArcStr>,
+                Idf: IdfAlgorithm + Send + Sync,
+                Idf::Error: Send;
+        }
+    }
+}
+
+impl AsRef<NGramStatistics<ArcStr>> for PyNGramStatistics {
+    fn as_ref(&self) -> &NGramStatistics<ArcStr> {
+        self.inner.as_ref()
+    }
+}
+
+impl From<NGramStatistics<ArcStr>> for PyNGramStatistics {
+    fn from(value: NGramStatistics<ArcStr>) -> Self {
+        Self {
+            inner: Arc::new(value)
+        }
+    }
+}
+
+impl Serialize for PyNGramStatistics {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        D: DictionaryWithVocabulary<ArcStr, V>,
-        V: BasicVocabulary<ArcStr>,
-        Idf: IdfAlgorithm,
+        S: Serializer
     {
-        self.inner.iter().filter_map(|(k, v)| {
-            v.create_idf_mapping(idf, dict).transpose().map(|v| v.map(|v| (k.clone(), v)))
-        }).collect::<Result<HashMap<_, _>, _>>()
+        self.inner.as_ref().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PyNGramStatistics {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>
+    {
+        Ok(
+            Self {
+                inner: Arc::new(Deserialize::deserialize(deserializer)?)
+            }
+        )
     }
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
-impl NGramStatistics {
+impl PyNGramStatistics {
     #[staticmethod]
-    pub fn load(path: PathBuf) -> PyResult<NGramStatistics> {
+    pub fn load(path: PathBuf) -> PyResult<PyNGramStatistics> {
         bincode::deserialize_from(BufReader::new(File::open(path)?)).map_err(|err| {
             PyValueError::new_err(err.to_string())
         })
     }
 }
 
-register_python!(struct NGramDefinition;);
+register_python!(struct PyNGramStatistics;);
 
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass)]
-#[pyclass]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NGramDefinition {
-    language: LanguageHint,
-    ngram_size: u8,
-    file_max: usize,
-}
-
-impl NGramDefinition {
-    pub fn identifier(&self) -> String {
-        format!("{}_{}", self.language.as_str(), self.ngram_size)
-    }
-
-    pub fn new(language: impl Into<LanguageHint>, ngram_size: u8, file_max: usize) -> Self {
-        Self { language: language.into(), ngram_size, file_max }
-    }
-}
-
-#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
-#[pymethods]
-impl NGramDefinition {
-    #[new]
-    pub fn py_new(language: LanguageHint, ngram_size: u8, file_max: usize) -> Self {
-        Self::new(language, ngram_size, file_max)
-    }
-}
-
-
-#[derive(Debug, Error)]
-pub enum GenerateIdfProviderError {
-    #[error(transparent)]
-    IO(#[from] std::io::Error),
-    #[error("No tokenizer found for {0}!")]
-    NoTokenizer(LanguageHint),
-    #[error("No Vocabulary found for {0} in dict!")]
-    NoVocabulary(LanguageHint),
-    #[error("No unique count found for {0:?}!")]
-    NoUnique(NGramDefinition),
-    #[error(transparent)]
-    NGramError(#[from] GoogleNGramError),
-    #[error(transparent)]
-    BinCode(#[from] bincode::Error),
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-}
-
-impl From<GenerateIdfProviderError> for PyErr {
-    fn from(value: GenerateIdfProviderError) -> Self {
-        PyValueError::new_err(value.to_string())
-    }
-}
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
@@ -326,276 +108,27 @@ pub fn generate_word_counts(
     proc: PyAlignedArticleProcessor,
     v1: PyDictionary,
     ngrams: Vec<NGramDefinition>,
-) -> PyResult<Vec<(PathBuf, NGramStatistics)>> {
+) -> PyResult<Vec<(PathBuf, PyNGramStatistics)>> {
     Ok(
-        generate_complete_idf_provider(
+        generate_google_ngram_statistic(
             Utf8PathBuf::from_path_buf(inp_root).map_err(|p| PyValueError::new_err(format!("Illegal inp path {p:?} (only utf-8)")))?,
             Utf8PathBuf::from_path_buf(out_root).map_err(|p| PyValueError::new_err(format!("Illegal outp path {p:?} (only utf-8)")))?,
             &proc,
             &v1,
             &ngrams,
-        )?.into_iter().map(|(p, v)| (p.into_std_path_buf(), v)).collect()
+        )?.into_iter().map(|(p, v)| (p.into_std_path_buf(), v.into())).collect()
     )
 }
 
 register_python!(fn generate_word_counts;);
 
-fn generate_complete_idf_provider(
-    inp_root: impl AsRef<Utf8Path>,
-    out_root: impl AsRef<Utf8Path>,
-    proc: &PyAlignedArticleProcessor,
-    v1: &PyDictionary,
-    ngrams: &[NGramDefinition],
-) -> Result<Vec<(Utf8PathBuf, NGramStatistics)>, GenerateIdfProviderError> {
-
-    fn save_bin_and_json<V: Serialize>(
-        save_path: impl AsRef<Utf8Path>,
-        file_name: impl Display,
-        value: &V
-    ) -> Result<(), GenerateIdfProviderError> {
-        let save_path = save_path.as_ref();
-        File::options().write(true).create(true).truncate(true).open(
-            save_path.join(format!("{file_name}.bin"))
-        ).map_err(GenerateIdfProviderError::IO).and_then(|file| {
-            bincode::serialize_into(
-                BufWriter::new(file),
-                value
-            ).map_err(Into::into)
-        }).and_then(|_| {
-            File::options().write(true).create(true).truncate(true).open(
-                save_path.join(format!("{file_name}.json"))
-            ).map_err(GenerateIdfProviderError::IO).and_then(|file| {
-                serde_json::to_writer_pretty(
-                    BufWriter::new(file),
-                    value
-                ).map_err(Into::into)
-            })
-        })
-    }
-
-    fn generate_base(
-        inp_root: impl AsRef<Utf8Path>,
-        out_root: impl AsRef<Utf8Path>,
-        proc: &PyAlignedArticleProcessor,
-        v1: &PyDictionary,
-        ngrams: &[NGramDefinition],
-    ) -> Result<(), GenerateIdfProviderError> {
-        log::info!("Generate base");
-        let inner1 = v1.get();
-        
-        let mut cache = HashMap::new();
-        
-        for ngram in ngrams {
-            log::info!("Start {} {}!", ngram.language, ngram.ngram_size);
-
-            let tokenizer: Rc<Tokenizer> = match cache.entry(ngram.language.clone()) {
-                Entry::Occupied(entry) => {
-                    Rc::clone(entry.get())
-                }
-                Entry::Vacant(entry) => {
-                    let tok = proc.get_tokenizers_for(entry.key()).ok_or_else(|| GenerateIdfProviderError::NoTokenizer(entry.key().clone()))?;
-                    Rc::clone(entry.insert(Rc::new(tok)))
-                }
-            };
-
-            scan_for_voc(
-                inp_root.as_ref(),
-                out_root.as_ref(),
-                ngram.language.as_str(),
-                ngram.ngram_size,
-                ngram.file_max,
-                inner1.voc_by_hint(&ngram.language).ok_or_else(|| GenerateIdfProviderError::NoVocabulary(ngram.language.clone()))?,
-                tokenizer.as_ref(),
-                &format!("word_counts_{}.bin", ngram.identifier()),
-            )?;
-        }
-
-        Ok(())
-    }
-
-    generate_base(
-        inp_root.as_ref(),
-        out_root.as_ref(),
-        proc,
-        v1,
-        ngrams
-    )?;
-
-
-    fn normalize(
-        root: impl AsRef<Utf8Path>,
-        base_path: impl AsRef<Utf8Path>,
-        proc: &PyAlignedArticleProcessor,
-        v1: &PyDictionary,
-        ngrams: &[NGramDefinition],
-    ) -> Result<(), GenerateIdfProviderError> {
-        log::info!("Normalize on base path: {}", base_path.as_ref());
-        for provider in [
-            Some(proc),
-            None
-        ] {
-
-            log::info!("Execute{}", provider.is_some().then(|| " with provider").unwrap_or(" without provider"));
-
-            let save_path = base_path.as_ref().join(provider.is_some().to_string());
-            if save_path.join("finished").exists() {
-                log::info!("Already finished!");
-                continue;
-            }
-
-            std::fs::create_dir_all(&save_path).unwrap();
-
-            let mut overall: HashMap<LanguageHint, HashMap<ArcStr, NGramCount>> = HashMap::new();
-
-            let mut unique_word_counts = HashMap::new();
-
-            for ngram in ngrams {
-                let name = format!("word_counts_{}", ngram.identifier());
-                log::info!("Normalize: {}{}", name, provider.is_some().then(|| " with provider").unwrap_or(""));
-                let (unique_ct, content) = bincode::deserialize_from::<_, (u128, HashMap<ArcStr, HashMap<ArcStr, NGramCount>>)>(BufReader::new(File::open(root.as_ref().join(format!(r#"{name}.bin"#))).unwrap())).unwrap();
-                log::info!("Uniques: {}", unique_ct);
-                let uniques_old = content.values().flat_map(|v| {
-                    v.keys()
-                }).unique().count();
-                log::info!("Uniques old: {}", uniques_old);
-
-                let normalized: HashMap<ArcStr, HashMap<ArcStr, NGramCount>> = normalize_ngram_counts::<ArcStr, ArcStr, ArcStr>(
-                    content,
-                    provider.as_ref().and_then(|v| v.get_tokenizers_for(&ngram.language)).as_ref()
-                );
-
-                let uniques_new = normalized.values().flat_map(|v| {
-                    v.keys()
-                }).unique().count();
-                log::info!("Uniques new: {}", uniques_new);
-                let unique_ct = unique_ct - uniques_old as u128 + uniques_new as u128;
-                log::info!("Uniques: {}", unique_ct);
-                unique_word_counts.insert(ngram.identifier(), unique_ct);
-
-                log::info!("Save norm");
-                save_bin_and_json(
-                    &save_path,
-                    format!("{name}_norm"),
-                    &normalized
-                )?;
-
-                log::info!("Generate word freqs");
-                let targ = overall.entry(ngram.language.clone()).or_default();
-                let other = create_word_freqs(
-                    v1.get().voc_by_hint(&ngram.language).ok_or_else(|| GenerateIdfProviderError::NoVocabulary(ngram.language.clone()))?,
-                    ngram.ngram_size,
-                    &normalized
-                );
-
-                log::info!("Collect word freqs");
-                other.into_iter().for_each(|(k, v)| {
-                    targ.entry(k).and_modify(|count| *count = max(*count, v)).or_insert(v);
-                })
-            }
-
-
-            log::info!("Save processed content");
-            save_bin_and_json(
-                &save_path,
-                "unique_word_counts",
-                &unique_word_counts
-            )?;
-
-            overall.par_iter().map(|(k, v)| {
-                log::info!("Save overall for: {}", k);
-                save_bin_and_json(
-                    &save_path,
-                    format!("{k}_counts_for_voc"),
-                    v
-                )
-            }).collect::<Result<(), GenerateIdfProviderError>>()?;
-
-
-            File::options().create_new(true).open(save_path.join("finished"))?;
-        }
-
-        Ok(())
-    }
-
-    let base_path = out_root.as_ref().join("gen");
-    normalize(out_root.as_ref(), base_path.as_path(), proc, v1, ngrams)?;
-
-
-    fn generate_final(
-        inp_root: impl AsRef<Utf8Path>,
-        base_path: impl AsRef<Utf8Path>,
-        ngrams: &[NGramDefinition],
-    ) -> Result<Vec<(Utf8PathBuf, NGramStatistics)>, GenerateIdfProviderError> {
-        log::info!("Generate final data!");
-        let targets = ngrams.into_iter().into_group_map_by(|v| v.language.clone());
-        log::info!("Targets: {:?}", targets);
-
-        let mut result = Vec::new();
-
-        for t_value in [true, false] {
-            let proc = if t_value {"with_proc"} else {"without_proc"};
-            let base_path_with_t_value = base_path.as_ref().join(t_value.to_string());
-            let unique: HashMap<String, u128> = bincode::deserialize_from(BufReader::new(File::open(base_path_with_t_value.join("unique_word_counts.bin"))?))?;
-
-            let r = targets.iter().map(|(k, v)| {
-                log::info!("Finalize for processed for {k} {proc}");
-
-                v.iter().map(|&ngram| {
-                    match load_total_counts(
-                        inp_root.as_ref().join(format!("{}-totalcounts-{}", ngram.language, ngram.ngram_size))
-                    ) {
-                        Ok(to_sum) => {
-                            let sum = to_sum.values().sum::<TotalCount>();
-                            unique.get(&ngram.identifier()).map(|&value| {
-                                (ngram.ngram_size, (value, sum))
-                            }).ok_or_else(|| GenerateIdfProviderError::NoUnique(ngram.clone()))
-                        }
-                        Err(err) => {
-                            Err(err.into())
-                        }
-                    }
-                }).collect::<Result<HashMap<_, _>, _>>().and_then(|total| {
-                    match File::open(base_path_with_t_value.join(format!("{k}_counts_for_voc.bin"))) {
-                        Ok(file) => {
-                            bincode::deserialize_from(BufReader::new(file)).map_err(Into::into).map(|dat| {
-                                (k.clone(), NGramStatisticsLangSpecific::new(
-                                    k.clone(),
-                                    dat,
-                                    total,
-                                ))
-                            })
-                        }
-                        Err(err) => {
-                            Err(err.into())
-                        }
-                    }
-                })
-            }).collect::<Result<HashMap<_, _>, _>>().map(NGramStatistics::new).and_then(|word_counts| {
-                let path = base_path.as_ref().join(format!("counts_{proc}.bin"));
-                save_bin_and_json(
-                    base_path.as_ref(),
-                    format!("counts_{proc}"),
-                    &word_counts
-                ).and_then(|_| Ok((path, word_counts)))
-            })?;
-            result.push(r);
-        }
-        Ok(result)
-    }
-
-    generate_final(
-        inp_root.as_ref(),
-        base_path.as_path(),
-        ngrams,
-    )
-}
 
 
 #[cfg(test)]
 mod test {
     use crate::py::dictionary::PyDictionary;
     use crate::py::tokenizer::PyAlignedArticleProcessor;
-    use crate::py::word_counts::{generate_complete_idf_provider, NGramDefinition, NGramStatistics};
+    use crate::py::word_counts::{NGramDefinition};
     use log::LevelFilter;
     use std::collections::HashMap;
     use std::fs::File;
@@ -604,6 +137,7 @@ mod test {
     use arcstr::ArcStr;
     use indexmap::IndexMap;
     use itertools::Itertools;
+    use crate::tools::google_ngram_statistic::{generate_google_ngram_statistic, NGramStatistics};
     use crate::tools::tf_idf::Idf;
 
     #[test]
@@ -618,7 +152,7 @@ mod test {
             PathBuf::from(r#"E:\git\ptmt\data\final_dict\dictionary_20241130_proc3.dat.zst"#)
         ).unwrap();
 
-        generate_complete_idf_provider(
+        generate_google_ngram_statistic(
             r#"Z:\NGrams"#,
             r#"E:\tmp\google_ngrams2"#,
             &proc,
@@ -654,15 +188,15 @@ mod test {
             "with_proc",
             "without_proc",
         ] {
-            bincode::deserialize_from::<_, NGramStatistics>(
+            bincode::deserialize_from::<_, NGramStatistics<ArcStr>>(
                 BufReader::new(
                     File::options().read(true).open(format!(r#"E:\tmp\google_ngrams2\gen\counts_{k}.bin"#)).unwrap()
                 )
-            ).unwrap().inner.iter().for_each(|(lang, entry)| {
+            ).unwrap().into_inner().into_iter().for_each(|(lang, entry)| {
                 for adj in [true, false] {
                     serde_json::to_writer_pretty(
                         BufWriter::new(File::options().write(true).create(true).truncate(true).open(format!(r#"E:\tmp\google_ngrams2\gen\{lang}_{k}_{}.json"#, if adj {"adj"} else {"not_adj"})).unwrap()),
-                        &entry.all_idf_with_freq(Idf::InverseDocumentFrequency, adj).unwrap().into_iter().sorted_by_key(|(k, _)| k.clone()).collect::<IndexMap<ArcStr, _>>()
+                        &entry.all_idf_with_freq(&Idf::InverseDocumentFrequency, adj).unwrap().into_iter().sorted_by_key(|(k, _)| k.clone()).collect::<IndexMap<ArcStr, _>>()
                     ).unwrap()
                 }
             });

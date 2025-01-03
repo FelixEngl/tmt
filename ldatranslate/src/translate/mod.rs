@@ -47,7 +47,7 @@ use ldatranslate_voting::variable_provider::{VariableProvider, VariableProviderO
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::traits::VotingMethodMarker;
 use ldatranslate_voting::{VotingMethod};
-use crate::py::word_counts::{NGramStatistics};
+use crate::tools::google_ngram_statistic::NGramStatistics;
 use crate::tools::memory::MemoryReporter;
 use crate::translate::candidate::Candidate;
 use crate::translate::dictionary_meta::booster::{Booster, TopicSpecificBooster};
@@ -62,7 +62,7 @@ pub fn translate_topic_model_without_provider<'a, Target, D, T, Voc, V>(
     target: &'a Target,
     dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
-    idf_source: Option<NGramStatistics>
+    idf_source: Option<&NGramStatistics<T>>
 ) -> Result<Target, TranslateError<'a>>
 where
     T: Hash + Eq + Ord + Clone + Sync + Send + 'a + Debug,
@@ -86,7 +86,7 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
     original_dictionary: &'a D,
     translate_config: &TranslateConfig<V>,
     provider: Option<&P>,
-    idf_source: Option<NGramStatistics>
+    idf_source: Option<&NGramStatistics<T>>
 ) -> Result<Target, TranslateError<'a>> where
     T: Hash + Eq + Ord + Clone + Send + Sync + 'a + Debug,
     V: VotingMethodMarker,
@@ -912,6 +912,7 @@ pub(crate) mod test {
                             ScoreModifierCalculator::Max
                         ),
                         BoostNorm::Linear,
+                        None,
                         None
                     ),
                 )
@@ -950,6 +951,7 @@ pub(crate) mod test {
                         false,
                         BoostMethod::Pipe,
                         MeanMethod::GeometricMean,
+                        None,
                         None
                     )
                 )
@@ -982,6 +984,7 @@ pub(crate) mod test {
                             ScoreModifierCalculator::Max
                         ),
                         BoostNorm::Linear,
+                        None,
                         None
                     ),
                 )
@@ -1009,6 +1012,7 @@ pub(crate) mod test {
                         false,
                         BoostMethod::Pipe,
                         MeanMethod::GeometricMean,
+                        None,
                         None
                     )
                 )

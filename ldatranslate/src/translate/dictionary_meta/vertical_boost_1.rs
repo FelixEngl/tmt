@@ -12,6 +12,7 @@ use ldatranslate_topicmodel::dictionary::metadata::MetadataManager;
 use ldatranslate_topicmodel::translate::TranslatableTopicMatrixWithCreate;
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
 use ldatranslate_translate::{TopicLike, TopicModelLikeMatrix};
+use crate::tools::non_zero::make_positive_only;
 use crate::translate::dictionary_meta::dict_meta::MetaTagTemplate;
 use crate::translate::dictionary_meta::{Similarity, SparseVectorFactory};
 use crate::translate::entropies::{EntropyWithAlphaError, FDivergenceCalculator};
@@ -130,12 +131,17 @@ impl VerticalBoostedScores {
                 original_dictionary.metadata().meta_a().get(id)
             })
         }).collect_vec();
-        let new = calculate_vertical_boost_matrice(
+        let mut new = calculate_vertical_boost_matrice(
             &metas,
             &sparse,
             &config,
             target,
         )?;
+        if config.only_positive_boost {
+            for value in new.iter_mut() {
+                make_positive_only(value.as_mut_slice())
+            }
+        }
         Ok(
             Self {
                 alternative_scores: Arc::new(new),
@@ -345,6 +351,7 @@ mod test {
                     ScoreModifierCalculator::WeightedSum
                 ),
                 BoostNorm::Linear,
+                None,
                 None
             ),
             &model_a,
@@ -380,6 +387,7 @@ mod test {
                         ScoreModifierCalculator::WeightedSum
                     ),
                     BoostNorm::Linear,
+                    None,
                     None
                 )
             ),

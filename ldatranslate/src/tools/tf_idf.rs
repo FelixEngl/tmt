@@ -91,13 +91,13 @@ where
                 statistics: &S,
                 word: &Q,
                 adjusted: bool,
-            ) -> Result<Option<f64>, Idf::Error>
+            ) -> Result<f64, Idf::Error>
             where
                 S: CorpusDocumentStatistics,
                 Q: Hash + Eq + ?Sized,
                 S::Word: Borrow<Q>;
 
-            fn calculate_idf_with_word_frequency<Q, S>(
+            fn calculate_idf_with_word_frequency<S>(
                 &self,
                 statistics: &S,
                 word_frequency: u128,
@@ -105,8 +105,6 @@ where
             ) -> Result<f64, Idf::Error>
             where
                 S: CorpusDocumentStatistics,
-                Q: Hash + Eq + ?Sized,
-                S::Word: Borrow<Q>,
             ;
         }
     }
@@ -185,7 +183,11 @@ pub trait IdfAlgorithm {
 
     /// Returns the max value of the idf for a word that is in 0 docs.
     #[inline]
-    fn max<S>(&self, statistics: &S, adjusted: bool) -> Result<f64, Self::Error> {
+    fn max<S>(&self, statistics: &S, adjusted: bool) -> Result<f64, Self::Error>
+    where
+        S: CorpusDocumentStatistics,
+
+    {
         if !adjusted {
             return Ok(f64::NAN);
         }
@@ -200,22 +202,22 @@ pub trait IdfAlgorithm {
     /// [word_frequency] denotes the frequency of a specific word in a corpus.
     ///
     /// Returns nan if the calculation is not possible.
-    fn calculate_idf_with_word_frequency<Q, S>(
+    fn calculate_idf_with_word_frequency<S>(
         &self,
         statistics: &S,
         word_frequency: u128,
         adjusted: bool
     ) -> Result<f64, Self::Error>
     where
-        S: CorpusDocumentStatistics,
-        Q: Hash + Eq + ?Sized,
-        S::Word: Borrow<Q>,
-    ;
+        S: CorpusDocumentStatistics;
 }
 
 /// Default IDF Algorithms
 /// From https://en.wikipedia.org/wiki/Tf%E2%80%93idf
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+
+#[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
+#[pyo3::pyclass(eq, eq_int, hash, frozen)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Idf {
     Unary,
     InverseDocumentFrequency,
@@ -244,18 +246,29 @@ impl IdfAlgorithm for Idf {
         statistics: &S,
         word: &Q,
         adjusted: bool
-    ) -> Result<Option<f64>, Self::Error>
+    ) -> Result<f64, Self::Error>
     where
         S: CorpusDocumentStatistics,
         Q: Hash + Eq + ?Sized,
         S::Word: Borrow<Q>
     {
         match self {
-            Idf::Unary => Ok(Some(1.0)),
-            other => statistics
-                .word_document_count(word)
-                .map(|value| other.calculate_idf_with_word_frequency(statistics, value, adjusted))
-                .transpose(),
+            Idf::Unary => Ok(1.0),
+            other => {
+                let wc = if adjusted {
+                    statistics.word_document_count(word).unwrap_or(0)
+                } else {
+                    match statistics.word_document_count(word) {
+                        None => {
+                            return Ok(f64::NAN);
+                        }
+                        Some(value) => {
+                            value
+                        }
+                    }
+                };
+                other.calculate_idf_with_word_frequency(statistics, wc, adjusted)
+            }
         }
     }
 
@@ -263,16 +276,14 @@ impl IdfAlgorithm for Idf {
     /// [word_frequency] denotes the frequency of a specific word in a corpus.
     ///
     /// Returns nan if the calculation is not possible.
-    fn calculate_idf_with_word_frequency<Q, S>(
+    fn calculate_idf_with_word_frequency<S>(
         &self,
         statistics: &S,
         mut word_frequency: u128,
         adjusted: bool
     ) -> Result<f64, Self::Error>
     where
-        S: CorpusDocumentStatistics,
-        Q: Hash + Eq + ?Sized,
-        S::Word: Borrow<Q>
+        S: CorpusDocumentStatistics
     {
         if adjusted {
             word_frequency += 1;

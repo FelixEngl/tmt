@@ -21,6 +21,7 @@ use ldatranslate_topicmodel::dictionary::{BasicDictionaryWithVocabulary, Searcha
 use ldatranslate_topicmodel::model::Probability;
 use ldatranslate_topicmodel::vocabulary::{AnonymousVocabulary, BasicVocabulary, SearchableVocabulary};
 use crate::tools::mean::MeanMethod;
+use crate::tools::non_zero::{make_positive_only_arr};
 use crate::translate::dictionary_meta::{MetaTagTemplate, Similarity, SparseVectorFactory};
 use crate::translate::dictionary_meta::coocurrence::{co_occurence_with_other_classes_a_to_b, ClassCoocurrenceMatrix};
 use crate::translate::dictionary_meta::vertical_boost_1::MetaFieldCountProvider;
@@ -198,7 +199,7 @@ impl HorizontalScoreBoost
             config.mode
         ).unwrap();
 
-        let voter_boots = translation_dictionary.voc_a().iter_entries().map(|(id_a, word_a)| {
+        let voter_boots: Vec<HashMap<usize, f64>> = translation_dictionary.voc_a().iter_entries().map(|(id_a, word_a)| {
             let words_b = translation_dictionary.translate_id_a_to_entries_b(id_a).unwrap_or_else(Vec::new);
             calculate_horizontal_boost(
                 original_dictionary,
@@ -210,7 +211,11 @@ impl HorizontalScoreBoost
                 config.mean_method,
                 config.linear_transformed
             ).map(|possible_arr| possible_arr.map(
-                |arr| {
+                |mut arr| {
+                    if config.only_positive_boost {
+                        make_positive_only_arr(&mut arr);
+                    }
+
                     let mut x = words_b.into_iter().map(|(p, _)| p).zip(arr.into_iter()).collect::<HashMap<_,_>>();
                     x.shrink_to_fit();
                     x
@@ -602,6 +607,7 @@ mod test {
                     false,
                     BoostMethod::Pipe,
                     MeanMethod::GeometricMean,
+                    None,
                     None
                 )
             ),

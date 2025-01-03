@@ -37,7 +37,7 @@ use ldatranslate_voting::{VotingMethod, VotingMethodContext, VotingResult};
 use ldatranslate_voting::constants::TMTNumericTypes;
 use ldatranslate_voting::py::{PyVotingModel};
 use ldatranslate_voting::traits::VotingMethodMarker;
-use crate::py::word_counts::NGramStatistics;
+use crate::py::word_counts::PyNGramStatistics;
 use crate::tools::boosting::BoostMethod;
 use crate::tools::mean::MeanMethod;
 use crate::tools::memory::MemoryReporter;
@@ -87,23 +87,26 @@ impl PyBasicBoostConfig {
 pub struct PyVerticalBoostConfig {
     pub divergence: PyBasicBoostConfig,
     pub transformer: BoostNorm,
-    pub factor: Option<f64>
+    pub factor: Option<f64>,
+    pub only_positive_boost: Option<bool>,
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyVerticalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, transformer=None, factor=None))]
+    #[pyo3(signature = (divergence, transformer=None, factor=None, only_positive_boost=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
         transformer: Option<BoostNorm>,
-        factor: Option<f64>
+        factor: Option<f64>,
+        only_positive_boost: Option<bool>
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
             transformer: transformer.unwrap_or_default(),
-            factor
+            factor,
+            only_positive_boost
         })
     }
 }
@@ -119,14 +122,15 @@ pub struct PyHorizontalBoostConfig {
     pub linear_transformed: bool,
     pub mean_method: MeanMethod,
     pub transform: BoostMethod,
-    pub factor: Option<f64>
+    pub factor: Option<f64>,
+    pub only_positive_boost: Option<bool>
 }
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pymethods)]
 #[pymethods]
 impl PyHorizontalBoostConfig {
     #[new]
-    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None, transform=None, factor=None))]
+    #[pyo3(signature = (divergence, mean_method=None, normalize_mode=None, alpha=None::<Option<f64>>, linear_transformed=None, transform=None, factor=None, only_positive_boost=None))]
     pub fn new(
         divergence: PyBasicBoostConfig,
         mean_method: Option<MeanMethod>,
@@ -134,7 +138,8 @@ impl PyHorizontalBoostConfig {
         alpha: Option<Option<f64>>,
         linear_transformed: Option<bool>,
         transform: Option<BoostMethod>,
-        factor: Option<f64>
+        factor: Option<f64>,
+        only_positive_boost: Option<bool>
     ) -> PyResult<Self> {
         Ok(Self{
             divergence,
@@ -143,7 +148,8 @@ impl PyHorizontalBoostConfig {
             linear_transformed: linear_transformed.unwrap_or_default(),
             transform: transform.unwrap_or_default(),
             mean_method: mean_method.unwrap_or_default(),
-            factor
+            factor,
+            only_positive_boost
         })
     }
 }
@@ -180,6 +186,7 @@ pub struct PyNGramLanguageBoost {
     pub idf: Idf,
     pub boosting: BoostMethod,
     pub norm: BoostNorm,
+    pub only_positive_boost: Option<bool>,
     pub factor: Option<f64>,
     pub fallback_language: Option<LanguageHint>
 }
@@ -188,20 +195,22 @@ pub struct PyNGramLanguageBoost {
 #[pymethods]
 impl PyNGramLanguageBoost {
     #[new]
-    #[pyo3(signature = (idf=None, boosting=None, norm=None, factor=None, fallback_language=None))]
+    #[pyo3(signature = (idf=None, boosting=None, norm=None, factor=None, fallback_language=None, only_positive_boost=None))]
     pub fn new(
         idf: Option<Idf>,
         boosting: Option<BoostMethod>,
         norm: Option<BoostNorm>,
         factor: Option<f64>,
-        fallback_language: Option<LanguageHintValue>
+        fallback_language: Option<LanguageHintValue>,
+        only_positive_boost: Option<bool>
     ) -> PyResult<Self> {
         Ok(Self{
             idf: idf.unwrap_or(Idf::InverseDocumentFrequency),
             boosting: boosting.unwrap_or(BoostMethod::Mult),
             norm: norm.unwrap_or(BoostNorm::Off),
             factor,
-            fallback_language: fallback_language.map(|v| v.into())
+            fallback_language: fallback_language.map(|v| v.into()),
+            only_positive_boost
         })
     }
 }
@@ -212,7 +221,9 @@ impl Default for PyNGramLanguageBoost {
             idf: Idf::InverseDocumentFrequency,
             boosting: BoostMethod::Mult,
             norm: BoostNorm::Off,
-            factor: None
+            factor: None,
+            fallback_language: None,
+            only_positive_boost: None
         }
     }
 }
@@ -329,7 +340,7 @@ impl VotingMethodMarker for Wrapper<'_> {}
 
 #[cfg_attr(feature="gen_python_api", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-#[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None, idf_source=None))]
+#[pyo3(signature = (topic_model, dictionary, voting, config, provider=None, voting_registry=None, ngram_statistics=None))]
 pub fn translate_topic_model<'a>(
     topic_model: &PyTopicModel,
     dictionary: &PyDictionary,
@@ -338,12 +349,12 @@ pub fn translate_topic_model<'a>(
     config: PyTranslationConfig,
     provider: Option<&PyVariableProvider>,
     voting_registry: Option<PyVotingRegistry>,
-    idf_source: Option<NGramStatistics>
+    ngram_statistics: Option<PyNGramStatistics>
 ) -> PyResult<PyTopicModel> {
     let cfg =config.to_translation_config(voting, voting_registry)?;
     let read = dictionary.get();
     log::info!("Start with translation.");
-    match translate(topic_model, read.deref(), &cfg, provider, idf_source) {
+    match translate(topic_model, read.deref(), &cfg, provider, ngram_statistics.as_ref().map(|v| v.as_ref())) {
         Ok(result) => {
             log::info!("Memory usage: {}", MemoryReporter::instant_report());
             Ok(result)

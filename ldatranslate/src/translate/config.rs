@@ -135,19 +135,27 @@ pub struct NGramLanguageBoostConfig {
     pub idf: Idf,
     pub boosting: BoostMethod,
     pub norm: BoostNorm,
+    pub only_positive_boost: bool,
     pub factor: f64,
     pub fallback_language: Option<LanguageHint>
 }
 
+impl NGramLanguageBoostConfig {
+    pub fn new(idf: Idf, boosting: BoostMethod, norm: BoostNorm, only_positive_boost: Option<bool>, factor: Option<f64>, fallback_language: Option<LanguageHint>) -> Self {
+        Self { idf, boosting, norm, only_positive_boost: only_positive_boost.unwrap_or(true), factor: factor.unwrap_or(1.0), fallback_language }
+    }
+}
+
 impl From<PyNGramLanguageBoost> for NGramLanguageBoostConfig {
     fn from(value: PyNGramLanguageBoost) -> Self {
-        Self {
-            idf: value.idf,
-            boosting: value.boosting,
-            norm: value.norm,
-            factor: value.factor.unwrap_or(1.0),
-            fallback_language: value.fallback_language
-        }
+        Self::new(
+            value.idf,
+            value.boosting,
+            value.norm,
+            value.only_positive_boost,
+            value.factor,
+            value.fallback_language
+        )
     }
 }
 
@@ -157,12 +165,13 @@ pub struct VerticalScoreBoostConfig {
     pub field_config: FieldConfig,
     pub calculator: FDivergenceCalculator,
     pub transformer: BoostNorm,
-    pub factor: f64
+    pub factor: f64,
+    pub only_positive_boost: bool,
 }
 
 impl VerticalScoreBoostConfig {
-    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: BoostNorm, factor: Option<f64>) -> Self {
-        Self { field_config, calculator, transformer, factor: factor.unwrap_or(1.0) }
+    pub fn new(field_config: FieldConfig, calculator: FDivergenceCalculator, transformer: BoostNorm, factor: Option<f64>, only_positive_boost: Option<bool>) -> Self {
+        Self { field_config, calculator, transformer, factor: factor.unwrap_or(1.0), only_positive_boost: only_positive_boost.unwrap_or(false) }
     }
 }
 
@@ -180,7 +189,8 @@ impl From<PyVerticalBoostConfig> for VerticalScoreBoostConfig {
                 value.divergence.score_modifier_calculator
             ),
             value.transformer,
-            value.factor
+            value.factor,
+            value.only_positive_boost
         )
     }
 }
@@ -196,7 +206,8 @@ pub struct HorizontalScoreBootConfig {
     pub linear_transformed: bool,
     pub transform: BoostMethod,
     pub mean_method: MeanMethod,
-    pub factor: f64
+    pub factor: f64,
+    pub only_positive_boost: bool
 }
 
 
@@ -209,9 +220,10 @@ impl HorizontalScoreBootConfig {
         linear_transformed: bool,
         transform: BoostMethod,
         mean_method: MeanMethod,
-        factor: Option<f64>
+        factor: Option<f64>,
+        only_positive_boost: Option<bool>
     ) -> Self {
-        Self { alpha, calculator, mode, field_config, linear_transformed, transform, mean_method, factor: factor.unwrap_or(1.0) }
+        Self { alpha, calculator, mode, field_config, linear_transformed, transform, mean_method, factor: factor.unwrap_or(1.0), only_positive_boost: only_positive_boost.unwrap_or(false) }
     }
 }
 
@@ -232,7 +244,8 @@ impl From<PyHorizontalBoostConfig> for HorizontalScoreBootConfig {
             config.linear_transformed,
             config.transform,
             config.mean_method,
-            config.factor
+            config.factor,
+            config.only_positive_boost
         )
     }
 }

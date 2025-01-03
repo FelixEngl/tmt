@@ -4,8 +4,9 @@ use thiserror::Error;
 use ldatranslate_topicmodel::dictionary::DictionaryWithVocabulary;
 use ldatranslate_topicmodel::vocabulary::BasicVocabulary;
 use ldatranslate_translate::TopicLike;
-use crate::py::word_counts::{IdfProviderError, NGramStatisticsLangSpecific};
 use crate::tools::boosting::BoostMethod;
+use crate::tools::google_ngram_statistic::{IdfProviderError, NGramStatisticsLangSpecific};
+use crate::tools::non_zero::make_positive_only;
 use crate::tools::tf_idf::{Idf};
 use crate::translate::{NGramLanguageBoostConfig};
 
@@ -34,6 +35,12 @@ impl NGramScoreBooster {
             dict
         )?.unwrap_or_else(|| (0, Vec::with_capacity(0)));
         config.norm.norm(&mut mapping);
+
+        if config.only_positive_boost {
+            make_positive_only(&mut mapping);
+        }
+
+
         Ok(
             Self {
                 values: Arc::new(mapping),
