@@ -984,7 +984,7 @@ pub(crate) mod test {
                 NormalizeMode::Sum,
                 Some(0.15),
                 false,
-                BoostMethod::Pipe,
+                BoostMethod::Linear,
                 MeanMethod::GeometricMean,
                 None,
                 None
@@ -1103,6 +1103,7 @@ pub(crate) mod test {
             ("cfg7", create_default_config(None, None, Some(ngram_config3.clone()))),
             ("cfg8", create_default_config(None, None, Some(ngram_config4.clone()))),
             ("cfg9", create_default_config(None, None, Some(ngram_config5.clone()))),
+            ("cfg10", create_default_config(Some(v_config1.clone()), Some(h_config1.clone()), Some(ngram_config5.clone()))),
         ] {
 
             log::info!("----");
