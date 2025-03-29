@@ -12,3 +12,4 @@ unicode-segmentation.workspace = true
 whatlang.workspace = true
 itertools.workspace = true
 strsim.workspace = true
+
