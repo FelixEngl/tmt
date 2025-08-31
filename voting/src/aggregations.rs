@@ -288,8 +288,6 @@ pub mod parse {
         use nom::error::VerboseError;
         use crate::aggregations::{Aggregation, AggregationKind};
         use crate::aggregations::parse::parse_aggregation;
-        use crate::aggregations::{Aggregation, AggregationKind};
-        use crate::aggregations::parse::parse_aggregation;
 
         #[test]
         fn can_parse_a_simple_expression(){

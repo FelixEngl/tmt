@@ -634,8 +634,8 @@ mod test {
     use nom::{Finish};
     use nom::error::VerboseError;
     use crate::variable_provider::variable_names::{NUMBER_OF_VOTERS, SCORE};
-    use crate::voting::{VotingMethod};
-    use crate::voting::parser::logic::{b_exp, voting, voting_function};
+    use crate::{VotingMethod};
+    use crate::parser::logic::{b_exp, voting, voting_function};
 
     const TEST: &str = "aggregate(let sss = sumOf): {
             let katze = if (a+b == (c+d)) {

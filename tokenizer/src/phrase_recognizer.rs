@@ -275,7 +275,7 @@ impl<'o, 'tb> Iterator for PhraseRecognizerIter<'o, 'tb>{
 #[cfg(test)]
 mod test {
     use trie_rs::map::TrieBuilder;
-    use crate::tokenizer::{TokenizerBuilder};
+    use crate::{TokenizerBuilder};
 
     #[test]
     fn can_recognize_phrase() {

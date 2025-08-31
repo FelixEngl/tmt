@@ -280,7 +280,7 @@ impl<'o, 'tb> Iterator for StemmedTokenIter<'o, 'tb> {
 #[cfg(test)]
 mod test {
     use rust_stemmers::{Algorithm};
-    use crate::tokenizer::{TokenizerBuilder};
+    use crate::{TokenizerBuilder};
 
     #[test]
     fn can_stem_properly(){

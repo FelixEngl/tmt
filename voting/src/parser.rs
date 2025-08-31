@@ -127,11 +127,6 @@ mod test {
     use crate::parser::logic::global_voting_function;
     use crate::parser::{parse, InterpretedVoting};
     use crate::registry::VotingRegistry;
-    use crate::voting::BuildInVoting;
-    use crate::voting::parser::{parse, InterpretedVoting};
-    use crate::voting::parser::input::ParserInput;
-    use crate::voting::parser::logic::global_voting_function;
-    use crate::voting::registry::VotingRegistry;
 
     #[test]
     fn can_recognize_buildin(){

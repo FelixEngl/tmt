@@ -1402,6 +1402,7 @@ dependencies = [
  "pyo3-stub-gen",
  "sealed",
  "serde",
+ "serde_json",
  "string-interner",
  "strum",
  "thiserror 2.0.4",

@@ -281,6 +281,9 @@ pub fn translate_topic_model<'a, Target, D, T, Voc, V, P>(
                     Ok(_) => {
                         let topic_context_2 = topic_context_2
                             .to_static_with(topic_context.clone());
+                        
+                        
+                        
                         translate_topic(
                             target,
                             &translation_dictionary,
@@ -497,6 +500,8 @@ where
                             original_voter_id,
                             candidate,
                         );
+
+                        
 
                         let mut context = context_map! {
                             COUNT_OF_VOTERS => as int mapped.len(),

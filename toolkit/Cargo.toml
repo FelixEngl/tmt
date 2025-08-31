@@ -21,6 +21,8 @@ pyo3-stub-gen = {workspace = true, optional = true}
 paste.workspace = true
 log.workspace = true
 tinyset.workspace = true
+[dev-dependencies]
+serde_json.workspace = true
 
 [features]
 gen_python_api = ["dep:pyo3-stub-gen"]

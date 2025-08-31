@@ -1,0 +1,6 @@
+Libs:
+    https://crates.io/crates/rug
+
+
+Selber implementieren durch port:
+    https://github.com/mpmath/mpmath/tree/master
