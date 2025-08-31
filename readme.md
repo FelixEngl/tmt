@@ -3,6 +3,8 @@ A tool to translate topic models between languages written in rust for python.
 
 This is experimental code and will change over the time.
 
+> Please Note: Currently the code is broken due some API changes in the dependencies and heavy API changes. I'll will fix the issues in the upcomming months.
+
 ## How to build?
 See: https://pyo3.rs/v0.22.5/
 
